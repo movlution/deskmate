@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace Deskmate
@@ -41,13 +42,15 @@ namespace Deskmate
         readonly NoteListView noteList = new NoteListView();
         readonly KitButton newNoteBtn = new KitButton { Primary = true };
         readonly NoteTagChip noteTagChip = new NoteTagChip();
+        readonly TaskIconButton blockBtn = new TaskIconButton { Glyph = '\uE710', GlyphPx = 15 };
+        NoteBlockMenu blockMenu;
         readonly TaskIconButton checkBtn = new TaskIconButton { Glyph = '\uE762', GlyphPx = 15 };
         readonly TaskIconButton colorBtn = new TaskIconButton { Glyph = '\uE790', GlyphPx = 15 };
         readonly TaskIconButton pinBtn = new TaskIconButton { Glyph = '\uE718', GlyphPx = 15 };
         readonly TaskIconButton archiveBtn = new TaskIconButton { Glyph = '\uE7B8', GlyphPx = 15 };
         readonly TaskIconButton delBtn = new TaskIconButton { Glyph = '\uE74D', GlyphPx = 15 };
         readonly TaskAddBox noteTitleBox = new TaskAddBox();
-        readonly TaskAddBox editor = new TaskAddBox();
+        readonly NoteEditor editor = new NoteEditor();
         string colorFilter = "";
         string saveStatusText = "";
         Dictionary<string, NoteMeta> noteMeta = new Dictionary<string, NoteMeta>(StringComparer.OrdinalIgnoreCase);
@@ -245,6 +248,10 @@ namespace Deskmate
 
             checkBtn.Back = delegate { return EditorHeaderColor(); };
             checkBtn.AccessibleName = Lang.T("Checklist");
+            blockBtn.Back = delegate { return EditorHeaderColor(); };
+            blockBtn.AccessibleName = Lang.T("Sisipkan blok");
+            blockBtn.Click += delegate { ShowBlockMenu(false); };
+            noteTips.SetToolTip(blockBtn, Lang.T("Sisipkan blok") + " (/)");
             checkBtn.Click += delegate { ToggleChecklistLine(); };
             noteTips.SetToolTip(checkBtn, Lang.T("Checklist (Ctrl+Shift+L)"));
 
@@ -285,18 +292,16 @@ namespace Deskmate
             editor.Enabled = false;
             editor.BorderStyle = BorderStyle.None;
             editor.Multiline = true;
-            editor.AcceptsReturn = true;
             editor.WordWrap = true;
-            editor.ScrollBars = ScrollBars.Vertical;
-            editor.HideIdleScroll = true;
             editor.TextChanged += delegate { OnNoteInputChanged(); };
-            editor.HandleCreated += delegate { Native.ThemeScroll(editor); editor.SyncScroll(); };
+            editor.KeyDown += ContinueMarkdownList;
+            editor.OpenBlockMenu = delegate { ShowBlockMenu(true); };
             editor.MouseDown += EditorMouseDown;
-            noteStatsTimer.Tick += delegate { UpdateNoteStats(); };
+            noteStatsTimer.Tick += delegate { editor.RefreshFormatting(); UpdateNoteStats(); };
             saveTimer.Tick += delegate { saveTimer.Stop(); SaveCurrent(false); };
 
             Controls.AddRange(new Control[] { tabs, taskMode, rail, title, addBox, taskView, board, syncStatus, moreBtn });
-            Controls.AddRange(new Control[] { newNoteBtn, search, noteArchiveFilter, colorStrip, noteList, noteTagChip, checkBtn, colorBtn, pinBtn, archiveBtn, delBtn, noteTitleBox, editor });
+            Controls.AddRange(new Control[] { newNoteBtn, search, noteArchiveFilter, colorStrip, noteList, noteTagChip, blockBtn, checkBtn, colorBtn, pinBtn, archiveBtn, delBtn, noteTitleBox, editor });
             FormClosing += (s, e) =>
             {
                 if (!SaveCurrent(true)) { e.Cancel = true; return; }
@@ -355,7 +360,11 @@ namespace Deskmate
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { saveTimer.Dispose(); noteStatsTimer.Dispose(); searchTimer.Dispose(); noteTips.Dispose(); }
+            if (disposing)
+            {
+                if (blockMenu != null) blockMenu.Dispose();
+                saveTimer.Dispose(); noteStatsTimer.Dispose(); searchTimer.Dispose(); noteTips.Dispose();
+            }
             base.Dispose(disposing);
             if (disposing)
                 foreach (var f in new[] { fText, fSub, fSmall }) if (f != null) f.Dispose();
@@ -424,7 +433,32 @@ namespace Deskmate
         {
             bool t = Tab == 0;
             bool hasNote = !t && current != null;
-            noteTagChip.Visible = checkBtn.Visible = colorBtn.Visible = pinBtn.Visible = archiveBtn.Visible = delBtn.Visible = noteTitleBox.Visible = editor.Visible = hasNote;
+            noteTagChip.Visible = blockBtn.Visible = checkBtn.Visible = colorBtn.Visible = pinBtn.Visible = archiveBtn.Visible = delBtn.Visible = noteTitleBox.Visible = editor.Visible = hasNote;
+            UpdateNoteAvailability();
+        }
+
+        internal void UpdateNoteAvailability()
+        {
+            bool ready = !owner.DriveNotesLoading;
+            newNoteBtn.Enabled = ready;
+            noteTagChip.Enabled = blockBtn.Enabled = checkBtn.Enabled = colorBtn.Enabled = pinBtn.Enabled = archiveBtn.Enabled = delBtn.Enabled = ready && current != null;
+            noteTitleBox.ReadOnly = !ready || current == NoteFiles.QuickPath;
+            editor.ReadOnly = !ready;
+            if (!ready && blockMenu != null) blockMenu.Close();
+            if (IsHandleCreated && !editorMetaRect.IsEmpty) Invalidate(editorMetaRect);
+        }
+
+        internal bool FlushNoteDraft() { return SaveCurrent(false); }
+
+        internal bool FlushQuickNoteDraft()
+        {
+            return current != NoteFiles.QuickPath || SaveCurrent(true);
+        }
+
+        internal void RefreshQuickNote()
+        {
+            RefreshNotes(current);
+            if (current == NoteFiles.QuickPath && !dirty) ShowNote(current);
         }
 
         // ---------- layout ----------
@@ -435,7 +469,7 @@ namespace Deskmate
         {
             if (!IsHandleCreated) return;
             float s = Ui;
-            int maxChipW = Math.Max((int)(80 * s), checkBtn.Left - wellEditor.X - (int)(24 * s));
+            int maxChipW = Math.Max((int)(80 * s), blockBtn.Left - wellEditor.X - (int)(24 * s));
             noteTagChip.SetBounds(wellEditor.X + (int)(14 * s), wellEditor.Y + (int)(9 * s), noteTagChip.PreferredWidth(maxChipW), (int)(28 * s));
         }
 
@@ -546,6 +580,7 @@ namespace Deskmate
             bx -= edBtnSz + edBtnGap; pinBtn.SetBounds(bx, tbY, edBtnSz, edBtnSz);
             bx -= edBtnSz + edBtnGap; colorBtn.SetBounds(bx, tbY, edBtnSz, edBtnSz);
             bx -= edBtnSz + edBtnGap; checkBtn.SetBounds(bx, tbY, edBtnSz, edBtnSz);
+            bx -= edBtnSz + edBtnGap; blockBtn.SetBounds(bx, tbY, edBtnSz, edBtnSz);
 
             LayoutNoteTagChip();
 
@@ -560,10 +595,9 @@ namespace Deskmate
 
             int edTop = editorDividerY + (int)(10 * s);
             editor.Font = fText; editor.BackColor = KitInk.Group; editor.ForeColor = KitInk.Text;
-            editor.Placeholder = Lang.T("Mulai menulis catatan…");
             editor.SetBounds(wellEditor.X + (int)(18 * s), edTop, wellEditor.Width - (int)(36 * s), Math.Max((int)(40 * s), wellEditor.Bottom - edTop - (int)(14 * s)));
             Native.ThemeScroll(editor);
-            editor.SyncScroll();
+            editor.RefreshFormatting();
 
             Invalidate(true);
         }
@@ -621,6 +655,7 @@ namespace Deskmate
                             g.DrawPath(bpen, cardPath);
                     }
                     string rightStatus = saveStatusText.Length > 0 ? saveStatusText : (dirty ? Lang.T("Menyimpan…") : Lang.T("Tersimpan"));
+                    if (owner.DriveNotesLoading) rightStatus = Lang.T("Memuat…");
                     int statusW = TextRenderer.MeasureText(rightStatus, fSmall, new Size(int.MaxValue, 1000), TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width + (int)(12 * s);
                     KitInk.Draw(g, noteMetaLine, fSmall, KitInk.Sub, new RectangleF(editorMetaRect.X, editorMetaRect.Y, Math.Max(40, editorMetaRect.Width - statusW), editorMetaRect.Height), ContentAlignment.MiddleLeft);
                     KitInk.Draw(g, rightStatus, fSmall, saveFailed ? Ink.Base.Negative : KitInk.Faint, new RectangleF(editorMetaRect.Right - statusW, editorMetaRect.Y, statusW, editorMetaRect.Height), ContentAlignment.MiddleRight);
@@ -1559,15 +1594,15 @@ namespace Deskmate
 
             ApplyNoteEditorVisibility();
             if (IsHandleCreated) LayoutNoteTagChip();
-            editor.SyncScroll();
+            editor.RefreshFormatting();
             Invalidate(true);
         }
 
         string SerializeCurrentNote()
         {
             if (current != null && string.Equals(current, NoteFiles.QuickPath, StringComparison.OrdinalIgnoreCase))
-                return editor.Text;
-            return NoteFiles.JoinNote(noteTitleBox.Text, editor.Text);
+                return NoteFiles.NormalizeNewlines(editor.Text);
+            return NoteFiles.JoinNote(noteTitleBox.Text, NoteFiles.NormalizeNewlines(editor.Text));
         }
 
         void SetSaveState(string text)
@@ -1605,7 +1640,7 @@ namespace Deskmate
             noteModified = DateTime.Now;
             UpdateNoteStats();
             SetSaveState("");
-            if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+            owner.ScheduleDriveNotesUpload();
             RefreshNotes(current);
             return true;
         }
@@ -1619,11 +1654,13 @@ namespace Deskmate
 
         void NewNote()
         {
+            if (owner.DriveNotesLoading) return;
             if (!SaveCurrent(true)) return;
             string path;
             try { path = NoteFiles.NewPath(); }
             catch (Exception ex) { KitAsk.Notice(this, ex.Message); return; }
             if (!NoteFiles.Write(path, "")) { SaveError(true); return; }
+            owner.ScheduleDriveNotesUpload();
             search.Text = "";
             colorFilter = "";
             colorStrip.Selected = "";
@@ -1637,11 +1674,21 @@ namespace Deskmate
         void TogglePin() { TogglePin(current); }
         void TogglePin(string path)
         {
+            if (owner.DriveNotesLoading) return;
             if (string.IsNullOrEmpty(path)) return;
             if (!SaveCurrent(true)) return;
+            NoteMeta meta = GetMeta(path, true);
+            DateTime previous = meta.UpdatedUtc;
+            meta.UpdatedUtc = DateTime.UtcNow;
+            if (!NoteFiles.SaveMeta(noteMeta))
+            {
+                meta.UpdatedUtc = previous;
+                KitAsk.Notice(this, Lang.T("Gagal menyimpan."));
+                return;
+            }
             NoteFiles.SetPin(pins, path, !NoteFiles.IsPinned(pins, path));
             RefreshNotes(current);
-            if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+            owner.ScheduleDriveNotesUpload();
             if (string.Equals(path, current, StringComparison.OrdinalIgnoreCase)) ShowNote(current);
         }
 
@@ -1649,11 +1696,12 @@ namespace Deskmate
 
         void DeleteNote(string path)
         {
+            if (owner.DriveNotesLoading) return;
             // A pinned draft is saved first; deleting another row must not drop it
             if (!SaveCurrent(true)) return;
             string target = path ?? current;
             if (target == null) return;
-            if (!KitAsk.Confirm(this, Lang.T("Hapus catatan ini?"))) return;
+            if (!KitAsk.Confirm(this, Lang.T("Hapus catatan ini?")) || owner.DriveNotesLoading) return;
             saveTimer.Stop();
             string deleted = target;
             string delKey = NoteFiles.KeyOf(deleted);
@@ -1675,7 +1723,7 @@ namespace Deskmate
             }
             if (NoteFiles.IsPinned(pins, deleted)) NoteFiles.SetPin(pins, deleted, false);
             if (noteMeta.Remove(delKey)) NoteFiles.SaveMeta(noteMeta);
-            if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+            owner.ScheduleDriveNotesUpload();
             bool wasOpen = string.Equals(deleted, current, StringComparison.OrdinalIgnoreCase);
             if (wasOpen) { dirty = false; current = null; }
             RefreshNotes(deleted);
@@ -1701,12 +1749,13 @@ namespace Deskmate
 
         void OpenTagDialog()
         {
+            if (owner.DriveNotesLoading) return;
             if (current == null) return;
             NoteMeta m = GetMeta(current, false);
             string initial = m != null ? (m.Labels ?? "") : "";
             using (var dlg = new ListNameDialog(Lang.T("Tag catatan"), initial, true, Lang.T("Pisahkan dengan koma, mis. kerja, ide")))
             {
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                if (dlg.ShowDialog(this) != DialogResult.OK || owner.DriveNotesLoading) return;
                 NoteMeta target = GetMeta(current, true);
                 string prevLabels = target.Labels;
                 DateTime prevUtc = target.UpdatedUtc;
@@ -1723,12 +1772,13 @@ namespace Deskmate
                 noteTagChip.Invalidate();
                 LayoutNoteTagChip();
                 RefreshNotes(current);
-                if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+                owner.ScheduleDriveNotesUpload();
             }
         }
 
         void ShowNoteColorMenu()
         {
+            if (owner.DriveNotesLoading) return;
             if (current == null) return;
             NoteMeta cm = GetMeta(current, false);
             string curCol = cm != null ? (cm.Color ?? "") : "";
@@ -1766,6 +1816,7 @@ namespace Deskmate
                 item.Image = bmp;
                 item.Click += delegate
                 {
+                    if (owner.DriveNotesLoading || current == null) return;
                     NoteMeta m = GetMeta(current, true);
                     string prevColor = m.Color;
                     DateTime prevUtc = m.UpdatedUtc;
@@ -1781,7 +1832,7 @@ namespace Deskmate
                     colorBtn.DotColor = NotePalette.ColorOf(key);
                     RefreshNotes(current);
                     Invalidate(true);
-                    if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+                    owner.ScheduleDriveNotesUpload();
                 };
                 menu.Items.Add(item);
             }
@@ -1791,15 +1842,36 @@ namespace Deskmate
 
         internal void ReloadFromSync()
         {
+            ReloadTasksFromSync();
+            ReloadNotesFromDisk();
+        }
+
+        internal void ReloadTasksFromSync()
+        {
             if (IsDisposed || !IsHandleCreated) return;
             if (owner != null && (owner.todos == null || owner.taskLists == null)) owner.EnsureWorkData();
             if (owner != null && owner.todos != null) owner.todos.RemoveAll(t => t == null);
             savedTasks = CopyTasks(owner != null ? owner.todos : null);
             RefillTasks(null);
+        }
+
+        internal void RefreshNoteDriveIds(Dictionary<string, NoteMeta> fresh)
+        {
+            foreach (var entry in fresh)
+            {
+                NoteMeta local;
+                if (noteMeta.TryGetValue(entry.Key, out local)) local.DriveId = entry.Value.DriveId;
+                else noteMeta[entry.Key] = entry.Value;
+            }
+        }
+
+        internal void ReloadNotesFromDisk()
+        {
+            if (IsDisposed || !IsHandleCreated) return;
             pins = NoteFiles.LoadPins();
             noteMeta = NoteFiles.LoadMeta();
             RefreshNotes(current);
-            if (current != null && !dirty) ShowNote(current);
+            if (!dirty) ShowNote(current ?? (notes.Count > 0 ? notes[0].Path : null));
         }
 
         NoteMeta GetMeta(string path, bool create)
@@ -1818,6 +1890,7 @@ namespace Deskmate
         void ToggleArchive() { ToggleArchive(current); }
         void ToggleArchive(string path)
         {
+            if (owner.DriveNotesLoading) return;
             if (string.IsNullOrEmpty(path)) return;
             if (!SaveCurrent(true)) return;
             NoteMeta m = GetMeta(path, true);
@@ -1835,16 +1908,77 @@ namespace Deskmate
             RefreshNotes(current);
             if (string.Equals(path, current, StringComparison.OrdinalIgnoreCase))
                 ShowNote(notes.Count > 0 ? notes[0].Path : null);
-            if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+            owner.ScheduleDriveNotesUpload();
+        }
+
+        void ShowBlockMenu(bool fromSlash)
+        {
+            if (current == null || editor.ReadOnly || blockMenu != null) return;
+            string note = current;
+            int caret = editor.SelectionStart;
+            var menu = new NoteBlockMenu(Ui, delegate(string prefix)
+            {
+                if (!Visible || current != note || editor.ReadOnly) return;
+                editor.Focus();
+                editor.Select(caret, 0);
+                editor.ApplyBlock(prefix, fromSlash);
+                editor.RefreshFormatting();
+            });
+            blockMenu = menu;
+            menu.Closed += delegate(object sender, ToolStripDropDownClosedEventArgs e)
+            {
+                blockMenu = null;
+                if (e.CloseReason == ToolStripDropDownCloseReason.Keyboard && editor.Visible) editor.Focus();
+                if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(menu.Dispose));
+                else menu.Dispose();
+            };
+            if (fromSlash)
+            {
+                Point point = editor.GetPositionFromCharIndex(caret);
+                point.Y += Math.Max(editor.Font.Height, editor.SelectionFont != null ? editor.SelectionFont.Height : 0) + 3;
+                menu.Show(editor, point);
+            }
+            else menu.Show(blockBtn, new Point(0, blockBtn.Height + 3));
+        }
+
+        static readonly Regex MarkdownList = new Regex(
+            @"^([ 	]*)([-+*] \[[ xX]\]|[-+*]|([0-9]+)[.)])([ 	]+)(.*)$");
+
+        void ContinueMarkdownList(object sender, KeyEventArgs e)
+        {
+            if (e.KeyData != Keys.Enter || editor.ReadOnly || editor.SelectionLength != 0) return;
+            string text = editor.Text;
+            int pos = editor.SelectionStart;
+            if (pos == 0 || (pos < text.Length && text[pos] != '\r' && text[pos] != '\n')) return;
+            int start = NoteEditor.LineStart(text, pos);
+            if (NoteEditor.InCodeBlock(text, start)) return;
+            Match item = MarkdownList.Match(text.Substring(start, pos - start));
+            if (!item.Success) return;
+
+            string marker = item.Groups[2].Value;
+            if (item.Groups[3].Success)
+            {
+                int number;
+                if (!int.TryParse(item.Groups[3].Value, out number) || number == int.MaxValue) return;
+                marker = (number + 1).ToString(CultureInfo.InvariantCulture) + marker[marker.Length - 1];
+            }
+            else if (marker.Length > 1) marker = marker[0] + " [ ]";
+
+            e.SuppressKeyPress = true;
+            if (string.IsNullOrWhiteSpace(item.Groups[5].Value))
+            {
+                editor.Select(start, pos - start);
+                editor.SelectedText = "";
+            }
+            else editor.SelectedText = "\n" + item.Groups[1].Value + marker + item.Groups[4].Value;
         }
 
         void ToggleChecklistLine()
         {
-            if (current == null || !editor.Enabled) return;
+            if (current == null || !editor.Enabled || editor.ReadOnly) return;
             int pos = editor.SelectionStart;
             string text = editor.Text;
-            int lineStart = text.LastIndexOf('\n', Math.Max(0, pos - 1));
-            lineStart = lineStart < 0 ? 0 : lineStart + 1;
+            int lineStart = NoteEditor.LineStart(text, pos);
             int lineEnd = text.IndexOf('\n', pos);
             if (lineEnd < 0) lineEnd = text.Length;
             string line = text.Substring(lineStart, lineEnd - lineStart);
@@ -1852,33 +1986,30 @@ namespace Deskmate
             if (line.StartsWith("- [ ] ", StringComparison.Ordinal)) next = "- [x] " + line.Substring(6);
             else if (line.StartsWith("- [x] ", StringComparison.OrdinalIgnoreCase)) next = line.Substring(6);
             else next = "- [ ] " + line;
-            editor.Text = text.Substring(0, lineStart) + next + text.Substring(lineEnd);
-            editor.SelectionStart = Math.Min(editor.Text.Length, lineStart + next.Length);
+            editor.Select(lineStart, lineEnd - lineStart);
+            editor.SelectedText = next;
             editor.Focus();
         }
 
         void EditorMouseDown(object sender, MouseEventArgs e)
         {
-            if (e.Button != MouseButtons.Left || !editor.Enabled) return;
+            if (e.Button != MouseButtons.Left || !editor.Enabled || editor.ReadOnly) return;
             int idx = editor.GetCharIndexFromPosition(e.Location);
             string text = editor.Text;
-            int lineStart = text.LastIndexOf('\n', Math.Max(0, idx - 1));
-            lineStart = lineStart < 0 ? 0 : lineStart + 1;
-            if (idx - lineStart > 6) return;
-            if (lineStart + 6 <= text.Length)
-            {
-                string prefix = text.Substring(lineStart, 6);
-                if (prefix == "- [ ] ")
-                {
-                    editor.Text = text.Substring(0, lineStart) + "- [x] " + text.Substring(lineStart + 6);
-                    editor.SelectionStart = lineStart + 6;
-                }
-                else if (string.Equals(prefix, "- [x] ", StringComparison.OrdinalIgnoreCase))
-                {
-                    editor.Text = text.Substring(0, lineStart) + "- [ ] " + text.Substring(lineStart + 6);
-                    editor.SelectionStart = lineStart + 6;
-                }
-            }
+            int lineStart = NoteEditor.LineStart(text, idx);
+            int lineEnd = text.IndexOf('\n', lineStart);
+            if (lineEnd < 0) lineEnd = text.Length;
+            if (NoteEditor.InCodeBlock(text, lineStart)) return;
+            Match block = NoteEditor.Block.Match(text.Substring(lineStart, lineEnd - lineStart));
+            string marker = block.Groups[2].Value;
+            if (marker.Length != 5 || marker[2] != '[') return;
+
+            int box = lineStart + block.Groups[2].Index + 2;
+            Point left = editor.GetPositionFromCharIndex(box);
+            Point right = editor.GetPositionFromCharIndex(box + 3);
+            if (e.X < left.X || e.X >= right.X || e.Y < left.Y || e.Y >= left.Y + editor.Font.Height) return;
+            editor.Select(box + 1, 1);
+            editor.SelectedText = marker[3] == ' ' ? "x" : " ";
         }
     }
 }

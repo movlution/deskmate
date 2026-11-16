@@ -457,17 +457,18 @@ namespace Deskmate
                 }
                 else p.TextRight(Fmt.Ago(item.Time), Ink.Caption, p.T.Sub, row.Right - 12, cy - 9);
                 var open = item;
-                AddHit(row, id, delegate { OpenNotifApp(open); });
+                var appMenu = NotifAppMenuAction(item);
+                AddHit(RectangleF.Intersect(row, area), id, delegate { OpenNotifApp(open); }, null, appMenu);
                 // Added last: wins over the row
                 var victim = item;
                 int idx = i;
                 var victimRow = row;
-                AddHit(x, del, delegate
+                AddHit(RectangleF.Intersect(x, area), del, delegate
                 {
                     Vanish(new[] { CanvasRect(victimRow) }, false);
                     Collapse("notif", idx, rowH);
                     RemoveNotifs(new List<NotifItem> { victim });
-                });
+                }, null, appMenu);
             }
             p.Alpha = keep;
             g.Restore(st);

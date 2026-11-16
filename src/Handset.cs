@@ -206,6 +206,7 @@ namespace Deskmate
                 Id = id, AppId = "phone:" + pkg, AppName = Fmt.OneLine(Json.Str(n, "app"), 40), Title = Fmt.OneLine(Json.Str(n, "title"), 120),
                 Body = Fmt.OneLine(Json.Str(n, "text"), 400), Time = DateTime.Now, Chat = true, Held = true, Logo = logo
             };
+            if (NotifAppHidden(item)) return;
             // Laptop already showed it: stay quiet
             // Same key and text: an update
             bool known = notifs.Exists(x => x.Id == id && Norm(x.Body) == Norm(item.Body));

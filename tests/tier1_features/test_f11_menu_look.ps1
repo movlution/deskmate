@@ -67,4 +67,42 @@ Describe "Feature 11: MenuLook Submenu & Disabled Contrast" {
 
         $menu.Dispose()
     }
+
+    It "Keeps Island context menus above the panel during fullscreen checks" {
+        $instance = [System.Reflection.BindingFlags]'Public,NonPublic,Instance'
+        $islandType = Get-DeskmateType "Island"
+        $nativeType = Get-DeskmateType "Native"
+        $getWindow = $nativeType.GetMethod("GetWindow")
+        $checkFullscreen = $islandType.GetMethod("CheckFullscreen", $instance)
+        $showMenu = $islandType.GetMethod("ShowIslandMenu", $instance)
+        $isle = $null
+        $main = [System.Windows.Forms.ContextMenuStrip]::new()
+        $app = $null
+        try {
+            $isle = [Activator]::CreateInstance($islandType, $true)
+            [void]$nativeType.GetMethod("ShowWindow").Invoke($null, @($isle.Handle, 4))
+            $islandType.GetField("windowShown", $instance).SetValue($isle, $true)
+            [void]$main.Items.Add("Deskmate")
+            $islandType.GetField("menu", $instance).SetValue($isle, $main)
+            $app = $islandType.GetMethod("BuildNotifAppMenu", $instance).Invoke(
+                $isle, @("test.app", "Test app", $null, $true))
+
+            foreach ($popup in @($main, $app)) {
+                $showMenu.Invoke($isle, @($popup))
+                $checkFullscreen.Invoke($isle, $null)
+                Assert-True $popup.Visible "Context menu stays open during the check"
+                $above = $getWindow.Invoke($null, @($isle.Handle, [uint32]3))
+                while ($above -ne [IntPtr]::Zero -and $above -ne $popup.Handle) {
+                    $above = $getWindow.Invoke($null, @($above, [uint32]3))
+                }
+                Assert-Equal $above $popup.Handle "Menu must be above the layered Island window"
+            }
+            Assert-True (!$main.Visible) "Opening the app menu closes the general menu"
+        }
+        finally {
+            if ($isle) { $isle.Dispose() }
+            if ($app) { $app.Dispose() }
+            $main.Dispose()
+        }
+    }
 }

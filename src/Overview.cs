@@ -466,7 +466,12 @@ namespace Deskmate
         // Latest sender up front; the rest as a count
         void DrawMessagesCard(RectangleF r)
         {
-            CardBase(r, "homeMsgs", HomeCard.Messages, delegate { SetPage(PageMessages, false); });
+            CardBase(r, "homeMsgs", HomeCard.Messages, delegate
+            {
+                messagesCardClick = Cursor.Position;
+                leaveTimer.Stop();
+                SetPage(PageMessages, false);
+            });
             var senders = Senders();
             CardCaption(r, Ink.IcoBell, Lang.F("{0} pesan", notifs.Count));
             if (senders.Count == 0) return;
