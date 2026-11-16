@@ -1037,6 +1037,7 @@ namespace Deskmate
 
         public void DisconnectGoogleCalendar()
         {
+            ResetDriveNotesSession();
             if (sources != null) sources.DisconnectGoogle();
             else GoogleCalVault.Forget();
         }
@@ -1051,6 +1052,24 @@ namespace Deskmate
         System.Threading.Timer googleWorkPeriodicTimer;
         readonly object googleWorkSyncGate = new object();
         bool googleWorkSyncing;
+        bool driveNotesLoaded;
+        Dictionary<string, DateTime> driveNoteVersions = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        long noteEditVersion = 1, noteUploadedVersion;
+        int driveNotesSession;
+        internal bool DriveNotesLoading { get; private set; }
+
+        internal void ScheduleDriveNotesUpload()
+        {
+            noteEditVersion++;
+            ScheduleGoogleWorkSync();
+        }
+
+        void ResetDriveNotesSession()
+        {
+            driveNotesSession++;
+            driveNotesLoaded = false;
+            driveNoteVersions = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        }
         readonly List<Action<string>> googleWorkWaiters = new List<Action<string>>();
 
         public void ReloadGoogleWorkspaceSources()
@@ -1217,7 +1236,8 @@ namespace Deskmate
                 return;
             }
             bool doTasks = settings.GetBool("google.tasks", true);
-            bool doDrive = settings.GetBool("google.drive.notes", true);
+            bool driveEnabled = settings.GetBool("google.drive.notes", true);
+            bool doDrive = driveEnabled && (!driveNotesLoaded || noteEditVersion != noteUploadedVersion);
             if (!GoogleCalendarConnected || (!doTasks && !doDrive))
             {
                 if (!doTasks && !doDrive) WorkSyncTriedUtc = DateTime.UtcNow;
@@ -1233,6 +1253,14 @@ namespace Deskmate
                 }
                 googleWorkSyncing = true;
             }
+            bool loadDrive = doDrive && !driveNotesLoaded;
+            bool draftBlockedLoad = loadDrive && workWin != null && !workWin.IsDisposed && !workWin.FlushNoteDraft();
+            if (draftBlockedLoad) loadDrive = doDrive = false;
+            var driveVersions = driveNoteVersions;
+            int driveSession = driveNotesSession;
+            long uploadVersion = noteEditVersion;
+            DriveNotesLoading = loadDrive;
+            if (loadDrive && workWin != null && !workWin.IsDisposed) workWin.UpdateNoteAvailability();
             if (doTasks) EnsureWorkData();
             var snapshot = new List<TodoItem>();
             var origUpdated = new Dictionary<string, DateTime>();
@@ -1253,8 +1281,11 @@ namespace Deskmate
             PublishWorkSync();
             ThreadPool.QueueUserWorkItem(delegate
             {
-                string err = null;
-                bool anyChanged = false, tasksChanged = false;
+                string err = draftBlockedLoad ? Lang.T("Gagal menyimpan") : null;
+                bool tasksChanged = false, notesChanged = false, notesTransferred = false;
+                Dictionary<string, NoteMeta> meta = null;
+                HashSet<string> pins = null;
+                var completedDeletes = new List<string>();
                 try
                 {
                     if (doTasks)
@@ -1275,55 +1306,16 @@ namespace Deskmate
                         if (tChanged)
                         {
                             tasksChanged = true;
-                            anyChanged = true;
                         }
                         if (tErr != null) err = tErr;
                     }
                     if (doDrive)
                     {
-                        var meta = NoteFiles.LoadMeta();
-                        var pins = NoteFiles.LoadPins();
-                        var pendingNoteDeletes = NoteFiles.LoadDeletedDrive();
-                        var completedDeletes = new List<string>();
-                        bool nChanged;
+                        meta = NoteFiles.LoadMeta();
+                        pins = NoteFiles.LoadPins();
                         string nErr;
-                        GoogleDriveNotesClient.Sync(NoteFiles.Dir, NoteFiles.QuickPath, meta, pins, pendingNoteDeletes, completedDeletes, out nChanged, out nErr);
-                        if (completedDeletes.Count > 0)
-                        {
-                            var freshDeletes = NoteFiles.LoadDeletedDrive();
-                            freshDeletes.RemoveAll(d => completedDeletes.Exists(c => string.Equals(c, d, StringComparison.OrdinalIgnoreCase)));
-                            NoteFiles.SaveDeletedDrive(freshDeletes);
-                        }
-                        if (nChanged)
-                        {
-                            var freshMeta = NoteFiles.LoadMeta();
-                            foreach (var kv in meta)
-                            {
-                                if (kv.Value == null || NoteFiles.IsDeletedRemote(kv.Value.DriveId, kv.Key)) continue;
-                                NoteMeta fm;
-                                if (freshMeta.TryGetValue(kv.Key, out fm))
-                                {
-                                    if (string.IsNullOrEmpty(fm.DriveId) && !string.IsNullOrEmpty(kv.Value.DriveId)) fm.DriveId = kv.Value.DriveId;
-                                    if (kv.Value.UpdatedUtc > fm.UpdatedUtc)
-                                    {
-                                        fm.Color = kv.Value.Color;
-                                        fm.Labels = kv.Value.Labels;
-                                        fm.Archived = kv.Value.Archived;
-                                        fm.UpdatedUtc = kv.Value.UpdatedUtc;
-                                    }
-                                }
-                                else
-                                {
-                                    freshMeta[kv.Key] = kv.Value;
-                                }
-                            }
-                            NoteFiles.SaveMeta(freshMeta);
-                            var freshPins = NoteFiles.LoadPins();
-                            foreach (var pk in pins)
-                                if (!NoteFiles.IsDeletedRemote(null, pk)) freshPins.Add(pk);
-                            NoteFiles.SavePins(freshPins);
-                        }
-                        if (nChanged) anyChanged = true;
+                        notesTransferred = GoogleDriveNotesClient.Transfer(NoteFiles.Dir, NoteFiles.QuickPath, meta, pins,
+                            NoteFiles.LoadDeletedDrive(), completedDeletes, loadDrive, driveVersions, out notesChanged, out nErr) && nErr == null;
                         if (nErr != null && err == null) err = nErr;
                     }
                 }
@@ -1332,22 +1324,79 @@ namespace Deskmate
                     err = Lang.T("Gagal memuat");
                     Log.Write("google work sync: " + ex.Message);
                 }
-                Action<string>[] waiters;
-                lock (googleWorkSyncGate)
-                {
-                    googleWorkSyncing = false;
-                    waiters = googleWorkWaiters.ToArray();
-                    googleWorkWaiters.Clear();
-                }
                 Post(delegate
                 {
+                    Action<string>[] waiters;
+                    lock (googleWorkSyncGate)
+                    {
+                        googleWorkSyncing = false;
+                        waiters = googleWorkWaiters.ToArray();
+                        googleWorkWaiters.Clear();
+                    }
+                    DriveNotesLoading = false;
+                    bool currentDriveSession = driveSession == driveNotesSession;
+                    if (currentDriveSession && doDrive)
+                    {
+                        if (completedDeletes.Count > 0)
+                        {
+                            var pending = NoteFiles.LoadDeletedDrive();
+                            pending.RemoveAll(d => completedDeletes.Exists(c => string.Equals(c, d, StringComparison.OrdinalIgnoreCase)));
+                            NoteFiles.SaveDeletedDrive(pending);
+                        }
+                        if (notesChanged && loadDrive)
+                        {
+                            NoteFiles.SavePins(pins);
+                            if (!NoteFiles.SaveMeta(meta))
+                            {
+                                notesTransferred = false;
+                                if (err == null) err = Lang.T("Gagal menyimpan");
+                            }
+                        }
+                        if (notesChanged && !loadDrive)
+                        {
+                            var fresh = NoteFiles.LoadMeta();
+                            bool idsChanged = false;
+                            foreach (var entry in meta)
+                            {
+                                string id = entry.Value.DriveId;
+                                if (string.IsNullOrEmpty(id) || NoteFiles.IsDeletedRemote(id, entry.Key)) continue;
+                                NoteMeta local;
+                                if (!fresh.TryGetValue(entry.Key, out local))
+                                    fresh[entry.Key] = local = new NoteMeta { Key = entry.Key };
+                                if (local.DriveId == id) continue;
+                                local.DriveId = id;
+                                idsChanged = true;
+                            }
+                            if (idsChanged && NoteFiles.SaveMeta(fresh) && workWin != null && !workWin.IsDisposed)
+                                workWin.RefreshNoteDriveIds(fresh);
+                        }
+                        if (notesTransferred)
+                        {
+                            if (loadDrive)
+                            {
+                                driveNotesLoaded = true;
+                                ScheduleDriveNotesUpload();
+                            }
+                            else
+                            {
+                                noteUploadedVersion = uploadVersion;
+                                if (noteEditVersion != uploadVersion) ScheduleGoogleWorkSync();
+                            }
+                        }
+                    }
+                    if (workWin != null && !workWin.IsDisposed)
+                    {
+                        if (loadDrive && notesChanged) workWin.ReloadNotesFromDisk();
+                        workWin.UpdateNoteAvailability();
+                    }
                     if (tasksChanged)
                     {
                         MergeSyncedLists(listSnapshot, origLists);
                         MergeSyncedTodos(snapshot, origUpdated);
                     }
-                    if (anyChanged && sources != null) sources.RefreshGoogle();
-                    if (anyChanged) ReloadWorkFromSync();
+                    if (tasksChanged && sources != null) sources.RefreshGoogle();
+                    if (tasksChanged && workWin != null && !workWin.IsDisposed) workWin.ReloadTasksFromSync();
+                    if (!currentDriveSession) ScheduleGoogleWorkSync();
                     WorkSyncBusy = false;
                     WorkSyncError = err;
                     if (err == null) WorkSyncOkUtc = DateTime.UtcNow;
@@ -1456,7 +1505,12 @@ namespace Deskmate
                 }
                 Post(delegate
                 {
-                    if (err == null && sources != null) sources.RefreshGoogle();
+                    if (err == null && sources != null)
+                    {
+                        ResetDriveNotesSession();
+                        sources.RefreshGoogle();
+                        SyncGoogleWorkAsync(null);
+                    }
                     if (done != null) done(err);
                 });
             });

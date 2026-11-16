@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace Deskmate
@@ -290,6 +291,7 @@ namespace Deskmate
             editor.ScrollBars = ScrollBars.Vertical;
             editor.HideIdleScroll = true;
             editor.TextChanged += delegate { OnNoteInputChanged(); };
+            editor.KeyDown += ContinueMarkdownList;
             editor.HandleCreated += delegate { Native.ThemeScroll(editor); editor.SyncScroll(); };
             editor.MouseDown += EditorMouseDown;
             noteStatsTimer.Tick += delegate { UpdateNoteStats(); };
@@ -425,6 +427,30 @@ namespace Deskmate
             bool t = Tab == 0;
             bool hasNote = !t && current != null;
             noteTagChip.Visible = checkBtn.Visible = colorBtn.Visible = pinBtn.Visible = archiveBtn.Visible = delBtn.Visible = noteTitleBox.Visible = editor.Visible = hasNote;
+            UpdateNoteAvailability();
+        }
+
+        internal void UpdateNoteAvailability()
+        {
+            bool ready = !owner.DriveNotesLoading;
+            newNoteBtn.Enabled = ready;
+            noteTagChip.Enabled = checkBtn.Enabled = colorBtn.Enabled = pinBtn.Enabled = archiveBtn.Enabled = delBtn.Enabled = ready && current != null;
+            noteTitleBox.ReadOnly = !ready || current == NoteFiles.QuickPath;
+            editor.ReadOnly = !ready;
+            if (IsHandleCreated && !editorMetaRect.IsEmpty) Invalidate(editorMetaRect);
+        }
+
+        internal bool FlushNoteDraft() { return SaveCurrent(false); }
+
+        internal bool FlushQuickNoteDraft()
+        {
+            return current != NoteFiles.QuickPath || SaveCurrent(true);
+        }
+
+        internal void RefreshQuickNote()
+        {
+            RefreshNotes(current);
+            if (current == NoteFiles.QuickPath && !dirty) ShowNote(current);
         }
 
         // ---------- layout ----------
@@ -621,6 +647,7 @@ namespace Deskmate
                             g.DrawPath(bpen, cardPath);
                     }
                     string rightStatus = saveStatusText.Length > 0 ? saveStatusText : (dirty ? Lang.T("Menyimpan…") : Lang.T("Tersimpan"));
+                    if (owner.DriveNotesLoading) rightStatus = Lang.T("Memuat…");
                     int statusW = TextRenderer.MeasureText(rightStatus, fSmall, new Size(int.MaxValue, 1000), TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width + (int)(12 * s);
                     KitInk.Draw(g, noteMetaLine, fSmall, KitInk.Sub, new RectangleF(editorMetaRect.X, editorMetaRect.Y, Math.Max(40, editorMetaRect.Width - statusW), editorMetaRect.Height), ContentAlignment.MiddleLeft);
                     KitInk.Draw(g, rightStatus, fSmall, saveFailed ? Ink.Base.Negative : KitInk.Faint, new RectangleF(editorMetaRect.Right - statusW, editorMetaRect.Y, statusW, editorMetaRect.Height), ContentAlignment.MiddleRight);
@@ -1605,7 +1632,7 @@ namespace Deskmate
             noteModified = DateTime.Now;
             UpdateNoteStats();
             SetSaveState("");
-            if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+            owner.ScheduleDriveNotesUpload();
             RefreshNotes(current);
             return true;
         }
@@ -1619,11 +1646,13 @@ namespace Deskmate
 
         void NewNote()
         {
+            if (owner.DriveNotesLoading) return;
             if (!SaveCurrent(true)) return;
             string path;
             try { path = NoteFiles.NewPath(); }
             catch (Exception ex) { KitAsk.Notice(this, ex.Message); return; }
             if (!NoteFiles.Write(path, "")) { SaveError(true); return; }
+            owner.ScheduleDriveNotesUpload();
             search.Text = "";
             colorFilter = "";
             colorStrip.Selected = "";
@@ -1637,11 +1666,21 @@ namespace Deskmate
         void TogglePin() { TogglePin(current); }
         void TogglePin(string path)
         {
+            if (owner.DriveNotesLoading) return;
             if (string.IsNullOrEmpty(path)) return;
             if (!SaveCurrent(true)) return;
+            NoteMeta meta = GetMeta(path, true);
+            DateTime previous = meta.UpdatedUtc;
+            meta.UpdatedUtc = DateTime.UtcNow;
+            if (!NoteFiles.SaveMeta(noteMeta))
+            {
+                meta.UpdatedUtc = previous;
+                KitAsk.Notice(this, Lang.T("Gagal menyimpan."));
+                return;
+            }
             NoteFiles.SetPin(pins, path, !NoteFiles.IsPinned(pins, path));
             RefreshNotes(current);
-            if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+            owner.ScheduleDriveNotesUpload();
             if (string.Equals(path, current, StringComparison.OrdinalIgnoreCase)) ShowNote(current);
         }
 
@@ -1649,11 +1688,12 @@ namespace Deskmate
 
         void DeleteNote(string path)
         {
+            if (owner.DriveNotesLoading) return;
             // A pinned draft is saved first; deleting another row must not drop it
             if (!SaveCurrent(true)) return;
             string target = path ?? current;
             if (target == null) return;
-            if (!KitAsk.Confirm(this, Lang.T("Hapus catatan ini?"))) return;
+            if (!KitAsk.Confirm(this, Lang.T("Hapus catatan ini?")) || owner.DriveNotesLoading) return;
             saveTimer.Stop();
             string deleted = target;
             string delKey = NoteFiles.KeyOf(deleted);
@@ -1675,7 +1715,7 @@ namespace Deskmate
             }
             if (NoteFiles.IsPinned(pins, deleted)) NoteFiles.SetPin(pins, deleted, false);
             if (noteMeta.Remove(delKey)) NoteFiles.SaveMeta(noteMeta);
-            if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+            owner.ScheduleDriveNotesUpload();
             bool wasOpen = string.Equals(deleted, current, StringComparison.OrdinalIgnoreCase);
             if (wasOpen) { dirty = false; current = null; }
             RefreshNotes(deleted);
@@ -1701,12 +1741,13 @@ namespace Deskmate
 
         void OpenTagDialog()
         {
+            if (owner.DriveNotesLoading) return;
             if (current == null) return;
             NoteMeta m = GetMeta(current, false);
             string initial = m != null ? (m.Labels ?? "") : "";
             using (var dlg = new ListNameDialog(Lang.T("Tag catatan"), initial, true, Lang.T("Pisahkan dengan koma, mis. kerja, ide")))
             {
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                if (dlg.ShowDialog(this) != DialogResult.OK || owner.DriveNotesLoading) return;
                 NoteMeta target = GetMeta(current, true);
                 string prevLabels = target.Labels;
                 DateTime prevUtc = target.UpdatedUtc;
@@ -1723,12 +1764,13 @@ namespace Deskmate
                 noteTagChip.Invalidate();
                 LayoutNoteTagChip();
                 RefreshNotes(current);
-                if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+                owner.ScheduleDriveNotesUpload();
             }
         }
 
         void ShowNoteColorMenu()
         {
+            if (owner.DriveNotesLoading) return;
             if (current == null) return;
             NoteMeta cm = GetMeta(current, false);
             string curCol = cm != null ? (cm.Color ?? "") : "";
@@ -1766,6 +1808,7 @@ namespace Deskmate
                 item.Image = bmp;
                 item.Click += delegate
                 {
+                    if (owner.DriveNotesLoading || current == null) return;
                     NoteMeta m = GetMeta(current, true);
                     string prevColor = m.Color;
                     DateTime prevUtc = m.UpdatedUtc;
@@ -1781,7 +1824,7 @@ namespace Deskmate
                     colorBtn.DotColor = NotePalette.ColorOf(key);
                     RefreshNotes(current);
                     Invalidate(true);
-                    if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+                    owner.ScheduleDriveNotesUpload();
                 };
                 menu.Items.Add(item);
             }
@@ -1791,15 +1834,36 @@ namespace Deskmate
 
         internal void ReloadFromSync()
         {
+            ReloadTasksFromSync();
+            ReloadNotesFromDisk();
+        }
+
+        internal void ReloadTasksFromSync()
+        {
             if (IsDisposed || !IsHandleCreated) return;
             if (owner != null && (owner.todos == null || owner.taskLists == null)) owner.EnsureWorkData();
             if (owner != null && owner.todos != null) owner.todos.RemoveAll(t => t == null);
             savedTasks = CopyTasks(owner != null ? owner.todos : null);
             RefillTasks(null);
+        }
+
+        internal void RefreshNoteDriveIds(Dictionary<string, NoteMeta> fresh)
+        {
+            foreach (var entry in fresh)
+            {
+                NoteMeta local;
+                if (noteMeta.TryGetValue(entry.Key, out local)) local.DriveId = entry.Value.DriveId;
+                else noteMeta[entry.Key] = entry.Value;
+            }
+        }
+
+        internal void ReloadNotesFromDisk()
+        {
+            if (IsDisposed || !IsHandleCreated) return;
             pins = NoteFiles.LoadPins();
             noteMeta = NoteFiles.LoadMeta();
             RefreshNotes(current);
-            if (current != null && !dirty) ShowNote(current);
+            if (!dirty) ShowNote(current ?? (notes.Count > 0 ? notes[0].Path : null));
         }
 
         NoteMeta GetMeta(string path, bool create)
@@ -1818,6 +1882,7 @@ namespace Deskmate
         void ToggleArchive() { ToggleArchive(current); }
         void ToggleArchive(string path)
         {
+            if (owner.DriveNotesLoading) return;
             if (string.IsNullOrEmpty(path)) return;
             if (!SaveCurrent(true)) return;
             NoteMeta m = GetMeta(path, true);
@@ -1835,12 +1900,43 @@ namespace Deskmate
             RefreshNotes(current);
             if (string.Equals(path, current, StringComparison.OrdinalIgnoreCase))
                 ShowNote(notes.Count > 0 ? notes[0].Path : null);
-            if (owner.WorkSyncHook != null) owner.WorkSyncHook();
+            owner.ScheduleDriveNotesUpload();
+        }
+
+        static readonly Regex MarkdownList = new Regex(
+            @"^([ 	]*)([-+*] \[[ xX]\]|[-+*]|([0-9]+)[.)])([ 	]+)(.*)$");
+
+        void ContinueMarkdownList(object sender, KeyEventArgs e)
+        {
+            if (e.KeyData != Keys.Enter || editor.ReadOnly || editor.SelectionLength != 0) return;
+            string text = editor.Text;
+            int pos = editor.SelectionStart;
+            if (pos == 0 || (pos < text.Length && text[pos] != '\r' && text[pos] != '\n')) return;
+            int start = text.LastIndexOf('\n', pos - 1) + 1;
+            Match item = MarkdownList.Match(text.Substring(start, pos - start));
+            if (!item.Success) return;
+
+            string marker = item.Groups[2].Value;
+            if (item.Groups[3].Success)
+            {
+                int number;
+                if (!int.TryParse(item.Groups[3].Value, out number) || number == int.MaxValue) return;
+                marker = (number + 1).ToString(CultureInfo.InvariantCulture) + marker[marker.Length - 1];
+            }
+            else if (marker.Length > 1) marker = marker[0] + " [ ]";
+
+            e.SuppressKeyPress = true;
+            if (string.IsNullOrWhiteSpace(item.Groups[5].Value))
+            {
+                editor.Select(start, pos - start);
+                editor.SelectedText = "";
+            }
+            else editor.SelectedText = Environment.NewLine + item.Groups[1].Value + marker + item.Groups[4].Value;
         }
 
         void ToggleChecklistLine()
         {
-            if (current == null || !editor.Enabled) return;
+            if (current == null || !editor.Enabled || editor.ReadOnly) return;
             int pos = editor.SelectionStart;
             string text = editor.Text;
             int lineStart = text.LastIndexOf('\n', Math.Max(0, pos - 1));
@@ -1859,7 +1955,7 @@ namespace Deskmate
 
         void EditorMouseDown(object sender, MouseEventArgs e)
         {
-            if (e.Button != MouseButtons.Left || !editor.Enabled) return;
+            if (e.Button != MouseButtons.Left || !editor.Enabled || editor.ReadOnly) return;
             int idx = editor.GetCharIndexFromPosition(e.Location);
             string text = editor.Text;
             int lineStart = text.LastIndexOf('\n', Math.Max(0, idx - 1));

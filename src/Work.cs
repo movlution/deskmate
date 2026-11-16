@@ -202,11 +202,11 @@ namespace Deskmate
 
         static readonly object noteStateLock = new object();
         const string DeletedKeyPrefix = "key:";
-        const string UtcStamp = "yyyy-MM-ddTHH:mm:ssZ";
+        const string UtcStamp = "yyyy-MM-ddTHH:mm:ss.fffffffZ";
         static DateTime ParseUtc(string s)
         {
             DateTime d;
-            if (!string.IsNullOrEmpty(s) && DateTime.TryParseExact(s, UtcStamp, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out d)) return d;
+            if (!string.IsNullOrEmpty(s) && DateTime.TryParseExact(s, new[] { UtcStamp, "yyyy-MM-ddTHH:mm:ssZ" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out d)) return d;
             return DateTime.UtcNow;
         }
 
@@ -381,19 +381,38 @@ namespace Deskmate
 
         public static bool Write(string path, string text)
         {
-            try { Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)); AtomicFile.Write(path, new UTF8Encoding(false).GetBytes(text)); return true; }
-            catch (Exception ex) { Log.Write("simpan catatan: " + ex.Message); return false; }
+            lock (noteStateLock)
+            {
+                try { Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)); AtomicFile.Write(path, new UTF8Encoding(false).GetBytes(text)); return true; }
+                catch (Exception ex) { Log.Write("simpan catatan: " + ex.Message); return false; }
+            }
         }
-        public static bool WriteIfNotDeleted(string path, string text, string driveId, string key, out bool skipped)
+        internal static bool WriteFromDrive(string path, string text, string driveId, string key,
+            bool existed, DateTime localTime, DateTime remoteTime, out bool skipped)
         {
             lock (noteStateLock)
             {
-                if (IsDeletedRemote(driveId, key)) { skipped = true; return false; }
-                skipped = false;
-                return Write(path, text);
+                skipped = IsDeletedRemote(driveId, key) || File.Exists(path) != existed
+                    || (existed && File.GetLastWriteTimeUtc(path) != localTime);
+                if (skipped || !Write(path, text)) return false;
+                if (remoteTime != DateTime.MinValue)
+                {
+                    try { File.SetLastWriteTimeUtc(path, remoteTime); }
+                    catch (Exception ex) { Log.Write("waktu catatan: " + ex.Message); }
+                }
+                return true;
             }
         }
 
+        internal static void AppendQuick(string line)
+        {
+            lock (noteStateLock)
+            {
+                string text = File.Exists(QuickPath) ? File.ReadAllText(QuickPath, Encoding.UTF8) : "";
+                if (text.Length != 0 && !text.EndsWith("\n", StringComparison.Ordinal)) text += Environment.NewLine;
+                if (!Write(QuickPath, text + line)) throw new IOException("Unable to append quick note");
+            }
+        }
 
         public static bool Remove(string path)
         {

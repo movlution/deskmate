@@ -745,6 +745,11 @@ namespace Deskmate
             string listUrl = FilesEndpoint + "?q=" + Uri.EscapeDataString(q) + "&fields=files(id,name)";
             FetchResult lr = GoogleWorkspaceHttp.SendWithRefresh(ref vault, "GET", listUrl, null, null, out error);
             if (error != null) return null;
+            if (!lr.Ok)
+            {
+                error = Lang.T("Gagal memuat catatan Google Drive");
+                return null;
+            }
             if (lr.Ok)
             {
                 try
@@ -806,6 +811,12 @@ namespace Deskmate
             return DateTime.MinValue;
         }
 
+        static DateTime NoteVersion(object file)
+        {
+            DateTime version = ParseUtc(NoteProperty(Json.Obj(file, "appProperties"), "UpdatedUtc"));
+            return version == DateTime.MinValue ? ParseUtc(Json.Str(file, "modifiedTime")) : version;
+        }
+
         static string BuildMultipart(Dictionary<string, object> metaObj, string content, string boundary)
         {
             var sb = new StringBuilder();
@@ -819,12 +830,9 @@ namespace Deskmate
             return sb.ToString();
         }
 
-        public static bool Sync(string notesDir, string quickPath, Dictionary<string, NoteMeta> meta, HashSet<string> pins, List<string> pendingDeletes, out bool changed, out string error)
-        {
-            return Sync(notesDir, quickPath, meta, pins, pendingDeletes, null, out changed, out error);
-        }
-
-        public static bool Sync(string notesDir, string quickPath, Dictionary<string, NoteMeta> meta, HashSet<string> pins, List<string> pendingDeletes, List<string> completedDeletes, out bool changed, out string error)
+        internal static bool Transfer(string notesDir, string quickPath, Dictionary<string, NoteMeta> meta, HashSet<string> pins,
+            List<string> pendingDeletes, List<string> completedDeletes, bool load, Dictionary<string, DateTime> driveVersions,
+            out bool changed, out string error)
         {
             changed = false;
             error = null;
@@ -834,7 +842,7 @@ namespace Deskmate
             GoogleCalVault vault = GoogleCalendarSource.EnsureVaultToken(out error);
             if (vault == null) return false;
 
-            if (pendingDeletes != null && pendingDeletes.Count > 0)
+            if (!load && pendingDeletes != null && pendingDeletes.Count > 0)
             {
                 for (int i = pendingDeletes.Count - 1; i >= 0; i--)
                 {
@@ -857,39 +865,39 @@ namespace Deskmate
             if (error != null || string.IsNullOrEmpty(folderId)) return false;
 
             string q = "'" + folderId + "' in parents and trashed=false";
-            string listUrl = FilesEndpoint + "?q=" + Uri.EscapeDataString(q) + "&fields=files(id,name,modifiedTime,appProperties,trashed)&pageSize=200";
-            FetchResult lr = GoogleWorkspaceHttp.SendWithRefresh(ref vault, "GET", listUrl, null, null, out error);
-            if (error != null) return false;
-            if (!lr.Ok)
-            {
-                error = Lang.T("Gagal memuat catatan Google Drive");
-                return false;
-            }
-
+            string listUrl = FilesEndpoint + "?q=" + Uri.EscapeDataString(q) + "&fields=nextPageToken,files(id,name,modifiedTime,appProperties,trashed)&pageSize=200";
             var remoteById = new Dictionary<string, object>(StringComparer.Ordinal);
             var remoteByKey = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-            try
+            string page = "";
+            do
             {
-                object lo = Json.Parse(lr.Text);
-                object[] files = lo != null ? Json.Arr(lo, "files") : null;
-                if (files != null && files.Length > 0)
+                string url = page.Length == 0 ? listUrl : listUrl + "&pageToken=" + Uri.EscapeDataString(page);
+                FetchResult lr = GoogleWorkspaceHttp.SendWithRefresh(ref vault, "GET", url, null, null, out error);
+                if (error != null) return false;
+                try
                 {
-                    foreach (var f in files)
+                    var result = lr.Ok ? Json.Parse(lr.Text) as Dictionary<string, object> : null;
+                    if (result == null) throw new FormatException();
+                    foreach (var f in Json.Arr(result, "files") ?? new object[0])
                     {
                         if (GoogleWorkspaceHttp.JsonBool(f, "trashed")) continue;
                         string fid = Json.Str(f, "id");
-                        string fname = Json.Str(f, "name");
                         if (string.IsNullOrEmpty(fid)) continue;
                         remoteById[fid] = f;
-                        object props = Json.Obj(f, "appProperties");
-                        string key = NoteProperty(props, "Key");
-                        if (string.IsNullOrEmpty(key)) key = fname;
+                        string key = NoteProperty(Json.Obj(f, "appProperties"), "Key");
+                        if (string.IsNullOrEmpty(key)) key = Json.Str(f, "name");
                         if (!string.IsNullOrEmpty(key)) remoteByKey[key] = f;
                     }
+                    page = Json.Str(result, "nextPageToken");
                 }
-            }
-            catch (Exception) { }
-            if (pendingDeletes != null && pendingDeletes.Count > 0)
+                catch (Exception)
+                {
+                    error = Lang.T("Gagal memuat catatan Google Drive");
+                    return false;
+                }
+            } while (page.Length != 0);
+
+            if (!load && pendingDeletes != null && pendingDeletes.Count > 0)
             {
                 for (int i = pendingDeletes.Count - 1; i >= 0; i--)
                 {
@@ -923,8 +931,11 @@ namespace Deskmate
             }
 
             var localFiles = new List<string>();
-            if (Directory.Exists(notesDir)) localFiles.AddRange(Directory.GetFiles(notesDir, "*.md"));
-            if (File.Exists(quickPath)) localFiles.Add(quickPath);
+            if (!load)
+            {
+                if (Directory.Exists(notesDir)) localFiles.AddRange(Directory.GetFiles(notesDir, "*.md"));
+                if (File.Exists(quickPath)) localFiles.Add(quickPath);
+            }
 
             foreach (string path in localFiles)
             {
@@ -948,9 +959,18 @@ namespace Deskmate
                 else if (remoteByKey.ContainsKey(key))
                     remoteObj = remoteByKey[key];
 
-                if (remoteObj == null || localMtime > ParseUtc(Json.Str(remoteObj, "modifiedTime")).AddSeconds(2))
+                DateTime uploadedVersion;
+                if (!driveVersions.TryGetValue(key, out uploadedVersion))
+                    uploadedVersion = remoteObj == null ? DateTime.MinValue : NoteVersion(remoteObj);
+                if (localMtime > uploadedVersion)
                 {
-                    string text = NoteFiles.Read(path);
+                    string text;
+                    if (!NoteFiles.TryRead(path, out text))
+                    {
+                        if (firstErr == null) firstErr = Lang.T("Gagal memuat");
+                        continue;
+                    }
+                    // A save that overlaps this read stays pending for the next upload.
                     var appProps = new Dictionary<string, object>
                     {
                         { "deskmateKey", key },
@@ -988,35 +1008,48 @@ namespace Deskmate
                         {
                             object uo = Json.Parse(ur.Text);
                             string fid = uo != null ? Json.Str(uo, "id") : "";
-                            if (!string.IsNullOrEmpty(fid)) nm.DriveId = fid;
-                            nm.UpdatedUtc = DateTime.UtcNow;
+                            if (string.IsNullOrEmpty(fid)) throw new FormatException();
+                            nm.DriveId = fid;
+                            driveVersions[key] = localMtime;
                             changed = true;
                         }
-                        catch (Exception) { }
+                        catch (Exception)
+                        {
+                            if (firstErr == null) firstErr = Lang.T("Gagal menyimpan catatan ke Google Drive");
+                        }
                     }
                     else if (firstErr == null) firstErr = Lang.T("Gagal menyimpan catatan ke Google Drive");
                 }
             }
 
             // Download remote notes that are newer or missing locally
-            foreach (var kv in remoteById)
+            if (!load)
+            {
+                error = firstErr;
+                return true;
+            }
+            driveVersions.Clear();
+            foreach (var kv in remoteByKey)
             {
                 object f = kv.Value;
-                string fid = kv.Key;
-                string fname = Json.Str(f, "name");
+                string fid = Json.Str(f, "id");
                 object props = Json.Obj(f, "appProperties");
-                string key = NoteProperty(props, "Key");
-                if (string.IsNullOrEmpty(key)) key = fname;
-                if (string.IsNullOrEmpty(key)) continue;
+                string key = kv.Key;
 
                 if (key != NoteFiles.QuickKey && (Path.GetFileName(key) != key || !key.EndsWith(".md", StringComparison.OrdinalIgnoreCase) || key.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)) continue;
                 if ((pendingDeletes != null && (pendingDeletes.Contains(fid) || pendingDeletes.Exists(x => string.Equals(x, "key:" + key, StringComparison.OrdinalIgnoreCase)))) || NoteFiles.IsDeletedRemote(fid, key)) continue;
                 string targetPath = key == NoteFiles.QuickKey ? quickPath : Path.Combine(notesDir, key);
-                DateTime remoteMtime = ParseUtc(Json.Str(f, "modifiedTime"));
+                DateTime remoteMtime = NoteVersion(f);
+                driveVersions[key] = remoteMtime;
                 bool exists = File.Exists(targetPath);
                 DateTime localMtime = exists ? File.GetLastWriteTimeUtc(targetPath) : DateTime.MinValue;
 
-                if (!exists || remoteMtime > localMtime.AddSeconds(2))
+                NoteMeta localMeta;
+                DateTime localVersion = localMtime;
+                if (meta.TryGetValue(key, out localMeta) && localMeta.UpdatedUtc > localVersion)
+                    localVersion = localMeta.UpdatedUtc;
+
+                if (!exists || remoteMtime > localVersion)
                 {
                     string dlErr;
                     FetchResult dr = GoogleWorkspaceHttp.SendWithRefresh(ref vault, "GET", FilesEndpoint + "/" + Uri.EscapeDataString(fid) + "?alt=media", null, null, out dlErr);
@@ -1028,7 +1061,7 @@ namespace Deskmate
                     else
                     {
                         bool skipped;
-                        bool wrote = NoteFiles.WriteIfNotDeleted(targetPath, dr.Text ?? "", fid, key, out skipped);
+                        bool wrote = NoteFiles.WriteFromDrive(targetPath, dr.Text ?? "", fid, key, exists, localMtime, remoteMtime, out skipped);
                         if (skipped) continue;
                         if (!wrote)
                         {
@@ -1055,12 +1088,7 @@ namespace Deskmate
                                     else pins.Remove(key);
                                 }
                             }
-                            nm.UpdatedUtc = remoteMtime > DateTime.MinValue ? remoteMtime : DateTime.UtcNow;
-                            if (remoteMtime > DateTime.MinValue)
-                            {
-                                try { File.SetLastWriteTimeUtc(targetPath, remoteMtime); }
-                                catch (Exception) { }
-                            }
+                            nm.UpdatedUtc = remoteMtime;
                             changed = true;
                         }
                     }
