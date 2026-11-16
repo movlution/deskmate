@@ -1,97 +1,26 @@
-<p align="center">
-  <img src="src/Deskmate.png" alt="Ikon Deskmate" width="112">
-</p>
-
-<p align="center">
-  <a href="https://github.com/movlution/deskmate/releases/latest/download/Deskmate.exe"><b>Unduh untuk Windows</b></a>
-  ·
-  <a href="https://github.com/odlaver/tepi-android/releases/latest"><b>Unduh untuk Android</b></a>
-  ·
-  <a href="https://github.com/movlution/deskmate/releases">Semua rilis</a>
-</p>
+<img src="src/Deskmate.png" alt="Ikon Deskmate" width="96">
 
 # Deskmate
 
-Deskmate duduk tenang di tepi atas layar, lalu membesar saat ada yang terjadi: lagu dan liriknya, agent coding yang minta izin, tugas yang mendekati tenggat, pesan masuk, timer, sampai waktu sholat. Tampilannya Liquid Glass dengan gerak pegas. Aplikasi ini ditulis dalam C# tanpa browser engine, dalam bahasa Indonesia dan Inggris.
+Dynamic island dan dock untuk Windows. Lihat musik, notifikasi, jadwal, dan tugas dari desktop.
 
-Sekarang juga ada [Tepi Android](https://github.com/odlaver/tepi-android): island di sekitar kamera depan HP, yang nyambung ke laptop cukup dengan memindai QR.
+[**Unduh Deskmate.exe**](https://github.com/movlution/deskmate/releases/latest/download/Deskmate.exe) · [Catatan rilis](https://github.com/movlution/deskmate/releases/latest)
 
-## Baru di 2.7.0
+Jalankan EXE, lalu arahkan kursor ke island di tepi atas layar. Mendukung Windows 10 versi 2004 ke atas dan Windows 11 (64-bit).
 
-- **Identitas Deskmate**: ikon baru di Explorer, Start Menu, system tray, taskbar, dan halaman Tentang.
-- **Island di mana saja**: atas tengah, pojok atas, atau berdiri tegak di sisi kiri dan kanan layar.
-- **Dock**: bar kaca berisi aplikasi, pratinjau jendela, dan widget, yang bisa menggantikan taskbar Windows sepenuhnya.
-- **Ngobrol dengan Deskmate**: Suruh Deskmate punya jendela obrolan yang ingat percakapannya, dengan layanan AI pilihanmu.
-- **Ringkasan pilihanmu**: pilih dan urutkan kartunya, termasuk cuaca, baterai, clipboard, dan sholat.
-- **Perbaiki dan terjemahkan** teks yang kamu blok di aplikasi apa pun.
-- **Ubah format lebih lengkap**: PDF ke Word, OCR untuk foto dan hasil scan, kompres PDF, gambar, video, dan audio, serta gabung PDF dan gambar jadi satu.
-- **Notifikasi lebih rapi**: Deskmate bisa jadi penerima utama banner chat, panggilan, dan screenshot, dan isi pesan disamarkan saat berbagi layar.
-- **Edit screenshot** (samarkan, potong, putar, balik) dan **Rapikan Downloads** yang bisa diurungkan.
-- **Agent lebih hati-hati**, dan **Pengaturan** yang dikelompokkan per kategori.
+## Fitur utama
 
-Sejak 2.6: **Dikte** tanpa tangan, **Suruh Deskmate** yang jalan tanpa internet, dan **Transkrip rapat** tanpa bot.
+- **Island dan dock** untuk musik dan lirik, notifikasi, kontrol cepat, dan akses aplikasi.
+- **Ruang kerja** untuk kalender, papan tugas, catatan, dan riwayat clipboard.
+- **Asisten AI** untuk bertanya, mendikte teks, dan merangkum rapat.
 
-Catatan lengkapnya ada di [halaman rilis](https://github.com/movlution/deskmate/releases/latest).
+## Panduan
 
-## Isinya
-
-| | |
-|---|---|
-| **Musik dan lirik** | Spotify, YouTube, Apple Music, dan pemutar lain. Lirik tersinkron menyapu kata demi kata, visualizer membaca suara yang benar-benar diputar. |
-| **Agent coding** | Claude Code, Codex, Antigravity, dan Copilot CLI, tiap sesi bertanda agentnya. Status sesi, rencana kerja, kuota tiap agent, dan izin yang bisa dijawab dari island. [Selengkapnya](docs/agen.md) |
-| **Kuliah** | Tugas dan jadwal dari [Kulia](https://kulia.live), Notion, Todoist, dan kalender iCal. [Selengkapnya](docs/integrasi.md) |
-| **Pesan** | WhatsApp, Telegram, Discord, Teams, Slack, dan email dari pusat notifikasi Windows. Satu pesan, satu banner: tidak dobel dengan banner Windows atau HP. |
-| **Dikte dan rapat** | Tahan Ctrl kanan, bicara, lepas: teksnya ditempel di aplikasi mana pun, dalam bahasa Indonesia yang bercampur istilah Inggris. Kamus istilah, snippet, lewat layanan AI pilihanmu (Groq, OpenAI, Claude, Gemini, Ollama, dan lainnya) atau offline. Rekam panggilan tanpa bot jadi transkrip Kamu dan Lawan bicara, plus ringkasan dan to-do. Suruh Deskmate memasang pengingat, timer, dan catatan dari kalimat biasa. [Selengkapnya](docs/fitur.md) |
-| **HP** | Kode OTP, notifikasi, baterai, dan kirim berkas dua arah dengan Tepi Android. [Selengkapnya](docs/hp.md) |
-| **Rak dan Ubah format** | Seret berkas ke island untuk disimpan sementara, atau ubah ke JPG, PDF, MP3, DOCX, dan lainnya. Rapikan Downloads dengan Urungkan. |
-| **Kontrol** | Volume per aplikasi, kecerahan, Wi-Fi, Bluetooth, mikrofon, mode gelap, laptop tetap terjaga, dan timer. |
-| **Pengingat** | Sholat (dihitung di laptop, tanpa internet), cuaca dan hujan, minum, istirahat mata, peregangan. |
-| **Mini** | Sliver kecil yang tembus klik, dengan dua mata yang berkedip dan berekspresi. |
-| **Lainnya** | [Teleprompter](docs/teleprompter.md), cermin kamera, catatan kilat, preview screenshot, mode rapat, flashdisk, [skrip](docs/skrip.md), dan navigasi keyboard penuh. |
-
-Daftar fitur lengkap dan cara pakainya ada di [Fitur dan cara pakai](docs/fitur.md).
-
-## Pasang
-
-1. Unduh [**Deskmate.exe**](https://github.com/movlution/deskmate/releases/latest/download/Deskmate.exe), lalu jalankan.
-2. Kalau Windows SmartScreen memperingatkan, pilih **More info** lalu **Run anyway**. Exe belum ditandatangani; [cara memastikan exe-nya asli](docs/privasi-keamanan.md#tanda-tangan-kode).
-3. Ikon Deskmate muncul di system tray. Arahkan kursor ke island di tepi atas layar untuk membuka panel.
-
-Syarat: Windows 10 versi 2004 ke atas atau Windows 11, 64-bit. Deskmate memberi tahu sendiri saat ada versi baru: klik kanan ikon Deskmate, lalu **Perbarui**.
-
-Untuk HP: pasang APK dari [tepi-android](https://github.com/odlaver/tepi-android/releases/latest) (Android 10 ke atas), lalu ikuti [langkah menyambungkan](docs/hp.md#menyambungkan).
-
-## Dokumentasi
-
-| Topik | Isi |
-|---|---|
-| [Fitur dan cara pakai](docs/fitur.md) | Semua fitur, gestur, menu, dan navigasi keyboard |
-| [Pengaturan](docs/pengaturan.md) | Isi tiap halaman Pengaturan dan semua kunci `settings.ini` |
-| [Tepi Android dan HP](docs/hp.md) | Apa saja yang lewat sambungan HP, dan cara memasangkan |
-| [Agent coding](docs/agen.md) | Menghubungkan agent, menjawab izin, chat ke sesi, kuota tiap agent |
-| [Integrasi](docs/integrasi.md) | Kulia, Notion, Todoist, kalender iCal, dan notifikasi pesan |
-| [Paket tema](docs/paket-tema.md) | Warna, lambang, maskot, sapaan, dan suara buatan sendiri |
-| [Teleprompter](docs/teleprompter.md) | Naskah di tepi atas layar, dekat kamera |
-| [Skrip](docs/skrip.md) | `Deskmate.exe --notify` dan `--run` dari terminal |
-| [Performa](docs/performa.md) | Hasil ukur CPU dan memori |
-| [Privasi dan keamanan](docs/privasi-keamanan.md) | Layanan luar yang dihubungi, model keamanan, tanda tangan kode |
-
-Paket tema juga bisa dibuat di [pembuat paket](https://odlaver.github.io/tepi/pack/) tanpa menyentuh berkas.
+- [Fitur dan cara pakai](docs/fitur.md) · [Pengaturan](docs/pengaturan.md) · [Integrasi](docs/integrasi.md)
+- [Sambungkan Tepi Android](docs/hp.md) · [Privasi dan keamanan](docs/privasi-keamanan.md)
 
 ## Build sendiri
 
-Tidak perlu memasang SDK. Compiler C# untuk .NET Framework 4.8 sudah ada di Windows:
+Jalankan `build.cmd` di Windows untuk menghasilkan `Deskmate.exe`.
 
-```
-build.cmd
-```
-
-Hasilnya `Deskmate.exe` di folder yang sama. Variabel lingkungan untuk pengembangan ada di [Pengaturan](docs/pengaturan.md#pengaturan-lanjutan).
-
-## Keamanan
-
-Menemukan celah? Laporkan secara privat lewat tab **Security › Report a vulnerability** di repo ini, jangan lewat issue publik.
-
-## Lisensi
-
-[MIT](LICENSE), dibuat oleh R. Revaldo Vabiansyah ([@odlaver](https://github.com/odlaver)).
+Lisensi [MIT](LICENSE). Dibuat oleh [R. Revaldo Vabiansyah](https://github.com/odlaver).
