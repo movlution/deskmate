@@ -1,7 +1,7 @@
 using System;
 using System.Drawing;
 
-namespace Tepi
+namespace Deskmate
 {
     // Calls: mic busy a while, island goes quiet
     partial class Island

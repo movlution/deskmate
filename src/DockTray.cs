@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading;
 using Microsoft.Win32;
 
-namespace Tepi
+namespace Deskmate
 {
     // One notification area icon, owned by its app
     sealed class TrayIcon
@@ -28,7 +28,7 @@ namespace Tepi
     }
 
     // Takes Explorer's place for tray icons while the dock replaces the taskbar.
-    // Every message still reaches Explorer, so nothing is lost when Tepi quits.
+    // Every message still reaches Explorer, so nothing is lost when Deskmate quits.
     sealed class TrayHost
     {
         delegate IntPtr WndProc(IntPtr h, uint msg, IntPtr w, IntPtr l);
@@ -70,6 +70,9 @@ namespace Tepi
         [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int pid);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterWindowMessage(string name);
         [DllImport("user32.dll")] static extern bool MoveWindow(IntPtr h, int x, int y, int w, int hgt, bool repaint);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetProp(IntPtr h, string name);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SetProp(IntPtr h, string name, IntPtr data);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr RemoveProp(IntPtr h, string name);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandle(string name);
         [DllImport("kernel32.dll", CharSet = CharSet.Ansi)] static extern IntPtr GetProcAddress(IntPtr module, string name);
 
@@ -80,11 +83,13 @@ namespace Tepi
         const int TrayDataSize = 964, Signature = 0x34753423;
 
         public static readonly uint TaskbarCreated = RegisterWindowMessage("TaskbarCreated");
-        static readonly uint StopMsg = RegisterWindowMessage("TepiTrayStop");
+        static readonly uint StopMsg = RegisterWindowMessage("DeskmateTrayStop");
 
         public event Action Changed;
         readonly object gate = new object();
         readonly List<TrayIcon> icons = new List<TrayIcon>();
+        static readonly string[] SyncPropNames = { "TaskbandHWND", "TaskbarMonitor", "IsAutoHideEnabled", "LastAutoHideBarStuckMonitor" };
+        readonly IntPtr[] propVals = new IntPtr[4];
         Thread thread;
         IntPtr hwnd, notify, explorer;
         WndProc proc;
@@ -174,6 +179,7 @@ namespace Tepi
                 if (hwnd == IntPtr.Zero) { Log.Write("tray: window failed " + Marshal.GetLastWin32Error()); return; }
                 notify = CreateWindowEx(0, "TrayNotifyWnd", null, 0x40000000 | 0x06000000, 0, 0, Math.Max(1, a.Width), Math.Max(1, a.Height), hwnd, IntPtr.Zero, inst, IntPtr.Zero);
                 explorer = FindExplorer();
+                SyncProps();
                 Topmost();
                 SetTimer(hwnd, (IntPtr)1, 250, IntPtr.Zero);
                 ready.Set();
@@ -188,12 +194,13 @@ namespace Tepi
             catch (Exception ex) { Log.Write("tray: " + ex); }
             finally
             {
-                if (hwnd != IntPtr.Zero) { KillTimer(hwnd, (IntPtr)1); DestroyWindow(hwnd); }
+                if (hwnd != IntPtr.Zero) { KillTimer(hwnd, (IntPtr)1); ClearProps(); DestroyWindow(hwnd); }
                 hwnd = notify = IntPtr.Zero;
                 IntPtr inst = GetModuleHandle(null);
                 UnregisterClass("TrayNotifyWnd", inst);
                 UnregisterClass("Shell_TrayWnd", inst);
                 lock (gate) { foreach (var ic in icons) Free(ic); icons.Clear(); }
+                for (int i = 0; i < propVals.Length; i++) propVals[i] = IntPtr.Zero;
                 ready.Set();
             }
         }
@@ -218,9 +225,9 @@ namespace Tepi
                     return IntPtr.Zero;
                 }
                 if (msg == WM_TIMER) { Guard(); return IntPtr.Zero; }
-                // Closed only by Tepi itself, never by a stray WM_CLOSE
+                // Closed only by Deskmate itself, never by a stray WM_CLOSE
                 if (msg == 0x10) return IntPtr.Zero;
-                if (msg == WM_DESTROY) { if (h == hwnd) PostQuitMessage(0); return IntPtr.Zero; }
+                if (msg == WM_DESTROY) { if (h == hwnd) { ClearProps(); PostQuitMessage(0); } return IntPtr.Zero; }
                 // Explorer's own traffic goes on to Explorer
                 if (msg >= 0x400 || msg == 0x111 || msg == 0x1C) return Forward(msg, w, l);
             }
@@ -255,10 +262,35 @@ namespace Tepi
         }
 
         void Topmost() { Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE); }
+        // Strict allowlist of Explorer scalar/HWND properties queried via FindWindow("Shell_TrayWnd")
+        void SyncProps()
+        {
+            if (hwnd == IntPtr.Zero) return;
+            if (explorer == IntPtr.Zero || !IsWindow(explorer)) explorer = FindExplorer();
+            if (explorer == IntPtr.Zero) return;
+            for (int i = 0; i < SyncPropNames.Length; i++)
+            {
+                IntPtr val = GetProp(explorer, SyncPropNames[i]);
+                if (val == propVals[i]) continue;
+                if (val != IntPtr.Zero) SetProp(hwnd, SyncPropNames[i], val);
+                else RemoveProp(hwnd, SyncPropNames[i]);
+                propVals[i] = val;
+            }
+        }
+
+        void ClearProps()
+        {
+            for (int i = 0; i < SyncPropNames.Length; i++)
+            {
+                if (hwnd != IntPtr.Zero && propVals[i] != IntPtr.Zero) RemoveProp(hwnd, SyncPropNames[i]);
+                propVals[i] = IntPtr.Zero;
+            }
+        }
 
         // Explorer can rise above us; take the spot back and ask apps again
         void Guard()
         {
+            SyncProps();
             var now = DateTime.UtcNow;
             if (FindWindow("Shell_TrayWnd", null) != hwnd)
             {

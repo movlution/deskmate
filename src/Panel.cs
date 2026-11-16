@@ -5,7 +5,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -422,7 +422,7 @@ namespace Tepi
                 // A read failure is not an empty inbox; never claim "no messages" for it
                 if (notifWatcher.Failing)
                 {
-                    EmptyState(new RectangleF(0, PanelTop, w, h - PanelTop), Ink.IcoBell, Lang.T("Pesan tidak bisa dibaca"), Lang.T("Notifikasi Windows tidak menjawab. Tepi mencoba lagi otomatis."), Lang.T("Coba lagi"), "notifRetry", delegate { notifWatcher.Refresh(); }, PillKind.Secondary);
+                    EmptyState(new RectangleF(0, PanelTop, w, h - PanelTop), Ink.IcoBell, Lang.T("Pesan tidak bisa dibaca"), Lang.T("Notifikasi Windows tidak menjawab. Deskmate mencoba lagi otomatis."), Lang.T("Coba lagi"), "notifRetry", delegate { notifWatcher.Refresh(); }, PillKind.Secondary);
                     return;
                 }
                 EmptyState(new RectangleF(0, PanelTop, w, h - PanelTop), Ink.IcoBell, Lang.T("Belum ada pesan"), Lang.T("WhatsApp, Telegram, Discord, Teams, email"));

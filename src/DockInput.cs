@@ -6,7 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -26,6 +26,8 @@ namespace Tepi
             bool trayPopup;
             string lastTrayKey = "";
             DateTime lastTrayUtc = DateTime.MinValue;
+            DateTime trayOpenUtc = DateTime.MinValue;
+            IntPtr trayFrontHwnd = IntPtr.Zero;
             readonly Timer trayPop = new Timer { Interval = 500 };
             // File drag over an app brings its window up
             string dropHover;
@@ -33,6 +35,23 @@ namespace Tepi
 
             bool dragging { get { return dragApp != null; } }
             bool PreviewsOn { get { return S.GetBool("dockbar.previews", true); } }
+            bool TrayExpanded { get { return card != null && card.Kind == DockCard.TrayKind && !card.Leaving; } }
+
+            bool ChevContainsScreen(Point pt)
+            {
+                if (scale <= 0 || cw <= 0 || ch <= 0) return false;
+                var o = WindowOrigin();
+                if (pt.X < o.X || pt.Y < o.Y || pt.X >= o.X + cw || pt.Y >= o.Y + ch) return false;
+                if (HitAt(new PointF((pt.X - o.X) / scale, (pt.Y - o.Y) / scale)) == "chev") return true;
+                foreach (var kv in hits)
+                    if (kv.Value == "chev")
+                    {
+                        var r = ToScreen(kv.Key);
+                        r.Inflate(2, 2);
+                        return r.Contains(pt);
+                    }
+                return false;
+            }
 
             string HitAt(PointF pt)
             {
@@ -86,6 +105,7 @@ namespace Tepi
                 if (pressId != null && e.Button == MouseButtons.Left && dragApp == null && AppById(pressId) != null && Far(e.Location, downAt)) BeginDrag(AppById(pressId), pt);
                 if (dragApp != null) { DragMove(pt); Animate(); return; }
                 string id = HitAt(pt);
+                if (card != null && card.Kind == DockCard.WindowsKind && PreviewAppById(id) == card.App) card.Keep();
                 if (id != hoverId) SetHover(id);
                 TrayMove(id);
                 Animate();
@@ -101,7 +121,7 @@ namespace Tepi
                 bool previewing = card != null && card.Kind == DockCard.WindowsKind && app != null && card.App == app;
                 labelShow.Target = label && !previewing ? 1 : 0;
                 dwell.Stop();
-                if (app != null && app.Running && PreviewsOn)
+                if (app != null && app.Running && PreviewsOn && sheet == null && !TrayExpanded)
                 {
                     // Once one preview is up, the next app shows at once
                     if (card != null && card.Kind == DockCard.WindowsKind) ShowPreview(app);
@@ -112,6 +132,7 @@ namespace Tepi
 
             void Dwell()
             {
+                if (sheet != null || TrayExpanded) return;
                 var app = PreviewAppById(hoverId);
                 if (app != null && app.Running && inside && dragApp == null) ShowPreview(app);
             }
@@ -126,7 +147,7 @@ namespace Tepi
                 dwell.Stop();
                 SetHover(null);
                 TrayLeave();
-                if (card != null) card.CloseSoon();
+                if (card != null && card.Kind == DockCard.WindowsKind) card.CloseSoon();
                 if (HideMode != "never") { hideLater.Stop(); hideLater.Start(); }
                 Animate();
             }
@@ -135,13 +156,22 @@ namespace Tepi
             {
                 base.OnMouseDown(e);
                 string id = HitAt(new PointF(e.X / scale, e.Y / scale));
+                if (TrayExpanded && id != "chev") CloseCard();
+                string wasPress = pressId;
                 pressId = id;
                 downAt = e.Location;
                 dwell.Stop();
                 // A deliberate click skips the wait
                 CancelHoverReveal();
                 Reveal(true);
+                if (id != null && id.StartsWith("sys:", StringComparison.Ordinal))
+                {
+                    var sp = SysPress(id.Substring(4));
+                    if (Anim.Reduced) sp.Snap(1f);
+                    else { Tune(sp, 520, 0.85f); sp.Target = 1f; }
+                }
                 if (id != null && id.StartsWith("tray:", StringComparison.Ordinal)) TrayDown(id, e.Button);
+                if (pressId != wasPress || pressId != null) Animate();
                 Render();
             }
 
@@ -161,7 +191,8 @@ namespace Tepi
                     var app = AppById(id);
                     if (app != null) Launch(app, false);
                 }
-                pressId = null;
+                if (pressId != null) { pressId = null; Animate(); }
+                else pressId = null;
                 Render();
             }
 
@@ -213,53 +244,73 @@ namespace Tepi
             void WorkMenu()
             {
                 var m = new ContextMenuStrip();
-                m.Items.Add(new ToolStripMenuItem(Lang.T("Tugas dan catatan")) { Enabled = false });
+                m.Items.Add(new ToolStripMenuItem(Lang.T("Tugas dan catatan")) { Enabled = false, Tag = new MenuItemMeta { Header = true } });
                 m.Items.Add(new ToolStripSeparator());
-                m.Items.Add(Lang.T("Tugas"), null, delegate { isle.OpenWork(0); });
-                m.Items.Add(Lang.T("Catatan"), null, delegate { isle.OpenWork(1); });
-                m.Items.Add(Lang.T("Lepas dari Dock"), null, delegate { isle.SetFlag("dockbar.work", false); if (isle.prefs != null && !isle.prefs.IsDisposed) isle.prefs.Relayout(); });
+                m.Items.Add(new ToolStripMenuItem(Lang.T("Tugas"), null, delegate { isle.OpenWork(0); }) { Tag = new MenuItemMeta { Glyph = '\uE762' } });
+                m.Items.Add(new ToolStripMenuItem(Lang.T("Catatan"), null, delegate { isle.OpenWork(1); }) { Tag = new MenuItemMeta { Glyph = '\uE70B' } });
+                m.Items.Add(new ToolStripMenuItem(Lang.T("Lepas dari Dock"), null, delegate { isle.SetFlag("dockbar.work", false); if (isle.prefs != null && !isle.prefs.IsDisposed) isle.prefs.Relayout(); }) { Tag = new MenuItemMeta { Glyph = '\uE77A' } });
                 if (isle.WorkOpen && isle.WorkHwnd != IntPtr.Zero)
                 {
                     m.Items.Add(new ToolStripSeparator());
-                    m.Items.Add(Lang.T("Tutup jendela"), null, delegate { ShellApp.Close(isle.WorkHwnd); });
+                    m.Items.Add(new ToolStripMenuItem(Lang.T("Tutup jendela"), null, delegate { ShellApp.Close(isle.WorkHwnd); }) { Tag = new MenuItemMeta { Glyph = '\uE8BB' } });
                 }
                 ShowMenu(m);
             }
 
-            void AppMenu(DockApp a)
+            internal void AppMenu(DockApp a)
             {
-                var m = new ContextMenuStrip();
-                m.Items.Add(new ToolStripMenuItem(a.Name) { Enabled = false });
-                if (a.Wins.Count > 1)
+                if (a == null || closing) return;
+                CloseCard();
+                if (sheet is AppSheet && ((AppSheet)sheet).App == a)
                 {
-                    m.Items.Add(new ToolStripSeparator());
-                    foreach (var w in a.Wins)
-                    {
-                        var h = w.H;
-                        string title = watch.Title(h);
-                        m.Items.Add(title.Length > 60 ? title.Substring(0, 57) + "…" : title, null, delegate { ShellApp.Activate(h); });
-                    }
+                    SheetDone(sheet);
+                    return;
                 }
-                m.Items.Add(new ToolStripSeparator());
-                string target = a.Target.Length > 0 ? a.Target : a.Exe;
-                if (target.Length > 0)
+                if (sheet != null) SheetDone(sheet);
+                labelShow.Target = 0;
+                Reveal(true);
+                var m = new AppSheet(isle, this, a);
+                sheet = m;
+                Rectangle useMon = mon.IsEmpty ? Screen.PrimaryScreen.Bounds : mon;
+                float sc = scale > 0 ? scale : 1f;
+                int barTop = (!mon.IsEmpty && !area.IsEmpty) ? BarTopShownScreen() : useMon.Bottom - (int)Math.Round((BarH + Edge) * sc);
+                Rectangle anchor = IconScreenRect(a);
+                if (anchor.IsEmpty) anchor = new Rectangle(useMon.Left + useMon.Width / 2, barTop, 1, 1);
+                m.OpenAt(anchor, Rectangle.Empty, useMon, barTop, sc);
+            }
+
+            internal AppSheet CurrentAppSheet { get { return sheet as AppSheet; } }
+            internal void OpenAppMenu(DockApp a) { AppMenu(a); }
+            public void LaunchApp(DockApp a, bool admin) { Launch(a, admin); }
+            internal void FocusOrOpenApp(DockApp a) { OpenApp(a, false); }
+            internal void PinApp(DockApp a) { Pin(a, -1); }
+            internal void UnpinApp(DockApp a) { Unpin(a); }
+            internal void EndApp(DockApp a) { EndDockApp(a); }
+            internal void RevealFile(string file) { ShowInFolder(file); }
+            internal string WindowTitle(IntPtr h) { return watch.Title(h); }
+            internal void RescanApps() { watch.Rescan(); Refresh(false); Render(); }
+            internal void ShowCopiedToast(string file) { if (isle != null) isle.ShowInfo('\uE8C8', Lang.T("Jalur disalin"), Path.GetFileName(file), true); }
+
+            public Bitmap IconFor(string key)
+            {
+                Bitmap b;
+                return !string.IsNullOrEmpty(key) && icons.TryGetValue(IconCacheKey(key), out b) ? b : null;
+            }
+
+            void EndDockApp(DockApp a)
+            {
+                var wins = new List<DockWin>(a.Wins);
+                var status = ShellApp.EndTask(wins);
+                if (status == ShellApp.EndTaskStatus.PartialDenied)
                 {
-                    m.Items.Add(a.Running ? Lang.T("Jendela baru") : Lang.T("Buka"), null, delegate { Launch(a, false); });
-                    if (!a.Packaged && !ShellApp.IsAppsFolder(target)) m.Items.Add(Lang.T("Jalankan sebagai administrator"), null, delegate { Launch(a, true); });
+                    if (isle != null) isle.ShowInfo(Ink.IcoLock, Lang.T("Tidak dapat mengakhiri proses"), Lang.T("Butuh izin administrator"), true);
                 }
-                if (a.Pinned) m.Items.Add(Lang.T("Lepas dari Dock"), null, delegate { Unpin(a); });
-                else if (target.Length > 0) m.Items.Add(Lang.T("Sematkan di Dock"), null, delegate { Pin(a, -1); });
-                string file = a.Exe.Length > 0 ? a.Exe : File.Exists(a.Target) ? a.Target : "";
-                if (file.Length > 0 && !a.Packaged) m.Items.Add(Lang.T("Buka lokasi berkas"), null, delegate { ShowInFolder(file); });
-                if (a.Running)
+                else
                 {
-                    m.Items.Add(new ToolStripSeparator());
-                    m.Items.Add(a.Wins.Count > 1 ? Lang.F("Tutup {0} jendela", a.Wins.Count) : Lang.T("Tutup jendela"), null, delegate
-                    {
-                        foreach (var w in a.Wins) ShellApp.Close(w.H);
-                    });
+                    foreach (var w in wins) watch.Drop(w.H);
+                    Refresh(false);
+                    Render();
                 }
-                ShowMenu(m);
             }
 
             static void ShowInFolder(string file)
@@ -300,13 +351,21 @@ namespace Tepi
                 CloseCard();
                 labelShow.Target = 0;
                 MenuLook.Apply(m);
-                m.Closed += delegate { BeginInvoke(new Action(m.Dispose)); };
+                m.Closed += delegate
+                {
+                    foreach (ToolStripItem item in m.Items)
+                    {
+                        if (item.Image != null) { item.Image.Dispose(); item.Image = null; }
+                    }
+                    BeginInvoke(new Action(m.Dispose));
+                };
                 MenuGuard.Watch(m);
                 m.Show(Cursor.Position);
             }
 
             void Pin(DockApp a, int at)
             {
+                if (isle == null) return;
                 string target = a.Target.Length > 0 ? a.Target : a.Exe;
                 if (target.Length == 0) return;
                 var pins = isle.DockPins();
@@ -324,6 +383,7 @@ namespace Tepi
                     if (s != null) ShatterDockIcon(a, Glyph(s.Icon));
                     Animate();
                 }
+                if (isle == null) return;
                 var pins = isle.DockPins();
                 pins.RemoveAll(x => string.Equals(x, a.Target, StringComparison.OrdinalIgnoreCase));
                 isle.SetDockPins(pins);
@@ -331,7 +391,7 @@ namespace Tepi
 
             void ShowPreview(DockApp app)
             {
-                if (closing || !shown || dragApp != null) return;
+                if (closing || !shown || dragApp != null || sheet != null || TrayExpanded) return;
                 var at = IconScreenRect(app);
                 if (at.IsEmpty) return;
                 if (card != null && card.Kind != DockCard.WindowsKind) CloseCard();
@@ -342,12 +402,24 @@ namespace Tepi
 
             void ToggleTrayCard()
             {
-                bool wasTray = card != null && card.Kind == DockCard.TrayKind;
+                bool wasTray = TrayExpanded;
+                if (sheet != null) SheetDone(sheet);
                 CloseCard();
                 if (wasTray) return;
+                labelShow.Target = 0;
+                Reveal(true);
                 TrayPromo.Invalidate();
-                card = new DockCard(isle, this, DockCard.TrayKind);
-                card.ShowTray(OverflowTray(), HitScreenRect("chev"), mon, BarTopScreen(), scale);
+                var list = OverflowTray();
+                if (list.Count == 0) { Render(); return; }
+                trayOpenUtc = DateTime.UtcNow;
+                trayFrontHwnd = GetForegroundWindow();
+                var c = new DockCard(isle, this, DockCard.TrayKind);
+                card = c;
+                c.ShowTray(list, HitScreenRect("chev"), mon, BarTopShownScreen(), scale);
+                MenuGuard.Watch(c, pt => (!c.IsDisposed && c.Bounds.Contains(pt)) || ChevContainsScreen(pt), delegate
+                {
+                    if (card == c) CloseCard();
+                }, Dry);
                 Render();
             }
 
@@ -381,6 +453,12 @@ namespace Tepi
                 labelShow.Target = 0;
                 // Auto-hidden: the dock comes up under its card
                 Reveal(true);
+                if (kind == "start" && !Anim.Reduced)
+                {
+                    SysSpring("start").Velocity += 1.8f;
+                    startPulseUtc = DateTime.UtcNow;
+                    Animate();
+                }
                 sheet = MakeSheet(kind);
                 sheet.OpenAt(HitScreenRect(SheetAnchor(kind)), Full ? Rectangle.Empty : ToScreen(centerPill), mon, BarTopShownScreen(), scale);
             }
@@ -409,8 +487,10 @@ namespace Tepi
 
             public void SheetDone(GlassSheet s)
             {
+                bool wasStart = s != null && s.Kind == "start";
                 if (s == sheet) sheet = null;
                 if (!s.IsDisposed) s.Dismiss();
+                if (wasStart && !closing) Render();
                 if (sheet == null && !closing && HideMode != "never" && !inside) { hideLater.Stop(); hideLater.Start(); }
             }
 
@@ -425,6 +505,28 @@ namespace Tepi
                     try { BeginInvoke(new Action(delegate { KeyAction(what); })); } catch (Exception) { }
                 };
                 startKey.Start();
+            }
+
+            // StartKey.Start waits on its helper thread. Measured from a free caller that
+            // costs ~80 ms, but when the UI thread is inside the first paint the helper
+            // cannot finish and the wait runs to its full 2 s timeout. So start it after
+            // the frame is out: the dock draws first, the Win key follows a beat later.
+            bool keysPosted;
+
+            void PostKeys()
+            {
+                if (keysPosted || startKey != null || closing) return;
+                keysPosted = true;
+                try
+                {
+                    BeginInvoke(new Action(delegate
+                    {
+                        keysPosted = false;
+                        if (closing) return;
+                        if (globalOwner && Replacing && !Dry && S.GetBool("dockbar.winkey", true)) StartKeys();
+                    }));
+                }
+                catch (InvalidOperationException) { keysPosted = false; }
             }
 
             void StopKeys()
@@ -605,8 +707,7 @@ namespace Tepi
 
             public Bitmap IconOf(DockApp a)
             {
-                Bitmap b;
-                return a != null && icons.TryGetValue(a.Key, out b) ? b : null;
+                return a != null ? IconFor(a.Key) : null;
             }
 
             void CloseCard()
@@ -614,8 +715,13 @@ namespace Tepi
                 if (card == null) return;
                 var c = card;
                 card = null;
+                MenuGuard.Unwatch(c);
                 if (!c.IsDisposed) c.Dismiss();
-                if (!closing) Render();
+                if (!closing)
+                {
+                    Render();
+                    if (sheet == null && !keyMode && HideMode != "never" && !inside) { hideLater.Stop(); hideLater.Start(); }
+                }
             }
 
             void CloseCardFor(DockApp a)

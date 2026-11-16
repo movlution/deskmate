@@ -4,17 +4,17 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 11 - MenuLook Contrast & Menu Boundaries" {
 
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Inspects MenuLook color tokens in Dark Mode" {
-        Reset-TepiTheme -Light $false
-        $menuLookType = Get-TepiType "MenuLook"
+        Reset-DeskmateTheme -Light $false
+        $menuLookType = Get-DeskmateType "MenuLook"
         Assert-NotNull $menuLookType "MenuLook type must be resolvable"
 
         $flags = [System.Reflection.BindingFlags]'NonPublic,Static'
@@ -31,8 +31,8 @@ Describe "Tier 2 Boundary Suite: Feature 11 - MenuLook Contrast & Menu Boundarie
     }
 
     It "Inspects MenuLook color tokens in Light Mode" {
-        Reset-TepiTheme -Light $true
-        $menuLookType = Get-TepiType "MenuLook"
+        Reset-DeskmateTheme -Light $true
+        $menuLookType = Get-DeskmateType "MenuLook"
         $flags = [System.Reflection.BindingFlags]'NonPublic,Static'
         $bg = $menuLookType.GetProperty("Bg", $flags).GetValue($null, $null)
         $text = $menuLookType.GetProperty("Text", $flags).GetValue($null, $null)
@@ -44,11 +44,11 @@ Describe "Tier 2 Boundary Suite: Feature 11 - MenuLook Contrast & Menu Boundarie
     }
 
     It "Verifies normal text contrast against menu background in both dark and light modes" {
-        $menuLookType = Get-TepiType "MenuLook"
+        $menuLookType = Get-DeskmateType "MenuLook"
         $flags = [System.Reflection.BindingFlags]'NonPublic,Static'
 
         foreach ($light in @($false, $true)) {
-            Reset-TepiTheme -Light $light
+            Reset-DeskmateTheme -Light $light
             $bg = $menuLookType.GetProperty("Bg", $flags).GetValue($null, $null)
             $text = $menuLookType.GetProperty("Text", $flags).GetValue($null, $null)
 
@@ -58,11 +58,11 @@ Describe "Tier 2 Boundary Suite: Feature 11 - MenuLook Contrast & Menu Boundarie
     }
 
     It "Evaluates disabled item and arrow Sub token contrast against menu background" {
-        $menuLookType = Get-TepiType "MenuLook"
+        $menuLookType = Get-DeskmateType "MenuLook"
         $flags = [System.Reflection.BindingFlags]'NonPublic,Static'
 
         foreach ($light in @($false, $true)) {
-            Reset-TepiTheme -Light $light
+            Reset-DeskmateTheme -Light $light
             $bg = $menuLookType.GetProperty("Bg", $flags).GetValue($null, $null)
             $sub = $menuLookType.GetProperty("Sub", $flags).GetValue($null, $null)
 
@@ -79,7 +79,7 @@ Describe "Tier 2 Boundary Suite: Feature 11 - MenuLook Contrast & Menu Boundarie
         [void]$cms.Items.Add("-")
         $item3 = $cms.Items.Add("Submenu Option")
 
-        $t = Get-TepiType "MenuLook"
+        $t = Get-DeskmateType "MenuLook"
         $m = $t.GetMethod("Apply", [System.Reflection.BindingFlags]'Public,Static', $null, @([System.Windows.Forms.ToolStripDropDownMenu]), $null)
         $m.Invoke($null, @($cms.psobject.BaseObject))
 

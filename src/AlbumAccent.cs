@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 
-namespace Tepi
+namespace Deskmate
 {
     // accent=album: accent taken from the cover
     partial class Island

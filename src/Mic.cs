@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Default microphone mute, system-wide
     partial class VolumeWatcher

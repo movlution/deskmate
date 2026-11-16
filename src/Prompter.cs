@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Teleprompter: pasted script scrolls on the island
     partial class Island
@@ -86,7 +86,6 @@ namespace Tepi
             prompterSetupOpen = true;
             using (var f = new PrompterSetup(last, wpm0, px0, mirror0, bg0, live))
             {
-                if (tray != null) f.Icon = tray.Icon;
                 PrompterKeys(f);
                 // Live script previews every change
                 if (live) f.Changed += delegate { if (!PrompterOn) return; PrompterLook(f.Wpm, f.Px, f.Mirror, f.Bg); Kick(); };

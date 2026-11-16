@@ -3,13 +3,13 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 23: Typing Combo Gamification & Settings" {
-    $islandType = Get-TepiType "Island"
+    $islandType = Get-DeskmateType "Island"
     $flags = [System.Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
 
-    $settingsType = Get-TepiType "Settings"
+    $settingsType = Get-DeskmateType "Settings"
     $settingsDir = $settingsType.GetField("Dir", $flags).GetValue($null)
     $settingsFile = Join-Path $settingsDir "settings.ini"
     $backupContent = $null
@@ -20,7 +20,7 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
 
     try {
         BeforeEach {
-            Reset-TepiTheme -Light $false
+            Reset-DeskmateTheme -Light $false
         }
 
         It "1. In-memory Audio Synthesizer builds RIFF/WAVE buffers, switches profiles, and frees pinned handles" {
@@ -137,7 +137,7 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
                 $s.Set("keys.combo.fever", "1")
 
                 # Set View.Combo and test EdgeMoving + DrawCombo + DrawEdgeLight
-                $viewType = Get-TepiType "View"
+                $viewType = Get-DeskmateType "View"
                 $viewCombo = [Enum]::Parse($viewType, "Combo")
                 $islandType.GetField("current", $flags).SetValue($isle, $viewCombo)
 
@@ -306,7 +306,7 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
         }
 
         It "5. RPG Level, XP, Daily Quest, Badges, SettingsIO.Portable, and ResetComboStats" {
-            $portable = Get-TepiStaticField "Island" "Portable"
+            $portable = Get-DeskmateStaticField "Island" "Portable"
             foreach ($k in @("keys.combo.sound.profile", "keys.combo.fever", "keys.combo.penalty", "keys.combo.enter", "keys.combo.rpg", "keys.combo.quest.chars", "keys.combo.quest.combos")) {
                 Assert-True ($portable.Contains($k)) "Portable settings must include $k"
             }
@@ -314,13 +314,13 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
                 Assert-False ($portable.Contains($pKey)) "Portable settings must NOT include personal stat $pKey"
             }
 
-            $lv0 = Invoke-TepiStaticMethod "Island" "ComboLevelFor" @([int]0)
-            $lv1 = Invoke-TepiStaticMethod "Island" "ComboLevelFor" @([int]500)
-            $lv2 = Invoke-TepiStaticMethod "Island" "ComboLevelFor" @([int]2500)
+            $lv0 = Invoke-DeskmateStaticMethod "Island" "ComboLevelFor" @([int]0)
+            $lv1 = Invoke-DeskmateStaticMethod "Island" "ComboLevelFor" @([int]500)
+            $lv2 = Invoke-DeskmateStaticMethod "Island" "ComboLevelFor" @([int]2500)
             Assert-Equal $lv0 1 "0 XP -> Level 1"
             Assert-True ($lv1 -gt $lv0 -and $lv2 -gt $lv1) "Level must increase monotonically with XP"
 
-            $prog = Invoke-TepiStaticMethod "Island" "ComboLevelProgressFor" @([int]50)
+            $prog = Invoke-DeskmateStaticMethod "Island" "ComboLevelProgressFor" @([int]50)
             Assert-True ($prog -ge 0 -and $prog -lt 1) "ComboLevelProgressFor must be in [0, 1)"
 
             $isle = [Activator]::CreateInstance($islandType)
@@ -349,11 +349,11 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
         }
 
         It "6. Overview HomeCard.Combo, 30s Sprint, PrefsWindow combo tab, and Lang.cs translations" {
-            $homeCardType = Get-TepiType "HomeCard"
+            $homeCardType = Get-DeskmateType "HomeCard"
             $names = [Enum]::GetNames($homeCardType)
             Assert-True ($names -contains "Combo") "HomeCard enum must contain Combo"
-            $homeIds = Get-TepiStaticField "Island" "HomeIds"
-            $homeNames = Get-TepiStaticField "Island" "HomeNames"
+            $homeIds = Get-DeskmateStaticField "Island" "HomeIds"
+            $homeNames = Get-DeskmateStaticField "Island" "HomeNames"
             Assert-True ($homeIds -contains "combo") "HomeIds must contain combo"
             Assert-True ($homeNames -contains "Combo Ketikan") "HomeNames must contain Combo Ketikan"
 
@@ -380,7 +380,7 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
                 Assert-False $isle.TypingSprintActive "StopTypingSprint must cancel active sprint"
 
                 # PrefsWindow "combo" tab & GlyphFor
-                $prefsType = Get-TepiType "PrefsWindow"
+                $prefsType = Get-DeskmateType "PrefsWindow"
                 $glyphFor = $prefsType.GetMethod("GlyphFor", $flags)
                 # DrawComboCard offscreen rendering
                 $cardBmp = New-Object System.Drawing.Bitmap(260, 92)
@@ -422,14 +422,14 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
                 }
 
                 # Lang.cs English translations
-                $langType = Get-TepiType "Lang"
+                $langType = Get-DeskmateType "Lang"
                 $engField = $langType.GetField("English", $flags)
                 $prevEng = $engField.GetValue($null)
                 try {
                     $engField.SetValue($null, $true)
-                    Assert-Equal (Invoke-TepiStaticMethod "Lang" "T" @("Finisher tombol Enter")) "Enter key finisher" "English translation for Finisher tombol Enter"
-                    Assert-Equal (Invoke-TepiStaticMethod "Lang" "T" @("Mulai Sprint")) "Start Sprint" "English translation for Mulai Sprint"
-                    Assert-Equal (Invoke-TepiStaticMethod "Lang" "T" @("Pemula")) "Beginner" "English translation for Pemula"
+                    Assert-Equal (Invoke-DeskmateStaticMethod "Lang" "T" @("Finisher tombol Enter")) "Enter key finisher" "English translation for Finisher tombol Enter"
+                    Assert-Equal (Invoke-DeskmateStaticMethod "Lang" "T" @("Mulai Sprint")) "Start Sprint" "English translation for Mulai Sprint"
+                    Assert-Equal (Invoke-DeskmateStaticMethod "Lang" "T" @("Pemula")) "Beginner" "English translation for Pemula"
                 }
                 finally {
                     $engField.SetValue($null, $prevEng)
@@ -510,7 +510,7 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
                     $cardG.Clear([System.Drawing.Color]::FromArgb(255, 16, 18, 22))
                     $p = $islandType.GetField("p", $flags).GetValue($isle)
                     $p.G = $cardG
-                    $p.T = (Get-TepiType "Ink").GetField("Base", $flags).GetValue($null)
+                    $p.T = (Get-DeskmateType "Ink").GetField("Base", $flags).GetValue($null)
                     $rect = New-Object System.Drawing.RectangleF(0, 0, 260, 100)
                     $islandType.GetMethod("DrawComboCard", $flags).Invoke($isle, @($rect)) | Out-Null
                     $cardPixels = 0
@@ -526,7 +526,7 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
                 }
 
                 # 6) SpawnComboCallout 4 times in a row places 4 non-colliding callouts (|a.Y - b.Y| >= 8.5)
-                $animType = Get-TepiType "Anim"
+                $animType = Get-DeskmateType "Anim"
                 $reducedField = $animType.GetField("Reduced", $flags)
                 $prevReduced = $reducedField.GetValue($null)
                 $reducedField.SetValue($null, $false)
@@ -558,7 +558,7 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
         It "8. Typing Combo Confetti physics, reduced-motion guard, and rendering" {
             $isle = [Activator]::CreateInstance($islandType)
             $flags = [System.Reflection.BindingFlags] "Public,NonPublic,Instance"
-            $animType = Get-TepiType "Anim"
+            $animType = Get-DeskmateType "Anim"
             $reducedField = $animType.GetField("Reduced", [System.Reflection.BindingFlags] "Public,NonPublic,Static")
             $prevReduced = $reducedField.GetValue($null)
             $reducedField.SetValue($null, $false)
@@ -608,6 +608,8 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
                     }
                 }
                 Assert-True ($nonBg -gt 3) "DrawCombo with active confetti must render visible non-background pixels"
+                $gField.SetValue($isle, $null)
+                $pGField.SetValue($pObj, $null)
                 $gfx.Dispose()
                 $bmp.Dispose()
 
@@ -659,6 +661,8 @@ Describe "Feature 23: Typing Combo Gamification & Settings" {
                         Assert-True ($sideNonBg -gt 3) "SideCombo(40, 84) with sprint confetti must render visible non-background pixels"
                     }
                     finally {
+                        $gField.SetValue($isle, $null)
+                        $pGField.SetValue($pObj, $null)
                         $sideGfx.Dispose()
                         $sideBmp.Dispose()
                     }

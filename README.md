@@ -1,38 +1,37 @@
 <p align="center">
-  <img src="https://odlaver.github.io/tepi/assets/img/readme-banner.jpg" alt="Tepi, dynamic island untuk Windows dan Android">
+  <img src="src/Deskmate.png" alt="Ikon Deskmate" width="112">
 </p>
 
 <p align="center">
-  <a href="https://github.com/odlaver/tepi/releases/latest/download/Tepi.exe"><b>Unduh untuk Windows</b></a>
+  <a href="https://github.com/movlution/deskmate/releases/latest/download/Deskmate.exe"><b>Unduh untuk Windows</b></a>
   ·
   <a href="https://github.com/odlaver/tepi-android/releases/latest"><b>Unduh untuk Android</b></a>
   ·
-  <a href="https://odlaver.github.io/tepi/">Situs</a>
-  ·
-  <a href="https://github.com/odlaver/tepi/releases">Semua rilis</a>
+  <a href="https://github.com/movlution/deskmate/releases">Semua rilis</a>
 </p>
 
-# Tepi
+# Deskmate
 
-Tepi duduk tenang di tepi atas layar, lalu membesar saat ada yang terjadi: lagu dan liriknya, agent coding yang minta izin, tugas yang mendekati tenggat, pesan masuk, timer, sampai waktu sholat. Tampilannya Liquid Glass dengan gerak pegas. Exe-nya 1.626 KB, native C# tanpa browser engine, dalam bahasa Indonesia dan Inggris.
+Deskmate duduk tenang di tepi atas layar, lalu membesar saat ada yang terjadi: lagu dan liriknya, agent coding yang minta izin, tugas yang mendekati tenggat, pesan masuk, timer, sampai waktu sholat. Tampilannya Liquid Glass dengan gerak pegas. Aplikasi ini ditulis dalam C# tanpa browser engine, dalam bahasa Indonesia dan Inggris.
 
 Sekarang juga ada [Tepi Android](https://github.com/odlaver/tepi-android): island di sekitar kamera depan HP, yang nyambung ke laptop cukup dengan memindai QR.
 
-## Baru di 2.6.1
+## Baru di 2.7.0
 
+- **Identitas Deskmate**: ikon baru di Explorer, Start Menu, system tray, taskbar, dan halaman Tentang.
 - **Island di mana saja**: atas tengah, pojok atas, atau berdiri tegak di sisi kiri dan kanan layar.
 - **Dock**: bar kaca berisi aplikasi, pratinjau jendela, dan widget, yang bisa menggantikan taskbar Windows sepenuhnya.
-- **Ngobrol dengan Tepi**: Suruh Tepi punya jendela obrolan yang ingat percakapannya, dengan layanan AI pilihanmu.
+- **Ngobrol dengan Deskmate**: Suruh Deskmate punya jendela obrolan yang ingat percakapannya, dengan layanan AI pilihanmu.
 - **Ringkasan pilihanmu**: pilih dan urutkan kartunya, termasuk cuaca, baterai, clipboard, dan sholat.
 - **Perbaiki dan terjemahkan** teks yang kamu blok di aplikasi apa pun.
 - **Ubah format lebih lengkap**: PDF ke Word, OCR untuk foto dan hasil scan, kompres PDF, gambar, video, dan audio, serta gabung PDF dan gambar jadi satu.
-- **Notifikasi lebih rapi**: Tepi bisa jadi penerima utama banner chat, panggilan, dan screenshot, dan isi pesan disamarkan saat berbagi layar.
+- **Notifikasi lebih rapi**: Deskmate bisa jadi penerima utama banner chat, panggilan, dan screenshot, dan isi pesan disamarkan saat berbagi layar.
 - **Edit screenshot** (samarkan, potong, putar, balik) dan **Rapikan Downloads** yang bisa diurungkan.
 - **Agent lebih hati-hati**, dan **Pengaturan** yang dikelompokkan per kategori.
 
-Sejak 2.6: **Dikte** tanpa tangan, **Suruh Tepi** yang jalan tanpa internet, dan **Transkrip rapat** tanpa bot.
+Sejak 2.6: **Dikte** tanpa tangan, **Suruh Deskmate** yang jalan tanpa internet, dan **Transkrip rapat** tanpa bot.
 
-Catatan lengkapnya ada di [halaman rilis](https://github.com/odlaver/tepi/releases/latest).
+Catatan lengkapnya ada di [halaman rilis](https://github.com/movlution/deskmate/releases/latest).
 
 ## Isinya
 
@@ -42,7 +41,7 @@ Catatan lengkapnya ada di [halaman rilis](https://github.com/odlaver/tepi/releas
 | **Agent coding** | Claude Code, Codex, Antigravity, dan Copilot CLI, tiap sesi bertanda agentnya. Status sesi, rencana kerja, kuota tiap agent, dan izin yang bisa dijawab dari island. [Selengkapnya](docs/agen.md) |
 | **Kuliah** | Tugas dan jadwal dari [Kulia](https://kulia.live), Notion, Todoist, dan kalender iCal. [Selengkapnya](docs/integrasi.md) |
 | **Pesan** | WhatsApp, Telegram, Discord, Teams, Slack, dan email dari pusat notifikasi Windows. Satu pesan, satu banner: tidak dobel dengan banner Windows atau HP. |
-| **Dikte dan rapat** | Tahan Ctrl kanan, bicara, lepas: teksnya ditempel di aplikasi mana pun, dalam bahasa Indonesia yang bercampur istilah Inggris. Kamus istilah, snippet, lewat layanan AI pilihanmu (Groq, OpenAI, Claude, Gemini, Ollama, dan lainnya) atau offline. Rekam panggilan tanpa bot jadi transkrip Kamu dan Lawan bicara, plus ringkasan dan to-do. Suruh Tepi memasang pengingat, timer, dan catatan dari kalimat biasa. [Selengkapnya](docs/fitur.md) |
+| **Dikte dan rapat** | Tahan Ctrl kanan, bicara, lepas: teksnya ditempel di aplikasi mana pun, dalam bahasa Indonesia yang bercampur istilah Inggris. Kamus istilah, snippet, lewat layanan AI pilihanmu (Groq, OpenAI, Claude, Gemini, Ollama, dan lainnya) atau offline. Rekam panggilan tanpa bot jadi transkrip Kamu dan Lawan bicara, plus ringkasan dan to-do. Suruh Deskmate memasang pengingat, timer, dan catatan dari kalimat biasa. [Selengkapnya](docs/fitur.md) |
 | **HP** | Kode OTP, notifikasi, baterai, dan kirim berkas dua arah dengan Tepi Android. [Selengkapnya](docs/hp.md) |
 | **Rak dan Ubah format** | Seret berkas ke island untuk disimpan sementara, atau ubah ke JPG, PDF, MP3, DOCX, dan lainnya. Rapikan Downloads dengan Urungkan. |
 | **Kontrol** | Volume per aplikasi, kecerahan, Wi-Fi, Bluetooth, mikrofon, mode gelap, laptop tetap terjaga, dan timer. |
@@ -54,11 +53,11 @@ Daftar fitur lengkap dan cara pakainya ada di [Fitur dan cara pakai](docs/fitur.
 
 ## Pasang
 
-1. Unduh [**Tepi.exe**](https://github.com/odlaver/tepi/releases/latest/download/Tepi.exe), lalu jalankan.
+1. Unduh [**Deskmate.exe**](https://github.com/movlution/deskmate/releases/latest/download/Deskmate.exe), lalu jalankan.
 2. Kalau Windows SmartScreen memperingatkan, pilih **More info** lalu **Run anyway**. Exe belum ditandatangani; [cara memastikan exe-nya asli](docs/privasi-keamanan.md#tanda-tangan-kode).
-3. Ikon Tepi muncul di system tray. Arahkan kursor ke island di tepi atas layar untuk membuka panel.
+3. Ikon Deskmate muncul di system tray. Arahkan kursor ke island di tepi atas layar untuk membuka panel.
 
-Syarat: Windows 10 versi 2004 ke atas atau Windows 11, 64-bit. Tepi memberi tahu sendiri saat ada versi baru: klik kanan ikon Tepi, lalu **Perbarui**.
+Syarat: Windows 10 versi 2004 ke atas atau Windows 11, 64-bit. Deskmate memberi tahu sendiri saat ada versi baru: klik kanan ikon Deskmate, lalu **Perbarui**.
 
 Untuk HP: pasang APK dari [tepi-android](https://github.com/odlaver/tepi-android/releases/latest) (Android 10 ke atas), lalu ikuti [langkah menyambungkan](docs/hp.md#menyambungkan).
 
@@ -73,7 +72,7 @@ Untuk HP: pasang APK dari [tepi-android](https://github.com/odlaver/tepi-android
 | [Integrasi](docs/integrasi.md) | Kulia, Notion, Todoist, kalender iCal, dan notifikasi pesan |
 | [Paket tema](docs/paket-tema.md) | Warna, lambang, maskot, sapaan, dan suara buatan sendiri |
 | [Teleprompter](docs/teleprompter.md) | Naskah di tepi atas layar, dekat kamera |
-| [Skrip](docs/skrip.md) | `Tepi.exe --notify` dan `--run` dari terminal |
+| [Skrip](docs/skrip.md) | `Deskmate.exe --notify` dan `--run` dari terminal |
 | [Performa](docs/performa.md) | Hasil ukur CPU dan memori |
 | [Privasi dan keamanan](docs/privasi-keamanan.md) | Layanan luar yang dihubungi, model keamanan, tanda tangan kode |
 
@@ -87,7 +86,7 @@ Tidak perlu memasang SDK. Compiler C# untuk .NET Framework 4.8 sudah ada di Wind
 build.cmd
 ```
 
-Hasilnya `Tepi.exe` di folder yang sama. Variabel lingkungan untuk pengembangan ada di [Pengaturan](docs/pengaturan.md#pengaturan-lanjutan).
+Hasilnya `Deskmate.exe` di folder yang sama. Variabel lingkungan untuk pengembangan ada di [Pengaturan](docs/pengaturan.md#pengaturan-lanjutan).
 
 ## Keamanan
 

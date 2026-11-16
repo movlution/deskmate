@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Win32;
 
-namespace Tepi
+namespace Deskmate
 {
     // Windows light or dark: read and flip
     partial class Island

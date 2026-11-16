@@ -2,7 +2,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 
-namespace Tepi
+namespace Deskmate
 {
     // Where the island lives: top edge, its corners, or a side
     partial class Island
@@ -37,6 +37,15 @@ namespace Tepi
         // Mini hugs the edge even when floating
         float SideGapTarget { get { return Docked || current == View.Mini ? 0 : SideFloat; } }
 
+        float LeftBubbleInset
+        {
+            get
+            {
+                float progress = Anim.Reduced && bubble.Value > 0.02f ? 1 : Ease.Clamp01(bubble.Value);
+                return Math.Max(placeInset, (BubbleGap + BubbleR * 2) * progress);
+            }
+        }
+
         // Screen x of the canvas centre line, device px
         float MidX(float shellW)
         {
@@ -44,7 +53,7 @@ namespace Tepi
             float glide = placeGlide.Value;
             switch (PlaceNow)
             {
-                case PlaceTopLeft: return mon.Left + (placeInset + shellW / 2) * scale + glide;
+                case PlaceTopLeft: return mon.Left + (LeftBubbleInset + shellW / 2) * scale + glide;
                 case PlaceTopRight: return mon.Right - (placeInset + shellW / 2) * scale + glide;
                 case PlaceLeft: return mon.Left + (sideGap.Value + shellW / 2) * scale;
                 case PlaceRight: return mon.Right - (sideGap.Value + shellW / 2) * scale;
@@ -128,7 +137,8 @@ namespace Tepi
             Span(sw.Value, ref lo, ref hi);
             Span(sw.Target, ref lo, ref hi);
             if (wide > 0) Span(wide, ref lo, ref hi);
-            if (RightHanded) lo -= bubbleW * scale; else hi += bubbleW * scale;
+            lo -= bubbleW * scale;
+            if (PlaceNow == PlaceTopLeft) hi += Math.Max(0, bubbleW - LeftBubbleInset) * scale;
             int left = Math.Max(mon.Left, (int)Math.Floor(lo - FrostPad * scale));
             int right = Math.Min(mon.Right, (int)Math.Ceiling(hi + FrostPad * scale));
             float hNow = Math.Max(sh.Value, BubbleR * 2), hWant = Math.Max(targetH, BubbleR * 2);

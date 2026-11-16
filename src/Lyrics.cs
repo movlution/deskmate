@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     class LyricLine
     {

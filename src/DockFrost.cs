@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -6,7 +7,7 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -18,9 +19,14 @@ namespace Tepi
 
             public void Dispose()
             {
-                if (Text != null && Text != Image) Text.Dispose();
+                if (Text != null && Text != Image)
+                {
+                    if (ReturnText != null) ReturnText(Text);
+                    else Text.Dispose();
+                }
                 if (Image != null) Image.Dispose();
             }
+            public Action<Bitmap> ReturnText;
         }
 
         // Reads the screen behind the dock and its cards off the UI thread
@@ -29,7 +35,7 @@ namespace Tepi
             // Pilot: a fixed picture instead of the user's screen
             public static Func<Rectangle, Bitmap> Backdrop { get; set; }
 
-            sealed class Job { public Rectangle Rect; public Color Bg; public bool Light, Liquid; public int Div; }
+            sealed class Job { public Rectangle Rect; public Color Bg; public bool Light, Liquid, NeedImage; public int Div; }
 
             readonly Action<DockPlate> deliver;
             readonly AutoResetEvent wake = new AutoResetEvent(false);
@@ -37,6 +43,9 @@ namespace Tepi
             volatile bool run;
             Job job;
             int nudged;
+            readonly object poolLock = new object();
+            readonly Stack<Bitmap> pool = new Stack<Bitmap>();
+            int poolW, poolH;
 
             public DockFrost(Action<DockPlate> deliver) { this.deliver = deliver; }
 
@@ -57,10 +66,17 @@ namespace Tepi
 
             public void Request(Rectangle rect, Color bg, bool light, bool liquid)
             {
-                var j = new Job { Rect = rect, Bg = bg, Light = light, Liquid = liquid, Div = liquid ? 2 : 5 };
+                Request(rect, bg, light, liquid, true);
+            }
+
+            public void Request(Rectangle rect, Color bg, bool light, bool liquid, bool needImage)
+            {
+                bool fastSheet = !needImage;
+                int div = fastSheet ? 6 : (liquid ? 2 : 5);
+                var j = new Job { Rect = rect, Bg = bg, Light = light, Liquid = liquid, Div = div, NeedImage = needImage };
                 var last = Volatile.Read(ref job);
                 Volatile.Write(ref job, j);
-                if (last == null || last.Rect != rect || last.Bg != bg || last.Liquid != liquid || last.Light != light) wake.Set();
+                if (last == null || last.Rect != rect || last.Bg != bg || last.Liquid != liquid || last.Light != light || last.NeedImage != needImage) wake.Set();
             }
 
             // Windows moved: look again once they settle
@@ -81,10 +97,18 @@ namespace Tepi
                     wake.WaitOne(wait);
                     var j = Volatile.Read(ref job);
                     if (!run || j == null || j.Rect.Width < 8 || j.Rect.Height < 8) { wait = 1000; continue; }
-                    if (Interlocked.Exchange(ref nudged, 0) != 0) { still = 0; Thread.Sleep(80); }
-                    bool same = last != null && last.Rect == j.Rect && last.Bg == j.Bg && last.Liquid == j.Liquid && last.Light == j.Light;
+                    if (Interlocked.Exchange(ref nudged, 0) != 0)
+                    {
+                        still = 0;
+                        Thread.Sleep(60);
+                        if (!run) break;
+                        j = Volatile.Read(ref job);
+                        if (j == null || j.Rect.Width < 8 || j.Rect.Height < 8) { wait = 1000; continue; }
+                    }
+                    bool same = last != null && last.Rect == j.Rect && last.Bg == j.Bg && last.Liquid == j.Liquid && last.Light == j.Light && last.NeedImage == j.NeedImage;
                     try
                     {
+                        var frameSw = Stopwatch.StartNew();
                         int tw = Math.Max(4, j.Rect.Width / j.Div), th = Math.Max(4, j.Rect.Height / j.Div);
                         if (tiny == null || tiny.Width != tw || tiny.Height != th)
                         {
@@ -92,7 +116,7 @@ namespace Tepi
                             tiny = new Bitmap(tw, th, PixelFormat.Format32bppRgb);
                             sig = null;
                         }
-                        Capture(tiny, j.Rect);
+                        Capture(tiny, j.Rect, !j.NeedImage);
                         var data = tiny.LockBits(new Rectangle(0, 0, tw, th), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
                         int stride = data.Stride, len = stride * th;
                         if (cur == null || cur.Length != len) cur = new byte[len];
@@ -102,11 +126,11 @@ namespace Tepi
                         if (same && sig != null && Similar(cur, sig))
                         {
                             still++;
-                            wait = Math.Min(3000, 250 << Math.Min(4, still));
+                            if (j.NeedImage) wait = Math.Min(3000, 250 << Math.Min(4, still));
+                            else wait = still == 1 ? 66 : Math.Min(400, 90 << Math.Min(3, still - 1));
                             continue;
                         }
                         still = 0;
-                        wait = 250;
                         var swap = sig;
                         sig = cur;
                         cur = swap;
@@ -114,22 +138,29 @@ namespace Tepi
                         if (work == null || work.Length != len) work = new byte[len];
                         if (j.Liquid)
                         {
-                            Liquid(sig, stride, tw, th, j.Bg, false, work);
-                            pl.Image = Upscale(tiny, work, j);
+                            if (j.NeedImage)
+                            {
+                                Liquid(sig, stride, tw, th, j.Bg, false, work);
+                                pl.Image = Upscale(tiny, work, j);
+                            }
                             Liquid(sig, stride, tw, th, j.Bg, true, work);
-                            pl.Text = Upscale(tiny, work, j);
+                            if (j.NeedImage) pl.Text = Upscale(tiny, work, j);
+                            else { pl.Text = UpscaleSheet(tiny, work, stride, tw, th, j); pl.ReturnText = Return; }
                         }
                         else
                         {
                             Buffer.BlockCopy(sig, 0, work, 0, len);
-                            pl.Image = pl.Text = Upscale(tiny, work, j);
+                            if (j.NeedImage) pl.Image = pl.Text = Upscale(tiny, work, j);
+                            else { pl.Text = UpscaleSheet(tiny, work, stride, tw, th, j); pl.ReturnText = Return; }
                         }
                         last = j;
+                        wait = j.NeedImage ? 250 : Math.Max(1, 33 - (int)frameSw.ElapsedMilliseconds);
                         deliver(pl);
                     }
                     catch (Exception ex) { Log.Write("dock frost: " + ex.Message); wait = 2000; }
                 }
                 if (tiny != null) tiny.Dispose();
+                lock (poolLock) { while (pool.Count > 0) pool.Pop().Dispose(); }
             }
 
             // Liquid for the dock: icons get vivid, lightly veiled glass;
@@ -186,7 +217,67 @@ namespace Tepi
                 return img;
             }
 
-            static void Capture(Bitmap tiny, Rectangle r)
+            Bitmap Rent(int w, int h)
+            {
+                lock (poolLock)
+                {
+                    if (poolW != w || poolH != h)
+                    {
+                        while (pool.Count > 0) pool.Pop().Dispose();
+                        poolW = w;
+                        poolH = h;
+                    }
+                    if (pool.Count > 0) return pool.Pop();
+                }
+                return new Bitmap(w, h, PixelFormat.Format32bppPArgb);
+            }
+
+            void Return(Bitmap b)
+            {
+                if (b == null) return;
+                lock (poolLock)
+                {
+                    if (run && b.Width == poolW && b.Height == poolH && pool.Count < 4)
+                    {
+                        pool.Push(b);
+                        return;
+                    }
+                }
+                b.Dispose();
+            }
+
+            Bitmap UpscaleSheet(Bitmap tiny, byte[] px, int stride, int tw, int th, Job j)
+            {
+                int dw = j.Rect.Width, dh = j.Rect.Height;
+                if (!j.Liquid)
+                {
+                    BoxBlur(px, stride, tw, th, 1);
+                    int a = (int)Math.Round(BaseTint * 256f), ia = 256 - a;
+                    int tb = j.Bg.B * a, tg = j.Bg.G * a, tr = j.Bg.R * a;
+                    int total = th * stride;
+                    for (int p = 0; p < total; p += 4)
+                    {
+                        px[p] = (byte)((px[p] * ia + tb) >> 8);
+                        px[p + 1] = (byte)((px[p + 1] * ia + tg) >> 8);
+                        px[p + 2] = (byte)((px[p + 2] * ia + tr) >> 8);
+                    }
+                }
+                var data = tiny.LockBits(new Rectangle(0, 0, tw, th), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
+                Marshal.Copy(px, 0, data.Scan0, Math.Min(px.Length, data.Stride * th));
+                tiny.UnlockBits(data);
+                var img = Rent(dw, dh);
+                using (var pg = Graphics.FromImage(img))
+                {
+                    pg.CompositingMode = CompositingMode.SourceCopy;
+                    pg.InterpolationMode = InterpolationMode.Bilinear;
+                    pg.PixelOffsetMode = PixelOffsetMode.Half;
+                    float f = j.Div / 2f;
+                    pg.DrawImage(tiny, new RectangleF(-f, -f, dw + f * 2, dh + f * 2));
+                }
+                return img;
+            }
+
+            static void Capture(Bitmap tiny, Rectangle r, bool fast)
             {
                 var hook = Backdrop;
                 using (var tg = Graphics.FromImage(tiny))
@@ -201,8 +292,8 @@ namespace Tepi
                         return;
                     }
                     IntPtr hdc = tg.GetHdc(), screen = Native.GetDC(IntPtr.Zero);
-                    Native.SetStretchBltMode(hdc, 4);
-                    Native.SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
+                    Native.SetStretchBltMode(hdc, fast ? 3 : 4);
+                    if (!fast) Native.SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
                     Native.StretchBlt(hdc, 0, 0, tiny.Width, tiny.Height, screen, r.X, r.Y, r.Width, r.Height, 0x00CC0020);
                     Native.ReleaseDC(IntPtr.Zero, screen);
                     tg.ReleaseHdc(hdc);

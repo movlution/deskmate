@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Global shortcuts: one table, remappable
     partial class Island
@@ -30,7 +30,7 @@ namespace Tepi
             Def(ScreenTextHotkey, "key.screentext", "Salin teks dari layar", "", false),
             Def(DictPasteHotkey, "key.dictate.paste", "Tempel dikte terakhir", "", false),
             Def(RapatHotkey, "key.rapat", "Rekam rapat", "Ctrl+Alt+T", false),
-            Def(SuruhHotkey, "key.suruh", "Suruh Tepi", "", false),
+            Def(SuruhHotkey, "key.suruh", "Suruh Deskmate", "", false),
             Def(FixHotkey, "key.fix", "Perbaiki teks terpilih", "", false),
             Def(TranslateHotkey, "key.translate", "Terjemahkan teks terpilih", "", false),
             Def(PrompterHotkey, "key.prompter.pause", "Jeda dan lanjut", "Ctrl+Alt+Space", true),

@@ -4,16 +4,16 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 14 - KitAsk Localization & Layout Boundaries" {
 
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Instantiates KitAsk via reflection with empty or null message strings" {
-        $askType = Get-TepiType "KitAsk"
+        $askType = Get-DeskmateType "KitAsk"
         Assert-NotNull $askType "KitAsk type must exist"
 
         $ctor = $askType.GetConstructors([System.Reflection.BindingFlags]'NonPublic,Instance')[0]
@@ -29,7 +29,7 @@ Describe "Tier 2 Boundary Suite: Feature 14 - KitAsk Localization & Layout Bound
     }
 
     It "Handles extreme 1000-character multi-line text payloads without layout collapse" {
-        $askType = Get-TepiType "KitAsk"
+        $askType = Get-DeskmateType "KitAsk"
         $ctor = $askType.GetConstructors([System.Reflection.BindingFlags]'NonPublic,Instance')[0]
 
         $longMessage = ("Baris konfirmasi peringatan penting.`n" * 50)
@@ -41,7 +41,7 @@ Describe "Tier 2 Boundary Suite: Feature 14 - KitAsk Localization & Layout Bound
     }
 
     It "Verifies mode configuration between Confirm (two buttons) and Notice (one button)" {
-        $askType = Get-TepiType "KitAsk"
+        $askType = Get-DeskmateType "KitAsk"
         $ctor = $askType.GetConstructors([System.Reflection.BindingFlags]'NonPublic,Instance')[0]
         $flags = [System.Reflection.BindingFlags]'NonPublic,Instance'
 
@@ -59,19 +59,19 @@ Describe "Tier 2 Boundary Suite: Feature 14 - KitAsk Localization & Layout Bound
     }
 
     It "Verifies Lang.T localization integration on standard dialog action words" {
-        $langType = Get-TepiType "Lang"
+        $langType = Get-DeskmateType "Lang"
         Assert-NotNull $langType "Lang type must exist"
 
         $standardKeys = @("Hapus", "Batal", "Tutup", "Simpan", "Pilih", "Pesan baru")
         foreach ($key in $standardKeys) {
-            $translated = Invoke-TepiStaticMethod "Lang" "T" @($key)
+            $translated = Invoke-DeskmateStaticMethod "Lang" "T" @($key)
             Assert-NotNull $translated "Translation for [$key] must not be null"
             Assert-True ($translated.Length -gt 0) "Translation for [$key] must not be empty"
         }
     }
 
     It "Executes Relayout on KitAsk across simulated DPI scale factors" {
-        $askType = Get-TepiType "KitAsk"
+        $askType = Get-DeskmateType "KitAsk"
         $ctor = $askType.GetConstructors([System.Reflection.BindingFlags]'NonPublic,Instance')[0]
         $ask = $ctor.Invoke(@("DPI Scale Test", $true, "Ya", "Tidak"))
 

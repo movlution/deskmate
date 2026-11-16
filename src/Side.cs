@@ -1,7 +1,7 @@
 using System;
 using System.Drawing;
 
-namespace Tepi
+namespace Deskmate
 {
     // Side edge: resting views as an upright capsule
     partial class Island

@@ -4,15 +4,15 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 12: Eliminate Hardcoded Semantic Red" {
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Verifies Ink.Base.Negative token exists and is a valid opaque Color" {
-        $base = Get-TepiStaticField "Ink" "Base"
+        $base = Get-DeskmateStaticField "Ink" "Base"
         Assert-NotNull $base "Ink.Base must not be null"
 
         $prop = $base.GetType().GetProperty("Negative")
@@ -25,8 +25,8 @@ Describe "Feature 12: Eliminate Hardcoded Semantic Red" {
     }
 
     It "Verifies Ink.Base.Negative contrast in Dark Mode achieves >= 4.5:1 against Ink.Base.Bg" {
-        Reset-TepiTheme -Light $false
-        $base = Get-TepiStaticField "Ink" "Base"
+        Reset-DeskmateTheme -Light $false
+        $base = Get-DeskmateStaticField "Ink" "Base"
         $neg = $base.Negative
         $bg = $base.Bg
 
@@ -35,8 +35,8 @@ Describe "Feature 12: Eliminate Hardcoded Semantic Red" {
     }
 
     It "Verifies Ink.Base.Negative contrast in Light Mode achieves >= 4.5:1 against Ink.Base.Bg" {
-        Reset-TepiTheme -Light $true
-        $base = Get-TepiStaticField "Ink" "Base"
+        Reset-DeskmateTheme -Light $true
+        $base = Get-DeskmateStaticField "Ink" "Base"
         $neg = $base.Negative
         $bg = $base.Bg
 
@@ -46,16 +46,16 @@ Describe "Feature 12: Eliminate Hardcoded Semantic Red" {
 
     It "Verifies Ink.Base.Negative contrast against KitInk.Window achieves >= 4.5:1 in both themes" {
         # Dark theme
-        Reset-TepiTheme -Light $false
-        $negDark = (Get-TepiStaticField "Ink" "Base").Negative
-        $winDark = Get-TepiStaticProperty "KitInk" "Window"
+        Reset-DeskmateTheme -Light $false
+        $negDark = (Get-DeskmateStaticField "Ink" "Base").Negative
+        $winDark = Get-DeskmateStaticProperty "KitInk" "Window"
         $rDark = Assert-Contrast $negDark $winDark 4.5 "Dark KitInk.Window vs Negative"
         Assert-True ($rDark -ge 4.5) "Dark window contrast >= 4.5:1"
 
         # Light theme
-        Reset-TepiTheme -Light $true
-        $negLight = (Get-TepiStaticField "Ink" "Base").Negative
-        $winLight = Get-TepiStaticProperty "KitInk" "Window"
+        Reset-DeskmateTheme -Light $true
+        $negLight = (Get-DeskmateStaticField "Ink" "Base").Negative
+        $winLight = Get-DeskmateStaticProperty "KitInk" "Window"
         $rLight = Assert-Contrast $negLight $winLight 4.5 "Light KitInk.Window vs Negative"
         Assert-True ($rLight -ge 4.5) "Light window contrast >= 4.5:1"
     }

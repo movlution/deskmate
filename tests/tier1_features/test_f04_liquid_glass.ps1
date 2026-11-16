@@ -4,10 +4,10 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 4: Liquid Glass Color Space Blending" {
-    $island = Get-TepiType "Island"
+    $island = Get-DeskmateType "Island"
     $toSrgb = $island.GetMethod("ToSrgb", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
     $liquidPass = $island.GetMethod("LiquidPass", [System.Reflection.BindingFlags]'NonPublic,Static')
 

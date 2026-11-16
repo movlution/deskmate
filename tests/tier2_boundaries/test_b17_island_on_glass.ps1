@@ -4,16 +4,16 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 17 - Island OnGlass Contrast & Alpha Boundaries" {
 
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Clamps Sub alpha to at least 189/255 when OnGlass() is invoked on low-alpha Tone" {
-        $tone = Invoke-TepiStaticMethod "Tone" "Dark" @()
+        $tone = Invoke-DeskmateStaticMethod "Tone" "Dark" @()
         # Set Sub to low alpha (e.g. 80)
         $tone.Sub = [System.Drawing.Color]::FromArgb(80, 245, 245, 247)
 
@@ -23,7 +23,7 @@ Describe "Tier 2 Boundary Suite: Feature 17 - Island OnGlass Contrast & Alpha Bo
     }
 
     It "Preserves higher alpha without reduction when Sub alpha already exceeds 189 (Math.Max invariant)" {
-        $tone = Invoke-TepiStaticMethod "Tone" "Dark" @()
+        $tone = Invoke-DeskmateStaticMethod "Tone" "Dark" @()
         $tone.Sub = [System.Drawing.Color]::FromArgb(240, 245, 245, 247)
 
         $glassTone = $tone.OnGlass()
@@ -31,7 +31,7 @@ Describe "Tier 2 Boundary Suite: Feature 17 - Island OnGlass Contrast & Alpha Bo
     }
 
     It "Guarantees idempotency: invoking OnGlass() multiple times causes zero alpha drift" {
-        $tone = Invoke-TepiStaticMethod "Tone" "Dark" @()
+        $tone = Invoke-DeskmateStaticMethod "Tone" "Dark" @()
         $g1 = $tone.OnGlass()
         $g2 = $g1.OnGlass()
         $g3 = $g2.OnGlass()
@@ -41,7 +41,7 @@ Describe "Tier 2 Boundary Suite: Feature 17 - Island OnGlass Contrast & Alpha Bo
     }
 
     It "Evaluates OnGlass Sub contrast against bright frosted glass background" {
-        $glassTone = (Invoke-TepiStaticMethod "Tone" "Dark" @()).OnGlass()
+        $glassTone = (Invoke-DeskmateStaticMethod "Tone" "Dark" @()).OnGlass()
         $brightGlassBg = [System.Drawing.Color]::FromArgb(255, 220, 220, 225)
 
         # In opaque composite terms, a high-alpha white text over bright glass
@@ -50,7 +50,7 @@ Describe "Tier 2 Boundary Suite: Feature 17 - Island OnGlass Contrast & Alpha Bo
     }
 
     It "Executes OnGlass() on Paper (light mode) tone without color inversion" {
-        $paperTone = Invoke-TepiStaticMethod "Tone" "Paper" @()
+        $paperTone = Invoke-DeskmateStaticMethod "Tone" "Paper" @()
         $glassPaper = $paperTone.OnGlass()
 
         Assert-True ($glassPaper.Sub.A -ge 189) "Light mode OnGlass Sub alpha must be >= 189"

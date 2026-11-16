@@ -6,7 +6,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     enum AgentState { Ready, Working, Waiting, Done, Ended }
 
@@ -201,7 +201,7 @@ namespace Tepi
                     if ((agent == "plugin" && path != "/notify") || (agent == "usage" && path != "/usage")) agent = null;
                     // Token before body; reject browser Origin
                     if (parts[0] != "POST" || agent == null || agent.Length == 0 || agent.Length > 32 || headers.ContainsKey("Origin") ||
-                        !headers.TryGetValue("X-Tepi-Token", out got) || !SameToken(got, token))
+                        !headers.TryGetValue("X-Deskmate-Token", out got) || !SameToken(got, token))
                     {
                         Reply(stream, 403, "");
                         return;
@@ -261,7 +261,7 @@ namespace Tepi
             if (a.Decision == "allow")
                 return "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\"}}}";
             if (a.Decision == "deny")
-                return "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"deny\",\"message\":" + Json.Encode(Lang.T("Ditolak dari Tepi.")) + "}}}";
+                return "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"deny\",\"message\":" + Json.Encode(Lang.T("Ditolak dari Deskmate.")) + "}}}";
             return "";
         }
 

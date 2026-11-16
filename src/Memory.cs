@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using WinTimer = System.Windows.Forms.Timer;
 
-namespace Tepi
+namespace Deskmate
 {
     // Leak guard and one trim at rest
     partial class Island

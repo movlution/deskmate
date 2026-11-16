@@ -10,7 +10,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -18,20 +18,25 @@ namespace Tepi
         sealed partial class DockWindow : Form
         {
             readonly Island isle;
+            Screen targetScreen;
+            readonly string deviceName;
             readonly Painter p = new Painter();
-            readonly AppWatch watch = new AppWatch();
+            readonly AppWatch fallbackWatch = new AppWatch();
+            AppWatch watch { get { return isle != null ? isle.dockWatch : fallbackWatch; } }
             List<DockApp> apps = new List<DockApp>();
-            readonly Dictionary<string, Bitmap> icons = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
+            readonly Dictionary<string, Bitmap> fallbackIcons = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, Bitmap> icons { get { return isle != null ? isle.dockIcons : fallbackIcons; } }
             float scale = 1;
             IntPtr memDC, dib, oldBmp;
             Bitmap canvas;
             Graphics g;
             int cw, ch;
-            // Monitor, and the strip the dock stands on, in px
+            // This dock's monitor and strip, in px.
             Rectangle mon, area;
-            bool registered, shown = true, closing;
+            IntPtr monitorHandle;
+            bool globalOwner, registered, shown = true, closing;
             const int AppBarMsg = Native.WM_APP + 0x32;
-            static readonly int ShellMsg = Taskbar.RegisterWindowMessage("SHELLHOOK"), FrameMsg = Taskbar.RegisterWindowMessage("TepiDockFrame");
+            static readonly int ShellMsg = Taskbar.RegisterWindowMessage("SHELLHOOK"), FrameMsg = Taskbar.RegisterWindowMessage("DeskmateDockFrame");
             readonly Timer tick = new Timer { Interval = 1000 }, dwell = new Timer { Interval = 420 }, hideLater = new Timer { Interval = 700 }, revealLater = new Timer();
             readonly Stopwatch clock = Stopwatch.StartNew();
             double lastT;
@@ -57,33 +62,44 @@ namespace Tepi
             [StructLayout(LayoutKind.Sequential)]
             struct MemInfo { public IntPtr Base, AllocBase; public uint AllocProtect; public IntPtr Size; public uint State, Protect, Type; }
 
-            Settings S { get { return isle.settings; } }
+            Settings S { get { return isle != null ? isle.settings : null; } }
 
             // Pilot runs: no taskbar or tray changes, drawn off screen
-            public static readonly bool Dry = Environment.GetEnvironmentVariable("TEPI_DOCK_DRY") == "1";
+            public static readonly bool Dry = Environment.GetEnvironmentVariable("DESKMATE_DOCK_DRY") == "1";
 
             // Stands in for the Windows taskbar
-            bool Replacing { get { return S.GetBool("dockbar.replace", false); } }
-            bool Full { get { return S.Get("dockbar.style", "float") == "full"; } }
+            bool Replacing { get { return S != null && S.GetBool("dockbar.replace", false); } }
+            bool Full { get { return S != null && S.Get("dockbar.style", "float") == "full"; } }
 
             string HideMode
             {
                 get
                 {
+                    if (S == null) return "never";
                     string m = S.Get("dockbar.hide", "never");
                     return m == "auto" || m == "smart" ? m : "never";
                 }
             }
 
-            public DockWindow(Island isle)
+            public DockWindow(Island isle, Screen screen, bool globalOwner)
             {
                 this.isle = isle;
+                targetScreen = screen;
+                deviceName = screen != null ? screen.DeviceName : "";
+                this.globalOwner = globalOwner;
+                if (screen != null)
+                {
+                    mon = screen.Bounds;
+                    int want = (int)Math.Ceiling((BarH + Edge) * scale);
+                    int bottom = screen.WorkingArea.IsEmpty ? screen.Bounds.Bottom : screen.WorkingArea.Bottom;
+                    area = new Rectangle(screen.Bounds.Left, bottom - want, screen.Bounds.Width, want);
+                }
                 FormBorderStyle = FormBorderStyle.None;
                 ShowInTaskbar = false;
                 StartPosition = FormStartPosition.Manual;
                 AutoScaleMode = AutoScaleMode.None;
                 AllowDrop = true;
-                Text = "Tepi Dock";
+                Text = "Deskmate Dock";
                 Bounds = new Rectangle(-32000, -32000, 1, 1);
                 Tune(reveal, 170, 0.86f);
                 Tune(hover, 260, 0.9f);
@@ -95,6 +111,9 @@ namespace Tepi
                 trayPop.Tick += delegate { TrayPopup(); };
                 Tune(labelShow, 520, 0.9f);
             }
+
+            // Used by small dock unit tests that do not create a visible dock.
+            public DockWindow(Island isle) : this(isle, Screen.PrimaryScreen, true) { }
 
             protected override CreateParams CreateParams
             {
@@ -117,9 +136,8 @@ namespace Tepi
                 pacer = new DockPacer(Handle, FrameMsg);
                 frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
                 RegisterShellHookWindow(Handle);
-                watch.Rescan();
-                Changed();
-                Refresh(true);
+                watch.RescanIfStale(400);
+                Changed(globalOwner);
                 tick.Start();
                 // Entrance: the dock rises, then icons arrive one after another
                 reveal.Snap(0);
@@ -159,14 +177,31 @@ namespace Tepi
                 StopKeys();
                 StopTray();
                 Reserve(false);
-                if (!Dry) Taskbar.Restore(S);
+                // Give this screen's Windows taskbar back; other docks keep theirs hidden
+                if (Replacing && !Dry) Taskbar.Release(S, monitorHandle);
                 FreeCanvas();
-                foreach (var b in icons.Values) if (b != null) b.Dispose();
-                icons.Clear();
+                foreach (var b in fallbackIcons.Values) if (b != null) b.Dispose();
+                fallbackIcons.Clear();
                 FreeCaches();
                 if (plate != null) plate.Dispose();
-                if (shadowTile != null) shadowTile.Dispose();
+                if (dockBackdrop != null) { dockBackdrop.Dispose(); dockBackdrop = null; }
                 base.OnFormClosed(e);
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    closing = true;
+                    if (sheet != null)
+                    {
+                        var s = sheet;
+                        sheet = null;
+                        if (!s.IsDisposed) { s.Close(); s.Dispose(); }
+                    }
+                    CloseCard();
+                }
+                base.Dispose(disposing);
             }
 
             protected override void WndProc(ref Message m)
@@ -184,38 +219,81 @@ namespace Tepi
             void ExplorerBack()
             {
                 if (closing) return;
-                if (Replacing) Taskbar.Hide(S, isle.monitorHandle);
-                if (tray != null) tray.Resync();
-                Changed();
+                if (Replacing && !Dry) Taskbar.Hide(S, monitorHandle);
+                if (globalOwner && tray != null) tray.Resync();
+                Changed(globalOwner);
             }
 
             bool Reserving { get { return HideMode == "never" && (Replacing || S.GetBool("dockbar.reserve", true)); } }
 
             // Glass reads the screen behind, so it cannot also appear in captures
-            public bool Glass { get { return isle.GlassOn && !S.GetBool("dockbar.capture", false); } }
+            public bool Glass { get { return isle != null && isle.GlassOn && !S.GetBool("dockbar.capture", false); } }
+            bool GpuGlass { get { return Glass && CompGlass.Available; } }
+            CompGlass.CompBackdrop dockBackdrop;
 
-            // Settings, pins or monitor changed
-            public void Changed()
+            // Settings or global-owner changes. Peer docks hide the bar on their own
+            // screen but keep off the tray and Win key, which have a single owner.
+            public void Changed(bool owner)
             {
-                if (!IsHandleCreated || closing) return;
-                scale = isle.scale;
-                mon = isle.monitorPx;
-                Native.SetWindowDisplayAffinity(Handle, Glass ? Native.WDA_EXCLUDEFROMCAPTURE : 0);
-                // Taskbar first: it changes the strip the dock gets
-                if (Replacing && !Dry) Taskbar.Hide(S, isle.monitorHandle);
-                else if (!Dry) Taskbar.Restore(S);
+                SetGlobalOwner(owner);
+                if (!IsHandleCreated || closing || !UpdateMonitor()) return;
+                bool needFrost = Glass && !GpuGlass;
+                Native.SetWindowDisplayAffinity(Handle, needFrost ? Native.WDA_EXCLUDEFROMCAPTURE : 0);
+                if (!GpuGlass && dockBackdrop != null) dockBackdrop.HideBackdrop();
+                // Every dock that stands in for the taskbar hides that screen's bar,
+                // otherwise the secondary screen shows Explorer's bar and ours together
+                if (Replacing && !Dry) Taskbar.Hide(S, monitorHandle);
                 Reserve(Reserving && !Dry);
-                if (Replacing && !Dry && S.GetBool("dockbar.tray", true)) StartTray();
+                if (globalOwner && Replacing && !Dry && S.GetBool("dockbar.tray", true)) StartTray();
                 else StopTray();
-                // Yields bare Win automatically if an external Win-key launcher is active
-                if (Replacing && !Dry && S.GetBool("dockbar.winkey", true)) StartKeys();
+                // Yields bare Win automatically if an external Win-key launcher is active.
+                // Starting it spins up hook threads and a keeper window, which waits on the
+                // caller: keep that off the first-paint path and let the dock draw first.
+                if (globalOwner && Replacing && !Dry && S.GetBool("dockbar.winkey", true)) PostKeys();
                 else StopKeys();
-                if (Glass) frost.Start(); else { frost.Stop(); if (plate != null) { plate.Dispose(); plate = null; } }
+                if (Glass && !GpuGlass) frost.Start(); else { frost.Stop(); if (plate != null) { plate.Dispose(); plate = null; } }
                 foreach (var a in apps) TuneApp(a);
                 Refresh(false);
                 Place();
                 drawnSig = "";
                 Render();
+            }
+
+            public void SetGlobalOwner(bool owner)
+            {
+                if (!owner && globalOwner) { globalOwner = false; StopTray(); StopKeys(); }
+                else globalOwner = owner;
+            }
+
+            bool UpdateMonitor()
+            {
+                Screen target = null;
+                foreach (var screen in Screen.AllScreens)
+                    if (string.Equals(screen.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase)) { target = screen; break; }
+                if (target == null) target = targetScreen;
+                if (target == null) return false;
+                targetScreen = target;
+                monitorHandle = Native.MonitorFromPoint(new Native.POINT(target.Bounds.Left + target.Bounds.Width / 2, target.Bounds.Top + target.Bounds.Height / 2), 2);
+                var mi = new Native.MONITORINFO { cbSize = Marshal.SizeOf(typeof(Native.MONITORINFO)) };
+                if (monitorHandle != IntPtr.Zero && Native.GetMonitorInfo(monitorHandle, ref mi) &&
+                    Rectangle.FromLTRB(mi.rcMonitor.Left, mi.rcMonitor.Top, mi.rcMonitor.Right, mi.rcMonitor.Bottom) == target.Bounds)
+                {
+                    mon = Rectangle.FromLTRB(mi.rcMonitor.Left, mi.rcMonitor.Top, mi.rcMonitor.Right, mi.rcMonitor.Bottom);
+                }
+                else
+                {
+                    mon = target.Bounds;
+                }
+                scale = 1;
+                try
+                {
+                    uint dx, dy;
+                    if (monitorHandle != IntPtr.Zero && Native.GetDpiForMonitor(monitorHandle, 0, out dx, out dy) == 0) scale = dx / 96f;
+                }
+                catch (Exception ex) { Log.Write("dock dpi: " + ex.Message); }
+                float forced;
+                if (float.TryParse(Environment.GetEnvironmentVariable("DESKMATE_SCALE"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out forced) && forced > 0.5f) scale = forced;
+                return true;
             }
 
             // Strip along the bottom; reserved, maximized windows stop above it
@@ -227,8 +305,16 @@ namespace Tepi
                 {
                     if (registered) { Native.SHAppBarMessage(1, ref abd); registered = false; }
                     var mi = new Native.MONITORINFO { cbSize = Marshal.SizeOf(typeof(Native.MONITORINFO)) };
-                    Native.GetMonitorInfo(isle.monitorHandle, ref mi);
-                    var work = Rectangle.FromLTRB(mi.rcWork.Left, mi.rcWork.Top, mi.rcWork.Right, mi.rcWork.Bottom);
+                    var work = mon;
+                    if (monitorHandle != IntPtr.Zero && Native.GetMonitorInfo(monitorHandle, ref mi) &&
+                        Rectangle.FromLTRB(mi.rcMonitor.Left, mi.rcMonitor.Top, mi.rcMonitor.Right, mi.rcMonitor.Bottom) == mon)
+                    {
+                        work = Rectangle.FromLTRB(mi.rcWork.Left, mi.rcWork.Top, mi.rcWork.Right, mi.rcWork.Bottom);
+                    }
+                    else if (targetScreen != null && !targetScreen.WorkingArea.IsEmpty)
+                    {
+                        work = targetScreen.WorkingArea;
+                    }
                     // Auto-hide sits on the monitor edge, over everything
                     int bottom = HideMode == "never" ? work.Bottom : mon.Bottom;
                     area = new Rectangle(mon.Left, bottom - want, mon.Width, want);
@@ -258,6 +344,7 @@ namespace Tepi
 
             void StopTray()
             {
+                if (card != null && card.Kind == DockCard.TrayKind) CloseCard();
                 if (tray == null) return;
                 var t = tray;
                 tray = null;
@@ -308,7 +395,7 @@ namespace Tepi
                         changed = true;
                         if (HideMode == "auto" && IsStartOrSearch(h)) Reveal(true);
                         // An app took over from the desktop: hide again
-                        else if (HideMode == "auto" && !inside && wantShown && sheet == null && !keyMode) { hideLater.Stop(); hideLater.Start(); }
+                        else if (HideMode == "auto" && !inside && wantShown && sheet == null && card == null && !keyMode) { hideLater.Stop(); hideLater.Start(); }
                         break;
                     case 6:
                         watch.Track(h);
@@ -316,7 +403,7 @@ namespace Tepi
                         break;
                     case 0x8006: changed = watch.Flashed(h); break;
                     case 5:
-                        if (MinRect(m.LParam)) { m.Result = (IntPtr)1; return; }
+                        if (globalOwner && MinRect(m.LParam)) { m.Result = (IntPtr)1; return; }
                         break;
                     case 13: watch.Drop(h); changed = watch.Rescan() || true; break;
                 }
@@ -443,6 +530,9 @@ namespace Tepi
             {
                 var now = DateTime.UtcNow;
                 if (!reveal.Settled || !hover.Settled || !workDot.Settled || WidgetsMoving() || DockFlyersMoving(now)) return true;
+                foreach (var s in sysGrow.Values) if (!s.Settled) return true;
+                foreach (var s in sysPress.Values) if (!s.Settled) return true;
+                if (!Anim.Reduced && startPulseUtc > DateTime.MinValue && (now - startPulseUtc).TotalSeconds < 0.40) return true;
                 foreach (var a in apps) if (!a.Show.Settled || !a.Grow.Settled || !a.Dot.Settled || a.Hop >= 0 || AppAnimMoving(a, now)) return true;
                 return false;
             }
@@ -476,17 +566,20 @@ namespace Tepi
                 }
             }
 
+            string IconCacheKey(string key) { return key + "@" + IconSourcePx(); }
+
             // Icon at the biggest size it will be drawn
             void LoadIcon(DockApp a)
             {
-                if (icons.ContainsKey(a.Key)) return;
+                string ck = IconCacheKey(a.Key);
+                if (icons.ContainsKey(ck)) return;
                 int px = IconSourcePx();
                 Bitmap bmp = null;
                 string item = a.Pinned ? a.Target : a.Packaged && a.AppId.Length > 0 ? ShellApp.AppsFolderOf(a.AppId) : a.Exe;
                 if (item.Length > 0) bmp = ShellApp.Icon(item, px);
                 if (bmp == null && a.Exe.Length > 0 && !a.Exe.EndsWith("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase)) bmp = ShellApp.Icon(a.Exe, px);
                 if (bmp == null && a.Wins.Count > 0) bmp = WindowIcon(a.Wins[0].H);
-                icons[a.Key] = bmp;
+                icons[ck] = bmp;
             }
 
             [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr h, int msg, IntPtr w, IntPtr l, int flags, int ms, out IntPtr result);
@@ -516,16 +609,24 @@ namespace Tepi
                 plate = pl;
                 if (old != null) old.Dispose();
                 if (card != null) card.Invalidate();
-                Render();
+                if (pacer != null && IsHandleCreated && !Dry) Animate();
+                else Render();
             }
 
             // Windows moved behind: the glass looks again
             public void Nudge()
             {
                 if (frost != null) frost.Nudge();
+                if (sheet != null && !sheet.IsDisposed) sheet.NudgeFrost();
                 if (HideMode == "smart") SmartHide();
                 // Focus moved elsewhere: the tray grid has done its job
-                if (card != null && card.Kind == DockCard.TrayKind && !card.Bounds.Contains(Cursor.Position)) CloseCard();
+                if (TrayExpanded && (DateTime.UtcNow - trayOpenUtc).TotalMilliseconds > 250)
+                {
+                    IntPtr fg = GetForegroundWindow();
+                    var cur = Cursor.Position;
+                    if (fg != IntPtr.Zero && fg != trayFrontHwnd && !card.Bounds.Contains(cur) && !ChevContainsScreen(cur) && pressId != "chev")
+                        CloseCard();
+                }
             }
 
             void Tick()
@@ -533,20 +634,26 @@ namespace Tepi
                 if (closing) return;
                 tickN++;
                 // Fullscreen or locked: out of the way
-                bool want = !isle.fullscreen && !isle.dormant && !isle.hiddenByUser;
+                // Fullscreen, lock, or user hide affects this dock's own display.
+                bool want = !Native.IsFullscreenOn(monitorHandle) && !(globalOwner && isle.ExceptHidden()) && !isle.dormant && !isle.hiddenByUser;
                 if (want != shown)
                 {
                     shown = want;
                     Native.ShowWindow(Handle, want ? Native.SW_SHOWNOACTIVATE : Native.SW_HIDE);
                     if (want) { drawnSig = ""; Render(); }
-                    else CloseCard();
+                    else { CloseCard(); if (dockBackdrop != null) dockBackdrop.HideBackdrop(); }
                 }
                 if (!shown) return;
                 if (HideMode == "auto" && StayOnDesktop && !wantShown && DesktopFront()) Reveal(true);
+                // Any dock stands in for the bar on its screen; Rehide only touches owned ones
                 if (Replacing && !Dry && Taskbar.Showing()) Taskbar.Rehide();
                 if (tickN % 3 == 0) ReadSystem();
-                // Shell hooks cover most changes; this catches the rest
-                if (tickN % 10 == 0 && watch.Rescan()) Refresh(false);
+                // Shell hooks cover most changes; this catches the rest (shared across monitors)
+                if (tickN % 10 == 0 && watch.RescanIfStale(1500))
+                {
+                    if (isle != null) isle.RefreshDockApps();
+                    else Refresh(false);
+                }
                 if (tickN % 5 == 0) ApplyBadges();
                 if (Signature() != drawnSig) Render();
             }
@@ -555,7 +662,7 @@ namespace Tepi
             string Signature()
             {
                 var sb = new StringBuilder();
-                sb.Append(Fmt.Clock(DateTime.Now)).Append('|').Append(hoverId).Append('|').Append(pressId).Append('|').Append(FocusKey()).Append('|').Append(isle.WorkOpen);
+                sb.Append(Fmt.Clock(DateTime.Now)).Append('|').Append(hoverId).Append('|').Append(pressId).Append('|').Append(FocusKey()).Append('|').Append(isle.WorkOpen).Append('|').Append(TrayExpanded);
                 foreach (var a in apps) sb.Append(a.Key.Length).Append(a.Wins.Count).Append(a.Badge).Append(a.Attention ? '!' : '.');
                 var mi = isle.mediaInfo;
                 if (mi.Present) sb.Append(mi.Title).Append(mi.Playing);

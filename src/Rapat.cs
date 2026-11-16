@@ -6,7 +6,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     // Call transcript: mic you, speakers them
     partial class Island

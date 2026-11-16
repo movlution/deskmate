@@ -6,7 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     // Frost work order; immutable once published
     sealed class FrostJob
@@ -111,9 +111,10 @@ namespace Tepi
             }
         }
 
-        // Capturable island can't read the screen
+        // Capturable island can't read the screen (legacy software frost only)
         bool GlassOn { get { return MaterialName != "solid" && !ShowInCapture; } }
         bool LiquidOn { get { return GlassOn && MaterialName == "liquid"; } }
+        bool GpuGlassOn { get { return GlassOn && CompGlass.Available; } }
 
         // Island centre; shift is percent of free half-width
         volatile int shiftPct;
@@ -135,20 +136,22 @@ namespace Tepi
 
         void ApplyGlass()
         {
-            bool on = GlassOn, hide = on || PrompterOn || Sharing;
-            // Glass and scripts stay out of captures
+            bool on = GlassOn, gpu = on && CompGlass.Available, needFrost = on && !gpu;
+            bool hide = needFrost || PrompterOn || Sharing;
+            // Software frost and scripts stay out of captures; GPU HostBackdrop composes safely
             if (hide != excluded)
             {
                 if (Native.SetWindowDisplayAffinity(Handle, hide ? Native.WDA_EXCLUDEFROMCAPTURE : 0)) excluded = hide;
                 else Log.Write("display affinity failed: " + Marshal.GetLastWin32Error());
             }
-            if (on && frostThread == null)
+            if (!gpu && islandBackdrop != null) islandBackdrop.HideBackdrop();
+            if (needFrost && frostThread == null)
             {
                 frostRun = true;
                 frostThread = new Thread(Prof.Wrap(FrostLoop)) { IsBackground = true, Name = "frost", Priority = ThreadPriority.BelowNormal };
                 frostThread.Start();
             }
-            else if (!on && frostThread != null)
+            else if (!needFrost && frostThread != null)
             {
                 frostRun = false;
                 frostWake.Set();
@@ -175,6 +178,7 @@ namespace Tepi
         // Cover the shell's target; plates at rest
         void NeedFrost(float targetH)
         {
+            if (!GlassOn || GpuGlassOn) return;
             bool panel = current == View.Panel || DateTime.UtcNow < prefetchUntilUtc;
             // Panel surface is baked at full height, so frost must reach it
             if (panel) targetH = Math.Max(targetH, MaxH + 30);
@@ -223,7 +227,7 @@ namespace Tepi
             backdropGen++;
             var old = Interlocked.Exchange(ref backdropSlot, new BackdropItem { Image = copy, Gen = backdropGen });
             if (old != null && old.Image != null) old.Image.Dispose();
-            if (GlassOn) NeedFrost(sh.Target);
+            if (GlassOn && !GpuGlassOn) NeedFrost(sh.Target);
         }
 
         // Readback and bakes: own thread, adaptive rate
@@ -608,12 +612,37 @@ namespace Tepi
             }
             var st = g.Save();
             g.SetClip(path, CombineMode.Intersect);
+            bool baseTone = tone.Bg.R < 128 == Ink.Base.Bg.R < 128;
+            if (GpuGlassOn)
+            {
+                var veil = baseTone ? Ink.Veil : tone.Bg;
+                float veilA = !baseTone ? 0.85f : (current == View.Panel ? 0.08f : 0.03f);
+                g.FillPath(p.B(Ink.A(veil, veilA)), path);
+                if (baseTone && current == View.Panel && page == PageMusic && mediaInfo.Present && BackdropShown(DateTime.UtcNow))
+                {
+                    var wash = BackdropFor();
+                    if (wash != null)
+                    {
+                        using (var ia = new ImageAttributes())
+                        {
+                            ia.SetColorMatrix(new ColorMatrix { Matrix33 = 0.28f });
+                            g.DrawImage(wash, Rectangle.Round(bounds), 0f, 0f, wash.Width, wash.Height, GraphicsUnit.Pixel, ia);
+                        }
+                        backdropInSurface = true;
+                    }
+                }
+                InnerLight(bounds, light);
+                if (joined) g.SetClip(bridge, CombineMode.Exclude);
+                g.DrawPath(p.P(Color.FromArgb(light ? 22 : 54, 0, 0, 0), 3f), path);
+                g.Restore(st);
+                RimOutside(path, bounds, light, false, joined);
+                return;
+            }
             var pl = plate;
             // Frost offset from this frame's canvas
             int fx = pl != null ? pl.Job.Left - frameLeft : 0, fy = pl != null ? pl.Job.Top - frameTop : 0;
             bool covered = pl != null && fx <= Math.Floor(bounds.X * scale) && fx + pl.Job.W >= Math.Ceiling(bounds.Right * scale) &&
                            fy <= Math.Floor(bounds.Y * scale) && fy + pl.Job.H >= Math.Ceiling(bounds.Bottom * scale);
-            bool baseTone = tone.Bg.R < 128 == Ink.Base.Bg.R < 128;
             // Frost has base tint; add the rest
             float extra = baseTone ? 1 - (1 - tint) / (1 - BaseTint) : tint;
             if (covered && baseTone && current == View.Panel && SurfaceSteady() && PlateFits(pl, fx, fy, bounds, extra)) DrawPlate(pl, fx, fy);
@@ -700,7 +729,17 @@ namespace Tepi
             rimBrush.LinearColors = glassPair;
             MapDown(rimBrush, y, h);
             rimPen.Brush = rimBrush;
+            // Keep the rim inside the shape on glass. The GPU backdrop mask stops exactly at this path, so a
+            // 1px stroke centred on it leaves ~half a pixel of unblurred wallpaper under the white line, which
+            // reads as a second bright outline tracing the corners instead of one edge sitting on the glass.
+            // Clipping discards that outer half, so stroke 2px and let the clip leave a full 1px inside.
+            if (solid) { g.DrawPath(rimPen, path); return; }
+            rimPen.Width = 2f;
+            var st = g.Save();
+            g.SetClip(path, CombineMode.Intersect);
             g.DrawPath(rimPen, path);
+            g.Restore(st);
+            rimPen.Width = 1f;
         }
 
         Color Rim(int alpha) { return Color.FromArgb(Math.Max(0, Math.Min(255, (int)(alpha * p.Alpha))), 255, 255, 255); }
@@ -755,8 +794,45 @@ namespace Tepi
                    (DateTime.UtcNow - switchedUtc).TotalSeconds > 0.5 && (current == View.Panel || sh.Settled);
         }
 
-        // TEPI_DUMP: frames, since glass skips screenshots
-        static readonly string dumpDir = Environment.GetEnvironmentVariable("TEPI_DUMP");
+        // DESKMATE_DUMP: frames, since glass skips screenshots
+        CompGlass.CompBackdrop islandBackdrop;
+        readonly CompGlass.PillSpec[] islandPills = new CompGlass.PillSpec[2];
+
+        void SyncIslandBackdrop(int frameX, int frameY, int pxW, int pxH, float rad, bool hasBridge)
+        {
+            if (!GpuGlassOn || !windowShown || dormant || current == View.Prompter || opacity.Value <= 0.01f)
+            {
+                if (islandBackdrop != null) islandBackdrop.HideBackdrop();
+                return;
+            }
+            if (islandBackdrop == null) islandBackdrop = new CompGlass.CompBackdrop();
+            bool panel = current == View.Panel;
+            bool liquid = LiquidOn;
+            var spec = CompGlass.Spec(liquid, panel, scale, Ease.Clamp01(opacity.Value));
+            var bounds = new Rectangle(frameX, frameY, pxW, pxH);
+            // Pills clip with plain circular corners; the shell uses continuous (squircle) corners, so at rest
+            // the sliver between the two shows unblurred wallpaper and each corner reads as a different colour.
+            // Mask with the real shell path once the shape settles; keep cheap pills while it morphs.
+            if (Docked || hasBridge || SurfaceSteady())
+            {
+                string key = string.Format("{0}|{1}|{2:F1},{3:F1},{4:F1},{5:F1}|{6:F1}|{7:F1},{8:F1},{9:F1},{10:F1}|{11}|{12:F2}",
+                    Docked, PlaceNow, shell.X, shell.Y, shell.Width, shell.Height, rad,
+                    bubbleRect.X, bubbleRect.Y, bubbleRect.Width, bubbleRect.Height, hasBridge, scale);
+                using (var sp = ShellPath(shell, rad))
+                    islandBackdrop.Sync(Handle, bounds, true, spec, null, 0, sp, hasBridge ? bridge : null, scale, key);
+                return;
+            }
+            int count = 1;
+            islandPills[0] = new CompGlass.PillSpec(shell.X * scale, shell.Y * scale, shell.Width * scale, shell.Height * scale, rad * scale);
+            if (!bubbleRect.IsEmpty)
+            {
+                islandPills[1] = new CompGlass.PillSpec(bubbleRect.X * scale, bubbleRect.Y * scale, bubbleRect.Width * scale, bubbleRect.Height * scale, bubbleRect.Height * 0.5f * scale);
+                count = 2;
+            }
+            islandBackdrop.Sync(Handle, bounds, true, spec, islandPills, count, null, null, scale, "");
+        }
+
+        static readonly string dumpDir = Environment.GetEnvironmentVariable("DESKMATE_DUMP");
         DateTime nextDumpUtc;
         Rectangle dumpAt;
         int dumpBusy;

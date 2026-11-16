@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Tepi
+namespace Deskmate
 {
     // One occurrence or to-do from a feed
     class IcsItem

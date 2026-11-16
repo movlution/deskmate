@@ -5,7 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Removed item's last picture, flying out
     class Flyer
@@ -207,7 +207,49 @@ namespace Tepi
             return list == collapseList && index >= collapseFrom && !collapse.Settled ? collapse.Value : 0;
         }
 
-        // Menus share the island's look
-        void StyleMenu(ToolStripDropDownMenu m) { MenuLook.Apply(m); }
+        void ShowIslandMenu(ContextMenuStrip popup)
+        {
+            if (popup == null || popup == islandMenu) return;
+            if (islandMenu != null) islandMenu.Close();
+            if (popup != menu) MenuLook.Apply(popup);
+            islandMenu = popup;
+            hoverTimer.Stop();
+            leaveTimer.Stop();
+            popup.Closed += IslandMenuClosed;
+            var at = Cursor.Position;
+            try { popup.Show(new Point(at.X + 6, at.Y + 6)); }
+            catch { FinishIslandMenu(popup); throw; }
+            if (!popup.Visible) { FinishIslandMenu(popup); return; }
+            // The non-activating Island and its glass backdrop both use the topmost band.
+            Native.SetWindowPos(popup.Handle, Native.HWND_TOPMOST, 0, 0, 0, 0,
+                Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+            MenuGuard.Watch(popup);
+        }
+
+        void IslandMenuClosed(object sender, ToolStripDropDownClosedEventArgs e)
+        {
+            FinishIslandMenu((ContextMenuStrip)sender);
+        }
+
+        void FinishIslandMenu(ContextMenuStrip popup)
+        {
+            popup.Closed -= IslandMenuClosed;
+            if (islandMenu == popup)
+            {
+                islandMenu = null;
+                if (!IsDisposed && !Disposing)
+                {
+                    mouse = CursorInIsland();
+                    pointerInside = InShape(mouse);
+                    hoverId = pointerInside ? HitAt(mouse) : null;
+                    if (expanded && !pointerInside) leaveTimer.Start();
+                    Kick();
+                }
+            }
+            if (popup == menu) return;
+            // WinForms still uses the menu handle while dispatching Closed.
+            if (popup.IsHandleCreated) popup.BeginInvoke(new Action(popup.Dispose));
+            else popup.Dispose();
+        }
     }
 }

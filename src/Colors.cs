@@ -6,7 +6,7 @@ using System.IO;
 using System.Text;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Own colours: three picks, palette derived like the pack site
     partial class Island
@@ -173,7 +173,7 @@ namespace Tepi
             for (int i = 2; Directory.Exists(dir); i++) dir = Path.Combine(ThemesDir, name + " " + i);
             Directory.CreateDirectory(dir);
             var palette = DerivePalette(CustomColor("bg"), CustomColor("text"), CustomColor("accent"));
-            var sb = new StringBuilder("# Tepi " + AppVersion + "\r\n");
+            var sb = new StringBuilder("# Deskmate " + AppVersion + "\r\n");
             foreach (var k in PaletteKeys) sb.Append(k).Append('=').Append(palette[k]).Append("\r\n");
             File.WriteAllText(Path.Combine(dir, "theme.ini"), sb.ToString(), new UTF8Encoding(false));
             return Path.GetFileName(dir);

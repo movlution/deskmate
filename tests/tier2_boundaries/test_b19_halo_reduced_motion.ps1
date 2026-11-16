@@ -4,12 +4,12 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 19 - Island Halo & Reduced Motion Boundaries" {
 
     It "Verifies GlowLayers constant equals 16 for smooth halo falloff" {
-        $islandType = Get-TepiType "Island"
+        $islandType = Get-DeskmateType "Island"
         $flags = [System.Reflection.BindingFlags]'NonPublic,Static'
         $field = $islandType.GetField("GlowLayers", $flags)
         Assert-NotNull $field "GlowLayers constant must exist"
@@ -34,17 +34,17 @@ Describe "Tier 2 Boundary Suite: Feature 19 - Island Halo & Reduced Motion Bound
     }
 
     It "Verifies Anim.Reduced static preference field toggling" {
-        $animType = Get-TepiType "Anim"
+        $animType = Get-DeskmateType "Anim"
         Assert-NotNull $animType "Anim type must exist"
 
         # Toggle to true
-        Set-TepiStaticField "Anim" "Reduced" $true
-        $isReduced = Get-TepiStaticField "Anim" "Reduced"
+        Set-DeskmateStaticField "Anim" "Reduced" $true
+        $isReduced = Get-DeskmateStaticField "Anim" "Reduced"
         Assert-True $isReduced "Anim.Reduced should be true"
 
         # Toggle back to false
-        Set-TepiStaticField "Anim" "Reduced" $false
-        $isReducedFalse = Get-TepiStaticField "Anim" "Reduced"
+        Set-DeskmateStaticField "Anim" "Reduced" $false
+        $isReducedFalse = Get-DeskmateStaticField "Anim" "Reduced"
         Assert-False $isReducedFalse "Anim.Reduced should be false"
     }
 

@@ -4,17 +4,17 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 10: KitRow.MarkGlyph Contrast Fix" {
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Renders KitRow with standard text offscreen and verifies dimensions" {
-        $row = New-TepiControl "KitRow"
+        $row = New-DeskmateControl "KitRow"
         $row.Text = "Standard Option"
-        $bmp = Render-TepiControlToBitmap $row 200 40
+        $bmp = Render-DeskmateControlToBitmap $row 200 40
 
         Assert-NotNull $bmp "Rendered row bitmap must not be null"
         Assert-Equal $bmp.Width 200 "Width must match 200"
@@ -25,19 +25,19 @@ Describe "Feature 10: KitRow.MarkGlyph Contrast Fix" {
     }
 
     It "Verifies KitRow declares MarkGlyph constant equal to '\u0001'" {
-        $markGlyph = Get-TepiStaticField "KitRow" "MarkGlyph"
+        $markGlyph = Get-DeskmateStaticField "KitRow" "MarkGlyph"
         Assert-NotNull $markGlyph "MarkGlyph must exist on KitRow"
         Assert-Equal ([char]$markGlyph) ([char]0x0001) "MarkGlyph must be char '\u0001'"
     }
 
     It "Renders KitRow with MarkGlyph in Light Mode offscreen via DrawToBitmap" {
-        Reset-TepiTheme -Light $true
+        Reset-DeskmateTheme -Light $true
 
-        $row = New-TepiControl "KitRow"
+        $row = New-DeskmateControl "KitRow"
         $row.Text = "Light Mark Row"
         $row.Glyph = [char]0x0001
 
-        $bmp = Render-TepiControlToBitmap $row 200 40
+        $bmp = Render-DeskmateControlToBitmap $row 200 40
         Assert-NotNull $bmp "Light mode MarkGlyph row must render"
 
         $bmp.Dispose()
@@ -45,13 +45,13 @@ Describe "Feature 10: KitRow.MarkGlyph Contrast Fix" {
     }
 
     It "Renders KitRow with MarkGlyph in Dark Mode and verifies pill does not use hardcoded black brush against dark backgrounds" {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
 
-        $row = New-TepiControl "KitRow"
+        $row = New-DeskmateControl "KitRow"
         $row.Text = "Dark Mark Row"
         $row.Glyph = [char]0x0001
 
-        $bmp = Render-TepiControlToBitmap $row 200 40
+        $bmp = Render-DeskmateControlToBitmap $row 200 40
 
         # Sample pixel inside the mark pill (approx x ~ 24, y ~ 20)
         $pillPx = $bmp.GetPixel(24, 20)
@@ -65,8 +65,8 @@ Describe "Feature 10: KitRow.MarkGlyph Contrast Fix" {
     }
 
     It "Verifies MarkGlyph inner dot fill achieves contrast against pill background" {
-        $textToken = Get-TepiStaticProperty "KitInk" "Text"
-        $windowToken = Get-TepiStaticProperty "KitInk" "Window"
+        $textToken = Get-DeskmateStaticProperty "KitInk" "Text"
+        $windowToken = Get-DeskmateStaticProperty "KitInk" "Window"
 
         # The dot and pill should maintain contrast in both themes
         $ratio = Assert-Contrast $textToken $windowToken 4.5 "Pill vs Dot contrast"

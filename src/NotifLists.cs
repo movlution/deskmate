@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Tepi
+namespace Deskmate
 {
     // notif.apps and notif.vip, comma separated
     partial class Island

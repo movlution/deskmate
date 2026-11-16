@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
-namespace Tepi
+namespace Deskmate
 {
     // Windows taskbar out of the way while the dock replaces it; always undoable
     static class Taskbar
@@ -18,7 +18,10 @@ namespace Tepi
 
         static IntPtr hook;
         static Native.WinEventProc onShow;
-        static IntPtr monitor;
+        // Monitors whose dock replaces the Windows taskbar. A dock on every screen
+        // means every screen's bar goes; tracking one monitor left the secondary
+        // taskbar drawn next to the dock.
+        static readonly HashSet<IntPtr> owned = new HashSet<IntPtr>();
 
         static List<IntPtr> Bars()
         {
@@ -29,12 +32,14 @@ namespace Tepi
             return list;
         }
 
-        // Bars on the dock's screen; the others stay
+        // Bars on a replaced screen; the others stay. Strict on purpose: an empty set
+        // must mean "nothing is ours", or Rehide would hide every screen's bar.
         static List<IntPtr> Mine()
         {
             var list = new List<IntPtr>();
+            if (owned.Count == 0) return list;
             foreach (var h in Bars())
-                if (monitor == IntPtr.Zero || Native.MonitorFromWindow(h, 2) == monitor) list.Add(h);
+                if (owned.Contains(Native.MonitorFromWindow(h, 2))) list.Add(h);
             return list;
         }
 
@@ -65,7 +70,7 @@ namespace Tepi
         // Auto-hide frees the work area; hiding stops it peeking back
         public static void Hide(Settings s, IntPtr dockMonitor)
         {
-            monitor = dockMonitor;
+            if (dockMonitor != IntPtr.Zero) owned.Add(dockMonitor);
             IntPtr main = ExplorerBar();
             if (main == IntPtr.Zero) return;
             if (!s.GetBool("dockbar.taskbar.hidden", false))
@@ -75,14 +80,31 @@ namespace Tepi
                 s.Save();
             }
             SetState(main, GetState(main) | 1);
-            var mine = Mine();
-            // The dock moved screens: the bar it left comes back
-            foreach (var h in Bars())
-                if (mine.Contains(h)) Native.ShowWindow(h, 0);
-                else if (!IsWindowVisible(h)) Native.ShowWindow(h, 8);
+            Apply();
             // Bars change after an Explorer restart: watch the current ones
             Unwatch();
             Watch(main);
+        }
+
+        // One dock went away: only the screens it owned come back
+        public static void Release(Settings s, IntPtr dockMonitor)
+        {
+            if (dockMonitor == IntPtr.Zero) return;
+            if (!owned.Remove(dockMonitor)) return;
+            if (owned.Count == 0) { Restore(s); return; }
+            Apply();
+            Unwatch();
+            IntPtr main = ExplorerBar();
+            if (main != IntPtr.Zero) Watch(main);
+        }
+
+        // Owned bars down, every other screen's bar back up
+        static void Apply()
+        {
+            var mine = Mine();
+            foreach (var h in Bars())
+                if (mine.Contains(h)) Native.ShowWindow(h, 0);
+                else if (!IsWindowVisible(h)) Native.ShowWindow(h, 8);
         }
 
         // Explorer shows its bar for Start and flyouts: hide it again at once
@@ -109,6 +131,7 @@ namespace Tepi
         public static void Restore(Settings s)
         {
             Unwatch();
+            owned.Clear();
             if (!s.GetBool("dockbar.taskbar.hidden", false)) return;
             IntPtr main = ExplorerBar();
             if (main != IntPtr.Zero) SetState(main, s.GetInt("dockbar.taskbar.state", 0));

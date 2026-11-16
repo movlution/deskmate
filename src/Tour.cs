@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // First run: guided tour under island
     partial class Island
@@ -43,14 +43,14 @@ namespace Tepi
                 + (rapatKey.Length > 0 ? Lang.F("Tekan {0} untuk merekam rapat tanpa bot; suaramu dan lawan bicara dipisah di transkripnya.", rapatKey)
                     : Lang.T("Rekam rapat dari menu klik kanan, tanpa bot; suaramu dan lawan bicara dipisah di transkripnya."))
                 + (DictOn ? "" : " " + Lang.T("Siapkan dulu di Pengaturan › Dikte."));
-            string ask = (DictOn ? Lang.F("Tahan Shift+{0} lalu ucapkan perintahnya, atau ketik lewat Suruh Tepi… di menu klik kanan.", dictKey)
-                    : Lang.T("Ketik perintah lewat Suruh Tepi… di menu klik kanan."))
+            string ask = (DictOn ? Lang.F("Tahan Shift+{0} lalu ucapkan perintahnya, atau ketik lewat Suruh Deskmate… di menu klik kanan.", dictKey)
+                    : Lang.T("Ketik perintah lewat Suruh Deskmate… di menu klik kanan."))
                 + " " + Lang.T("Misalnya \"timer 25 menit\", \"ingetin minum 30 menit lagi\", atau \"catat beli galon\". Perintah seperti ini jalan tanpa internet.");
-            string menu = Lang.T("Klik kanan island atau ikon Tepi di tray untuk timer fokus, teleprompter, catatan kilat, cermin kamera, dan Pengaturan. Sholat, minum, dan cuaca dinyalakan di Pengaturan › Pengingat.")
+            string menu = Lang.T("Klik kanan island atau ikon Deskmate di tray untuk timer fokus, teleprompter, catatan kilat, cermin kamera, dan Pengaturan. Sholat, minum, dan cuaca dinyalakan di Pengaturan › Pengingat.")
                 + (navKey.Length > 0 ? " " + Lang.F("{0} memindahkan fokus ke island untuk dipakai dengan keyboard.", navKey) : "");
             var steps = new[]
             {
-                new TourStep { Title = Lang.T("Ini Tepi"), Body = Lang.T("Island di tepi atas ini membesar saat ada yang terjadi: lagu diputar, pesan masuk, agent minta izin, unduhan berjalan, atau flashdisk dicolok. Saat tidak dipakai, ia bisa menyusut jadi garis kecil bermata yang tembus klik.") },
+                new TourStep { Title = Lang.T("Ini Deskmate"), Body = Lang.T("Island di tepi atas ini membesar saat ada yang terjadi: lagu diputar, pesan masuk, agent minta izin, unduhan berjalan, atau flashdisk dicolok. Saat tidak dipakai, ia bisa menyusut jadi garis kecil bermata yang tembus klik.") },
                 new TourStep
                 {
                     Title = Lang.T("Buka panel"),
@@ -67,7 +67,7 @@ namespace Tepi
                 new TourStep { Title = Lang.T("Tugas dan pesan"), Body = Lang.T("Tugas dan jadwal dari Kulia, Notion, Todoist, atau kalender iCal masuk ke tab Kuliah, dengan pengingat sebelum tenggat. Pesan WhatsApp, Telegram, Discord, dan lainnya dikelompokkan per pengirim. Sambungkan di Pengaturan › Integrasi.") },
                 new TourStep { Title = Lang.T("Rak dan ubah format"), Body = Lang.T("Seret berkas ke island, lalu lepas di Taruh di rak untuk menyimpannya sementara, atau di Ubah format untuk mengonversinya, misalnya gambar ke PDF. Screenshot juga muncul di island dan bisa langsung diseret.") },
                 new TourStep { Title = Lang.T("Dikte dan rapat"), Body = voice },
-                new TourStep { Title = Lang.T("Suruh Tepi"), Body = ask },
+                new TourStep { Title = Lang.T("Suruh Deskmate"), Body = ask },
                 new TourStep { Title = Lang.T("Menu dan Pengaturan"), Body = menu },
             };
             tour = new TourCard(this, steps);
@@ -116,7 +116,7 @@ namespace Tepi
             {
                 this.isle = isle;
                 this.steps = steps;
-                Text = Lang.T("Tur Tepi");
+                Text = Lang.T("Tur Deskmate");
                 FormBorderStyle = FormBorderStyle.None;
                 ShowInTaskbar = false;
                 TopMost = true;
@@ -224,7 +224,7 @@ namespace Tepi
                 // Screen readers hear each step
                 body.AccessibleName = title.Text + ". " + body.Text;
                 // The island waves hello
-                if (at == 0) isle.ShowInfo('\0', Lang.T("Ini Tepi"), "", true);
+                if (at == 0) isle.ShowInfo('\0', Lang.T("Ini Deskmate"), "", true);
             }
 
             public override void Relayout()
@@ -233,7 +233,7 @@ namespace Tepi
                 Func<float, int> u = v => (int)Math.Round(v * s);
                 BackColor = KitInk.Window;
                 Native.DarkFrame(Handle, !Ink.Light);
-                // Same margins as Tepi's other popups
+                // Same margins as Deskmate's other popups
                 int pad = u(24), w = u(420), inner = w - pad * 2;
                 var step = steps[at];
                 count.Text = Lang.F("{0} dari {1}", at + 1, steps.Length);

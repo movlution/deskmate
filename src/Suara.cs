@@ -6,7 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Suara tab: dictate, record, command, history
     partial class Island
@@ -91,7 +91,7 @@ namespace Tepi
             string rec = RapatOn ? Lang.F("Merekam {0}", Clock((DateTime.UtcNow - rapatStartUtc).TotalSeconds)) : rapatWriting ? Lang.T("Menulis transkrip") : HotkeyText(RapatHotkey).Length > 0 ? HotkeyText(RapatHotkey) : Lang.T("Mulai rekam");
             VoiceTile(new RectangleF(16 + tw + gap, y, tw, VoiceTileH), "vRec", '', RapatOn ? Lang.T("Hentikan") : Lang.T("Rekam rapat"), rec, RapatOn,
                 delegate { if (!rapatWriting) ToggleRapat(); });
-            VoiceTile(new RectangleF(16 + 2 * (tw + gap), y, tw, VoiceTileH), "vAsk", '', Lang.T("Suruh Tepi"), Lang.F("Shift+{0}", keyName), false, OpenSuruh);
+            VoiceTile(new RectangleF(16 + 2 * (tw + gap), y, tw, VoiceTileH), "vAsk", '', Lang.T("Suruh Deskmate"), Lang.F("Shift+{0}", keyName), false, OpenSuruh);
             DrawVoiceList(w, h);
         }
 
@@ -283,9 +283,7 @@ namespace Tepi
                 m.Items.Add(new ToolStripSeparator());
                 m.Items.Add(Lang.T("Hapus dari daftar"), null, delegate { VoiceDelete(e, RectangleF.Empty, -1); });
             }
-            StyleMenu(m);
-            m.Closed += delegate { BeginInvoke(new Action(m.Dispose)); };
-            m.Show(Cursor.Position);
+            ShowIslandMenu(m);
         }
 
         void ClearVoiceLog()

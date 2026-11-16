@@ -18,7 +18,7 @@ Add-Type -AssemblyName System.Windows.Forms
 
 $commonDir = Join-Path $PSScriptRoot "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 $passCount = 0
 $failCount = 0
@@ -41,7 +41,7 @@ function Report-Result {
 # --------------------------------------------------------------------------
 Write-Host "`n--- 1. KitWindow.BroadcastThemeChange() Stress Testing ---" -ForegroundColor Yellow
 
-$kitWindowType = Get-TepiType "KitWindow"
+$kitWindowType = Get-DeskmateType "KitWindow"
 $flags = [System.Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
 
 # 1.1 Broadcast with zero open windows
@@ -90,26 +90,26 @@ $afterPruneCount = $list.Count
 Report-Result "BroadcastThemeChange() prunes collected WeakReferences (zero GC leaks)" ($afterPruneCount -eq $initialCount) "Count after GC & prune: $afterPruneCount (initial: $initialCount)"
 
 # 1.3 Dynamic propagation of BackColor and ForeColor to active windows
-Reset-TepiTheme -Light $false
+Reset-DeskmateTheme -Light $false
 $activeWin1 = [Activator]::CreateInstance($kitWindowType)
 $activeWin2 = [Activator]::CreateInstance($kitWindowType)
-$group1 = New-TepiControl "KitGroup"
+$group1 = New-DeskmateControl "KitGroup"
 $activeWin1.Controls.Add($group1)
 
 # Check dark initial colors
-$darkWinColor = Get-TepiStaticProperty "KitInk" "Window"
-$darkTextColor = Get-TepiStaticProperty "KitInk" "Text"
-$darkGroupColor = Get-TepiStaticProperty "KitInk" "Group"
+$darkWinColor = Get-DeskmateStaticProperty "KitInk" "Window"
+$darkTextColor = Get-DeskmateStaticProperty "KitInk" "Text"
+$darkGroupColor = Get-DeskmateStaticProperty "KitInk" "Group"
 
 Report-Result "KitWindow initial Dark colors match KitInk" ($activeWin1.BackColor.ToArgb() -eq $darkWinColor.ToArgb()) "Dark: $($activeWin1.BackColor)"
 
 # Switch to Light Theme and broadcast
-Reset-TepiTheme -Light $true
+Reset-DeskmateTheme -Light $true
 [void]$kitWindowType.GetMethod("BroadcastThemeChange", [System.Reflection.BindingFlags]'Public,Static').Invoke($null, @())
 
-$lightWinColor = Get-TepiStaticProperty "KitInk" "Window"
-$lightTextColor = Get-TepiStaticProperty "KitInk" "Text"
-$lightGroupColor = Get-TepiStaticProperty "KitInk" "Group"
+$lightWinColor = Get-DeskmateStaticProperty "KitInk" "Window"
+$lightTextColor = Get-DeskmateStaticProperty "KitInk" "Text"
+$lightGroupColor = Get-DeskmateStaticProperty "KitInk" "Group"
 
 $propWin1 = ($activeWin1.BackColor.ToArgb() -eq $lightWinColor.ToArgb() -and $activeWin1.ForeColor.ToArgb() -eq $lightTextColor.ToArgb())
 $propWin2 = ($activeWin2.BackColor.ToArgb() -eq $lightWinColor.ToArgb() -and $activeWin2.ForeColor.ToArgb() -eq $lightTextColor.ToArgb())
@@ -119,7 +119,7 @@ Report-Result "BroadcastThemeChange() updates window BackColor & ForeColor to Li
 Report-Result "BroadcastThemeChange() updates child KitGroup.BackColor to Light" $propGroup "Group BackColor: $($group1.BackColor)"
 
 # Switch back to Dark Theme and broadcast
-Reset-TepiTheme -Light $false
+Reset-DeskmateTheme -Light $false
 [void]$kitWindowType.GetMethod("BroadcastThemeChange", [System.Reflection.BindingFlags]'Public,Static').Invoke($null, @())
 
 $propDarkWin1 = ($activeWin1.BackColor.ToArgb() -eq $darkWinColor.ToArgb())
@@ -136,7 +136,7 @@ $rapidError = ""
 try {
     for ($i = 0; $i -lt 50; $i++) {
         $isLight = ($i % 2 -eq 0)
-        Reset-TepiTheme -Light $isLight
+        Reset-DeskmateTheme -Light $isLight
         [void]$kitWindowType.GetMethod("BroadcastThemeChange", [System.Reflection.BindingFlags]'Public,Static').Invoke($null, @())
     }
 } catch {
@@ -151,7 +151,7 @@ Report-Result "BroadcastThemeChange() survives 50 rapid successive theme toggles
 # --------------------------------------------------------------------------
 Write-Host "`n--- 2. KitButton Interactive States & Focus Ring Stress Testing ---" -ForegroundColor Yellow
 
-$btn = New-TepiControl "KitButton" @{ Text = "Test Button"; Width = 120; Height = 36 }
+$btn = New-DeskmateControl "KitButton" @{ Text = "Test Button"; Width = 120; Height = 36 }
 $btnType = $btn.GetType()
 $hoverField = $btnType.GetField("hovered", [System.Reflection.BindingFlags]'NonPublic,Instance')
 $pressedField = $btnType.GetField("pressed", [System.Reflection.BindingFlags]'NonPublic,Instance')
@@ -197,15 +197,15 @@ $rightPressed = [bool]$pressedField.GetValue($btn)
 Report-Result "KitButton ignores Right-Click for pressed state activation" (-not $rightPressed) "Pressed on Right Click: $rightPressed"
 
 # 2.4 Pixel Render Differences (Normal vs Hover vs Pressed)
-Reset-TepiTheme -Light $true
-$btnSecondary = New-TepiControl "KitButton" @{ Text = "Action"; Width = 120; Height = 36; Primary = $false }
-$bmpNorm = Render-TepiControlToBitmap $btnSecondary 120 36
+Reset-DeskmateTheme -Light $true
+$btnSecondary = New-DeskmateControl "KitButton" @{ Text = "Action"; Width = 120; Height = 36; Primary = $false }
+$bmpNorm = Render-DeskmateControlToBitmap $btnSecondary 120 36
 
 $hoverField.SetValue($btnSecondary, $true)
-$bmpHov = Render-TepiControlToBitmap $btnSecondary 120 36
+$bmpHov = Render-DeskmateControlToBitmap $btnSecondary 120 36
 
 $pressedField.SetValue($btnSecondary, $true)
-$bmpPress = Render-TepiControlToBitmap $btnSecondary 120 36
+$bmpPress = Render-DeskmateControlToBitmap $btnSecondary 120 36
 
 # Check center and border pixels
 $pxN = $bmpNorm.GetPixel(60, 18)
@@ -216,13 +216,13 @@ $secondaryDistinct = ($pxN.ToArgb() -ne $pxH.ToArgb() -and $pxH.ToArgb() -ne $px
 Report-Result "KitButton secondary button renders distinct pixels for Normal, Hover, Pressed" $secondaryDistinct "Norm:$($pxN.Name) Hov:$($pxH.Name) Press:$($pxP.Name)"
 
 # Primary Button Pressed vs Hovered in Light and Dark Mode
-$btnPrimary = New-TepiControl "KitButton" @{ Text = "Primary"; Width = 120; Height = 36; Primary = $true }
+$btnPrimary = New-DeskmateControl "KitButton" @{ Text = "Primary"; Width = 120; Height = 36; Primary = $true }
 $hoverField.SetValue($btnPrimary, $true)
 $pressedField.SetValue($btnPrimary, $false)
-$bmpPrimHov = Render-TepiControlToBitmap $btnPrimary 120 36
+$bmpPrimHov = Render-DeskmateControlToBitmap $btnPrimary 120 36
 
 $pressedField.SetValue($btnPrimary, $true)
-$bmpPrimPress = Render-TepiControlToBitmap $btnPrimary 120 36
+$bmpPrimPress = Render-DeskmateControlToBitmap $btnPrimary 120 36
 
 $pxPrimH = $bmpPrimHov.GetPixel(60, 18)
 $pxPrimP = $bmpPrimPress.GetPixel(60, 18)
@@ -251,28 +251,28 @@ $ringContrastFailures = @()
 
 foreach ($acc in $accentsToTest) {
     foreach ($isLight in @($true, $false)) {
-        Reset-TepiTheme -Light $isLight
-        if ($acc.Hex) { Invoke-TepiStaticMethod "Ink" "SetAccent" @($acc.Hex) }
-        else { Invoke-TepiStaticMethod "Ink" "SetAccent" @([string]$null) }
+        Reset-DeskmateTheme -Light $isLight
+        if ($acc.Hex) { Invoke-DeskmateStaticMethod "Ink" "SetAccent" @($acc.Hex) }
+        else { Invoke-DeskmateStaticMethod "Ink" "SetAccent" @([string]$null) }
 
         foreach ($isPrim in @($true, $false)) {
-            $tBtn = New-TepiControl "KitButton" @{ Text = "Focus"; Width = 120; Height = 36; Primary = $isPrim }
-            Set-TepiStaticField "KitInk" "ByMouse" $false
+            $tBtn = New-DeskmateControl "KitButton" @{ Text = "Focus"; Width = 120; Height = 36; Primary = $isPrim }
+            Set-DeskmateStaticField "KitInk" "ByMouse" $false
 
             $bg = if ($isPrim) {
-                Get-TepiStaticProperty "KitInk" "Text"
+                Get-DeskmateStaticProperty "KitInk" "Text"
             } else {
-                Get-TepiStaticProperty "KitInk" "Line"
+                Get-DeskmateStaticProperty "KitInk" "Line"
             }
 
-            $accentToken = Get-TepiStaticProperty "KitInk" "Accent"
-            $textToken = Get-TepiStaticProperty "KitInk" "Text"
+            $accentToken = Get-DeskmateStaticProperty "KitInk" "Accent"
+            $textToken = Get-DeskmateStaticProperty "KitInk" "Text"
             $ringColor = $accentToken
-            $cRatio = Get-TepiContrast $ringColor $bg
+            $cRatio = Get-DeskmateContrast $ringColor $bg
             if ($cRatio -lt 3.0 -or ($isPrim -and ($ringColor.ToArgb() -eq $textToken.ToArgb() -or $ringColor.ToArgb() -eq $bg.ToArgb()))) {
                 $ringColor = if ($isLight) { [System.Drawing.Color]::FromArgb(255, 22, 104, 232) } else { [System.Drawing.Color]::FromArgb(255, 59, 130, 246) }
             }
-            $finalRatio = Get-TepiContrast $ringColor $bg
+            $finalRatio = Get-DeskmateContrast $ringColor $bg
             if ($finalRatio -lt 3.0) {
                 $ringContrastOk = $false
                 $ringContrastFailures += "Accent: $($acc.Name), Light:$isLight, Primary:$isPrim => Ratio $finalRatio < 3.0"
@@ -289,7 +289,7 @@ Report-Result "KitButton focus ring guarantees >= 3.0:1 contrast on all accents 
 # --------------------------------------------------------------------------
 Write-Host "`n--- 3. KitSwitch Hover State & Bounds Stress Testing ---" -ForegroundColor Yellow
 
-$sw = New-TepiControl "KitSwitch" @{ Width = 60; Height = 28 }
+$sw = New-DeskmateControl "KitSwitch" @{ Width = 60; Height = 28 }
 $swType = $sw.GetType()
 $swHoverField = $swType.GetField("hovered", [System.Reflection.BindingFlags]'NonPublic,Instance')
 $swOnMouseEnter = $swType.GetMethod("OnMouseEnter", [System.Reflection.BindingFlags]'NonPublic,Instance')
@@ -303,12 +303,12 @@ $swHovFalse = [bool]$swHoverField.GetValue($sw)
 Report-Result "KitSwitch OnMouseEnter/OnMouseLeave toggles hovered field" ($swHovTrue -and -not $swHovFalse) "Enter:$swHovTrue, Leave:$swHovFalse"
 
 # 3.2 Visual Render difference when hovered (Unchecked state)
-Reset-TepiTheme -Light $true
-$swUnchecked = New-TepiControl "KitSwitch" @{ Checked = $false; Width = 60; Height = 28 }
-$bmpSwNormal = Render-TepiControlToBitmap $swUnchecked 60 28
+Reset-DeskmateTheme -Light $true
+$swUnchecked = New-DeskmateControl "KitSwitch" @{ Checked = $false; Width = 60; Height = 28 }
+$bmpSwNormal = Render-DeskmateControlToBitmap $swUnchecked 60 28
 
 $swHoverField.SetValue($swUnchecked, $true)
-$bmpSwHover = Render-TepiControlToBitmap $swUnchecked 60 28
+$bmpSwHover = Render-DeskmateControlToBitmap $swUnchecked 60 28
 
 # Track area pixel (e.g. x=30, y=14)
 $pxSwNorm = $bmpSwNormal.GetPixel(30, 14)
@@ -316,25 +316,25 @@ $pxSwHov = $bmpSwHover.GetPixel(30, 14)
 Report-Result "KitSwitch Unchecked track shifts luminance on hover" ($pxSwNorm.ToArgb() -ne $pxSwHov.ToArgb()) "Norm:$($pxSwNorm.Name) Hov:$($pxSwHov.Name)"
 
 # 3.3 Visual Render difference when hovered (Checked state with accent)
-Invoke-TepiStaticMethod "Ink" "SetAccent" @("#1668E8")
-$swChecked = New-TepiControl "KitSwitch" @{ Checked = $true; Width = 60; Height = 28 }
+Invoke-DeskmateStaticMethod "Ink" "SetAccent" @("#1668E8")
+$swChecked = New-DeskmateControl "KitSwitch" @{ Checked = $true; Width = 60; Height = 28 }
 $swKnobField = $swType.GetField("knob", [System.Reflection.BindingFlags]'NonPublic,Instance')
 $swKnobField.SetValue($swChecked, [float]1.0)
 
-$bmpSwCheckedNorm = Render-TepiControlToBitmap $swChecked 60 28
+$bmpSwCheckedNorm = Render-DeskmateControlToBitmap $swChecked 60 28
 $swHoverField.SetValue($swChecked, $true)
-$bmpSwCheckedHov = Render-TepiControlToBitmap $swChecked 60 28
+$bmpSwCheckedHov = Render-DeskmateControlToBitmap $swChecked 60 28
 
 $pxSwChkNorm = $bmpSwCheckedNorm.GetPixel(15, 14)
 $pxSwChkHov = $bmpSwCheckedHov.GetPixel(15, 14)
 Report-Result "KitSwitch Checked track shifts luminance on hover" ($pxSwChkNorm.ToArgb() -ne $pxSwChkHov.ToArgb()) "Norm:$($pxSwChkNorm.Name) Hov:$($pxSwChkHov.Name)"
 
 # 3.4 Disabled switch hover immunity (Disabled control must ignore hover)
-$swDisabled = New-TepiControl "KitSwitch" @{ Enabled = $false; Width = 60; Height = 28 }
-$bmpDisNorm = Render-TepiControlToBitmap $swDisabled 60 28
+$swDisabled = New-DeskmateControl "KitSwitch" @{ Enabled = $false; Width = 60; Height = 28 }
+$bmpDisNorm = Render-DeskmateControlToBitmap $swDisabled 60 28
 
 $swHoverField.SetValue($swDisabled, $true)
-$bmpDisHov = Render-TepiControlToBitmap $swDisabled 60 28
+$bmpDisHov = Render-DeskmateControlToBitmap $swDisabled 60 28
 
 # Sample 10 points across track and knob
 $disIdentical = $true
@@ -353,10 +353,10 @@ $dimError = ""
 foreach ($h in $heightsToTest) {
     try {
         $w = [int]($h * 2.5)
-        $testSw = New-TepiControl "KitSwitch"
+        $testSw = New-DeskmateControl "KitSwitch"
         $testSw.Width = $w
         $testSw.Height = $h
-        $bmpH = Render-TepiControlToBitmap -Control $testSw -Width $w -Height $h
+        $bmpH = Render-DeskmateControlToBitmap -Control $testSw -Width $w -Height $h
         $bmpH.Dispose()
         $testSw.Dispose()
     } catch {
@@ -377,7 +377,7 @@ $swUnchecked.Dispose(); $swChecked.Dispose(); $swDisabled.Dispose(); $sw.Dispose
 # --------------------------------------------------------------------------
 Write-Host "`n--- 4. KitSlider Disabled vs Enabled Thumb Rendering ---" -ForegroundColor Yellow
 
-$slider = New-TepiControl "KitSlider"
+$slider = New-DeskmateControl "KitSlider"
 $slider.Minimum = 0
 $slider.Maximum = 100
 $slider.Value = 50
@@ -390,30 +390,30 @@ $thumbColorMatchOk = $true
 $thumbDetails = @()
 
 foreach ($isLight in @($true, $false)) {
-    Reset-TepiTheme -Light $isLight
-    $disToken = Get-TepiStaticProperty "KitInk" "Disabled"
-    $textToken = Get-TepiStaticProperty "KitInk" "Text"
+    Reset-DeskmateTheme -Light $isLight
+    $disToken = Get-DeskmateStaticProperty "KitInk" "Disabled"
+    $textToken = Get-DeskmateStaticProperty "KitInk" "Text"
 
     # Enabled Slider
-    $slEnabled = New-TepiControl "KitSlider"
+    $slEnabled = New-DeskmateControl "KitSlider"
     $slEnabled.Minimum = 0
     $slEnabled.Maximum = 100
     $slEnabled.Value = 0
     $slEnabled.Width = 140
     $slEnabled.Height = 28
     $slEnabled.Enabled = $true
-    $bmpEn = Render-TepiControlToBitmap $slEnabled 140 28
+    $bmpEn = Render-DeskmateControlToBitmap $slEnabled 140 28
     $pxThumbEn = $bmpEn.GetPixel(10, 14)
 
     # Disabled Slider
-    $slDisabled = New-TepiControl "KitSlider"
+    $slDisabled = New-DeskmateControl "KitSlider"
     $slDisabled.Minimum = 0
     $slDisabled.Maximum = 100
     $slDisabled.Value = 0
     $slDisabled.Width = 140
     $slDisabled.Height = 28
     $slDisabled.Enabled = $false
-    $bmpDis = Render-TepiControlToBitmap $slDisabled 140 28
+    $bmpDis = Render-DeskmateControlToBitmap $slDisabled 140 28
     $pxThumbDis = $bmpDis.GetPixel(10, 14)
 
     $matchDis = ($pxThumbDis.R -eq $disToken.R -and $pxThumbDis.G -eq $disToken.G -and $pxThumbDis.B -eq $disToken.B)
@@ -430,19 +430,19 @@ foreach ($isLight in @($true, $false)) {
 Report-Result "KitSlider disabled thumb matches KitInk.Disabled (not active Text) in Light & Dark" $thumbColorMatchOk ($thumbDetails -join "; ")
 
 # 4.2 Thumb Radius Immunity to Drag/Hover when Disabled
-$slDisTest = New-TepiControl "KitSlider"
+$slDisTest = New-DeskmateControl "KitSlider"
 $slDisTest.Minimum = 0
 $slDisTest.Maximum = 100
 $slDisTest.Value = 50
 $slDisTest.Width = 140
 $slDisTest.Height = 28
 $slDisTest.Enabled = $false
-$bmpDisNoHov = Render-TepiControlToBitmap $slDisTest 140 28
+$bmpDisNoHov = Render-DeskmateControlToBitmap $slDisTest 140 28
 
 # Set dragging and hovered
 $dragField = $sliderType.GetField("dragging", [System.Reflection.BindingFlags]'NonPublic,Instance')
 if ($dragField) { $dragField.SetValue($slDisTest, $true) }
-$bmpDisDrag = Render-TepiControlToBitmap $slDisTest 140 28
+$bmpDisDrag = Render-DeskmateControlToBitmap $slDisTest 140 28
 
 $pxAt9_NoHov = $bmpDisNoHov.GetPixel(70, 5)
 $pxAt9_Drag = $bmpDisDrag.GetPixel(70, 5)
@@ -451,7 +451,7 @@ Report-Result "KitSlider disabled thumb radius does not expand on drag/hover" ($
 $bmpDisNoHov.Dispose(); $bmpDisDrag.Dispose(); $slDisTest.Dispose()
 
 # 4.3 Slider Boundary Value Clamping and Arithmetic Safety
-$slBounds = New-TepiControl "KitSlider"
+$slBounds = New-DeskmateControl "KitSlider"
 $slBounds.Minimum = 10
 $slBounds.Maximum = 90
 $slBounds.Step = 5
@@ -474,7 +474,7 @@ $boundsOk = ($valBelow -eq 10 -and $valAbove -eq 90 -and $valSnap -eq 35)
 Report-Result "KitSlider bounds clamping (Min=10, Max=90, Step=5)" $boundsOk "Below: $valBelow, Above: $valAbove, Snap(33): $valSnap"
 
 # 4.4 Boundary case: Minimum == Maximum (Zero span)
-$slZeroSpan = New-TepiControl "KitSlider"
+$slZeroSpan = New-DeskmateControl "KitSlider"
 $slZeroSpan.Minimum = 50
 $slZeroSpan.Maximum = 50
 $slZeroSpan.Value = 50
@@ -482,7 +482,7 @@ $slZeroSpan.Width = 140
 $slZeroSpan.Height = 28
 $zeroSpanOk = $true
 try {
-    $bmpZero = Render-TepiControlToBitmap $slZeroSpan 140 28
+    $bmpZero = Render-DeskmateControlToBitmap $slZeroSpan 140 28
     $bmpZero.Dispose()
 } catch {
     $zeroSpanOk = $false
@@ -496,7 +496,7 @@ $slZeroSpan.Dispose(); $slBounds.Dispose(); $slider.Dispose()
 # --------------------------------------------------------------------------
 Write-Host "`n--- 5. KitAsk Dynamic Title & Button Localization Stress Testing ---" -ForegroundColor Yellow
 
-$kitAskType = Get-TepiType "KitAsk"
+$kitAskType = Get-DeskmateType "KitAsk"
 $askFlags = [System.Reflection.BindingFlags]'NonPublic,Instance'
 $getState = [System.Windows.Forms.Control].GetMethod("GetState", [System.Reflection.BindingFlags]'NonPublic,Instance')
 
@@ -522,12 +522,12 @@ Report-Result "KitAsk uses explicit title parameter" ($askExplicit.Text -eq $cus
 
 # Question mode default title
 $askQuestionDefault = New-KitAskInstance -Message "Pesan tanya" -Question $true -Title $null
-$expectedQuestionTitle = Invoke-TepiStaticMethod "Lang" "T" @("Konfirmasi")
+$expectedQuestionTitle = Invoke-DeskmateStaticMethod "Lang" "T" @("Konfirmasi")
 Report-Result "KitAsk question mode falls back to localized 'Konfirmasi'" ($askQuestionDefault.Text -eq $expectedQuestionTitle) "Text: $($askQuestionDefault.Text)"
 
 # Notice mode default title
 $askNoticeDefault = New-KitAskInstance -Message "Pesan info" -Question $false -Title $null
-$expectedNoticeTitle = Invoke-TepiStaticMethod "Lang" "T" @("Pemberitahuan")
+$expectedNoticeTitle = Invoke-DeskmateStaticMethod "Lang" "T" @("Pemberitahuan")
 Report-Result "KitAsk notice mode falls back to localized 'Pemberitahuan'" ($askNoticeDefault.Text -eq $expectedNoticeTitle) "Text: $($askNoticeDefault.Text)"
 
 # Empty string title falls back to default
@@ -540,8 +540,8 @@ $yesBtn = $kitAskType.GetField("yes", $askFlags).GetValue($askCustomButtons)
 $noBtn = $kitAskType.GetField("no", $askFlags).GetValue($askCustomButtons)
 $okBtn = $kitAskType.GetField("ok", $askFlags).GetValue($askCustomButtons)
 
-$expectedYes = Invoke-TepiStaticMethod "Lang" "T" @("Buang")
-$expectedNo = Invoke-TepiStaticMethod "Lang" "T" @("Pertahankan")
+$expectedYes = Invoke-DeskmateStaticMethod "Lang" "T" @("Buang")
+$expectedNo = Invoke-DeskmateStaticMethod "Lang" "T" @("Pertahankan")
 Report-Result "KitAsk action buttons localized via Lang.T (custom labels)" ($yesBtn.Text -eq $expectedYes -and $noBtn.Text -eq $expectedNo) "Yes: $($yesBtn.Text), No: $($noBtn.Text)"
 
 # Button visibility in Question mode vs Notice mode
@@ -557,7 +557,7 @@ $noticeOkBtn = $kitAskType.GetField("ok", $askFlags).GetValue($askNotice)
 $noticeYesBtn = $kitAskType.GetField("yes", $askFlags).GetValue($askNotice)
 $noticeNoBtn = $kitAskType.GetField("no", $askFlags).GetValue($askNotice)
 
-$expectedClose = Invoke-TepiStaticMethod "Lang" "T" @("Mengerti")
+$expectedClose = Invoke-DeskmateStaticMethod "Lang" "T" @("Mengerti")
 $nOkVis = [bool]$getState.Invoke($noticeOkBtn, @(2))
 $nYesVis = [bool]$getState.Invoke($noticeYesBtn, @(2))
 $nNoVis = [bool]$getState.Invoke($noticeNoBtn, @(2))

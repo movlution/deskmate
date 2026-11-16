@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 
-namespace Tepi
+namespace Deskmate
 {
     // Idle side slots: clock, date, battery, weather
     partial class Island

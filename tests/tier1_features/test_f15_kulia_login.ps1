@@ -4,14 +4,14 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 15: KuliaLogin Tokenization & Modernization" {
-    $kuliaLoginType = Get-TepiType "KuliaLogin"
-    $kitWindowType = Get-TepiType "KitWindow"
+    $kuliaLoginType = Get-DeskmateType "KuliaLogin"
+    $kitWindowType = Get-DeskmateType "KitWindow"
     $flags = [System.Reflection.BindingFlags]'Instance,NonPublic'
 
-    It "Verifies KuliaLogin type exists in Tepi assembly" {
+    It "Verifies KuliaLogin type exists in Deskmate assembly" {
         Assert-NotNull $kuliaLoginType "KuliaLogin type must exist"
     }
 

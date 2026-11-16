@@ -2,7 +2,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 
-namespace Tepi
+namespace Deskmate
 {
     enum EyeMood { None, Happy, Surprised, Sleepy, Glance, Sad, Worried }
 
@@ -128,7 +128,7 @@ namespace Tepi
             // Moods and the bubble steer gaze
             if (k > 0 && moodSide != 0) { tx = moodSide * EyeReachX; ty = 0.3f; Gaze(0); }
             if (k > 0 && (mood == EyeMood.Sad || mood == EyeMood.Worried)) { tx = 0; ty = mood == EyeMood.Sad ? 0.9f : -0.5f; Gaze(0); }
-            if (!reduced && !bubbleRect.IsEmpty) tx = RightHanded ? -EyeReachX : EyeReachX;
+            if (!reduced && !bubbleRect.IsEmpty) tx = -EyeReachX;
             lookX.Target = tx;
             lookY.Target = ty;
             lookX.Step(dt);

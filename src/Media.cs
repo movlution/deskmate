@@ -7,7 +7,7 @@ using Windows.Foundation;
 using Windows.Media.Control;
 using Windows.Storage.Streams;
 
-namespace Tepi
+namespace Deskmate
 {
     class MediaInfo
     {
@@ -324,6 +324,35 @@ namespace Tepi
             if (op.Status != AsyncStatus.Completed)
                 throw new InvalidOperationException("WinRT " + op.Status + (op.ErrorCode != null ? " 0x" + op.ErrorCode.HResult.ToString("X8") : ""));
             return op.GetResults();
+        }
+
+        internal static T Await<T>(IAsyncOperation<T> op, int timeoutMs)
+        {
+            using (var done = new ManualResetEvent(false))
+            {
+                op.Completed = delegate { try { done.Set(); } catch (ObjectDisposedException) { } };
+                if (op.Status == AsyncStatus.Started && !done.WaitOne(timeoutMs)) throw new TimeoutException("WinRT timeout");
+            }
+            if (op.Status != AsyncStatus.Completed)
+                throw new InvalidOperationException("WinRT " + op.Status + (op.ErrorCode != null ? " 0x" + op.ErrorCode.HResult.ToString("X8") : ""));
+            return op.GetResults();
+        }
+
+        internal static void Await(IAsyncAction op)
+        {
+            Await(op, 5000);
+        }
+
+        internal static void Await(IAsyncAction op, int timeoutMs)
+        {
+            using (var done = new ManualResetEvent(false))
+            {
+                op.Completed = delegate { try { done.Set(); } catch (ObjectDisposedException) { } };
+                if (op.Status == AsyncStatus.Started && !done.WaitOne(timeoutMs)) throw new TimeoutException("WinRT timeout");
+            }
+            if (op.Status != AsyncStatus.Completed)
+                throw new InvalidOperationException("WinRT " + op.Status + (op.ErrorCode != null ? " 0x" + op.ErrorCode.HResult.ToString("X8") : ""));
+            op.GetResults();
         }
     }
 }

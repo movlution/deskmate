@@ -9,12 +9,12 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // One-click update: download, verify SHA-256, swap, restart
     partial class Island
     {
-        const string AssetPrefix = "https://github.com/odlaver/tepi/releases/download/";
+        const string AssetPrefix = "https://github.com/movlution/deskmate/releases/download/";
         const long AssetMax = 20 * 1024 * 1024;
         string newAsset, newDigest;
         bool updating;
@@ -28,7 +28,7 @@ namespace Tepi
             if (assets == null) return;
             foreach (var a in assets)
             {
-                if (Json.Str(a, "name") != "Tepi.exe") continue;
+                if (Json.Str(a, "name") != "Deskmate.exe") continue;
                 string u = Json.Str(a, "browser_download_url"), d = Json.Str(a, "digest");
                 if (!u.StartsWith(AssetPrefix, StringComparison.Ordinal) || !d.StartsWith("sha256:", StringComparison.Ordinal) || d.Length != 71) return;
                 url = u;
@@ -55,7 +55,7 @@ namespace Tepi
             if (newAsset == null || newDigest == null) { if (newUrl != null) OpenUrl(newUrl); return; }
             updating = true;
             if (UpdateChanged != null) UpdateChanged();
-            ShowInfo(Ink.IcoRefresh, Lang.F("Mengunduh Tepi {0}", newVersion), "", true);
+            ShowInfo(Ink.IcoRefresh, Lang.F("Mengunduh Deskmate {0}", newVersion), "", true);
             string url = newAsset, digest = newDigest, version = newVersion;
             ThreadPool.QueueUserWorkItem(delegate
             {
@@ -74,7 +74,7 @@ namespace Tepi
                         Close();
                         return;
                     }
-                    if (error == Restart) { ShowInfo(Ink.IcoRefresh, Lang.F("Tepi {0} terpasang", version), Lang.T("buka ulang Tepi"), true); return; }
+                    if (error == Restart) { ShowInfo(Ink.IcoRefresh, Lang.F("Deskmate {0} terpasang", version), Lang.T("buka ulang Deskmate"), true); return; }
                     Log.Write("update failed: " + error);
                     ShowInfo(Ink.IcoRefresh, Lang.T("Pembaruan gagal"), Lang.T("halaman rilis dibuka"), true);
                     if (newUrl != null) OpenUrl(newUrl);
@@ -86,7 +86,7 @@ namespace Tepi
         {
             byte[] data;
             var req = (HttpWebRequest)WebRequest.Create(url);
-            req.UserAgent = "Tepi/" + AppVersion;
+            req.UserAgent = "Deskmate/" + AppVersion;
             req.Timeout = 60000;
             req.ReadWriteTimeout = 30000;
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
@@ -109,7 +109,7 @@ namespace Tepi
             if (hash != digest) return "SHA-256 tidak cocok";
 
             string exe = Application.ExecutablePath, dir = Path.GetDirectoryName(exe);
-            string fresh = Path.Combine(dir, "Tepi.new.exe"), old = Path.Combine(dir, "Tepi.old.exe");
+            string fresh = Path.Combine(dir, "Deskmate.new.exe"), old = Path.Combine(dir, "Deskmate.old.exe");
             File.WriteAllBytes(fresh, data);
             // Once releases are signed, the next one must be signed by the same publisher
             string mine = Signature.Signer(exe);
@@ -157,7 +157,7 @@ namespace Tepi
         static void CleanUpdate()
         {
             string dir = Path.GetDirectoryName(Application.ExecutablePath);
-            foreach (var name in new[] { "Tepi.old.exe", "Tepi.new.exe" })
+            foreach (var name in new[] { "Deskmate.old.exe", "Deskmate.new.exe" })
                 try
                 {
                     string leftover = Path.Combine(dir, name);

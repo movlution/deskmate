@@ -5,7 +5,7 @@ using System.Globalization;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Offline model download, outlives the window
     class DictFetch
@@ -240,7 +240,7 @@ namespace Tepi
 
         RectangleF well;
 
-        // Margins as in Tepi's other dialogs
+        // Margins as in Deskmate's other dialogs
         void Place()
         {
             float s = Ui;

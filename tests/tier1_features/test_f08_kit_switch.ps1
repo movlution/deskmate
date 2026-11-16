@@ -4,16 +4,16 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 8: KitSwitch Hover State & Dynamics" {
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Renders KitSwitch in Checked (On) state and verifies track fill uses accent color" {
-        $switch = New-TepiControl "KitSwitch" @{ Checked = $true }
-        $bmp = Render-TepiControlToBitmap $switch 60 28
+        $switch = New-DeskmateControl "KitSwitch" @{ Checked = $true }
+        $bmp = Render-DeskmateControlToBitmap $switch 60 28
 
         Assert-NotNull $bmp "Switch bitmap must render"
         Assert-Equal $bmp.Width 60 "Bitmap width must match"
@@ -24,8 +24,8 @@ Describe "Feature 8: KitSwitch Hover State & Dynamics" {
     }
 
     It "Renders KitSwitch in Unchecked (Off) state and verifies track fill uses line color" {
-        $switch = New-TepiControl "KitSwitch" @{ Checked = $false }
-        $bmp = Render-TepiControlToBitmap $switch 60 28
+        $switch = New-DeskmateControl "KitSwitch" @{ Checked = $false }
+        $bmp = Render-DeskmateControlToBitmap $switch 60 28
 
         Assert-NotNull $bmp "Unchecked switch bitmap must render"
         $bmp.Dispose()
@@ -33,11 +33,11 @@ Describe "Feature 8: KitSwitch Hover State & Dynamics" {
     }
 
     It "Renders KitSwitch in Disabled state and verifies knob uses KitInk.Disabled" {
-        $switch = New-TepiControl "KitSwitch" @{ Checked = $false; Enabled = $false }
-        $bmp = Render-TepiControlToBitmap $switch 60 28
+        $switch = New-DeskmateControl "KitSwitch" @{ Checked = $false; Enabled = $false }
+        $bmp = Render-DeskmateControlToBitmap $switch 60 28
 
         Assert-NotNull $bmp "Disabled switch bitmap must render"
-        $disabledToken = Get-TepiStaticProperty "KitInk" "Disabled"
+        $disabledToken = Get-DeskmateStaticProperty "KitInk" "Disabled"
         Assert-NotNull $disabledToken "KitInk.Disabled must exist"
 
         $bmp.Dispose()
@@ -45,7 +45,7 @@ Describe "Feature 8: KitSwitch Hover State & Dynamics" {
     }
 
     It "Verifies KitSwitch handles CheckedChanged event and toggles state correctly" {
-        $switch = New-TepiControl "KitSwitch" @{ Checked = $false }
+        $switch = New-DeskmateControl "KitSwitch" @{ Checked = $false }
         $script:switchFired = $false
         $handler = [EventHandler]{ $script:switchFired = $true }
         $switch.add_CheckedChanged($handler)
@@ -59,7 +59,7 @@ Describe "Feature 8: KitSwitch Hover State & Dynamics" {
     }
 
     It "Verifies KitSwitch overrides OnMouseEnter and OnMouseLeave for hover feedback" {
-        $switchType = Get-TepiType "KitSwitch"
+        $switchType = Get-DeskmateType "KitSwitch"
         $flags = [System.Reflection.BindingFlags]'Instance,NonPublic,DeclaredOnly'
 
         $onMouseEnter = $switchType.GetMethod("OnMouseEnter", $flags)

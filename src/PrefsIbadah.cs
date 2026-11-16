@@ -5,7 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Controls side by side in one row
     class KitPair : Panel

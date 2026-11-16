@@ -4,10 +4,10 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 3: Frost Glass Adaptive Contrast Guard" {
-    $island = Get-TepiType "Island"
+    $island = Get-DeskmateType "Island"
     $computeMethod = $island.GetMethod("ComputeFrostTint", [System.Reflection.BindingFlags]'NonPublic,Static')
 
     It "Verifies ComputeFrostTint method exists on Island engine" {

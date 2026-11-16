@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $commonDir = Join-Path $PSScriptRoot "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Set-TestVerbose $true
 
@@ -20,17 +20,17 @@ Write-Host "  Target: DockCal.cs & DockSheet.cs Mouse Lifecycle & Down " -Foregr
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # 1. Initialize Loader & Types
-$binPath = Find-TepiBinary
+$binPath = Find-DeskmateBinary
 if (-not $binPath) {
-    throw "Tepi.exe not found! Please build before running tests."
+    throw "Deskmate.exe not found! Please build before running tests."
 }
-Initialize-TepiLoader | Out-Null
+Initialize-DeskmateLoader | Out-Null
 
-$islandType = Get-TepiType "Island"
-if (-not $islandType) { throw "Could not resolve Tepi.Island type" }
+$islandType = Get-DeskmateType "Island"
+if (-not $islandType) { throw "Could not resolve Deskmate.Island type" }
 
-$inkType = Get-TepiType "Ink"
-if (-not $inkType) { throw "Could not resolve Tepi.Ink type" }
+$inkType = Get-DeskmateType "Ink"
+if (-not $inkType) { throw "Could not resolve Deskmate.Ink type" }
 
 $flags = [System.Reflection.BindingFlags]'Instance,Public,NonPublic'
 $sflags = [System.Reflection.BindingFlags]'Static,Public,NonPublic'
@@ -39,13 +39,13 @@ $sflags = [System.Reflection.BindingFlags]'Static,Public,NonPublic'
 [void]$inkType.GetMethod("Init", $sflags).Invoke($null, @())
 
 $calType = $islandType.GetNestedType("CalendarSheet", $flags)
-if (-not $calType) { throw "Could not resolve Tepi.Island+CalendarSheet type" }
+if (-not $calType) { throw "Could not resolve Deskmate.Island+CalendarSheet type" }
 
 $dockSheetType = $islandType.GetNestedType("GlassSheet", $flags)
-if (-not $dockSheetType) { throw "Could not resolve Tepi.Island+GlassSheet type" }
+if (-not $dockSheetType) { throw "Could not resolve Deskmate.Island+GlassSheet type" }
 
 $dockWindowType = $islandType.GetNestedType("DockWindow", $flags)
-if (-not $dockWindowType) { throw "Could not resolve Tepi.Island+DockWindow type" }
+if (-not $dockWindowType) { throw "Could not resolve Deskmate.Island+DockWindow type" }
 
 # Helper to create fresh test harness instances
 function New-CalendarTestInstance {
@@ -608,7 +608,7 @@ Describe "6. Action Buttons Response ('clear', 'x', 'quiet') & Offscreen Hit Tes
         $notifsList = $notifsField.GetValue($isle)
 
         # Populate notifications
-        $notifItemType = Get-TepiType "NotifItem"
+        $notifItemType = Get-DeskmateType "NotifItem"
         $n1 = [System.Activator]::CreateInstance($notifItemType)
         $n1.AppName = "App 1"
         $n2 = [System.Activator]::CreateInstance($notifItemType)

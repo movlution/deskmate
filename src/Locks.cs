@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Globalization;
 using System.Runtime.InteropServices;
 
-namespace Tepi
+namespace Deskmate
 {
     // Lock keys, read without a keyboard hook
     partial class Island

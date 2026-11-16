@@ -1,17 +1,17 @@
 # run_adversarial.ps1
-# Comprehensive Adversarial Suite for Tepi Color Science, Palette Derivation, and Ink Tokens
+# Comprehensive Adversarial Suite for Deskmate Color Science, Palette Derivation, and Ink Tokens
 
 param([switch]$VerboseReport)
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Adversarial Stress Suite: Milestone 1 Color Science & Tokens" {
 
-    $islandType = Get-TepiType "Island"
-    $inkType = Get-TepiType "Ink"
-    $toneType = Get-TepiType "Tone"
+    $islandType = Get-DeskmateType "Island"
+    $inkType = Get-DeskmateType "Ink"
+    $toneType = Get-DeskmateType "Tone"
 
     $deriveMethod = $islandType.GetMethod("DerivePalette", [System.Reflection.BindingFlags]'Public,Static')
     $contrastMethod = $islandType.GetMethod("Contrast", [System.Reflection.BindingFlags]'Public,Static')

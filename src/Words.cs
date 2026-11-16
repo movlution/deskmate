@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Tepi
+namespace Deskmate
 {
     // Dictation vocabulary: terms, replacements, snippets
     class Words

@@ -4,7 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Ubah tab: pick files, tools, recent results
     partial class Island
@@ -245,9 +245,7 @@ namespace Tepi
             m.Items.Add(Lang.T("Salin jalur"), null, delegate { try { Clipboard.SetText(d.Item.Path); } catch (Exception) { } });
             m.Items.Add(new ToolStripSeparator());
             m.Items.Add(Lang.T("Hapus dari daftar"), null, delegate { ForgetConvert(d); });
-            StyleMenu(m);
-            m.Closed += delegate { BeginInvoke(new Action(m.Dispose)); };
-            m.Show(Control.MousePosition);
+            ShowIslandMenu(m);
         }
 
         // Old settings lack the new tab

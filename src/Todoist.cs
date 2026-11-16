@@ -4,7 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 
-namespace Tepi
+namespace Deskmate
 {
     // Todoist API v1 with a personal token
     class TodoistSource : Source
@@ -37,13 +37,13 @@ namespace Tepi
 
         static FetchResult Call(string token, string method, string path)
         {
-            return Tepi.Fetch.Send(method, Api + path, new Dictionary<string, string> { { "Authorization", "Bearer " + token } }, null, Tepi.Fetch.JsonCap, 20000);
+            return Deskmate.Fetch.Send(method, Api + path, new Dictionary<string, string> { { "Authorization", "Bearer " + token } }, null, Deskmate.Fetch.JsonCap, 20000);
         }
 
         public override string Create(object snap, string text)
         {
             var h = new Dictionary<string, string> { { "Authorization", "Bearer " + (string)snap }, { "Content-Type", "application/json" } };
-            var r = Tepi.Fetch.Send("POST", Api + "/api/v1/tasks", h, Json.Encode(new Dictionary<string, object> { { "content", Clean(text, 500) } }), Tepi.Fetch.JsonCap, 20000);
+            var r = Deskmate.Fetch.Send("POST", Api + "/api/v1/tasks", h, Json.Encode(new Dictionary<string, object> { { "content", Clean(text, 500) } }), Deskmate.Fetch.JsonCap, 20000);
             if (r.Ok) return null;
             if (r.Status == 401 || r.Status == 403) return Lang.F("Token {0} ditolak", "Todoist");
             if (r.Status == 0) return Lang.F("{0} tidak terjangkau", "Todoist");

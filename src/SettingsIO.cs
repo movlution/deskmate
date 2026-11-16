@@ -5,7 +5,7 @@ using System.IO;
 using System.Text;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Export, import, reset; secrets never travel
     partial class Island
@@ -15,9 +15,10 @@ namespace Tepi
         {
             "material", "theme", "lyrics", "lyrics.online", "visualizer", "music.view", "notif", "notif.content", "notif.apps", "notif.vip",
             "agent.wait", "agent.quota", "update.check", "accent", "monitor", "focus.break", "focus.hold", "dock", "position", "panel.width", "panel.tabs",
+            "google.tasks", "google.drive.notes", "tasks.sort",
             "place", "place.inset", "place.y", "home.cards", "home.sort", "tabs.trigger",
             "dockbar.on", "dockbar.replace", "dockbar.reserve", "dockbar.magnify", "dockbar.pins", "dockbar.work",
-            "dockbar.w.clock", "dockbar.w.media", "dockbar.w.ai", "dockbar.w.timer", "dockbar.w.weather", "dockbar.w.battery", "dockbar.w.system", "dockbar.style", "dockbar.size", "dockbar.mag", "dockbar.hide", "dockbar.revealdelay", "dockbar.previews", "dockbar.badges", "dockbar.search", "dockbar.taskview", "dockbar.capture",
+            "dockbar.w.clock", "dockbar.w.media", "dockbar.w.ai", "dockbar.w.timer", "dockbar.w.weather", "dockbar.w.battery", "dockbar.w.system", "dockbar.style", "dockbar.size", "dockbar.mag", "dockbar.hide", "dockbar.revealdelay", "dockbar.previews", "dockbar.badges", "dockbar.taskview", "dockbar.capture",
             "panel.first", "panel.open", "panel.delay", "tabs.style", "mini", "mini.notif", "island.eyes", "island.follow", "idle.face", "island.except",
             "prompter.wpm", "prompter.size", "prompter.mirror", "prompter.width", "prompter.height", "prompter.bg", "lang", "capture.show",
             "a11y.announce", "clipboard", "downloads", "class.island", "shelf", "shelf.keep", "shelf.expire", "convert", "shots", "drives",
@@ -25,7 +26,7 @@ namespace Tepi
             "pray", "pray.city", "pray.before", "drink", "drink.every", "drink.goal", "eyes", "stretch", "stretch.every", "theme.pack",
             "theme.voice", "weather", "clock.24", "look.custom", "look.bg", "look.text", "look.accent", "wall.sync", "sound.agent", "phone.notifs", "phone.otp",
             "sound.drink", "sound.eyes", "sound.stretch", "sound.pray", "sound.pray.before", "ibadah.count",
-            "notif.banner", "share.mode", "idle.left", "idle.right", "tidy", "tidy.layout", "tidy.nudge", "ai.text", "ai.stt",
+            "notif.banner", "share.mode", "idle.left", "idle.right", "tidy", "tidy.layout", "tidy.nudge", "ai.text", "ai.stt", "calendar.holidays",
         };
 
         // Kept on reset: identity, links, internal state
@@ -37,7 +38,7 @@ namespace Tepi
         {
             var keys = settings.Keys();
             keys.Sort(StringComparer.OrdinalIgnoreCase);
-            var sb = new StringBuilder("# Tepi " + AppVersion + "\r\n");
+            var sb = new StringBuilder("# Deskmate " + AppVersion + "\r\n");
             int n = 0;
             foreach (var k in keys)
             {
@@ -79,7 +80,7 @@ namespace Tepi
         }
 
         // New process waits for this one, like an update
-        public void RestartTepi()
+        public void RestartDeskmate()
         {
             try { Process.Start(new ProcessStartInfo(Application.ExecutablePath, "--after " + Process.GetCurrentProcess().Id) { UseShellExecute = false }); }
             catch (Exception ex) { Log.Write("restart: " + ex.Message); return; }

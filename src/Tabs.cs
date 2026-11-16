@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 
-namespace Tepi
+namespace Deskmate
 {
     // Panel structure: tabs, segments, heights, scrolling
     partial class Island
@@ -40,7 +40,6 @@ namespace Tepi
             }
             if (list.Count == 0) list.Add(PageHome);
             tabs = list.ToArray();
-            tabSnap = true;
             LoadHome();
             LoadPlace();
         }
@@ -75,8 +74,11 @@ namespace Tepi
         }
 
         DateTime panelOpenedUtc, pageSwitchUtc, segSwitchUtc;
+        const float PageTransitionSeconds = 0.23f, SegmentTransitionSeconds = 0.20f, RowTransitionSeconds = 0.16f;
+        const int RowStaggerLimit = 4;
+        const float RowStaggerSeconds = 0.014f;
         int prevPage, prevSeg;
-        readonly Spring agentScroll = new Spring(0, 300, 34, 0.2f), taskScroll = new Spring(0, 300, 34, 0.2f), notifScroll = new Spring(0, 300, 34, 0.2f);
+        readonly Spring agentScroll = new Spring(0, 300, 34, 0.2f), taskScroll = new Spring(0, 300, 34, 0.2f), notifScroll = new Spring(0, 300, 34, 0.2f), controlScroll = new Spring(0, 300, 34, 0.2f);
         readonly Spring classSegX = new Spring(0, 420, 34, 0.004f), shelfSegX = new Spring(0, 420, 34, 0.004f);
 
         // Deep links into segments
@@ -98,7 +100,7 @@ namespace Tepi
                 case PageMusic: return MusicHeight();
                 case PageAgents: return AgentsHeight();
                 case PageClass: return Math.Min(MaxH, SegTop + (classSeg == 0 ? TasksHeight() : ScheduleHeight()));
-                case PageShelf: return Math.Min(MaxH, SegTop + (shelfSeg == 0 ? ShelfHeight() : ClipsHeight()));
+                case PageShelf: return Math.Min(MaxH, SegTop + (shelfSeg == 0 ? ShelfHeight() : ClipGalleryH));
                 case PageControl: return ControlHeight();
                 case PageRemind: return RemindHeight();
                 case PagePhone: return PhoneHeight();
@@ -144,14 +146,24 @@ namespace Tepi
         {
             if (pg != page)
             {
+                if (page == PageControl) StopControlScans();
                 prevPage = page;
                 page = pg;
                 pageSwitchUtc = DateTime.UtcNow;
             }
-            if (snap) { tabSnap = true; prevPage = pg; }
+            else if (pg != PageControl)
+            {
+                StopControlScans();
+            }
+            if (snap) prevPage = pg;
             if (pg == PageMessages) unread = 0;
             if (pg == PageClass) RefreshTasksIfStale();
             if (pg == PageShelf) ShelfClipCheck();
+            if (pg == PageControl)
+            {
+                if (controlMode == 2 && !ctlWifiScanning) StartControlWifiScan();
+                else if (controlMode == 3 && !ctlBtScanning) StartControlBtScan();
+            }
             Kick();
         }
 
@@ -163,7 +175,8 @@ namespace Tepi
             if (snap) { sx.Snap(seg); return; }
             if (was == seg) return;
             prevSeg = was;
-            sx.Target = seg;
+            if (Anim.Reduced) sx.Snap(seg);
+            else sx.Target = seg;
             segSwitchUtc = DateTime.UtcNow;
             if (pg == PageClass) RefreshTasksIfStale();
             Kick();
@@ -177,10 +190,9 @@ namespace Tepi
 
         void StepPanel(float dt)
         {
-            tabMorph.Step(dt);
             dotOpen.Step(dt); dotHotX.Step(dt); dotHotA.Step(dt);
             classSegX.Step(dt); shelfSegX.Step(dt);
-            agentScroll.Step(dt); taskScroll.Step(dt); notifScroll.Step(dt); plainScroll.Step(dt); scheduleScroll.Step(dt); clipScroll.Step(dt); shelfScroll.Step(dt); convScroll.Step(dt); homeScroll.Step(dt);
+            agentScroll.Step(dt); taskScroll.Step(dt); notifScroll.Step(dt); controlScroll.Step(dt); plainScroll.Step(dt); scheduleScroll.Step(dt); clipScroll.Step(dt); clipLift.Step(dt); shelfScroll.Step(dt); convScroll.Step(dt); homeScroll.Step(dt);
             // Rubber band: let go after a beat
             if (rubber != null && (DateTime.UtcNow - rubberUtc).TotalSeconds > 0.14)
             {
@@ -193,9 +205,15 @@ namespace Tepi
         bool PanelMoving()
         {
             var now = DateTime.UtcNow;
-            return !tabMorph.Settled || DotsMoving() || !classSegX.Settled || !shelfSegX.Settled ||
-                   !agentScroll.Settled || !taskScroll.Settled || !notifScroll.Settled || !plainScroll.Settled || !scheduleScroll.Settled || !clipScroll.Settled || !shelfScroll.Settled || !homeScroll.Settled ||
-                   (now - pageSwitchUtc).TotalSeconds < 0.7 || (now - panelOpenedUtc).TotalSeconds < 0.7 || (now - segSwitchUtc).TotalSeconds < 0.6 || MusicMoving(now) ||
+            const float rowEnd = RowTransitionSeconds + RowStaggerLimit * RowStaggerSeconds;
+            bool contentMoving = current == View.Panel && !Anim.Reduced &&
+                ((now - pageSwitchUtc).TotalSeconds < PageTransitionSeconds ||
+                 (now - panelOpenedUtc).TotalSeconds < rowEnd ||
+                 (now - segSwitchUtc).TotalSeconds < Math.Max(rowEnd, SegmentTransitionSeconds));
+            return DotsMoving() || !classSegX.Settled || !shelfSegX.Settled ||
+                   !agentScroll.Settled || !taskScroll.Settled || !notifScroll.Settled || !controlScroll.Settled || !plainScroll.Settled || !scheduleScroll.Settled || !clipScroll.Settled || !shelfScroll.Settled || !homeScroll.Settled ||
+                   (current == View.Panel && page == PageShelf && shelfSeg == 1 && !clipLift.Settled) ||
+                   contentMoving || MusicMoving(now) ||
                    (page == PageAgents && (now - agentFocusUtc).TotalSeconds < 1.6);
         }
 
@@ -219,11 +237,11 @@ namespace Tepi
         {
             var since = pageSwitchUtc > panelOpenedUtc ? pageSwitchUtc : panelOpenedUtc;
             if (segSwitchUtc > since) since = segSwitchUtc;
-            float t = ((float)(now - since).TotalSeconds - 0.06f - Math.Min(i, 8) * 0.03f) / 0.32f;
+            float t = ((float)(now - since).TotalSeconds - Math.Min(i, RowStaggerLimit) * RowStaggerSeconds) / RowTransitionSeconds;
             if (Anim.Reduced || t >= 1) { dy = 0; return 1; }
             float k = Ease.OutCubic(t);
-            dy = (1 - k) * 8;
-            return k;
+            dy = (1 - k) * 4;
+            return Ease.Lerp(0.72f, 1, k);
         }
 
         bool ScrollPanel(int delta)
@@ -237,10 +255,17 @@ namespace Tepi
             else if (page == PageClass && classSeg == 0) { s = taskScroll; content = (tasks != null ? tasks.Count : 0) * 54 + TaskFoot(); step = 81; }
             else if (page == PageClass) { s = scheduleScroll; content = ScheduleContentH() + EventFoot(); step = ClassRowH * 1.5f; }
             else if (page == PageMessages) { s = notifScroll; content = notifs.Count * 50; step = 75; }
-            else if (page == PageShelf && shelfSeg == 1) { s = clipScroll; content = clips.Count * ClipRowH; step = ClipRowH * 1.5f; }
+            else if (page == PageShelf && shelfSeg == 1) return ScrollClipCards(-Math.Sign(delta));
             else if (page == PageShelf) { s = shelfScroll; content = ShelfContentH(); step = 60; }
             else if (page == PageVoice) { s = voiceScroll; content = VoiceContentH(VoiceItems(), PanelW); view = VoiceListView(PanelHeight()); step = VoiceRowH * 1.5f; }
             else if (page == PageConvert && ConvertSetting) { s = convScroll; content = convHistory.Count * ConvRowH; view = ConvListView(PanelHeight()); step = ConvRowH * 1.5f; }
+            else if (page == PageControl && (controlMode == 2 || controlMode == 3))
+            {
+                s = controlScroll;
+                content = ControlSubContentH();
+                view = ControlSubViewH();
+                step = CtlSubRowPitch * 1.5f;
+            }
             else if (page == PageMusic && lyrics != null && lyrics.State == LyricState.Plain && lyrics.Key == mediaInfo.Key)
             {
                 s = plainScroll;
@@ -249,8 +274,9 @@ namespace Tepi
                 step = PlainLineH * 3;
             }
             else return false;
-            // Content fits: wheel changes tabs instead
-            if (content - view <= 1 && s.Target <= 0.5f) return false;
+            // Content fits: wheel changes tabs instead (inline Wi-Fi/BT sub-views absorb wheel)
+            if (content - view <= 1 && s.Target <= 0.5f)
+                return page == PageControl && (controlMode == 2 || controlMode == 3);
             ScrollTo(s, s.Target - delta / 120f * step, Math.Max(0, content - view));
             Kick();
             return true;
@@ -278,7 +304,7 @@ namespace Tepi
 
         void DrawPanel(float w, float h, DateTime now)
         {
-            float k = Ease.OutCubic((float)((now - pageSwitchUtc).TotalSeconds / 0.34));
+            float k = Anim.Reduced || prevPage == page ? 1 : Ease.OutCubic((float)((now - pageSwitchUtc).TotalSeconds / PageTransitionSeconds));
             float musicVis = BackdropShown(now) ? 1 : 0;
             double t0 = Prof.T();
             if (mediaInfo.Present) DrawBackdrop(musicVis);
@@ -298,7 +324,7 @@ namespace Tepi
             {
                 p.Alpha = outAlpha;
                 var s1 = g.Save();
-                g.TranslateTransform(-dir * k * 30, 0);
+                g.TranslateTransform(-dir * k * 14, 0);
                 bool hold = hitsOn;
                 hitsOn = false;
                 DrawPage(prevPage, w, h, now);
@@ -307,7 +333,7 @@ namespace Tepi
             }
             p.Alpha = alpha * Ease.Clamp01(k * 1.3f);
             var s2 = g.Save();
-            g.TranslateTransform(dir * (1 - k) * 30, 0);
+            g.TranslateTransform(dir * (1 - k) * 14, 0);
             if (k < 0.85f) hitsOn = false;
             DrawPage(page, w, h, now);
             g.Restore(s2);
@@ -319,7 +345,7 @@ namespace Tepi
         // Cover backdrop swaps mid-fade
         bool BackdropShown(DateTime now)
         {
-            bool mid = (now - pageSwitchUtc).TotalSeconds >= 0.34 * 0.45;
+            bool mid = Anim.Reduced || (now - pageSwitchUtc).TotalSeconds >= PageTransitionSeconds * 0.45;
             if (page == PageMusic) return prevPage == PageMusic || mid;
             return prevPage == PageMusic && !mid;
         }
@@ -349,8 +375,7 @@ namespace Tepi
             bool isClass = pg == PageClass;
             int seg = isClass ? classSeg : shelfSeg;
             DrawSegments(w, pg, isClass ? Lang.T("Tugas") : Lang.T("Berkas"), isClass ? Lang.T("Jadwal") : Lang.T("Clipboard"));
-            float k = Ease.OutCubic((float)((now - segSwitchUtc).TotalSeconds / 0.3));
-            if (pg != page) k = 1;
+            float k = Anim.Reduced || pg != page || prevSeg == seg ? 1 : Ease.OutCubic((float)((now - segSwitchUtc).TotalSeconds / SegmentTransitionSeconds));
             int dir = seg > prevSeg ? 1 : -1;
             var st = g.Save();
             g.IntersectClip(new RectangleF(0, PanelTop + SegTop - 6, w, h - PanelTop - SegTop + 6));
@@ -360,14 +385,14 @@ namespace Tepi
             {
                 p.Alpha = alpha * (1 - Ease.Clamp01(k * 2.2f));
                 var s1 = g.Save();
-                g.TranslateTransform(-dir * k * 24, SegTop);
+                g.TranslateTransform(-dir * k * 12, SegTop);
                 hitsOn = false;
                 DrawSub(pg, prevSeg, w, h - SegTop, now);
                 g.Restore(s1);
             }
             p.Alpha = alpha * Ease.Clamp01(k * 1.3f);
             var s2 = g.Save();
-            g.TranslateTransform(dir * (1 - k) * 24, SegTop);
+            g.TranslateTransform(dir * (1 - k) * 12, SegTop);
             hitsOn = hold && k >= 0.85f;
             hitDy = keepDy + SegTop;
             DrawSub(pg, seg, w, h - SegTop, now);
@@ -404,10 +429,9 @@ namespace Tepi
             }
         }
 
-        // Icon tabs; active one widens with name
+        // Tabs keep equal cells. The title sits below the strip.
 
-        const float TabIcon = 32, TabH = 28, TabGap = 4, TabY = 10, DotCell = 22, DotActive = 30, TabGlyph = 0.86f;
-        readonly Spring tabMorph = new Spring(1, 300, 26, 0.002f);
+        const float TabIcon = 32, TabH = 28, TabGap = 4, TabY = 10, TabGlyph = 0.86f;
         // Wheel past last tab: bar leans back
         readonly Spring tabNudge = new Spring(0, 420, 18, 0.05f);
         bool tabDotsDrawn;
@@ -416,13 +440,13 @@ namespace Tepi
         // Highlight pill slides to the item the pointer would pick
         readonly Spring dotHotX = new Spring(0, 620, 38, 0.05f), dotHotA = new Spring(0, 620, 38, 0.004f);
         DateTime stripUtc = DateTime.MinValue;
-        bool stripOpen;
+        bool stripOpen, stripEngaged;
         // Dots band: full tab row tall; open cells keep this much room for the title on the left
         const float DotBandH = 48, DotPadX = 6, DotPadY = 4;
 
         bool DotsMoving()
         {
-            return !dotOpen.Settled || !dotHotX.Settled || !dotHotA.Settled || (DateTime.UtcNow - stripUtc).TotalSeconds < 0.32;
+            return !dotOpen.Settled || !dotHotX.Settled || !dotHotA.Settled || (stripOpen && !stripEngaged && (DateTime.UtcNow - stripUtc).TotalSeconds < 0.32);
         }
 
         // Many tabs: dots plus page title
@@ -434,162 +458,93 @@ namespace Tepi
                 return style == "dots" || (style == "auto" && tabs.Length > 7);
             }
         }
-        float[] tabFromX = new float[0], tabFromW = new float[0], tabToX = new float[0], tabToW = new float[0];
-        int tabMorphPage = -1;
-        bool tabSnap = true;
         float tabLayoutW;
 
         string TabLabel(int pg) { return Lang.T(PageNames[pg]); }
 
-        void TabLayout(float w, int active, float[] xs, float[] ws)
+        RectangleF TabStrip(float w, float preferredPitch)
         {
-            int n = tabs.Length;
-            if (DotTabs)
-            {
-                float dotsW = (n - 1) * DotCell + DotActive + (n - 1) * 6;
-                float dx = Math.Min(w / 2 - dotsW / 2, w - 92 - dotsW);
-                for (int i = 0; i < n; i++)
-                {
-                    xs[i] = dx;
-                    ws[i] = i == active ? DotActive : DotCell;
-                    dx += ws[i] + 6;
-                }
-                return;
-            }
-            // Right: action and gear
-            float room = w - 110, cell = TabIcon;
-            float label = active >= 0 ? p.Measure(TabLabel(tabs[active]), Ink.Semi(12f)) + 7 : 0;
-            float total = n * cell + (n - 1) * TabGap + label;
-            // Too tight: icons only
-            if (total > room) { label = 0; total = n * cell + (n - 1) * TabGap; }
-            if (total > room) { cell = (room - (n - 1) * TabGap) / n; total = room; }
-            float x = Math.Min(w / 2 - total / 2, w - 92 - total);
-            for (int i = 0; i < n; i++)
-            {
-                xs[i] = x;
-                ws[i] = cell + (i == active ? label : 0);
-                x += ws[i] + TabGap;
-            }
+            float room = w - 110;
+            float pitch = Math.Min(preferredPitch, room / Math.Max(1, tabs.Length));
+            float total = pitch * tabs.Length;
+            return new RectangleF(Math.Min((w - total) / 2, w - 92 - total), 0, total, DotBandH);
         }
 
         void DrawTabs(float w, DateTime now)
         {
-            int n = tabs.Length, at = Array.IndexOf(tabs, page);
-            if (tabToX.Length != n) { tabToX = new float[n]; tabToW = new float[n]; tabFromX = new float[n]; tabFromW = new float[n]; tabSnap = true; }
-            if (tabDotsDrawn != DotTabs) tabSnap = true;
-            tabDotsDrawn = DotTabs;
-            if (tabMorphPage != page || tabSnap || tabLayoutW != w)
+            tabLayoutW = w;
+            bool dots = DotTabs;
+            if (tabDotsDrawn != dots)
             {
-                float k0 = tabMorph.Value;
-                for (int i = 0; i < n; i++) { tabFromX[i] = Ease.Lerp(tabFromX[i], tabToX[i], k0); tabFromW[i] = Ease.Lerp(tabFromW[i], tabToW[i], k0); }
-                TabLayout(w, at, tabToX, tabToW);
-                if (tabSnap)
-                {
-                    Array.Copy(tabToX, tabFromX, n);
-                    Array.Copy(tabToW, tabFromW, n);
-                    tabMorph.Snap(1);
-                    tabSnap = false;
-                }
-                else
-                {
-                    // Liquid: a touch of overshoot
-                    Tune(tabMorph, 300, 0.74f);
-                    tabMorph.Snap(0);
-                    tabMorph.Target = 1;
-                }
-                tabMorphPage = page;
-                tabLayoutW = w;
+                tabDotsDrawn = dots;
+                stripOpen = stripEngaged = false;
+                stripUtc = DateTime.MinValue;
+                dotOpen.Snap(0);
+                dotHotA.Snap(0);
             }
-            float k = tabMorph.Value;
-            var rects = new RectangleF[n];
-            float nudge = tabNudge.Value;
-            if (tabDotsDrawn)
-            {
-                for (int i = 0; i < n; i++) rects[i] = new RectangleF(Ease.Lerp(tabFromX[i], tabToX[i], k) + nudge, TabY, Ease.Lerp(tabFromW[i], tabToW[i], k), TabH);
-                DrawDots(w, at, rects);
-                return;
-            }
-            for (int i = 0; i < n; i++) rects[i] = new RectangleF(Ease.Lerp(tabFromX[i], tabToX[i], k) + nudge, TabY, Math.Max(TabH, Ease.Lerp(tabFromW[i], tabToW[i], k)), TabH);
-
+            int n = tabs.Length;
+            var strip = TabStrip(w, dots ? 32 : TabIcon + TabGap);
+            if (dots) { DrawDots(w, strip, now); return; }
+            float pitch = strip.Width / Math.Max(1, n);
+            int preview = page;
             for (int i = 0; i < n; i++)
             {
                 int to = tabs[i];
-                var hit = new RectangleF(tabToX[i], TabY, tabToW[i], TabH);
-                AddHit(hit, "tab" + to, delegate { SetPage(to, false); });
-                if (Hover("tab" + to) && to != page) p.FillRound(rects[i], TabH / 2, Pressed("tab" + to) ? p.T.FillPressed : p.T.FillHover);
-                DrawTabIconFast(to, rects[i].X + TabIcon / 2, TabY + TabH / 2, Hover("tab" + to) ? p.T.Text : p.T.Sub, to != page);
-            }
-            // Hidden tab via link: no pill
-            if (at >= 0)
-            {
-                var pill = rects[at];
-                p.FillRound(pill, TabH / 2, p.T.Accent);
-                var st = g.Save();
-                using (var clip = Ink.Round(pill, TabH / 2)) g.SetClip(clip, CombineMode.Intersect);
-                for (int i = 0; i < n; i++)
-                    if (rects[i].IntersectsWith(pill)) DrawTabIconFast(tabs[i], rects[i].X + TabIcon / 2, TabY + TabH / 2, p.T.OnAccent, true);
-                // Name fades in as the pill opens
-                float la = Ease.Clamp01((Math.Min(1, k) - 0.35f) / 0.65f);
-                if (la > 0.01f && tabToW[at] > TabIcon + 1)
+                string id = "tab" + to;
+                var hit = new RectangleF(strip.X + i * pitch, TabY, pitch, TabH);
+                AddHit(hit, id, delegate { SetPage(to, false); });
+                bool hot = Hover(id), active = to == page;
+                if (hot || (keyboardMode && focusId == id)) preview = to;
+                var pill = RectangleF.Inflate(hit, -2, 0);
+                pill.X += tabNudge.Value;
+                float cx = pill.X + pill.Width / 2;
+                if (active || hot)
+                    p.FillRound(pill, TabH / 2, active ? p.T.Accent : Pressed(id) ? p.T.FillPressed : p.T.FillHover);
+                DrawTabIconFast(to, cx, TabY + TabH / 2, active ? p.T.OnAccent : hot ? p.T.Text : p.T.Sub, true);
+
+                bool mark = (to == PageMessages && unread > 0) ||
+                    (to == PageAgents && approvals.Count + BusyCount() > 0 && !active);
+                if (mark)
                 {
-                    float keep = p.Alpha;
-                    p.Alpha = keep * la;
-                    p.Text(TabLabel(page), Ink.Semi(12f), p.T.OnAccent, pill.X + TabIcon - 4, TabY + TabH / 2, pill.Width - TabIcon + 4, StringAlignment.Near);
-                    p.Alpha = keep;
+                    p.Circle(cx + 8, TabY + 6, 4.2f, p.T.Bg);
+                    p.Circle(cx + 8, TabY + 6, 3f, p.T.Text);
                 }
-                g.Restore(st);
             }
-            for (int i = 0; i < n; i++)
-            {
-                int pg = tabs[i];
-                bool dot = (pg == PageMessages && unread > 0) || (pg == PageAgents && approvals.Count + BusyCount() > 0 && page != PageAgents);
-                if (!dot) continue;
-                float dx = rects[i].X + TabIcon - 9;
-                p.Circle(dx, rects[i].Y + 6, 4.2f, p.T.Bg);
-                p.Circle(dx, rects[i].Y + 6, 3f, p.T.Text);
-            }
+            DrawTabName(strip, preview);
             DrawTabAction(w);
         }
 
-        // Dots: hover or focus anywhere opens the whole strip into icons; hover names page
-        void DrawDots(float w, int at, RectangleF[] rects)
+        void DrawTabName(RectangleF strip, int preview)
         {
-            int n = tabs.Length, hover = -1;
-            float cy = 18f;
-            float labelY = 39f;
-            var now = DateTime.UtcNow;
-            // Open layout: equal cells about the strip's centre, clear of the title and the action buttons
-            float pitch = Math.Max(28, Math.Min(40, (w - 110) / Math.Max(1, n)));
-            float total = n * pitch;
-            float mid = n > 0 ? (tabToX[0] + tabToX[n - 1] + tabToW[n - 1]) / 2 : w / 2;
-            float x0 = Math.Max(18, Math.Min(mid - total / 2, w - 92 - total));
-            var closedBand = n > 0 ? new RectangleF(tabToX[0] - 3, 0, tabToX[n - 1] + tabToW[n - 1] - tabToX[0] + 6, DotBandH) : RectangleF.Empty;
-            var openBand = new RectangleF(x0, 0, total, DotBandH);
+            float center = strip.X + strip.Width / 2;
+            p.Text(TabLabel(preview), Ink.Semi(12f), p.T.Text, center, 42, 2 * (center - 12), StringAlignment.Center);
+        }
+
+        // Dots: hover or focus anywhere opens the whole strip into icons; hover names page
+        void DrawDots(float w, RectangleF strip, DateTime now)
+        {
+            int n = tabs.Length, hover = -1, at = Array.IndexOf(tabs, page);
+            const float cy = 18f;
+            float pitch = strip.Width / Math.Max(1, n);
             bool focusIn = keyboardMode && focusId != null && focusId.Length > 3 && focusId.StartsWith("tab", StringComparison.Ordinal) && char.IsDigit(focusId[3]);
-            // Open: stay open inside the open band plus padding; closed: only the dots themselves open it
             var local = new PointF(mouse.X - originX, mouse.Y - originY - hitDy);
-            var zone = stripOpen ? RectangleF.Inflate(openBand, DotPadX, DotPadY) : closedBand;
-            bool over = pointerInside && zone.Contains(local);
-            if (over || focusIn) stripUtc = now;
-            double idle = (now - stripUtc).TotalSeconds;
-            // Leaving collapses after a beat
-            bool open = over || focusIn || idle < 0.28;
+            var zone = stripOpen ? RectangleF.Inflate(strip, DotPadX, DotPadY) : strip;
+            bool engaged = (pointerInside && zone.Contains(local)) || focusIn;
+            if (stripEngaged && !engaged) stripUtc = now;
+            stripEngaged = engaged;
+            bool open = engaged || (now - stripUtc).TotalSeconds < 0.28;
             stripOpen = open;
-            // Panel was closed meanwhile: start shut
-            if (!open && idle > 1) dotOpen.Snap(0);
             dotOpen.Target = open ? 1 : 0;
             if (Anim.Reduced) dotOpen.Snap(dotOpen.Target);
             float e = Ease.Clamp01(dotOpen.Value);
-            // Hits follow the geometry the user sees once open
             for (int i = 0; i < n; i++)
             {
+                string id = "tab" + tabs[i];
                 int to = tabs[i];
-                var hit = open ? new RectangleF(x0 + i * pitch, 0, pitch, DotBandH) : new RectangleF(tabToX[i] - 3, TabY - 2, tabToW[i] + 6, TabH + 4);
-                string id = "tab" + to;
-                AddHit(hit, id, delegate { SetPage(to, false); });
+                AddHit(new RectangleF(strip.X + i * pitch, 0, pitch, DotBandH), id, delegate { SetPage(to, false); });
                 if (Hover(id) || (keyboardMode && focusId == id)) hover = i;
             }
-            float hotTo = x0 + Math.Max(0, hover) * pitch + pitch / 2;
+            float hotTo = strip.X + (Math.Max(0, hover) + 0.5f) * pitch;
             dotHotA.Target = open && hover >= 0 && hover != at ? 1 : 0;
             if (dotHotA.Target > 0 && dotHotA.Value < 0.02f) dotHotX.Snap(hotTo); else dotHotX.Target = hotTo;
             if (Anim.Reduced) { dotHotA.Snap(dotHotA.Target); dotHotX.Snap(hotTo); }
@@ -605,25 +560,24 @@ namespace Tepi
             for (int i = 0; i < n; i++)
             {
                 int to = tabs[i];
-                var r = rects[i];
                 bool lit = i == hover;
                 bool news = (to == PageMessages && unread > 0) || (to == PageAgents && approvals.Count + BusyCount() > 0);
                 bool mark = (to == PageMessages && unread > 0) || (to == PageAgents && approvals.Count + BusyCount() > 0 && page != PageAgents);
-                float cx = Ease.Lerp(r.X + r.Width / 2, x0 + i * pitch + pitch / 2, e);
+                float cx = strip.X + (i + 0.5f) * pitch + tabNudge.Value;
                 // Small stagger across the strip; all settled once e reaches 1
                 float t = Ease.Clamp01(e * 1.35f - 0.35f * i / Math.Max(1, n - 1));
                 float ia = Ease.Clamp01((t - 0.35f) / 0.65f), keep = p.Alpha;
                 Color iconColor;
                 if (i == at)
                 {
-                    float pw = Ease.Lerp(r.Width, pitch - 4, t), ph = Ease.Lerp(8, 24, t);
+                    float pw = Ease.Lerp(Math.Min(20, pitch - 4), pitch - 4, t), ph = Ease.Lerp(8, 24, t);
                     p.FillRound(new RectangleF(cx - pw / 2, cy - ph / 2, pw, ph), ph / 2, p.T.Accent);
                     iconColor = p.T.OnAccent;
                 }
                 else
                 {
                     // The dot melts away as its icon arrives
-                    float rad = Ease.Lerp(lit ? 4.5f : news ? 4f : 3.2f, 7f, t);
+                    float rad = Ease.Lerp(lit ? 4.5f : news ? 4.2f : 3.8f, 7f, t);
                     p.Alpha = keep * (1 - t);
                     if (t < 0.99f) p.Circle(cx, cy, rad, lit || news ? p.T.Text : p.T.Faint);
                     p.Alpha = keep;
@@ -647,10 +601,7 @@ namespace Tepi
                     p.Alpha = keep;
                 }
             }
-            // Title: current or hovered page, centered below the strip
-            float stripMid = n > 0 ? Ease.Lerp((rects[0].X + rects[n - 1].Right) / 2, x0 + total / 2, e) : w / 2;
-            int named = hover >= 0 ? tabs[hover] : page;
-            p.TextCenter(TabLabel(named), Ink.Semi(12f), hover >= 0 ? p.T.Text : p.T.Sub, stripMid, labelY);
+            DrawTabName(strip, hover >= 0 ? tabs[hover] : page);
             DrawTabAction(w);
         }
 
@@ -817,12 +768,26 @@ namespace Tepi
         void DrawPrefsButton(float w)
         {
             var r = new RectangleF(w - 52, TabY, 34, TabH);
-            AddHit(r, "prefsOpen", openPrefsAct ?? (openPrefsAct = delegate { BeginInvoke(new Action(OpenPrefs)); }));
+            AddHit(r, "prefsOpen", openPrefsAct ?? (openPrefsAct = delegate { int pg = page; BeginInvoke(new Action(delegate { OpenPrefsForPage(pg); })); }));
             if (Hover("prefsOpen")) p.FillRound(r, TabH / 2, Pressed("prefsOpen") ? p.T.FillPressed : p.T.FillHover);
             p.Icon('', 13f, Hover("prefsOpen") ? p.T.Text : p.T.Sub, r.X + 17, r.Y + TabH / 2);
         }
 
         Action openPrefsAct;
+
+        void OpenPrefsForPage(int pg)
+        {
+            string target = "overview";
+            if (pg == PageHome) target = "tabs";
+            else if (pg == PageMusic || pg == PageShelf || pg == PageConvert) target = "files";
+            else if (pg == PageAgents) target = "agents";
+            else if (pg == PageClass) target = "integrasi";
+            else if (pg == PageMessages) target = "messages";
+            else if (pg == PageRemind) target = "remind";
+            else if (pg == PagePhone) target = "phone";
+            else if (pg == PageVoice) target = "dikte";
+            OpenPrefs(target);
+        }
 
         // Round action button; trash swallows flyers
         void TabButton(string id, char glyph, Action act, bool trash)
@@ -879,8 +844,8 @@ namespace Tepi
                     // The page only holds the newest rows; clear everything else too
                     NotifSource.ClearAll();
                 }, true);
-            else if (page == PageShelf && shelfSeg == 1 && clips.Count > 0)
-                TabButton("clearClips", '', delegate { Vanish(RowRects("clip", null), true); clipScroll.Snap(0); clips.Clear(); Kick(); }, true);
+            else if (page == PageShelf && shelfSeg == 1 && VisibleClips.Count > 0)
+                TabButton("clearClips", '', delegate { Vanish(RowRects("clip", null), true); clipScroll.Snap(0); ClearClips(VisibleClips); Kick(); }, true);
             else if (page == PageShelf && shelfSeg == 0 && shelf.Count > 0)
                 TabButton("clearShelf", '', delegate { Vanish(new List<RectangleF>(shelfCells.Values), true); shelfScroll.Snap(0); ClearShelf(); }, true);
             else if (page == PageVoice)

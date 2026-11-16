@@ -2,7 +2,7 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -11,7 +11,7 @@ namespace Tepi
         {
             const float Pad = 20, HourH = 78, DayH = 34, Foot = 44;
 
-            public WeatherSheet(Island isle, DockWindow dock) : base(isle, dock, "weather", "Tepi Weather") { W = 340; }
+            public WeatherSheet(Island isle, DockWindow dock) : base(isle, dock, "weather", "Deskmate Weather") { W = 340; }
 
             WeatherNow Now
             {
@@ -134,7 +134,7 @@ namespace Tepi
 
             protected override void Clicked(string id, MouseButtons button)
             {
-                if (button == MouseButtons.Left && id == "setup") { Done(); isle.OpenPrefs("system"); }
+                if (button == MouseButtons.Left && id == "setup") { Done(); isle.OpenPrefs("remind"); }
             }
         }
     }

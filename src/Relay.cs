@@ -5,10 +5,10 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     // Hook bridge for command-based agents:
-    // Tepi.exe --relay <agent> [--reply] [--json] [--event <name>] < event.json
+    // Deskmate.exe --relay <agent> [--reply] [--json] [--event <name>] < event.json
     static class Relay
     {
         public static int Run(string[] args)
@@ -92,7 +92,7 @@ namespace Tepi
                     c.EndConnect(ar);
                     c.SendTimeout = c.ReceiveTimeout = timeoutMs;
                     var st = c.GetStream();
-                    var head = Encoding.ASCII.GetBytes("POST " + path + " HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Tepi-Token: " + token +
+                    var head = Encoding.ASCII.GetBytes("POST " + path + " HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Deskmate-Token: " + token +
                                                       "\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
                     st.Write(head, 0, head.Length);
                     st.Write(body, 0, body.Length);

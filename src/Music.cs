@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 
-namespace Tepi
+namespace Deskmate
 {
     // Music page: lyrics or album card
     partial class Island
@@ -111,9 +111,7 @@ namespace Tepi
                     m.Items.Add(new System.Windows.Forms.ToolStripMenuItem(src[1], null, delegate { media.Prefer(id); }) { Checked = id == mediaInfo.AppId });
                 }
             }
-            StyleMenu(m);
-            m.Closed += delegate { BeginInvoke(new Action(m.Dispose)); };
-            m.Show(System.Windows.Forms.Control.MousePosition);
+            ShowIslandMenu(m);
         }
 
         void ToggleMusicView()

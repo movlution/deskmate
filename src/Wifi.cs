@@ -3,19 +3,22 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Text;
+using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     // Nearby Wi-Fi networks, through Windows' Native Wifi API
     static class Wifi
     {
+        public enum ScanStatus { Ok, NoAdapter, RadioOff, AccessDenied, Failed }
+
         public sealed class Net
         {
             public string Ssid = "", Profile = "";
             public int Signal, Auth, Cipher;
             public bool Secured, Connected, Known;
             public Guid Iface;
-            // Needs a password Tepi can save
+            // Needs a password Deskmate can save
             public bool Personal { get { return Auth == 4 || Auth == 7 || Auth == 9; } }
             public bool Open { get { return !Secured || Auth == 10; } }
         }
@@ -30,6 +33,15 @@ namespace Tepi
             public uint Flags;
         }
 
+        struct IfaceInfo
+        {
+            public Guid Id;
+            public int State;
+        }
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        delegate void WlanNotificationCallback(IntPtr data, IntPtr context);
+
         [DllImport("wlanapi.dll")] static extern int WlanOpenHandle(uint version, IntPtr reserved, out uint negotiated, out IntPtr handle);
         [DllImport("wlanapi.dll")] static extern int WlanCloseHandle(IntPtr handle, IntPtr reserved);
         [DllImport("wlanapi.dll")] static extern int WlanEnumInterfaces(IntPtr handle, IntPtr reserved, out IntPtr list);
@@ -38,18 +50,27 @@ namespace Tepi
         [DllImport("wlanapi.dll")] static extern int WlanConnect(IntPtr handle, ref Guid iface, ref ConnParams p, IntPtr reserved);
         [DllImport("wlanapi.dll")] static extern int WlanDisconnect(IntPtr handle, ref Guid iface, IntPtr reserved);
         [DllImport("wlanapi.dll", CharSet = CharSet.Unicode)] static extern int WlanSetProfile(IntPtr handle, ref Guid iface, uint flags, string xml, string security, bool overwrite, IntPtr reserved, out uint reason);
+        [DllImport("wlanapi.dll")] static extern int WlanRegisterNotification(IntPtr handle, uint source, bool ignoreDuplicate, WlanNotificationCallback callback, IntPtr context, IntPtr reserved, out uint prevSource);
+        [DllImport("wlanapi.dll")] static extern int WlanQueryInterface(IntPtr handle, ref Guid iface, int opcode, IntPtr reserved, out uint dataSize, out IntPtr data, out int valueType);
         [DllImport("wlanapi.dll")] static extern void WlanFreeMemory(IntPtr p);
 
         static IntPtr Open()
         {
-            uint version;
             IntPtr h;
-            return WlanOpenHandle(2, IntPtr.Zero, out version, out h) == 0 ? h : IntPtr.Zero;
+            return Open(out h) == 0 ? h : IntPtr.Zero;
         }
 
-        static List<Guid> Interfaces(IntPtr h)
+        static int Open(out IntPtr handle)
         {
-            var list = new List<Guid>();
+            uint version;
+            int rc = WlanOpenHandle(2, IntPtr.Zero, out version, out handle);
+            if (rc != 0) handle = IntPtr.Zero;
+            return rc;
+        }
+
+        static List<IfaceInfo> Interfaces(IntPtr h)
+        {
+            var list = new List<IfaceInfo>();
             IntPtr p;
             if (WlanEnumInterfaces(h, IntPtr.Zero, out p) != 0) return list;
             try
@@ -59,36 +80,178 @@ namespace Tepi
                 for (int i = 0; i < n; i++)
                 {
                     var b = new byte[16];
-                    Marshal.Copy(new IntPtr(p.ToInt64() + 8 + i * 532), b, 0, 16);
-                    list.Add(new Guid(b));
+                    IntPtr item = new IntPtr(p.ToInt64() + 8 + i * 532);
+                    Marshal.Copy(item, b, 0, 16);
+                    list.Add(new IfaceInfo { Id = new Guid(b), State = Marshal.ReadInt32(item, 528) });
                 }
             }
             finally { WlanFreeMemory(p); }
             return list;
         }
 
-        // Ask the adapters for a fresh look; results land a few seconds later
+        static bool IsRadioOff(IntPtr h, IfaceInfo iface)
+        {
+            if (iface.State == 0) return true;
+            Guid id = iface.Id;
+            uint size;
+            IntPtr p;
+            int vt;
+            if (WlanQueryInterface(h, ref id, 7 /* wlan_intf_opcode_radio_state */, IntPtr.Zero, out size, out p, out vt) != 0 || p == IntPtr.Zero)
+                return false;
+            try
+            {
+                int n = Marshal.ReadInt32(p, 0);
+                if (n <= 0) return false;
+                int count = Math.Min(n, 64);
+                for (int i = 0; i < count; i++)
+                {
+                    int sw = Marshal.ReadInt32(p, 4 + i * 12 + 4);
+                    int hw = Marshal.ReadInt32(p, 4 + i * 12 + 8);
+                    if (sw != 2 && hw != 2) return false;
+                }
+                return true;
+            }
+            finally { WlanFreeMemory(p); }
+        }
+
+        // Ask the adapters for a fresh look without waiting
         public static void Scan()
         {
-            var h = Open();
-            if (h == IntPtr.Zero) return;
-            try { foreach (var g in Interfaces(h)) { var id = g; WlanScan(h, ref id, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero); } }
+            ScanAndWait(0);
+        }
+
+        // Trigger a Wi-Fi scan and wait up to timeoutMs for completion notification
+        public static ScanStatus ScanAndWait(int timeoutMs)
+        {
+            IntPtr h;
+            int openRc = Open(out h);
+            if (openRc != 0) return openRc == 5 ? ScanStatus.AccessDenied : ScanStatus.Failed;
+            try
+            {
+                var ifaces = Interfaces(h);
+                if (ifaces.Count == 0) return ScanStatus.NoAdapter;
+
+                bool wait = timeoutMs > 0;
+                ManualResetEvent done = wait ? new ManualResetEvent(false) : null;
+                WlanNotificationCallback cb = null;
+                bool registered = false;
+                int pending = ifaces.Count;
+                bool anyComplete = false;
+                bool anyScanFail = false;
+
+                try
+                {
+                    if (wait)
+                    {
+                        cb = delegate(IntPtr data, IntPtr ctx)
+                        {
+                            if (data == IntPtr.Zero) return;
+                            int source = Marshal.ReadInt32(data, 0);
+                            if (source != 8) return;
+                            int code = Marshal.ReadInt32(data, 4);
+                            if (code == 9 || code == 10)
+                            {
+                                if (code == 9) anyComplete = true;
+                                else anyScanFail = true;
+                                if (Interlocked.Decrement(ref pending) <= 0)
+                                {
+                                    try { done.Set(); } catch (ObjectDisposedException) { }
+                                }
+                            }
+                        };
+                        uint prev;
+                        int regRc = WlanRegisterNotification(h, 8 /* WLAN_NOTIFICATION_SOURCE_ACM */, true, cb, IntPtr.Zero, IntPtr.Zero, out prev);
+                        if (regRc == 5) return ScanStatus.AccessDenied;
+                        registered = regRc == 0;
+                    }
+
+                    bool anyOk = false, anyDenied = false, anyOff = false;
+                    foreach (var iface in ifaces)
+                    {
+                        if (IsRadioOff(h, iface)) anyOff = true;
+                        var id = iface.Id;
+                        int rc = WlanScan(h, ref id, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+                        if (rc == 0)
+                        {
+                            anyOk = true;
+                        }
+                        else
+                        {
+                            if (wait && Interlocked.Decrement(ref pending) <= 0)
+                            {
+                                try { done.Set(); } catch (ObjectDisposedException) { }
+                            }
+                            if (rc == 5) anyDenied = true;
+                            else if (rc == 5023 || rc == 1167 || rc == 4319 || iface.State == 0) anyOff = true;
+                        }
+                    }
+
+                    if (anyOk && wait && registered && Interlocked.CompareExchange(ref pending, 0, 0) > 0)
+                        done.WaitOne(timeoutMs);
+
+                    if (anyOk) return (!anyComplete && anyScanFail) ? (anyOff ? ScanStatus.RadioOff : ScanStatus.Failed) : ScanStatus.Ok;
+                    if (anyDenied) return ScanStatus.AccessDenied;
+                    if (anyOff) return ScanStatus.RadioOff;
+                    return ScanStatus.Failed;
+                }
+                finally
+                {
+                    if (registered)
+                    {
+                        uint prev;
+                        WlanRegisterNotification(h, 0, true, null, IntPtr.Zero, IntPtr.Zero, out prev);
+                    }
+                    GC.KeepAlive(cb);
+                    if (done != null) done.Dispose();
+                }
+            }
             finally { WlanCloseHandle(h, IntPtr.Zero); }
         }
 
-        // One row per network name, strongest first, connected on top
+        // One row per network name, connected first, in-range before saved, strongest first
         public static List<Net> List()
         {
+            ScanStatus ignored;
+            return List(out ignored);
+        }
+
+        public static List<Net> List(out ScanStatus status)
+        {
             var seen = new Dictionary<string, Net>();
-            var h = Open();
-            if (h == IntPtr.Zero) return new List<Net>();
+            IntPtr h;
+            int openRc = Open(out h);
+            if (openRc != 0)
+            {
+                status = openRc == 5 ? ScanStatus.AccessDenied : ScanStatus.Failed;
+                return new List<Net>();
+            }
+
+            bool anyOk = false, anyDenied = false, anyOff = false, anyRadioOn = false;
             try
             {
-                foreach (var g in Interfaces(h))
+                var ifaces = Interfaces(h);
+                if (ifaces.Count == 0)
                 {
-                    var id = g;
+                    status = ScanStatus.NoAdapter;
+                    return new List<Net>();
+                }
+
+                foreach (var iface in ifaces)
+                {
+                    bool off = IsRadioOff(h, iface);
+                    if (off) anyOff = true;
+                    else anyRadioOn = true;
+
+                    var id = iface.Id;
                     IntPtr p;
-                    if (WlanGetAvailableNetworkList(h, ref id, 0, IntPtr.Zero, out p) != 0) continue;
+                    int rc = WlanGetAvailableNetworkList(h, ref id, 0, IntPtr.Zero, out p);
+                    if (rc != 0)
+                    {
+                        if (rc == 5) anyDenied = true;
+                        else if (rc == 5023 || rc == 1167 || rc == 4319 || iface.State == 0) anyOff = true;
+                        continue;
+                    }
+                    anyOk = true;
                     try
                     {
                         int n = Marshal.ReadInt32(p);
@@ -110,21 +273,63 @@ namespace Tepi
                                 Cipher = Marshal.ReadInt32(e, 616),
                                 Connected = (flags & 1) != 0,
                                 Known = (flags & 2) != 0,
-                                Iface = g,
+                                Iface = iface.Id,
                             };
                             Net had;
                             if (!seen.TryGetValue(net.Ssid, out had)) { seen[net.Ssid] = net; continue; }
-                            // Keep the saved entry; take the best signal and state
-                            if (net.Known && !had.Known) { net.Signal = Math.Max(net.Signal, had.Signal); net.Connected |= had.Connected; seen[net.Ssid] = net; }
-                            else { had.Signal = Math.Max(had.Signal, net.Signal); had.Connected |= net.Connected; }
+
+                            bool takeMeta = (net.Connected && !had.Connected)
+                                || (net.Connected == had.Connected && net.Known && !had.Known)
+                                || (net.Connected == had.Connected && net.Known == had.Known && net.Signal > had.Signal);
+                            int bestSig = Math.Max(had.Signal, net.Signal);
+                            bool conn = had.Connected || net.Connected;
+                            bool known = had.Known || net.Known;
+                            string prof = net.Profile.Length > 0 && (had.Profile.Length == 0 || takeMeta) ? net.Profile : had.Profile;
+                            int auth = net.Auth != 0 && (had.Auth == 0 || takeMeta) ? net.Auth : had.Auth;
+                            int cipher = net.Cipher != 0 && (had.Cipher == 0 || takeMeta) ? net.Cipher : had.Cipher;
+
+                            if (takeMeta)
+                            {
+                                net.Signal = bestSig;
+                                net.Connected = conn;
+                                net.Known = known;
+                                net.Profile = prof;
+                                net.Auth = auth;
+                                net.Cipher = cipher;
+                                seen[net.Ssid] = net;
+                            }
+                            else
+                            {
+                                had.Signal = bestSig;
+                                had.Connected = conn;
+                                had.Known = known;
+                                had.Profile = prof;
+                                had.Auth = auth;
+                                had.Cipher = cipher;
+                            }
                         }
                     }
                     finally { WlanFreeMemory(p); }
                 }
             }
             finally { WlanCloseHandle(h, IntPtr.Zero); }
+
+            if (anyDenied && !anyOk) status = ScanStatus.AccessDenied;
+            else if (anyOff && !anyRadioOn) status = ScanStatus.RadioOff;
+            else if (anyOk) status = ScanStatus.Ok;
+            else if (anyOff) status = ScanStatus.RadioOff;
+            else status = ScanStatus.Failed;
+
             var list = new List<Net>(seen.Values);
-            list.Sort((a, b) => a.Connected != b.Connected ? (a.Connected ? -1 : 1) : a.Known != b.Known ? (a.Known ? -1 : 1) : b.Signal.CompareTo(a.Signal));
+            list.Sort(delegate(Net a, Net b)
+            {
+                if (a.Connected != b.Connected) return a.Connected ? -1 : 1;
+                bool aIn = a.Signal > 0, bIn = b.Signal > 0;
+                if (aIn != bIn) return aIn ? -1 : 1;
+                if (a.Known != b.Known) return a.Known ? -1 : 1;
+                int c = b.Signal.CompareTo(a.Signal);
+                return c != 0 ? c : string.Compare(a.Ssid, b.Ssid, StringComparison.OrdinalIgnoreCase);
+            });
             return list;
         }
 

@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using Microsoft.Win32;
 
-namespace Tepi
+namespace Deskmate
 {
     // Click on a message: hand Windows' own toast click to the app
     static class NotifOpen
@@ -31,7 +31,7 @@ namespace Tepi
         [DllImport("winsqlite3.dll")] static extern int sqlite3_finalize(IntPtr stmt);
 
         static readonly Dictionary<string, Guid?> activators = new Dictionary<string, Guid?>();
-        // Schemes a toast must not reach through Tepi
+        // Schemes a toast must not reach through Deskmate
         static readonly string[] BlockedSchemes = { "file", "ms-msdt", "search-ms", "search", "shell", "javascript", "vbscript", "ms-officecmd", "ms-appinstaller" };
 
         // True when the app got the click itself

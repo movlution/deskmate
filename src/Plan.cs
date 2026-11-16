@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
     // One step of an agent's plan
     class PlanStep

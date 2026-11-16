@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
     // Screen share: hide island, mask messages
     partial class Island

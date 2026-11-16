@@ -8,7 +8,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
-namespace Tepi
+namespace Deskmate
 {
     // One window the taskbar would list
     sealed class DockWin
@@ -76,6 +76,8 @@ namespace Tepi
         readonly HashSet<IntPtr> foundSet = new HashSet<IntPtr>();
         EnumProc enumProc;
         long seq, useSeq;
+        int lastScanTick;
+        bool hasScanned;
 
         sealed class PinInfo { public string Exe = "", AppId = "", Name = ""; public bool Packaged, Missing; }
 
@@ -107,9 +109,17 @@ namespace Tepi
             return c != "Progman" && c != "WorkerW" && c != "Shell_TrayWnd" && c != "Shell_SecondaryTrayWnd";
         }
 
+        public bool RescanIfStale(int maxAgeMs)
+        {
+            if (hasScanned && unchecked(Environment.TickCount - lastScanTick) < maxAgeMs) return false;
+            return Rescan();
+        }
+
         // Full pass; true when the window set changed
         public bool Rescan()
         {
+            hasScanned = true;
+            lastScanTick = Environment.TickCount;
             found.Clear();
             foundSet.Clear();
             if (enumProc == null) enumProc = delegate (IntPtr h, IntPtr l) { if (Eligible(h)) { found.Add(h); foundSet.Add(h); } return true; };

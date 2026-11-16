@@ -4,11 +4,11 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 14: KitAsk Universal Title & Localization" {
-    $kitAskType = Get-TepiType "KitAsk"
-    $kitWindowType = Get-TepiType "KitWindow"
+    $kitAskType = Get-DeskmateType "KitAsk"
+    $kitWindowType = Get-DeskmateType "KitWindow"
 
     It "Verifies KitAsk inherits from KitWindow" {
         Assert-NotNull $kitAskType "KitAsk type must exist"

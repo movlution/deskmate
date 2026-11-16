@@ -4,17 +4,17 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 9: KitSlider Disabled Thumb Contrast" {
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Renders KitSlider in Enabled state offscreen and verifies dimensions" {
-        $slider = New-TepiControl "KitSlider"
+        $slider = New-DeskmateControl "KitSlider"
         $slider.Value = 50
-        $bmp = Render-TepiControlToBitmap $slider 140 24
+        $bmp = Render-DeskmateControlToBitmap $slider 140 24
 
         Assert-NotNull $bmp "Rendered slider bitmap must not be null"
         Assert-Equal $bmp.Width 140 "Bitmap width must match"
@@ -25,7 +25,7 @@ Describe "Feature 9: KitSlider Disabled Thumb Contrast" {
     }
 
     It "Verifies KitSlider Value clamping between Minimum and Maximum" {
-        $slider = New-TepiControl "KitSlider"
+        $slider = New-DeskmateControl "KitSlider"
         $slider.Minimum = 10
         $slider.Maximum = 90
         $slider.Value = 50
@@ -44,7 +44,7 @@ Describe "Feature 9: KitSlider Disabled Thumb Contrast" {
     }
 
     It "Verifies KitSlider keyboard navigation responds to arrow keys" {
-        $slider = New-TepiControl "KitSlider"
+        $slider = New-DeskmateControl "KitSlider"
         $slider.Minimum = 0
         $slider.Maximum = 100
         $slider.Step = 5
@@ -67,26 +67,26 @@ Describe "Feature 9: KitSlider Disabled Thumb Contrast" {
     }
 
     It "Verifies KitSlider disabled track fill uses KitInk.Disabled token" {
-        $disabledToken = Get-TepiStaticProperty "KitInk" "Disabled"
-        $textToken = Get-TepiStaticProperty "KitInk" "Text"
+        $disabledToken = Get-DeskmateStaticProperty "KitInk" "Disabled"
+        $textToken = Get-DeskmateStaticProperty "KitInk" "Text"
 
         Assert-NotNull $disabledToken "KitInk.Disabled must be defined"
         Assert-NotEqual $disabledToken.ToArgb() $textToken.ToArgb() "Disabled token must differ from Text token"
     }
 
     It "Renders KitSlider in Disabled state and verifies thumb renders using KitInk.Disabled rather than active Text" {
-        $slider = New-TepiControl "KitSlider"
+        $slider = New-DeskmateControl "KitSlider"
         $slider.Minimum = 0
         $slider.Maximum = 100
         $slider.Value = 0
         $slider.Enabled = $false
 
-        $bmp = Render-TepiControlToBitmap $slider 140 24
+        $bmp = Render-DeskmateControlToBitmap $slider 140 24
 
         # Sample pixel at thumb center (x ~ 10, y = 12)
         $thumbPx = $bmp.GetPixel(10, 12)
-        $disabledToken = Get-TepiStaticProperty "KitInk" "Disabled"
-        $textToken = Get-TepiStaticProperty "KitInk" "Text"
+        $disabledToken = Get-DeskmateStaticProperty "KitInk" "Disabled"
+        $textToken = Get-DeskmateStaticProperty "KitInk" "Text"
 
         # The thumb pixel should match KitInk.Disabled, NOT active KitInk.Text
         Assert-Equal $thumbPx.R $disabledToken.R "Disabled thumb Red channel must match KitInk.Disabled ($($disabledToken.R)), not active KitInk.Text ($($textToken.R))"

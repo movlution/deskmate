@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 
-namespace Tepi
+namespace Deskmate
 {
     // Ubah: drop into the box, pick a format
     partial class Island

@@ -3,16 +3,16 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 24: Quest-Driven Deep Work & Top-3 Daily Priorities" {
-    $islandType = Get-TepiType "Island"
-    $prefsType = Get-TepiType "PrefsWindow"
-    $langType = Get-TepiType "Lang"
-    $timerKindType = Get-TepiType "TimerKind"
+    $islandType = Get-DeskmateType "Island"
+    $prefsType = Get-DeskmateType "PrefsWindow"
+    $langType = Get-DeskmateType "Lang"
+    $timerKindType = Get-DeskmateType "TimerKind"
     $flags = [System.Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
 
-    $settingsType = Get-TepiType "Settings"
+    $settingsType = Get-DeskmateType "Settings"
     $settingsDir = $settingsType.GetField("Dir", $flags).GetValue($null)
     $settingsFile = Join-Path $settingsDir "settings.ini"
     $backupContent = $null
@@ -29,7 +29,7 @@ Describe "Feature 24: Quest-Driven Deep Work & Top-3 Daily Priorities" {
 
     try {
         BeforeEach {
-            Reset-TepiTheme -Light $false
+            Reset-DeskmateTheme -Light $false
             Reset-CleanSettings
         }
 
@@ -197,7 +197,7 @@ Describe "Feature 24: Quest-Driven Deep Work & Top-3 Daily Priorities" {
                     $gfx.Clear([System.Drawing.Color]::FromArgb(255, 18, 18, 22))
                     $gField.SetValue($isle, $gfx)
                     $pObj.G = $gfx
-                    if ($null -eq $pObj.T) { $pObj.T = (Get-TepiType "Theme").GetField("Dark", $flags).GetValue($null) }
+                    if ($null -eq $pObj.T) { $pObj.T = (Get-DeskmateType "Theme").GetField("Dark", $flags).GetValue($null) }
 
                     # DrawTimer
                     $drawTimer = $islandType.GetMethod("DrawTimer", $flags)

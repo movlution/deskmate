@@ -4,7 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
     // Relay hooks: Codex, Antigravity, Copilot CLI
     static class AgentSetup
@@ -112,16 +112,16 @@ namespace Tepi
         }
 
         // Rewrite stale Antigravity hooks
-        public static void Refresh()
+        public static void Refresh(Settings s = null)
         {
             try
             {
-                // Gemini CLI dropped: clear its old Tepi hooks
+                // Gemini CLI dropped: clear its old Deskmate hooks
                 string gem = ConfigFile("gemini");
                 if (File.Exists(gem) && File.ReadAllText(gem).Contains("--relay gemini")) Remove("gemini");
                 var root = HookSetup.Load(ConfigFile("antigravity"));
-                if (root != null && root.ContainsKey("tepi") && !Installed("antigravity")) Install("antigravity");
-                if (Installed("antigravity") && new Settings().GetBool(StatusSetup.AgentsKey, true)) StatusSetup.AgyInstall();
+                if (root != null && root.ContainsKey("deskmate") && !Installed("antigravity")) Install("antigravity");
+                if (Installed("antigravity") && (s ?? new Settings()).GetBool(StatusSetup.AgentsKey, true)) StatusSetup.AgyInstall();
             }
             catch (Exception ex) { Log.Write("agent refresh: " + ex.Message); }
         }
@@ -138,7 +138,7 @@ namespace Tepi
                 d["timeoutSec"] = 10;
                 return d;
             }
-            if (id == "gemini") d["name"] = "tepi";
+            if (id == "gemini") d["name"] = "deskmate";
             d["type"] = "command";
             d["command"] = Command(id, h);
             // Gemini counts milliseconds; the others seconds
@@ -157,7 +157,7 @@ namespace Tepi
         {
             var root = HookSetup.Load(ConfigFile(id));
             if (root == null) return false;
-            var events = id == "antigravity" ? Json.Obj(root, "tepi") : Json.Obj(root, "hooks");
+            var events = id == "antigravity" ? Json.Obj(root, "deskmate") : Json.Obj(root, "hooks");
             if (events == null) return false;
             foreach (var h in HooksFor(id))
             {
@@ -180,8 +180,8 @@ namespace Tepi
             string dir = Path.GetDirectoryName(file);
             if (id == "codex" && !Directory.Exists(dir)) return Lang.T("Folder Codex tidak ditemukan");
             // cmd would read these as operators
-            if (Exe().IndexOfAny("&|<>^%".ToCharArray()) >= 0) return Lang.T("Pindahkan Tepi.exe ke folder tanpa & | < > ^ %");
-            if (id == "antigravity" && Exe().IndexOf('"') >= 0) return Lang.T("Pindahkan Tepi.exe ke folder tanpa spasi");
+            if (Exe().IndexOfAny("&|<>^%".ToCharArray()) >= 0) return Lang.T("Pindahkan Deskmate.exe ke folder tanpa & | < > ^ %");
+            if (id == "antigravity" && Exe().IndexOf('"') >= 0) return Lang.T("Pindahkan Deskmate.exe ke folder tanpa spasi");
             Directory.CreateDirectory(dir);
             var root = File.Exists(file) ? HookSetup.Load(file) : new Dictionary<string, object>();
             if (root == null) return Path.GetFileName(file) + Lang.T(" tidak terbaca");
@@ -195,7 +195,7 @@ namespace Tepi
                     object handler = Handler(id, h);
                     group[h.Event] = new List<object> { h.Tool ? new Dictionary<string, object> { { "matcher", "*" }, { "hooks", new List<object> { handler } } } : handler };
                 }
-                root["tepi"] = group;
+                root["deskmate"] = group;
                 // Quota comes through its status line
                 if (new Settings().GetBool(StatusSetup.AgentsKey, true)) StatusSetup.AgyInstall();
             }
@@ -225,7 +225,7 @@ namespace Tepi
             var root = HookSetup.Load(file);
             if (root == null) return;
             HookSetup.Backup(file);
-            if (id == "antigravity") { root.Remove("tepi"); StatusSetup.AgyRemove(); }
+            if (id == "antigravity") { root.Remove("deskmate"); StatusSetup.AgyRemove(); }
             else
             {
                 var hooks = Json.Obj(root, "hooks");

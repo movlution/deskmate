@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Copied images and screenshots, previewed
     partial class Island
@@ -29,16 +29,15 @@ namespace Tepi
 
         bool ShotsOn { get { return settings.GetBool("shots", true); } }
 
-        static string ShotsTemp() { return System.IO.Path.Combine(System.IO.Path.GetTempPath(), @"Tepi\shots"); }
+        static string ShotsTemp() { return System.IO.Path.Combine(System.IO.Path.GetTempPath(), @"Deskmate\shots"); }
 
-        void OnClipImage(IDataObject data)
+        void OnClipImage(Bitmap clip)
         {
             Bitmap full = null;
             try
             {
-                // Own copy: clipboard bitmap breaks off-thread
-                using (var clip = data.GetData(DataFormats.Bitmap, true) as Bitmap)
-                    if (clip != null && clip.Width >= 8 && clip.Height >= 8) full = OwnCopy(clip);
+                // Own copy: the history and the screenshot worker have independent lifetimes.
+                if (clip.Width >= 8 && clip.Height >= 8) full = OwnCopy(clip);
             }
             catch (Exception ex) { Log.Write("shot read: " + ex.Message); }
             if (full == null) return;
@@ -59,7 +58,7 @@ namespace Tepi
                 try
                 {
                     Directory.CreateDirectory(dir);
-                    path = System.IO.Path.Combine(dir, "Tepi " + DateTime.Now.ToString("yyyy-MM-dd HH.mm.ss.fff") + ".png");
+                    path = System.IO.Path.Combine(dir, "Deskmate " + DateTime.Now.ToString("yyyy-MM-dd HH.mm.ss.fff") + ".png");
                     full.Save(path, ImageFormat.Png);
                 }
                 catch (Exception ex) { Log.Write("shot save: " + ex.Message); path = null; }
@@ -152,7 +151,7 @@ namespace Tepi
                 var dir = new DirectoryInfo(ShotsTemp());
                 if (!dir.Exists) return;
                 var cutoff = DateTime.UtcNow.AddDays(-1);
-                foreach (var f in dir.EnumerateFiles("Tepi *.png"))
+                foreach (var f in dir.EnumerateFiles("Deskmate *.png"))
                     if (all || f.LastWriteTimeUtc < cutoff) TryDelete(f.FullName);
             }
             catch (Exception ex) { Log.Write("shot clean: " + ex.Message); }

@@ -5,7 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
 
-namespace Tepi
+namespace Deskmate
 {
     // Browser downloads, read from partial files in Downloads
     partial class Island

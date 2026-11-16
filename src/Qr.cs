@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
     // QR code, byte mode, level M, versions 1 to 10
     static class Qr

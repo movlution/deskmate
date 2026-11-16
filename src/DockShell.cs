@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
     // Shell lookups for the dock: icons, app ids, shortcuts
     static class ShellApp
@@ -235,16 +235,16 @@ namespace Tepi
             return result;
         }
 
-        // Start menu entry for the running exe: Search and All apps list Tepi with its icon
+        // Start menu entry for the running exe: Search and All apps list Deskmate with its icon
         public static void EnsureStartEntry()
         {
             try
             {
                 // Test runs and copies in temp folders leave the menu alone
-                if (Environment.GetEnvironmentVariable("TEPI_DIR") != null) return;
+                if (Environment.GetEnvironmentVariable("DESKMATE_DIR") != null) return;
                 string exe = Process.GetCurrentProcess().MainModule.FileName;
                 if (exe.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase)) return;
-                string lnk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Tepi.lnk");
+                string lnk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Deskmate.lnk");
                 if (File.Exists(lnk) && string.Equals(ReadLink(lnk).Target, exe, StringComparison.OrdinalIgnoreCase)) return;
                 object o = new ShellLinkObject();
                 try
@@ -252,7 +252,7 @@ namespace Tepi
                     var sl = (IShellLinkW)o;
                     sl.SetPath(exe);
                     sl.SetWorkingDirectory(Path.GetDirectoryName(exe));
-                    sl.SetDescription("Tepi");
+                    sl.SetDescription("Deskmate");
                     sl.SetIconLocation(exe, 0);
                     ((IPersistFile)o).Save(lnk, true);
                 }
@@ -473,6 +473,32 @@ namespace Tepi
         [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
         [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
         [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+        [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
+        [DllImport("user32.dll")] static extern bool EndTask(IntPtr h, bool shutdown, bool force);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string name);
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out int pid);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct SHELLEXECUTEINFO
+        {
+            public int cbSize;
+            public uint fMask;
+            public IntPtr hwnd;
+            [MarshalAs(UnmanagedType.LPWStr)] public string lpVerb;
+            [MarshalAs(UnmanagedType.LPWStr)] public string lpFile;
+            [MarshalAs(UnmanagedType.LPWStr)] public string lpParameters;
+            [MarshalAs(UnmanagedType.LPWStr)] public string lpDirectory;
+            public int nShow;
+            public IntPtr hInstApp;
+            public IntPtr lpIDList;
+            [MarshalAs(UnmanagedType.LPWStr)] public string lpClass;
+            public IntPtr hkeyClass;
+            public uint dwHotKey;
+            public IntPtr hIcon;
+            public IntPtr hProcess;
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool ShellExecuteEx(ref SHELLEXECUTEINFO info);
 
         // A click on the dock counts as our input, so focus is ours to give
         public static void Activate(IntPtr h)
@@ -512,5 +538,167 @@ namespace Tepi
         }
 
         public static void Close(IntPtr h) { PostMessage(h, 0x10, IntPtr.Zero, IntPtr.Zero); }
+
+        public static bool IsMinimized(IntPtr h) { return IsIconic(h); }
+        public static bool IsMaximized(IntPtr h) { return IsZoomed(h); }
+        public static void Minimize(IntPtr h) { ShowWindowAsync(h, 6); }
+        public static void Restore(IntPtr h) { ShowWindowAsync(h, 9); Activate(h); }
+        public static void Maximize(IntPtr h) { ShowWindowAsync(h, 3); Activate(h); }
+
+        public static string ResolveFileTarget(string target, string exe)
+        {
+            if (!string.IsNullOrEmpty(exe) && File.Exists(exe)) return exe;
+            if (!string.IsNullOrEmpty(target))
+            {
+                if (target.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) && File.Exists(target))
+                {
+                    string linkTarget = ReadLink(target).Target;
+                    return !string.IsNullOrEmpty(linkTarget) && File.Exists(linkTarget) ? linkTarget : target;
+                }
+                if (File.Exists(target)) return target;
+            }
+            return "";
+        }
+
+        public static bool ShowProperties(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+            try
+            {
+                var info = new SHELLEXECUTEINFO
+                {
+                    cbSize = Marshal.SizeOf(typeof(SHELLEXECUTEINFO)),
+                    fMask = 0x0000000Cu,
+                    lpVerb = "properties",
+                    lpFile = path,
+                    nShow = 5
+                };
+                if (ShellExecuteEx(ref info)) return true;
+                Log.Write("properties " + path + ": error " + Marshal.GetLastWin32Error());
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("properties " + path + ": " + ex.Message);
+                return false;
+            }
+        }
+
+        public enum EndTaskStatus { Ok, PartialDenied, Failed, NotFound }
+
+        public static EndTaskStatus EndTask(IList<DockWin> windows)
+        {
+            if (windows == null || windows.Count == 0) return EndTaskStatus.NotFound;
+            int selfPid = GetCurrentProcessId();
+            var pidWins = new Dictionary<int, List<IntPtr>>();
+            int killed = 0;
+            bool denied = false, attempted = false;
+
+            for (int i = 0; i < windows.Count; i++)
+            {
+                DockWin w = windows[i];
+                if (w == null) continue;
+                int pid = 0;
+                if (w.H != IntPtr.Zero) GetWindowThreadProcessId(w.H, out pid);
+                if (pid == 0) pid = w.Pid;
+
+                if (w.Exe != null && w.Exe.EndsWith("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    IntPtr core = w.H != IntPtr.Zero ? FindWindowEx(w.H, IntPtr.Zero, "Windows.UI.Core.CoreWindow", null) : IntPtr.Zero;
+                    int corePid = 0;
+                    if (core != IntPtr.Zero) GetWindowThreadProcessId(core, out corePid);
+                    if (corePid > 0 && corePid != pid && corePid != selfPid)
+                    {
+                        List<IntPtr> list;
+                        if (!pidWins.TryGetValue(corePid, out list)) pidWins[corePid] = list = new List<IntPtr>();
+                        if (w.H != IntPtr.Zero) list.Add(w.H);
+                    }
+                    else if (w.H != IntPtr.Zero && pid != selfPid)
+                    {
+                        attempted = true;
+                        if (EndTask(w.H, false, true)) killed++;
+                    }
+                }
+                else if (pid > 0 && pid != selfPid)
+                {
+                    List<IntPtr> list;
+                    if (!pidWins.TryGetValue(pid, out list)) pidWins[pid] = list = new List<IntPtr>();
+                    if (w.H != IntPtr.Zero) list.Add(w.H);
+                }
+            }
+
+            foreach (var kv in pidWins)
+            {
+                int pid = kv.Key;
+                List<IntPtr> hwnds = kv.Value;
+                attempted = true;
+                try
+                {
+                    using (var p = Process.GetProcessById(pid))
+                    {
+                        p.Kill();
+                        p.WaitForExit(150);
+                        killed++;
+                    }
+                }
+                catch (ArgumentException)
+                {
+                    killed++;
+                }
+                catch (System.ComponentModel.Win32Exception ex)
+                {
+                    Log.Write("endtask pid " + pid + ": " + ex.Message);
+                    denied = true;
+                    for (int i = 0; i < hwnds.Count; i++)
+                    {
+                        if (hwnds[i] != IntPtr.Zero && EndTask(hwnds[i], false, true)) killed++;
+                    }
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    Log.Write("endtask pid " + pid + ": " + ex.Message);
+                    denied = true;
+                    for (int i = 0; i < hwnds.Count; i++)
+                    {
+                        if (hwnds[i] != IntPtr.Zero && EndTask(hwnds[i], false, true)) killed++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("endtask pid " + pid + ": " + ex.Message);
+                }
+            }
+
+            if (!attempted) return EndTaskStatus.NotFound;
+            if (denied) return EndTaskStatus.PartialDenied;
+            if (killed > 0) return EndTaskStatus.Ok;
+            return EndTaskStatus.Failed;
+        }
+
+        public static void RestartExplorer()
+        {
+            try
+            {
+                Process[] procs = Process.GetProcessesByName("explorer");
+                for (int i = 0; i < procs.Length; i++)
+                {
+                    using (var p = procs[i])
+                    {
+                        try
+                        {
+                            p.Kill();
+                            p.WaitForExit(300);
+                        }
+                        catch (Exception) { }
+                    }
+                }
+            }
+            catch (Exception ex) { Log.Write("restart explorer kill: " + ex.Message); }
+            try
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe") { UseShellExecute = true });
+            }
+            catch (Exception ex) { Log.Write("restart explorer start: " + ex.Message); }
+        }
     }
 }

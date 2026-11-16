@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Selected text: fix or translate in place
     partial class Island
@@ -13,7 +13,7 @@ namespace Tepi
         const int RewriteMax = 8000;
         bool rewriting;
 
-        // Clipboard writes by Tepi itself, not previews
+        // Clipboard writes by Deskmate itself, not previews
         DateTime clipQuietUtc;
 
         void RewriteSelection(bool translate)

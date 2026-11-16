@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 
-namespace Tepi
+namespace Deskmate
 {
     // One AI service and its endpoint
     class AiProvider
@@ -79,8 +79,19 @@ namespace Tepi
         {
             if (p.Id != "custom") return p.Base;
             string b = settings == null ? "" : settings.Get("ai.custom.url", "").Trim();
-            if (b.Length > 0 && !b.EndsWith("/")) b += "/";
-            return b;
+            if (!ValidCustomUrl(b)) return "";
+            b = b.TrimEnd('/');
+            if (b.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+                b = b.Substring(0, b.Length - "/chat/completions".Length);
+            return b.Length == 0 ? "" : b + "/";
+        }
+
+        internal static bool ValidCustomUrl(string value)
+        {
+            Uri url;
+            return Uri.TryCreate(value, UriKind.Absolute, out url) &&
+                url.UserInfo.Length == 0 && url.Query.Length == 0 && url.Fragment.Length == 0 &&
+                (url.Scheme == Uri.UriSchemeHttps || (url.Scheme == Uri.UriSchemeHttp && url.IsLoopback));
         }
 
         // Text: summaries, commands, selected text
@@ -116,7 +127,7 @@ namespace Tepi
                 h["anthropic-version"] = "2023-06-01";
             }
             else if (key.Length > 0) h["Authorization"] = "Bearer " + key;
-            if (p.Id == "openrouter") { h["HTTP-Referer"] = "https://odlaver.github.io/tepi/"; h["X-Title"] = "Tepi"; }
+            if (p.Id == "openrouter") { h["HTTP-Referer"] = "https://github.com/movlution/deskmate"; h["X-Title"] = "Deskmate"; }
             return h;
         }
 
@@ -130,7 +141,7 @@ namespace Tepi
             if (r.Status == 404) return Lang.F("Model tidak ada di {0}", n);
             if (r.Status == 429) return Lang.F("Batas {0} tercapai, coba lagi sebentar", n);
             if (r.Status == 413) return Lang.F("Rekaman terlalu panjang untuk {0}", n);
-            Log.Write("ai " + p.Id + " " + r.Status + ": " + (r.Body.Length > 300 ? r.Body.Substring(0, 300) : r.Body));
+            Log.Write("ai " + p.Id + " " + r.Status);
             return Lang.F("{0} menjawab {1}", n, r.Status);
         }
 
@@ -238,34 +249,109 @@ namespace Tepi
             };
             // Reasoning models reject a set temperature
             if (!model.StartsWith("gpt-5") && !model.StartsWith("o1") && !model.StartsWith("o3") && !model.StartsWith("o4")) payload["temperature"] = 0.2;
+            if (p.Id == "custom")
+            {
+                payload.Remove("temperature");
+                payload["stream"] = false;
+            }
             if (tools != null) { payload["tools"] = tools; payload["tool_choice"] = "auto"; }
-            var r = Web.Send("POST", BaseUrl(p) + "chat/completions", Auth(p, key), Json.Encode(payload), 90000);
-            // Local models without tools: plain text instead
-            if (!r.Ok && r.Status == 400 && tools != null && (r.Body ?? "").IndexOf("tool", StringComparison.OrdinalIgnoreCase) >= 0)
+            string url = BaseUrl(p) + "chat/completions";
+            var headers = Auth(p, key);
+            var r = Web.Send("POST", url, headers, Json.Encode(payload), 90000);
+            var reply = r.Ok ? ReadChatCompletion(r.Body) : null;
+            // Retry once as plain chat when a compatible server cannot return tool calls.
+            if (tools != null && ((p.Id == "custom" && r.Ok && reply == null) ||
+                (!r.Ok && (r.Status == 400 || r.Status == 422 || r.Status == 501) &&
+                 ((r.Body ?? "").IndexOf("tool", StringComparison.OrdinalIgnoreCase) >= 0 || p.Id == "custom"))))
             {
                 payload.Remove("tools");
                 payload.Remove("tool_choice");
-                r = Web.Send("POST", BaseUrl(p) + "chat/completions", Auth(p, key), Json.Encode(payload), 90000);
+                r = Web.Send("POST", url, headers, Json.Encode(payload), 90000);
+                reply = r.Ok ? ReadChatCompletion(r.Body) : null;
             }
             if (!r.Ok) { error = Error(p, r); return null; }
+            if (reply == null) error = Lang.F("Jawaban {0} tidak terbaca", Label(p));
+            return reply;
+        }
+
+        internal static Reply ReadChatCompletion(string body)
+        {
+            body = (body ?? "").Trim().TrimStart('\uFEFF');
+            if (body.StartsWith("data:", StringComparison.Ordinal) || body.StartsWith(":", StringComparison.Ordinal))
+                return ReadChatStream(body);
             try
             {
-                var d = (Dictionary<string, object>)Json.Parse(r.Body);
-                var first = (Dictionary<string, object>)Json.Arr(d, "choices")[0];
-                var msg = (Dictionary<string, object>)first["message"];
-                var reply = new Reply { Text = (Json.Str(msg, "content") ?? "").Trim() };
-                foreach (var o in Json.Arr(msg, "tool_calls"))
-                {
-                    var call = o as Dictionary<string, object>;
-                    var fn = Json.Obj(call, "function");
-                    if (fn == null) continue;
-                    Dictionary<string, object> args = null;
-                    try { args = Json.Parse(Json.Str(fn, "arguments").Length > 0 ? Json.Str(fn, "arguments") : "{}") as Dictionary<string, object>; } catch (Exception) { }
-                    reply.Calls.Add(new KeyValuePair<string, Dictionary<string, object>>(Json.Str(fn, "name"), args));
-                }
-                return reply;
+                var d = Json.Parse(body);
+                var choices = Json.Arr(d, "choices");
+                var first = choices.Length > 0 ? choices[0] : null;
+                var msg = Json.Obj(first, "message") ?? Json.Obj(d, "message");
+                var reply = new Reply { Text = ReadContent(msg, "content").Trim() };
+                if (reply.Text.Length == 0) reply.Text = Json.Str(msg, "refusal").Trim();
+                if (reply.Text.Length == 0) reply.Text = Json.Str(first, "text").Trim();
+                foreach (var call in Json.Arr(msg, "tool_calls")) ReadFunction(reply, Json.Obj(call, "function"));
+                ReadFunction(reply, Json.Obj(msg, "function_call"));
+                return reply.Text.Length > 0 || reply.Calls.Count > 0 ? reply : null;
             }
-            catch (Exception) { error = Lang.F("Jawaban {0} tidak terbaca", Label(p)); return null; }
+            catch (ArgumentException) { return null; }
+            catch (InvalidOperationException) { return null; }
+        }
+
+        static Reply ReadChatStream(string body)
+        {
+            // Some compatible servers stream plain text even with stream=false.
+            var text = new System.Text.StringBuilder();
+            try
+            {
+                foreach (var line in body.Split('\n'))
+                {
+                    if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+                    string value = line.Substring(5).Trim();
+                    if (value == "[DONE]") break;
+                    var chunk = Json.Parse(value);
+                    if (Json.Obj(chunk, "error") != null) return null;
+                    var choices = Json.Arr(chunk, "choices");
+                    if (choices.Length == 0) continue;
+                    var delta = Json.Obj(choices[0], "delta");
+                    if (Json.Arr(delta, "tool_calls").Length > 0 || Json.Obj(delta, "function_call") != null) return null;
+                    text.Append(ReadContent(delta, "content"));
+                    text.Append(Json.Str(delta, "refusal"));
+                }
+            }
+            catch (ArgumentException) { return null; }
+            catch (InvalidOperationException) { return null; }
+            string answer = text.ToString().Trim();
+            return answer.Length == 0 ? null : new Reply { Text = answer };
+        }
+
+        static string ReadContent(object message, string key)
+        {
+            string value = Json.Str(message, key);
+            if (value.Length > 0) return value;
+            var parts = new List<string>();
+            foreach (var part in Json.Arr(message, key))
+            {
+                string type = Json.Str(part, "type");
+                if (type != "" && type != "text" && type != "output_text") continue;
+                string text = part as string ?? Json.Str(part, "text");
+                if (text.Length == 0) text = Json.Str(Json.Obj(part, "text"), "value");
+                if (text.Length > 0) parts.Add(text);
+            }
+            return string.Join("\n", parts.ToArray());
+        }
+
+        static void ReadFunction(Reply reply, Dictionary<string, object> fn)
+        {
+            string name = Json.Str(fn, "name");
+            if (name.Length == 0) return;
+            var args = Json.Obj(fn, "arguments");
+            string encoded = Json.Str(fn, "arguments");
+            if (args == null && encoded.Length > 0)
+            {
+                try { args = Json.Parse(encoded) as Dictionary<string, object>; }
+                catch (ArgumentException) { }
+                catch (InvalidOperationException) { }
+            }
+            if (args != null) reply.Calls.Add(new KeyValuePair<string, Dictionary<string, object>>(name, args));
         }
 
         static Dictionary<string, object> Msg(string role, string content) { return new Dictionary<string, object> { { "role", role }, { "content", content } }; }

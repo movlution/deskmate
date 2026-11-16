@@ -6,7 +6,7 @@ using System.IO;
 using System.Text;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Rak extras: pick many, paste, expiry, keep
     partial class Island
@@ -86,7 +86,7 @@ namespace Tepi
                         if (img == null) return;
                         string dir = ShotsTemp();
                         Directory.CreateDirectory(dir);
-                        string path = Path.Combine(dir, "Tepi " + DateTime.Now.ToString("yyyy-MM-dd HH.mm.ss.fff") + ".png");
+                        string path = Path.Combine(dir, "Deskmate " + DateTime.Now.ToString("yyyy-MM-dd HH.mm.ss.fff") + ".png");
                         img.Save(path, ImageFormat.Png);
                         AddToShelf(new[] { path });
                     }

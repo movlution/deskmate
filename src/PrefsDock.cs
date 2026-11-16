@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -18,7 +18,7 @@ namespace Tepi
             void DockRows(Action<string> cap, Action<KitRow> add)
             {
                 bool on = settings.GetBool("dockbar.on", false), replacing = settings.GetBool("dockbar.replace", false);
-                var dock = Row(Lang.T("Dock"), Lang.T("Aplikasi, widget, dan jam di tepi bawah layar"), Switch("dockbar.on", false, v => { island.SetFlag("dockbar.on", v); Relayout(); }));
+                var dock = Row(Lang.T("Dock"), Lang.T("Aplikasi, widget, dan jam di tepi bawah setiap layar"), Switch("dockbar.on", false, v => { island.SetFlag("dockbar.on", v); Relayout(); }));
                 dock.Glyph = (char)0xE8A9;
                 add(dock);
                 var replace = Switch("dockbar.replace", false, v => { island.SetFlag("dockbar.replace", v); Relayout(); });
@@ -84,15 +84,12 @@ namespace Tepi
                 add(badgeRow);
                 if (replacing)
                 {
-                    var search = Switch("dockbar.search", true, null);
-                    search.Enabled = on;
-                    add(Row(Lang.T("Tombol cari"), null, search));
                     var view = Switch("dockbar.taskview", false, null);
                     view.Enabled = on;
                     add(Row(Lang.T("Tombol semua jendela"), Lang.T("Task View, sama dengan Win+Tab"), view));
                     var winkey = Switch("dockbar.winkey", true, null);
                     winkey.Enabled = on;
-                    var winkeyRow = Row(Lang.T("Tombol Windows membuka Tepi Start"), Lang.T("Juga Win+S, Win+A, Win+N, Win+W, Win+X, dan Ctrl+Esc; pintasan Win lain tetap jalan"), winkey);
+                    var winkeyRow = Row(Lang.T("Tombol Windows membuka Deskmate Start"), Lang.T("Juga Win+S, Win+A, Win+N, Win+W, Win+X, dan Ctrl+Esc; pintasan Win lain tetap jalan"), winkey);
                     winkeyRow.Glyph = (char)0xE765;
                     add(winkeyRow);
                 }
@@ -102,7 +99,7 @@ namespace Tepi
                 add(Row(Lang.T("Tombol tugas dan catatan"), Lang.T("Satu tombol untuk mengakses Tugas dan catatan"), work));
 
                 cap(Lang.T("Widget"));
-                string[] notes = { "Jam dan tanggal; klik membuka Ringkasan", "Sampul, judul, dan tombol putar", "Pemakaian tertinggi dan agen yang bekerja", "Saat timer berjalan", "Butuh kota di Pengaturan › Sistem", "Hanya di laptop", "CPU dan RAM, dibaca tiap 3 detik" };
+                string[] notes = { "Jam dan tanggal; klik membuka Ringkasan", "Sampul, judul, dan tombol putar", "Pemakaian tertinggi dan agen yang bekerja", "Saat timer berjalan", "Butuh kota di Pengaturan › Cuaca & Pengingat", "Hanya di laptop", "CPU dan RAM, dibaca tiap 3 detik" };
                 char[] glyphs = { (char)0xE823, (char)0xE8D6, (char)0xEC4A, (char)0xE916, (char)0xE753, (char)0xE83F, (char)0xE9D9 };
                 for (int i = 0; i < DockWidgetIds.Length; i++)
                 {

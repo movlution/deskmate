@@ -7,9 +7,9 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
-    // Win keys open Tepi Start and cards
+    // Win keys open Deskmate Start and cards
     sealed class StartKey
     {
         public event Action<string> Pressed;
@@ -118,7 +118,7 @@ namespace Tepi
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool Process32NextW(IntPtr snap, ref PROCESSENTRY32W pe);
 
         // Invisible focus holder. The desktop hides its keys from
-        // every app, so Tepi holds the focus while it shows.
+        // every app, so Deskmate holds the focus while it shows.
         sealed class Keeper : NativeWindow
         {
             public Action<int> Due;
@@ -176,7 +176,7 @@ namespace Tepi
                 catch (Exception ex) { Log.Write("start key: keeper " + ex.Message); }
                 RefreshExternalWin(true);
                 if (keeper != null) keeper.Later(CheckTimer, 3000);
-                // Windows Start appears: Tepi's replaces it
+                // Windows Start appears: Deskmate's replaces it
                 watchProc = OnForeground;
                 watch = SetWinEventHook(3, 3, IntPtr.Zero, watchProc, 0, 0, 0);
                 if (keeper != null && IsDesktop(GetForegroundWindow()) && !IsExternalWinActive()) keeper.Later(ParkTimer, 350);
@@ -342,7 +342,7 @@ namespace Tepi
             return cls == "Progman" || cls == "WorkerW";
         }
 
-        // Empty desktop in front: Tepi holds the focus so Win reaches it
+        // Empty desktop in front: Deskmate holds the focus so Win reaches it
         void Park()
         {
             var fg = GetForegroundWindow();
@@ -416,7 +416,7 @@ namespace Tepi
             finally { CloseHandle(p); }
         }
 
-        // Admin windows hide their keys from Tepi
+        // Admin windows hide their keys from Deskmate
         static bool Elevated(IntPtr h)
         {
             uint pid;
@@ -480,7 +480,7 @@ namespace Tepi
             }
         }
 
-        // Windows Start came up: steal focus so it closes, then open Tepi's
+        // Windows Start came up: steal focus so it closes, then open Deskmate's
         void StartCameUp()
         {
             if (keeper != null)
@@ -655,14 +655,14 @@ namespace Tepi
             if (!other.HasValue && first && !ext)
             {
                 lastLoggedExternalWin = false;
-                Log.Write("start key: external win shortcut none, using Tepi Start");
+                Log.Write("start key: external win shortcut none, using Deskmate Start");
                 return;
             }
             if (first || ext != lastLoggedExternalWin)
             {
                 bool was = lastLoggedExternalWin;
                 lastLoggedExternalWin = ext;
-                Log.Write("start key: external win shortcut " + (ext ? "detected, yielding Win" : "none, using Tepi Start"));
+                Log.Write("start key: external win shortcut " + (ext ? "detected, yielding Win" : "none, using Deskmate Start"));
                 if (!first && was && !ext)
                 {
                     PostThreadMessage(hookId, RehookMsg, IntPtr.Zero, IntPtr.Zero);

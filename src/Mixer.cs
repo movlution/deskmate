@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 
-namespace Tepi
+namespace Deskmate
 {
     [ComImport, Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     interface IAudioSessionManager2
@@ -163,7 +163,7 @@ namespace Tepi
                     if (list.GetSession(i, out s) != 0 || s == null) continue;
                     int state;
                     uint pid;
-                    // Only sessions playing now, never Tepi
+                    // Only sessions playing now, never Deskmate
                     if (s.GetState(out state) != 0 || state != 1 || s.IsSystemSoundsSession() == 0 || s.GetProcessId(out pid) != 0 || pid == self) { Marshal.ReleaseComObject(s); continue; }
                     var vol = (ISimpleAudioVolume)s;
                     float level;

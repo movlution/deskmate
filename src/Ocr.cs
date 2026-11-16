@@ -6,7 +6,7 @@ using Windows.Media.Ocr;
 using Windows.Storage;
 using Windows.Storage.Streams;
 
-namespace Tepi
+namespace Deskmate
 {
     // Windows OCR on this machine; nothing leaves it
     static class Ocr

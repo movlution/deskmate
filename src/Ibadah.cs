@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 
-namespace Tepi
+namespace Deskmate
 {
     // Custom worship time, any faith
     class IbadahItem

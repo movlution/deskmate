@@ -3,16 +3,17 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
-namespace Tepi
+namespace Deskmate
 {
     static class Native
     {
         public const int WS_POPUP = unchecked((int)0x80000000);
-        public const int WS_EX_LAYERED = 0x80000, WS_EX_TOOLWINDOW = 0x80, WS_EX_NOACTIVATE = 0x8000000, WS_EX_TOPMOST = 0x8;
+        public const int WS_EX_LAYERED = 0x80000, WS_EX_TOOLWINDOW = 0x80, WS_EX_NOACTIVATE = 0x8000000, WS_EX_TOPMOST = 0x8, WS_EX_TRANSPARENT = 0x20, WS_EX_NOREDIRECTIONBITMAP = 0x200000;
         public const int WM_MOUSEACTIVATE = 0x21, MA_NOACTIVATE = 3, WM_POWERBROADCAST = 0x218;
         public const int WM_DISPLAYCHANGE = 0x7E, WM_DPICHANGED = 0x2E0, WM_APP = 0x8000;
         public const int ULW_ALPHA = 2, SW_HIDE = 0, SW_SHOWNOACTIVATE = 4;
-        public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOACTIVATE = 0x10;
+        public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOACTIVATE = 0x10, SWP_SHOWWINDOW = 0x40, SWP_HIDEWINDOW = 0x80;
+        public const uint GW_HWNDNEXT = 2;
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
         [StructLayout(LayoutKind.Sequential)]
@@ -90,6 +91,7 @@ namespace Tepi
         [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
         [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int cmd);
         [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+        [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hwnd, uint cmd);
         [DllImport("user32.dll")] public static extern IntPtr MonitorFromPoint(POINT pt, uint flags);
         [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
         [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);

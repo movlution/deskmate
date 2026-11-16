@@ -1,13 +1,19 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 
-namespace Tepi
+namespace Deskmate
 {
     // Dock: opt-in bar of apps and live widgets
     partial class Island
     {
+        // The selected island display owns taskbar/tray/Win-key integration;
+        // every detected display gets an independent visual dock.
         DockWindow dockWin;
+        readonly Dictionary<string, DockWindow> dockWins = new Dictionary<string, DockWindow>(StringComparer.OrdinalIgnoreCase);
+        internal readonly AppWatch dockWatch = new AppWatch();
+        internal readonly Dictionary<string, Bitmap> dockIcons = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
         readonly System.Windows.Forms.Timer dockLeave = new System.Windows.Forms.Timer { Interval = 3500 };
         FileSystemWatcher pinWatch;
         readonly System.Windows.Forms.Timer pinSync = new System.Windows.Forms.Timer { Interval = 600 };
@@ -20,26 +26,98 @@ namespace Tepi
 
         bool DockWidget(string id) { return settings.GetBool("dockbar.w." + id, id != "system"); }
 
+        sealed class DockPlan
+        {
+            public readonly List<string> Live = new List<string>();
+            public readonly List<string> Close = new List<string>();
+            public string Owner = "";
+        }
+
+        // Kept pure so hot-plug reconciliation is deterministic before windows change.
+        static DockPlan PlanDocks(IEnumerable<string> screens, IEnumerable<string> existing, string selected)
+        {
+            var plan = new DockPlan();
+            foreach (var device in screens)
+                if (!string.IsNullOrEmpty(device) && !plan.Live.Exists(x => string.Equals(x, device, StringComparison.OrdinalIgnoreCase))) plan.Live.Add(device);
+            foreach (var device in existing)
+                if (!plan.Live.Exists(x => string.Equals(x, device, StringComparison.OrdinalIgnoreCase))) plan.Close.Add(device);
+            foreach (var device in plan.Live)
+                if (string.Equals(device, selected, StringComparison.OrdinalIgnoreCase)) { plan.Owner = device; break; }
+            if (plan.Owner.Length == 0 && plan.Live.Count > 0) plan.Owner = plan.Live[0];
+            return plan;
+        }
+
         void ApplyDock()
         {
-            if (DockBarOn && dockWin == null)
+            if (!DockBarOn) { CloseDocks(); return; }
+            if (dockWins.Count == 0) { ImportTaskbarPins(false); WatchPins(true); }
+
+            var screens = System.Windows.Forms.Screen.AllScreens;
+            var devices = new List<string>();
+            foreach (var screen in screens) devices.Add(screen.DeviceName);
+            var selected = ChosenScreen();
+            var plan = PlanDocks(devices, dockWins.Keys, selected != null ? selected.DeviceName : "");
+
+            // Stop shared owner services before assigning them to the new target.
+            foreach (var dock in dockWins.Values) dock.SetGlobalOwner(false);
+            foreach (var device in plan.Close)
             {
-                ImportTaskbarPins(false);
-                WatchPins(true);
-                dockWin = new DockWindow(this);
-                dockWin.Show();
+                var dock = dockWins[device];
+                dock.Shutdown();
+                dockWins.Remove(device);
             }
-            else if (!DockBarOn && dockWin != null)
+            if (!settings.GetBool("dockbar.replace", false) && !DockWindow.Dry) Taskbar.Restore(settings);
+            if (plan.Live.Count > 0) dockWatch.RescanIfStale(400);
+
+            foreach (var device in plan.Live)
             {
-                WatchPins(false);
-                dockWin.Shutdown();
+                System.Windows.Forms.Screen target = null;
+                foreach (var screen in screens)
+                    if (string.Equals(screen.DeviceName, device, StringComparison.OrdinalIgnoreCase)) { target = screen; break; }
+                if (target == null) continue;
+                DockWindow dock;
+                bool global = string.Equals(device, plan.Owner, StringComparison.OrdinalIgnoreCase);
+                if (!dockWins.TryGetValue(device, out dock))
+                {
+                    dock = new DockWindow(this, target, global);
+                    dockWins.Add(device, dock);
+                    dock.Show();
+                }
+                else dock.Changed(global);
+            }
+            dockWins.TryGetValue(plan.Owner, out dockWin);
+        }
+
+        void CloseDocks()
+        {
+            WatchPins(false);
+            if (dockWins.Count == 0)
+            {
                 dockWin = null;
+                if (!DockWindow.Dry) Taskbar.Restore(settings);
+                return;
             }
-            else if (dockWin != null) dockWin.Changed();
+            foreach (var dock in dockWins.Values) dock.SetGlobalOwner(false);
+            foreach (var dock in dockWins.Values) dock.Shutdown();
+            dockWins.Clear();
+            dockWin = null;
+            foreach (var b in dockIcons.Values) if (b != null) b.Dispose();
+            dockIcons.Clear();
+            if (!DockWindow.Dry) Taskbar.Restore(settings);
+        }
+
+        void RefreshDocks()
+        {
+            foreach (var dock in dockWins.Values) dock.Changed(dock == dockWin);
+        }
+
+        void RefreshDockApps()
+        {
+            foreach (var dock in dockWins.Values) dock.Refresh(false);
         }
 
         // Something on screen moved: dock glass and apps look again
-        void NudgeDock() { if (dockWin != null) dockWin.Nudge(); }
+        void NudgeDock() { foreach (var dock in dockWins.Values) dock.Nudge(); }
 
         // Dock click opens the island on a tab; closes if never visited
         void OpenFromDock(int pg)
@@ -69,7 +147,7 @@ namespace Tepi
         {
             settings.Set("dockbar.pins", string.Join("|", pins.ToArray()));
             settings.Save();
-            if (dockWin != null) dockWin.Refresh(false);
+            RefreshDockApps();
         }
 
         // First run takes the Windows taskbar's pins, in its order

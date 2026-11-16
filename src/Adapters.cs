@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Tepi
+namespace Deskmate
 {
     // Other agents' events as Claude events
     static class AgentAdapters

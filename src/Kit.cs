@@ -6,7 +6,7 @@ using System.Drawing.Text;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Opaque window colours from island tokens
     static class KitInk
@@ -782,19 +782,13 @@ namespace Tepi
             KitInk.Smooth(g);
             // Tall rows keep the tile beside the title
             var tile = new RectangleF((14 + Lead) * s, Height > 80 * s ? 16 * s : (Height - 30 * s) / 2, 30 * s, 30 * s);
-            using (var path = Ink.Round(tile, 8 * s))
-            using (var b = new SolidBrush(KitInk.Hover)) g.FillPath(b, path);
-            // Mark glyph: Tepi's own pill
             if (Glyph == MarkGlyph)
             {
-                var pill = new RectangleF(tile.X + 5 * s, tile.Y + 10 * s, 20 * s, 10 * s);
-                using (var p2 = Ink.Round(pill, 5 * s))
-                using (var pb = new SolidBrush(KitInk.Text))
-                    g.FillPath(pb, p2);
-                using (var dot = new SolidBrush(KitInk.Window))
-                    g.FillEllipse(dot, pill.Right - 8 * s, pill.Y + 2.5f * s, 5 * s, 5 * s);
+                g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(tile));
                 return;
             }
+            using (var path = Ink.Round(tile, 8 * s))
+            using (var b = new SolidBrush(KitInk.Hover)) g.FillPath(b, path);
             using (var icons = new Font(Ink.IconFamily, 15f * s, GraphicsUnit.Pixel))
                 KitInk.Draw(g, Glyph.ToString(), icons, Enabled ? KitInk.Text : KitInk.Faint, tile, ContentAlignment.MiddleCenter);
         }
@@ -820,6 +814,7 @@ namespace Tepi
     class KitWindow : Form
     {
         public float Ui = 1f;
+        Timer fadeTimer;
 
         [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
 
@@ -832,12 +827,13 @@ namespace Tepi
             ForeColor = KitInk.Text;
             KeyPreview = true;
             ShowInTaskbar = true;
-            if (AppIcon != null) Icon = AppIcon;
+            Icon = AppIcon;
             lock (openWindows) openWindows.Add(new WeakReference(this));
         }
 
         protected override void OnClosed(EventArgs e)
         {
+            StopFade();
             base.OnClosed(e);
             lock (openWindows)
             {
@@ -852,6 +848,7 @@ namespace Tepi
         {
             if (disposing)
             {
+                StopFade();
                 lock (openWindows)
                 {
                     for (int i = openWindows.Count - 1; i >= 0; i--)
@@ -912,8 +909,18 @@ namespace Tepi
             }
         }
 
-        // Tepi's mark on every window
-        public static Icon AppIcon;
+        internal static readonly Icon AppIcon = LoadAppIcon(SystemInformation.IconSize);
+
+        internal static Icon LoadAppIcon(Size size)
+        {
+            try
+            {
+                using (var stream = typeof(KitWindow).Assembly.GetManifestResourceStream("Deskmate.ico"))
+                    if (stream != null) return new Icon(stream, size);
+            }
+            catch (Exception ex) { Log.Write("app icon: " + ex.Message); }
+            return (Icon)SystemIcons.Application.Clone();
+        }
 
         protected override void OnHandleCreated(EventArgs e)
         {
@@ -930,19 +937,31 @@ namespace Tepi
             base.OnLoad(e);
         }
 
+        void StopFade()
+        {
+            if (fadeTimer != null)
+            {
+                fadeTimer.Stop();
+                fadeTimer.Dispose();
+                fadeTimer = null;
+            }
+        }
+
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
             if (Opacity >= 1) return;
+            StopFade();
             var start = DateTime.UtcNow;
-            var fade = new Timer { Interval = 15 };
-            fade.Tick += delegate
+            fadeTimer = new Timer { Interval = 15 };
+            fadeTimer.Tick += delegate
             {
+                if (IsDisposed || Disposing || !IsHandleCreated) { StopFade(); return; }
                 double k = Math.Min(1, (DateTime.UtcNow - start).TotalMilliseconds / 160);
                 Opacity = 1 - (1 - k) * (1 - k);
-                if (k >= 1) { fade.Stop(); fade.Dispose(); }
+                if (k >= 1) StopFade();
             };
-            fade.Start();
+            fadeTimer.Start();
         }
 
         protected override bool ProcessDialogKey(Keys key)

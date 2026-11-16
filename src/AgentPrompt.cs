@@ -9,7 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Type a prompt into an agent's terminal
     partial class Island
@@ -397,7 +397,7 @@ namespace Tepi
                     if (mine != null)
                         for (int i = mine.Count - 1; i >= 0; i--) { list.Items.Add(mine[i].Text); list.Trail.Add(Fmt.AgoShort(mine[i].Utc)); }
                     list.Empty = Lang.T("Belum ada pesan untuk proyek ini");
-                    note.Text = Lang.T("Hanya di memori sampai Tepi ditutup");
+                    note.Text = Lang.T("Hanya di memori sampai Deskmate ditutup");
                 }
                 else
                 {

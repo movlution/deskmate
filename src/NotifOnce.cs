@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
-namespace Tepi
+namespace Deskmate
 {
     // One banner per message, whatever the source
     partial class Island
@@ -41,7 +41,7 @@ namespace Tepi
 
         static string SourceOf(NotifItem n)
         {
-            if (n.AppId.StartsWith("phone:")) return "tepi-hp";
+            if (n.AppId.StartsWith("phone:")) return "deskmate-hp";
             string app = (n.AppId + " " + n.AppName).ToLowerInvariant();
             return app.Contains("yourphone") || app.Contains("crossdevice") ? "phone-link" : n.AppId;
         }
@@ -117,7 +117,7 @@ namespace Tepi
             return -1;
         }
 
-        // auto: Tepi pops only where Windows won't
+        // auto: Deskmate pops only where Windows won't
         string BannerMode { get { return settings.Get("notif.banner", "auto"); } }
 
         // Read-only; Settings › Notifications writes these
@@ -140,8 +140,8 @@ namespace Tepi
 
         const string NotifSettingsKey = @"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\";
 
-        // Tepi first: Windows banners off where Tepi shows the same; the center keeps them
-        int MakeTepiPrimary()
+        // Deskmate first: Windows banners off where Deskmate shows the same; the center keeps them
+        int MakeDeskmatePrimary()
         {
             var muted = new List<string>(settings.Get("notif.muted", "").Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries));
             int count = 0;
@@ -151,7 +151,7 @@ namespace Tepi
                     if (root != null)
                         foreach (var id in root.GetSubKeyNames())
                         {
-                            // Screenshots: only while Tepi previews them
+                            // Screenshots: only while Deskmate previews them
                             bool shots = id.StartsWith("Microsoft.ScreenSketch", StringComparison.OrdinalIgnoreCase) && ShotsOn;
                             if (!shots && !NotifSource.ChatAppId(id)) continue;
                             if (!WindowsBanner(id)) continue;
@@ -160,14 +160,14 @@ namespace Tepi
                             count++;
                         }
             }
-            catch (Exception ex) { Log.Write("tepi utama: " + ex.Message); }
-            settings.Set("notif.banner", "tepi");
+            catch (Exception ex) { Log.Write("deskmate utama: " + ex.Message); }
+            settings.Set("notif.banner", "deskmate");
             settings.Set("notif.muted", string.Join("|", muted.ToArray()));
             settings.Save();
             return count;
         }
 
-        // Undo: banners back for what Tepi turned off
+        // Undo: banners back for what Deskmate turned off
         void RestoreWindowsBanners()
         {
             foreach (var id in settings.Get("notif.muted", "").Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries))
@@ -192,7 +192,7 @@ namespace Tepi
         bool ShouldPop(NotifItem n)
         {
             if (IsSummary(n)) return false;
-            if (BannerMode == "tepi") return true;
+            if (BannerMode == "deskmate") return true;
             return !WindowsBanner(n.AppId);
         }
 

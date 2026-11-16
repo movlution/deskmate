@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     // Rapikan Downloads: loose files into folders, undoable
     partial class Island

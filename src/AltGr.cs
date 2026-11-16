@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
     // AltGr is Ctrl+Alt: give typed characters back
     partial class Island

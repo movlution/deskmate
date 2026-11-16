@@ -4,10 +4,10 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 5: Custom Palette Contrast Floor" {
-    $island = Get-TepiType "Island"
+    $island = Get-DeskmateType "Island"
     $derive = $island.GetMethod("DerivePalette", [System.Reflection.BindingFlags]'Public,Static')
 
     It "Verifies DerivePalette static method exists on Island" {

@@ -4,12 +4,12 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 18 - Island Pill Elevation Shadow Boundaries" {
 
     It "Evaluates shadow suppression condition boundary at height H=60" {
-        $islandType = Get-TepiType "Island"
+        $islandType = Get-DeskmateType "Island"
         Assert-NotNull $islandType "Island type must exist"
 
         $heights = @(30, 48, 60, 61, 80, 120)
@@ -20,7 +20,7 @@ Describe "Tier 2 Boundary Suite: Feature 18 - Island Pill Elevation Shadow Bound
     }
 
     It "Verifies ShadowAlpha kernel table has decreasing falloff within ambient (0..4) and key (5..7) passes" {
-        $shadowAlpha = Get-TepiStaticField "Island" "ShadowAlpha"
+        $shadowAlpha = Get-DeskmateStaticField "Island" "ShadowAlpha"
         Assert-NotNull $shadowAlpha "ShadowAlpha array must exist"
         Assert-Equal $shadowAlpha.Length 8 "ShadowAlpha must have exactly 8 layers (5 ambient + 3 key)"
 
@@ -36,7 +36,7 @@ Describe "Tier 2 Boundary Suite: Feature 18 - Island Pill Elevation Shadow Bound
     }
 
     It "Verifies ShadowGrow kernel table has increasing offset progression within ambient (0..4) and key (5..7) passes" {
-        $shadowGrow = Get-TepiStaticField "Island" "ShadowGrow"
+        $shadowGrow = Get-DeskmateStaticField "Island" "ShadowGrow"
         Assert-NotNull $shadowGrow "ShadowGrow array must exist"
         Assert-Equal $shadowGrow.Length 8 "ShadowGrow must have exactly 8 layers"
 
@@ -52,9 +52,9 @@ Describe "Tier 2 Boundary Suite: Feature 18 - Island Pill Elevation Shadow Bound
     }
 
     It "Verifies ShadowDrop array dimension matches ShadowGrow and ShadowAlpha" {
-        $shadowAlpha = Get-TepiStaticField "Island" "ShadowAlpha"
-        $shadowGrow = Get-TepiStaticField "Island" "ShadowGrow"
-        $shadowDrop = Get-TepiStaticField "Island" "ShadowDrop"
+        $shadowAlpha = Get-DeskmateStaticField "Island" "ShadowAlpha"
+        $shadowGrow = Get-DeskmateStaticField "Island" "ShadowGrow"
+        $shadowDrop = Get-DeskmateStaticField "Island" "ShadowDrop"
 
         Assert-NotNull $shadowDrop "ShadowDrop array must exist"
         Assert-Equal $shadowDrop.Length $shadowGrow.Length "ShadowDrop and ShadowGrow lengths must match"

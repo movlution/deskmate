@@ -5,7 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Gamified typing combo: arcade hit counter, rank tiers, particles, and drain meter
     partial class Island
@@ -111,7 +111,6 @@ namespace Tepi
         float sprintLeft;
         float sprintDoneLeft;
         int sprintChars;
-        int sprintRunCombo;
         int sprintFinalWpm;
 
         static readonly string[] ComboBadgeOrder =
@@ -507,7 +506,6 @@ namespace Tepi
             sprintActive = true;
             sprintDoneLeft = 0f;
             sprintChars = 0;
-            sprintRunCombo = 0;
             sprintFinalWpm = 0;
             expanded = false;
             SyncComboHook();

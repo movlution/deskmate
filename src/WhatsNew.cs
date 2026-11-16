@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Release highlights, shown once per version
     static class WhatsNew
@@ -26,10 +26,10 @@ namespace Tepi
                     new[] { "Island di mana saja", "Atas tengah, pojok atas, atau sisi kiri dan kanan layar dengan island berdiri tegak. Saat diam, island bisa menampilkan jam, tanggal, baterai, atau suhu di sampingnya.", "\uE759" },
                     new[] { "Dock", "Bar kaca di tepi bawah berisi aplikasi, pratinjau jendela, dan widget, yang bisa menggantikan taskbar Windows sepenuhnya. Nyalakan di Pengaturan › Dock.", "" },
                     new[] { "Ringkasan pilihanmu", "Pilih dan urutkan kartunya, termasuk cuaca, baterai, clipboard, dan sholat. Panel yang lebar memakai tiga kolom.", "\uE80F" },
-                    new[] { "Ngobrol dengan Tepi", "Suruh Tepi punya jendela obrolan yang ingat percakapannya, dan bisa memakai Groq, OpenAI, Claude, Gemini, OpenRouter, DeepSeek, Mistral, AI lokal di laptop sendiri, atau server sendiri.", "\uE8F2" },
+                    new[] { "Ngobrol dengan Deskmate", "Suruh Deskmate punya jendela obrolan yang ingat percakapannya, dan bisa memakai Groq, OpenAI, Claude, Gemini, OpenRouter, DeepSeek, Mistral, AI lokal di laptop sendiri, atau server sendiri.", "\uE8F2" },
                     new[] { "Perbaiki dan terjemahkan teks", "Blok teks di aplikasi apa pun, tekan pintasannya, dan teks itu diganti versi yang sudah diperbaiki atau diterjemahkan.", "\uE8AC" },
                     new[] { "Ubah format lebih lengkap", "PDF ke Word dan teks, OCR untuk foto dan hasil scan, kompres PDF, gambar, video, dan audio, gabung PDF dan gambar jadi satu, serta slide ke gambar.", "\uE8AB" },
-                    new[] { "Notifikasi lebih rapi", "Tepi bisa jadi penerima utama banner chat, panggilan, dan screenshot. Pesan dari HP dan laptop tampil sekali, dan isinya disamarkan saat berbagi layar.", "\uE8BD" },
+                    new[] { "Notifikasi lebih rapi", "Deskmate bisa jadi penerima utama banner chat, panggilan, dan screenshot. Pesan dari HP dan laptop tampil sekali, dan isinya disamarkan saat berbagi layar.", "\uE8BD" },
                     new[] { "Screenshot dan Downloads", "Screenshot bisa disamarkan, dipotong, diputar, dan dibalik. Berkas lepas di Downloads bisa dirapikan per jenis dan diurungkan selama satu jam.", "\uE7B3" },
                     new[] { "Agent lebih hati-hati", "Perintah berisiko selalu ditanya ulang, island merangkum hasil kerja agent, klik notifikasinya membuka sesinya di tab Agen, dan kuota semua agent kini satu sakelar.", "\uE756" },
                     new[] { "Pengaturan baru", "Dikelompokkan per kategori: pilih satu untuk melihat daftar halamannya. Aksesibilitas, Pintasan, dan Tentang langsung ada di samping.", "\uE713" },
@@ -41,9 +41,9 @@ namespace Tepi
                 Items = new[]
                 {
                     new[] { "Dikte", "Tahan Ctrl kanan di aplikasi apa pun, bicara, lalu lepas: teksnya ditempel di tempat kursor. Ada kamus istilah dan snippet, lewat layanan AI pilihanmu atau offline.", "\uE720" },
-                    new[] { "Suruh Tepi", "Ketik atau ucapkan \"ingetin minum 30 menit lagi\", \"timer 5:30\", \"15% dari 240.000\", atau \"5 km ke mil\". Pengingat, timer, catatan, hitungan, dan konversi satuan jalan tanpa internet.", "\uE765" },
+                    new[] { "Suruh Deskmate", "Ketik atau ucapkan \"ingetin minum 30 menit lagi\", \"timer 5:30\", \"15% dari 240.000\", atau \"5 km ke mil\". Pengingat, timer, catatan, hitungan, dan konversi satuan jalan tanpa internet.", "\uE765" },
                     new[] { "Transkrip rapat", "Rekam panggilan tanpa bot dengan Ctrl+Alt+T. Mic jadi Kamu, suara laptop jadi Lawan bicara, lengkap dengan ringkasan dan to-do.", "\uE7C8" },
-                    new[] { "Tab Bicara", "Dikte, rekam rapat, Suruh Tepi, pengingat yang menunggu, dan riwayatnya di satu tab.", "\uE8A9" },
+                    new[] { "Tab Bicara", "Dikte, rekam rapat, Suruh Deskmate, pengingat yang menunggu, dan riwayatnya di satu tab.", "\uE8A9" },
                     new[] { "Ringkasan setelah fokus", "Selama sesi fokus, pesan biasa ditahan. Begitu selesai, island merangkum siapa saja yang mengirim pesan.", "\uE7E7" },
                     new[] { "Garis cahaya", "Progres timer, unduhan, dan cas baterai menyala di tepi island. Saat tugas hari ini habis, island ikut merayakan.", "\uE781" },
                     new[] { "Salin teks dari layar", "Pilih area mana pun, teksnya langsung tersalin. Ada di menu klik kanan, dan pintasannya bisa dipasang di Pengaturan.", "\uE8C8" },
@@ -51,7 +51,7 @@ namespace Tepi
                     new[] { "Kirim saran", "Ide fitur atau laporan masalah bisa dikirim langsung dari Pengaturan, bagian Tentang.", "\uE939" },
                     new[] { "Tur dan Apa yang baru", "Pengguna baru dipandu sembilan langkah di bawah island, dan setiap pembaruan merangkum isinya di sini.", "\uE7C1" },
                     new[] { "Pengaturan lebih lega", "Jendelanya terbuka lebih besar, daftar di samping bisa digulir, dan ada opsi menyisakan ruang di tepi atas untuk jendela.", "\uE713" },
-                    new[] { "Perbaikan kecil untuk agent", "Antigravity tidak lagi terblokir saat terhubung ke Tepi, setiap sesi agent kini bertanda Claude, Codex, atau Antigravity, dan sesi Codex atau Antigravity yang sudah diam 30 menit hilang sendiri dari daftar.", "\uE756" },
+                    new[] { "Perbaikan kecil untuk agent", "Antigravity tidak lagi terblokir saat terhubung ke Deskmate, setiap sesi agent kini bertanda Claude, Codex, atau Antigravity, dan sesi Codex atau Antigravity yang sudah diam 30 menit hilang sendiri dari daftar.", "\uE756" },
                     new[] { "Kuota semua agent", "Tab Agen kini menampilkan kuota Claude, Codex, Antigravity, dan Copilot dalam satu daftar, dengan nama AI di depan tiap baris.", "\uEC4A" },
                     new[] { "Copilot CLI", "Copilot CLI bisa dihubungkan dari Pengaturan › Agen: sesinya tampil di island, bertanda Copilot, dan ditutup rapi saat selesai.", "\uE756" },
                 },
@@ -139,7 +139,7 @@ namespace Tepi
             done.Click += delegate { Close(); };
             full.Text = Lang.T("Catatan lengkap");
             full.AccessibleDescription = "GitHub";
-            full.Click += delegate { Island.OpenUrl("https://github.com/odlaver/tepi/releases/tag/v" + notes[0].Version); };
+            full.Click += delegate { Island.OpenUrl("https://github.com/movlution/deskmate/releases/tag/v" + notes[0].Version); };
             Controls.Add(scroller);
             Controls.Add(done);
             Controls.Add(full);
@@ -164,7 +164,7 @@ namespace Tepi
             e.Graphics.Clear(KitInk.Window);
             float s = Ui;
             using (var f = UiFont(24f))
-                TextRenderer.DrawText(e.Graphics, Lang.F("Baru di Tepi {0}", notes[0].Version), f, new Point((int)(26 * s), (int)(22 * s)), KitInk.Text, TextFormatFlags.NoPrefix);
+                TextRenderer.DrawText(e.Graphics, Lang.F("Baru di Deskmate {0}", notes[0].Version), f, new Point((int)(26 * s), (int)(22 * s)), KitInk.Text, TextFormatFlags.NoPrefix);
         }
 
         public override void Relayout()
@@ -231,7 +231,7 @@ namespace Tepi
                         if (k > 0)
                         {
                             y += 22 * s;
-                            captions.Add(new KeyValuePair<float, string>(y, Lang.F("Tepi {0}", Notes[k].Version)));
+                            captions.Add(new KeyValuePair<float, string>(y, Lang.F("Deskmate {0}", Notes[k].Version)));
                             y += 24 * s;
                         }
                         float top = y;

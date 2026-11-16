@@ -4,20 +4,20 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 22 - Typing Combo Boundaries & Edge Cases" {
-    $islandType = Get-TepiType "Island"
+    $islandType = Get-DeskmateType "Island"
     $flags = [System.Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
 
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Filters out out-of-range VKs (-1, 0, 256, 999) and modifier/lock keys in IsTypingKey" {
         $invalidVks = @(-1, 0, 256, 999, 0x10, 0x11, 0x12, 0x14, 0x1B, 0x5B, 0x5C, 0x90, 0x91, 0xA0, 0xA2, 0xA4, 0x70, 0x7B)
         foreach ($vk in $invalidVks) {
-            $ok = Invoke-TepiStaticMethod "Island" "IsTypingKey" @([int]$vk)
+            $ok = Invoke-DeskmateStaticMethod "Island" "IsTypingKey" @([int]$vk)
             Assert-False $ok "VK $vk must not be classified as a typing key"
         }
     }
@@ -25,32 +25,32 @@ Describe "Tier 2 Boundary Suite: Feature 22 - Typing Combo Boundaries & Edge Cas
     It "Accepts letters, digits, numpad, space, enter, backspace, and OEM punctuation in IsTypingKey" {
         $validVks = @(0x41, 0x5A, 0x30, 0x39, 0x60, 0x69, 0x20, 0x0D, 0x08, 0x09, 0xBA, 0xBF, 0xDB, 0xDE)
         foreach ($vk in $validVks) {
-            $ok = Invoke-TepiStaticMethod "Island" "IsTypingKey" @([int]$vk)
+            $ok = Invoke-DeskmateStaticMethod "Island" "IsTypingKey" @([int]$vk)
             Assert-True $ok "VK $vk must be classified as a typing key"
         }
     }
 
     It "Formats KeyCapLabel cleanly for letters, digits, numpad operators, special keys, IME, and unknown VKs" {
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "KeyCapLabel" @([int]0x41)) "A" "0x41 -> A"
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "KeyCapLabel" @([int]0x35)) "5" "0x35 -> 5"
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "KeyCapLabel" @([int]0x67)) "7" "Numpad 7 -> 7"
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "KeyCapLabel" @([int]0x6A)) "*" "Numpad * -> *"
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "KeyCapLabel" @([int]0x6B)) "+" "Numpad + -> +"
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "KeyCapLabel" @([int]0x20)) "SPC" "Space -> SPC"
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "KeyCapLabel" @([int]0x0D)) ([string][char]0x23CE) "Enter -> return symbol"
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "KeyCapLabel" @([int]0xE7)) "IME" "VK_PACKET -> IME"
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "KeyCapLabel" @([int]0xFF)) "KEY" "Unknown VK -> KEY fallback"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "KeyCapLabel" @([int]0x41)) "A" "0x41 -> A"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "KeyCapLabel" @([int]0x35)) "5" "0x35 -> 5"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "KeyCapLabel" @([int]0x67)) "7" "Numpad 7 -> 7"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "KeyCapLabel" @([int]0x6A)) "*" "Numpad * -> *"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "KeyCapLabel" @([int]0x6B)) "+" "Numpad + -> +"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "KeyCapLabel" @([int]0x20)) "SPC" "Space -> SPC"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "KeyCapLabel" @([int]0x0D)) ([string][char]0x23CE) "Enter -> return symbol"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "KeyCapLabel" @([int]0xE7)) "IME" "VK_PACKET -> IME"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "KeyCapLabel" @([int]0xFF)) "KEY" "Unknown VK -> KEY fallback"
     }
 
     It "Handles negative and extreme hit counts (-100, 0, 100000) in ComboTierFor without throwing" {
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "ComboTierFor" @([int]-100)) 0 "Negative hits -> Tier 0"
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "ComboTierFor" @([int]0)) 0 "Zero hits -> Tier 0"
-        Assert-Equal (Invoke-TepiStaticMethod "Island" "ComboTierFor" @([int]100000)) 6 "100,000 hits -> Tier 6"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "ComboTierFor" @([int]-100)) 0 "Negative hits -> Tier 0"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "ComboTierFor" @([int]0)) 0 "Zero hits -> Tier 0"
+        Assert-Equal (Invoke-DeskmateStaticMethod "Island" "ComboTierFor" @([int]100000)) 6 "100,000 hits -> Tier 6"
     }
 
     It "Cycles rainbow color smoothly across arbitrary negative, zero, and large time values in Tier 6" {
         foreach ($t in @(-5.5, 0.0, 0.33, 1.75, 1000.4)) {
-            $c = Invoke-TepiStaticMethod "Island" "ComboTierColor" @([int]6, [double]$t)
+            $c = Invoke-DeskmateStaticMethod "Island" "ComboTierColor" @([int]6, [double]$t)
             Assert-NotNull $c "Rainbow color at t=$t must not be null"
             Assert-Equal $c.A 255 "Rainbow color at t=$t must be fully opaque"
         }
@@ -116,9 +116,11 @@ Describe "Tier 2 Boundary Suite: Feature 22 - Typing Combo Boundaries & Edge Cas
         finally {
             [void]$setMethod.Invoke($settings, @("keys.combo", $prevCombo))
             $isle.ResetCombo()
+            $painter.GetType().GetField("G", $flags).SetValue($painter, $null)
+            $gField.SetValue($isle, $null)
+            $isle.Dispose()
             $gr.Dispose()
             $bmp.Dispose()
-            $isle.Dispose()
         }
     }
 
@@ -169,8 +171,8 @@ Describe "Tier 2 Boundary Suite: Feature 22 - Typing Combo Boundaries & Edge Cas
             Assert-True $isle.ComboShowing "ComboShowing is active at 3 hits"
 
             # Verify urgent/interactive toast takes priority over View.Combo in DesiredView()
-            $toastType = Get-TepiType "Toast"
-            $viewType = Get-TepiType "View"
+            $toastType = Get-DeskmateType "Toast"
+            $viewType = Get-DeskmateType "View"
             $urgentToast = [Activator]::CreateInstance($toastType)
             $urgentToast.GetType().GetField("View").SetValue($urgentToast, [System.Enum]::Parse($viewType, "Otp"))
             $urgentToast.GetType().GetField("Priority").SetValue($urgentToast, 3)
@@ -183,13 +185,13 @@ Describe "Tier 2 Boundary Suite: Feature 22 - Typing Combo Boundaries & Edge Cas
             Assert-Equal ($desiredMethod.Invoke($isle, @()).ToString()) "Combo" "View.Combo resumes once urgent toast clears"
 
             # Render in Light Mode and at small mid-morph dimensions (40x10 and 8x30) without throwing
-            Reset-TepiTheme -Light $true
+            Reset-DeskmateTheme -Light $true
             $gField = $islandType.GetField("g", $flags)
             $pField = $islandType.GetField("p", $flags)
             $painter = $pField.GetValue($isle)
             $gField.SetValue($isle, $gr)
             $painter.GetType().GetField("G", $flags).SetValue($painter, $gr)
-            $inkType = Get-TepiType "Ink"
+            $inkType = Get-DeskmateType "Ink"
             $baseTone = $inkType.GetField("Base", $flags).GetValue($null)
             $painter.GetType().GetField("T", $flags).SetValue($painter, $baseTone)
 
@@ -206,12 +208,14 @@ Describe "Tier 2 Boundary Suite: Feature 22 - Typing Combo Boundaries & Edge Cas
             [void]$setDormant.Invoke($isle, @($false, $false))
         }
         finally {
-            Reset-TepiTheme -Light $false
+            Reset-DeskmateTheme -Light $false
             [void]$setMethod.Invoke($settings, @("keys.combo", $prevCombo))
             $isle.ResetCombo()
+            $painter.GetType().GetField("G", $flags).SetValue($painter, $null)
+            $gField.SetValue($isle, $null)
+            $isle.Dispose()
             $gr.Dispose()
             $bmp.Dispose()
-            $isle.Dispose()
         }
     }
 }

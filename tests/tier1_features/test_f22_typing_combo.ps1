@@ -4,32 +4,32 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 22: Gamified Typing Combo & Menu Integration" {
-    $islandType = Get-TepiType "Island"
+    $islandType = Get-DeskmateType "Island"
     $flags = [System.Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
 
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
-    It "Verifies View.Combo exists in Tepi.View enum" {
-        $viewType = Get-TepiType "View"
+    It "Verifies View.Combo exists in Deskmate.View enum" {
+        $viewType = Get-DeskmateType "View"
         Assert-NotNull $viewType "View enum must exist"
         $names = [System.Enum]::GetNames($viewType)
         Assert-True ($names -contains "Combo") "View enum must contain 'Combo'"
     }
 
     It "Verifies ComboTierFor maps hit counts to arcade tiers 0..6" {
-        $t0 = Invoke-TepiStaticMethod "Island" "ComboTierFor" @([int]0)
-        $t0b = Invoke-TepiStaticMethod "Island" "ComboTierFor" @([int]2)
-        $t1 = Invoke-TepiStaticMethod "Island" "ComboTierFor" @([int]3)
-        $t2 = Invoke-TepiStaticMethod "Island" "ComboTierFor" @([int]10)
-        $t3 = Invoke-TepiStaticMethod "Island" "ComboTierFor" @([int]25)
-        $t4 = Invoke-TepiStaticMethod "Island" "ComboTierFor" @([int]50)
-        $t5 = Invoke-TepiStaticMethod "Island" "ComboTierFor" @([int]100)
-        $t6 = Invoke-TepiStaticMethod "Island" "ComboTierFor" @([int]200)
+        $t0 = Invoke-DeskmateStaticMethod "Island" "ComboTierFor" @([int]0)
+        $t0b = Invoke-DeskmateStaticMethod "Island" "ComboTierFor" @([int]2)
+        $t1 = Invoke-DeskmateStaticMethod "Island" "ComboTierFor" @([int]3)
+        $t2 = Invoke-DeskmateStaticMethod "Island" "ComboTierFor" @([int]10)
+        $t3 = Invoke-DeskmateStaticMethod "Island" "ComboTierFor" @([int]25)
+        $t4 = Invoke-DeskmateStaticMethod "Island" "ComboTierFor" @([int]50)
+        $t5 = Invoke-DeskmateStaticMethod "Island" "ComboTierFor" @([int]100)
+        $t6 = Invoke-DeskmateStaticMethod "Island" "ComboTierFor" @([int]200)
 
         Assert-Equal $t0 0 "0 hits -> Tier 0 (warmup)"
         Assert-Equal $t0b 0 "2 hits -> Tier 0 (warmup)"
@@ -52,33 +52,33 @@ Describe "Feature 22: Gamified Typing Combo & Menu Integration" {
         }
 
         foreach ($tier in 1..6) {
-            $label = Invoke-TepiStaticMethod "Island" "ComboRankLabel" @([int]$tier)
+            $label = Invoke-DeskmateStaticMethod "Island" "ComboRankLabel" @([int]$tier)
             Assert-Equal $label $expectedLabels[$tier] "Tier $tier rank label must match"
 
-            $col = Invoke-TepiStaticMethod "Island" "ComboTierColor" @([int]$tier, [double]1.25)
+            $col = Invoke-DeskmateStaticMethod "Island" "ComboTierColor" @([int]$tier, [double]1.25)
             Assert-NotNull $col "Tier $tier color must not be null"
             Assert-Equal $col.A 255 "Tier $tier color must be fully opaque"
 
-            $sub = Invoke-TepiStaticMethod "Island" "ComboRankSubtitle" @([int]$tier)
+            $sub = Invoke-DeskmateStaticMethod "Island" "ComboRankSubtitle" @([int]$tier)
             Assert-True ($sub.Length -gt 0) "Tier $tier subtitle must be non-empty"
         }
     }
 
     It "Verifies keys.combo and keys.combo.sound are included in SettingsIO.Portable" {
-        $portable = Get-TepiStaticField "Island" "Portable"
+        $portable = Get-DeskmateStaticField "Island" "Portable"
         Assert-NotNull $portable "Island.Portable HashSet must exist"
         Assert-True ($portable.Contains("keys.combo")) "Portable settings must include keys.combo"
         Assert-True ($portable.Contains("keys.combo.sound")) "Portable settings must include keys.combo.sound"
     }
 
     It "Verifies Indonesian and English localization for Combo Ketikan menu and subtitles" {
-        $langType = Get-TepiType "Lang"
+        $langType = Get-DeskmateType "Lang"
         $enProp = $langType.GetField("English", [System.Reflection.BindingFlags]'Public,Static')
         $prevEn = $enProp.GetValue($null)
         try {
             $enProp.SetValue($null, $true)
-            $tMenu = Invoke-TepiStaticMethod "Lang" "T" @("Combo Ketikan")
-            $tGod = Invoke-TepiStaticMethod "Lang" "T" @("Dewa Ketik!")
+            $tMenu = Invoke-DeskmateStaticMethod "Lang" "T" @("Combo Ketikan")
+            $tGod = Invoke-DeskmateStaticMethod "Lang" "T" @("Dewa Ketik!")
             Assert-Equal $tMenu "Typing Combo" "Combo Ketikan must translate to Typing Combo in English"
             Assert-Equal $tGod "Typing God!" "Dewa Ketik! must translate to Typing God! in English"
         }
@@ -88,7 +88,7 @@ Describe "Feature 22: Gamified Typing Combo & Menu Integration" {
     }
 
     It "Verifies Combo Ketikan row glyph is registered in PrefsWindow.RowGlyphs" {
-        $prefsType = Get-TepiType "PrefsWindow"
+        $prefsType = Get-DeskmateType "PrefsWindow"
         Assert-NotNull $prefsType "PrefsWindow type must exist"
         $glyphFor = $prefsType.GetMethod("GlyphFor", [System.Reflection.BindingFlags]'NonPublic,Public,Static')
         Assert-NotNull $glyphFor "GlyphFor method must exist"
@@ -167,9 +167,11 @@ Describe "Feature 22: Gamified Typing Combo & Menu Integration" {
         finally {
             [void]$setMethod.Invoke($settings, @("keys.combo", $prevCombo))
             $isle.ResetCombo()
+            $painter.GetType().GetField("G", $flags).SetValue($painter, $null)
+            $gField.SetValue($isle, $null)
+            $isle.Dispose()
             $gr.Dispose()
             $bmp.Dispose()
-            $isle.Dispose()
         }
     }
 }

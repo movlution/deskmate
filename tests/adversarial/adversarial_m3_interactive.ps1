@@ -9,15 +9,15 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Adversarial Suite M3: Island HUD & Interactive State Stress Testing" {
 
-    $islandType = Get-TepiType "Island"
-    $inkType = Get-TepiType "Ink"
-    $toneType = Get-TepiType "Tone"
-    $animType = Get-TepiType "Anim"
-    $painterType = Get-TepiType "Painter"
+    $islandType = Get-DeskmateType "Island"
+    $inkType = Get-DeskmateType "Ink"
+    $toneType = Get-DeskmateType "Tone"
+    $animType = Get-DeskmateType "Anim"
+    $painterType = Get-DeskmateType "Painter"
 
     $contrastMethod = $islandType.GetMethod("Contrast", [System.Reflection.BindingFlags]'Public,Static')
     $shadowLayersMethod = $islandType.GetMethod("ShadowLayers", [System.Reflection.BindingFlags]'NonPublic,Static')
@@ -33,8 +33,8 @@ Describe "Adversarial Suite M3: Island HUD & Interactive State Stress Testing" {
     # =========================================================================
 
     It "S1.01: Verifies Tone.OnGlass() clamps Sub alpha to >= 189 (74.1%) in Dark and Light modes" {
-        Reset-TepiTheme -Light $false
-        $darkTone = Invoke-TepiStaticMethod "Tone" "Dark" @()
+        Reset-DeskmateTheme -Light $false
+        $darkTone = Invoke-DeskmateStaticMethod "Tone" "Dark" @()
         Assert-Equal $darkTone.Sub.A 158 "Default dark mode Sub alpha must be 158"
         
         $glassDark = $darkTone.OnGlass()
@@ -43,14 +43,14 @@ Describe "Adversarial Suite M3: Island HUD & Interactive State Stress Testing" {
         Assert-Equal $glassDark.Sub.G $darkTone.Sub.G "Sub G must be preserved"
         Assert-Equal $glassDark.Sub.B $darkTone.Sub.B "Sub B must be preserved"
 
-        Reset-TepiTheme -Light $true
-        $paperTone = Invoke-TepiStaticMethod "Tone" "Paper" @()
+        Reset-DeskmateTheme -Light $true
+        $paperTone = Invoke-DeskmateStaticMethod "Tone" "Paper" @()
         $glassPaper = $paperTone.OnGlass()
         Assert-True ($glassPaper.Sub.A -ge 189) "Light mode OnGlass Sub alpha must clamp to >= 189 (actual: $($glassPaper.Sub.A))"
     }
 
     It "S1.02: Verifies Tone.OnGlass() mathematical idempotency over 10 consecutive passes" {
-        $tone = Invoke-TepiStaticMethod "Tone" "Dark" @()
+        $tone = Invoke-DeskmateStaticMethod "Tone" "Dark" @()
         $current = $tone
         for ($i = 0; $i -lt 10; $i++) {
             $current = $current.OnGlass()
@@ -77,7 +77,7 @@ Describe "Adversarial Suite M3: Island HUD & Interactive State Stress Testing" {
         $plateB = [int](0.67 * 20 + 0.33 * 255) # ~98
         $plateColor = [System.Drawing.Color]::FromArgb(255, $plateR, $plateG, $plateB)
 
-        $darkTone = Invoke-TepiStaticMethod "Tone" "Dark" @()
+        $darkTone = Invoke-DeskmateStaticMethod "Tone" "Dark" @()
         $subNoGlass = $darkTone.Sub # alpha 158
         $subOnGlass = $darkTone.OnGlass().Sub # alpha 189
 
@@ -120,7 +120,7 @@ Describe "Adversarial Suite M3: Island HUD & Interactive State Stress Testing" {
         )
 
         $veil = [System.Drawing.Color]::FromArgb(255, 18, 18, 20)
-        $darkTone = Invoke-TepiStaticMethod "Tone" "Dark" @()
+        $darkTone = Invoke-DeskmateStaticMethod "Tone" "Dark" @()
         $subOnGlass = $darkTone.OnGlass().Sub
 
         foreach ($wp in $brightWallpapers) {
@@ -391,8 +391,8 @@ Describe "Adversarial Suite M3: Island HUD & Interactive State Stress Testing" {
 
     It "S4.01: Verifies FillHover and FillPressed tokens are distinct in Dark and Light modes" {
         # Dark mode
-        Reset-TepiTheme -Light $false
-        $darkTone = Invoke-TepiStaticMethod "Tone" "Dark" @()
+        Reset-DeskmateTheme -Light $false
+        $darkTone = Invoke-DeskmateStaticMethod "Tone" "Dark" @()
         Assert-NotNull $darkTone.FillHover "Dark FillHover must not be null"
         Assert-NotNull $darkTone.FillPressed "Dark FillPressed must not be null"
         Assert-NotEqual $darkTone.FillHover.ToArgb() $darkTone.FillPressed.ToArgb() "Dark FillHover and FillPressed must differ"
@@ -400,8 +400,8 @@ Describe "Adversarial Suite M3: Island HUD & Interactive State Stress Testing" {
         Assert-Equal $darkTone.FillPressed.A 10 "Dark mode FillPressed alpha must be 10 (18 * 0.57f)"
 
         # Light mode
-        Reset-TepiTheme -Light $true
-        $paperTone = Invoke-TepiStaticMethod "Tone" "Paper" @()
+        Reset-DeskmateTheme -Light $true
+        $paperTone = Invoke-DeskmateStaticMethod "Tone" "Paper" @()
         Assert-NotNull $paperTone.FillHover "Light FillHover must not be null"
         Assert-NotNull $paperTone.FillPressed "Light FillPressed must not be null"
         Assert-NotEqual $paperTone.FillHover.ToArgb() $paperTone.FillPressed.ToArgb() "Light FillHover and FillPressed must differ"
@@ -437,8 +437,8 @@ Describe "Adversarial Suite M3: Island HUD & Interactive State Stress Testing" {
 
     It "S4.03: Empirically renders tab button in Idle, Hover, and Pressed states in Dark and Light modes" {
         foreach ($isLight in @($false, $true)) {
-            Reset-TepiTheme -Light $isLight
-            $tone = if ($isLight) { Invoke-TepiStaticMethod "Tone" "Paper" @() } else { Invoke-TepiStaticMethod "Tone" "Dark" @() }
+            Reset-DeskmateTheme -Light $isLight
+            $tone = if ($isLight) { Invoke-DeskmateStaticMethod "Tone" "Paper" @() } else { Invoke-DeskmateStaticMethod "Tone" "Dark" @() }
 
             function Render-TabPill([bool]$hover, [bool]$pressed, [object]$t) {
                 $bmp = New-Object System.Drawing.Bitmap 60, 30, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)

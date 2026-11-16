@@ -16,18 +16,18 @@ Write-Host "==========================================================" -Foregro
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 
-$binPath = "d:\PROJECT\Other\tepi\Tepi.exe"
+$binPath = "d:\PROJECT\Other\tepi\Deskmate.exe"
 if (-not (Test-Path $binPath)) {
-    Write-Error "Tepi.exe not found at $binPath. Run build.cmd first."
+    Write-Error "Deskmate.exe not found at $binPath. Run build.cmd first."
     exit 1
 }
 
 $assembly = [System.Reflection.Assembly]::LoadFrom($binPath)
-$islandType = $assembly.GetType("Tepi.Island")
-$inkType = $assembly.GetType("Tepi.Ink")
+$islandType = $assembly.GetType("Deskmate.Island")
+$inkType = $assembly.GetType("Deskmate.Ink")
 
 if (-not $islandType -or -not $inkType) {
-    Write-Error "Could not resolve Tepi.Island or Tepi.Ink types."
+    Write-Error "Could not resolve Deskmate.Island or Deskmate.Ink types."
     exit 1
 }
 
@@ -367,7 +367,7 @@ for ($y = 0; $y -lt 16; $y++) {
 Test-LiquidExecution "LiquidPass 32x16 Gradient Backdrop" 32 16 $rawGrad $darkBg $false $darkText 4.5
 
 # Test DockFrost.Liquid method
-$dockFrostType = $assembly.GetType("Tepi.Island+DockFrost")
+$dockFrostType = $assembly.GetType("Deskmate.Island+DockFrost")
 $dockLiquidMethod = $dockFrostType.GetMethod("Liquid", [System.Reflection.BindingFlags]'NonPublic,Static')
 
 if ($dockLiquidMethod) {

@@ -4,13 +4,13 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 5 - Custom Palette Contrast Floor Boundaries" {
 
     It "Enforces contrast floor when background and text are identical pure white #FFFFFF" {
         $white = [System.Drawing.Color]::White
-        $pal = Invoke-TepiStaticMethod "Island" "DerivePalette" @($white, $white, [System.Drawing.Color]::Blue)
+        $pal = Invoke-DeskmateStaticMethod "Island" "DerivePalette" @($white, $white, [System.Drawing.Color]::Blue)
         Assert-NotNull $pal "Palette must be generated"
 
         $derivedText = [System.Drawing.ColorTranslator]::FromHtml($pal["text"])
@@ -20,7 +20,7 @@ Describe "Tier 2 Boundary Suite: Feature 5 - Custom Palette Contrast Floor Bound
 
     It "Enforces contrast floor when background and text are identical pure black #000000" {
         $black = [System.Drawing.Color]::Black
-        $pal = Invoke-TepiStaticMethod "Island" "DerivePalette" @($black, $black, [System.Drawing.Color]::Green)
+        $pal = Invoke-DeskmateStaticMethod "Island" "DerivePalette" @($black, $black, [System.Drawing.Color]::Green)
         Assert-NotNull $pal "Palette must be generated"
 
         $derivedText = [System.Drawing.ColorTranslator]::FromHtml($pal["text"])
@@ -32,7 +32,7 @@ Describe "Tier 2 Boundary Suite: Feature 5 - Custom Palette Contrast Floor Bound
         $grey = [System.Drawing.Color]::FromArgb(255, 128, 128, 128)
         $lowAccent = [System.Drawing.Color]::FromArgb(255, 130, 130, 130)
 
-        $pal = Invoke-TepiStaticMethod "Island" "DerivePalette" @($grey, [System.Drawing.Color]::White, $lowAccent)
+        $pal = Invoke-DeskmateStaticMethod "Island" "DerivePalette" @($grey, [System.Drawing.Color]::White, $lowAccent)
         $derivedAccent = [System.Drawing.ColorTranslator]::FromHtml($pal["accent"])
         $ratio = Get-WcagContrastRatio $derivedAccent $grey
         Assert-True ($ratio -ge 3.0) "Mid-grey low contrast accent must be enforced >= 3.0:1 (actual: ${ratio}:1)"
@@ -43,7 +43,7 @@ Describe "Tier 2 Boundary Suite: Feature 5 - Custom Palette Contrast Floor Bound
         $text = [System.Drawing.Color]::FromArgb(255, 250, 250, 252)
         $accent = [System.Drawing.Color]::FromArgb(255, 80, 140, 255)
 
-        $pal = Invoke-TepiStaticMethod "Island" "DerivePalette" @($bg, $text, $accent)
+        $pal = Invoke-DeskmateStaticMethod "Island" "DerivePalette" @($bg, $text, $accent)
         $sub = [System.Drawing.ColorTranslator]::FromHtml($pal["sub"])
         $faint = [System.Drawing.ColorTranslator]::FromHtml($pal["faint"])
 
@@ -59,7 +59,7 @@ Describe "Tier 2 Boundary Suite: Feature 5 - Custom Palette Contrast Floor Bound
         $lightText = [System.Drawing.Color]::FromArgb(255, 240, 240, 245)
         $accent = [System.Drawing.Color]::FromArgb(255, 60, 160, 240)
 
-        $pal = Invoke-TepiStaticMethod "Island" "DerivePalette" @($darkBg, $lightText, $accent)
+        $pal = Invoke-DeskmateStaticMethod "Island" "DerivePalette" @($darkBg, $lightText, $accent)
 
         $cardBg = [System.Drawing.ColorTranslator]::FromHtml($pal["card.bg"])
         $cardText = [System.Drawing.ColorTranslator]::FromHtml($pal["card.text"])

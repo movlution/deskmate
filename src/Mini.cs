@@ -5,7 +5,7 @@ using System.Text;
 using System.Windows.Forms;
 using WinTimer = System.Windows.Forms.Timer;
 
-namespace Tepi
+namespace Deskmate
 {
     // Mini: click-through sliver on the edge
     partial class Island
@@ -96,7 +96,7 @@ namespace Tepi
                 bool face = EyesOn && !MiniClockOn;
                 return face ? new SizeF(22, 30) : MiniBusy() ? new SizeF(MiniBusyH, MiniBusyW) : new SizeF(MiniH, MiniW);
             }
-            if (MiniClockOn) return MiniBusy() ? new SizeF(MiniClockW + 24, MiniClockH) : new SizeF(MiniClockW, MiniClockH);
+            if (MiniClockOn) return new SizeF(MiniClockW + (LockShown ? 16 : 0) + (PrivacyOn || RapatOn ? 24 : 0), MiniClockH);
             if (!EyesOn) return MiniBusy() ? new SizeF(MiniBusyW, MiniBusyH) : new SizeF(MiniW, MiniH);
             // Eyes only, whatever is running
             return new SizeF(MiniEyesW, MiniEyesH);
@@ -388,7 +388,7 @@ namespace Tepi
             // Idle face set to the clock: the time replaces the eyes, same marks as MiniFace
             if (MiniClockOn)
             {
-                float cx = v != View.Idle ? w / 2 - 12 : w / 2;
+                float cx = w / 2 + (LockShown ? 8 : 0) - (dot ? 12 : 0);
                 clockRoller.Draw(p, Ink.Semi(MiniClockText), p.T.Text, cx, h / 2, StringAlignment.Center, now);
                 if (dot) p.Circle(w - 9, h / 2, MiniDotR, MicSilenced || RapatOn ? p.T.Negative : p.T.Accent);
                 if (LockShown) p.Symbol(Sym.ChevronUp, 10, h / 2, 6.5f, p.T.Text);

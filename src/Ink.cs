@@ -6,7 +6,7 @@ using System.Drawing.Imaging;
 using System.Drawing.Text;
 using System.Runtime.InteropServices;
 
-namespace Tepi
+namespace Deskmate
 {
     // Monochrome tokens; Base/Flip swap inverts
     class Tone
@@ -619,7 +619,7 @@ namespace Tepi
         }
 
         // Covers stay monochrome: luminance-only copy
-        public static Bitmap Grayscale(Image src, int size)
+        public static Bitmap Grayscale(Image src, int size, bool keepColor = false)
         {
             var bmp = new Bitmap(size, size, PixelFormat.Format32bppPArgb);
             var m = new ColorMatrix(new[]
@@ -633,7 +633,7 @@ namespace Tepi
             using (var attr = new ImageAttributes())
             using (var g = Graphics.FromImage(bmp))
             {
-                attr.SetColorMatrix(m);
+                if (!keepColor) attr.SetColorMatrix(m);
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 int side = Math.Min(src.Width, src.Height);
@@ -903,12 +903,14 @@ namespace Tepi
         public float Measure(string s, Font f)
         {
             if (string.IsNullOrEmpty(s)) return 0;
+            if (G == null || f == null) return s.Length * (f != null ? f.Size * 0.6f : 7.5f);
             if (!ReferenceEquals(widthsFor, G) || widthCount > 4096) { widths.Clear(); widthsFor = G; widthCount = 0; }
             Dictionary<string, float> byText;
             if (!widths.TryGetValue(f, out byText)) widths[f] = byText = new Dictionary<string, float>();
             float w;
             if (byText.TryGetValue(s, out w)) return w;
-            w = G.MeasureString(s, f, PointF.Empty, line).Width;
+            try { w = G.MeasureString(s, f, PointF.Empty, line).Width; }
+            catch (ArgumentException) { return s.Length * (f.Size * 0.6f); }
             byText[s] = w;
             widthCount++;
             return w;

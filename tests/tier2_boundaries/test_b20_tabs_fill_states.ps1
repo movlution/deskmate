@@ -4,17 +4,17 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 20 - Tabs Interactive Fill Boundaries" {
 
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Verifies FillHover and FillPressed tokens are distinct in Dark Mode" {
-        Reset-TepiTheme -Light $false
-        $base = Get-TepiStaticField "Ink" "Base"
+        Reset-DeskmateTheme -Light $false
+        $base = Get-DeskmateStaticField "Ink" "Base"
         Assert-NotNull $base.FillHover "FillHover must exist in dark mode"
         Assert-NotNull $base.FillPressed "FillPressed must exist in dark mode"
 
@@ -22,8 +22,8 @@ Describe "Tier 2 Boundary Suite: Feature 20 - Tabs Interactive Fill Boundaries" 
     }
 
     It "Verifies FillHover and FillPressed tokens are distinct in Light Mode" {
-        Reset-TepiTheme -Light $true
-        $base = Get-TepiStaticField "Ink" "Base"
+        Reset-DeskmateTheme -Light $true
+        $base = Get-DeskmateStaticField "Ink" "Base"
         Assert-NotNull $base.FillHover "FillHover must exist in light mode"
         Assert-NotNull $base.FillPressed "FillPressed must exist in light mode"
 
@@ -33,8 +33,8 @@ Describe "Tier 2 Boundary Suite: Feature 20 - Tabs Interactive Fill Boundaries" 
     It "Evaluates Tone.Derive alpha multipliers for FillPressed across dark and light modes" {
         # Dark mode: FillPressed = Ink.A(Fill, 0.57f)
         # Light mode: FillPressed = Ink.A(Fill, 2.2f)
-        $darkTone = Invoke-TepiStaticMethod "Tone" "Dark" @()
-        $paperTone = Invoke-TepiStaticMethod "Tone" "Paper" @()
+        $darkTone = Invoke-DeskmateStaticMethod "Tone" "Dark" @()
+        $paperTone = Invoke-DeskmateStaticMethod "Tone" "Paper" @()
 
         Assert-True ($darkTone.FillPressed.A -gt 0) "Dark mode FillPressed alpha must be positive"
         Assert-True ($paperTone.FillPressed.A -gt 0) "Light mode FillPressed alpha must be positive"
@@ -43,7 +43,7 @@ Describe "Tier 2 Boundary Suite: Feature 20 - Tabs Interactive Fill Boundaries" 
     It "Verifies ternary state resolution: pressed state overrides hover state" {
         $hovered = $true
         $pressed = $true
-        $darkTone = Invoke-TepiStaticMethod "Tone" "Dark" @()
+        $darkTone = Invoke-DeskmateStaticMethod "Tone" "Dark" @()
 
         $resolvedFill = if ($pressed) { $darkTone.FillPressed } else { $darkTone.FillHover }
         Assert-Equal $resolvedFill.ToArgb() $darkTone.FillPressed.ToArgb() "When both hovered and pressed, FillPressed must be chosen"

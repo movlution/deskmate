@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Drawing;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -171,6 +171,7 @@ namespace Tepi
             if (current == View.Approve || PrompterRunning()) return true;
             if (current == View.ShelfDrop && dropActive) return true;
             if (current == View.Panel && page == PageClass && classSeg == 0 && tasksLoading) return true;
+            if (current == View.Panel && page == PageControl && ((controlMode == 2 && ctlWifiScanning) || (controlMode == 3 && ctlBtScanning))) return true;
             return false;
         }
 
@@ -223,12 +224,13 @@ namespace Tepi
 
         void DrawIdleCore(float w, float h, DateTime now)
         {
-            float cy = h / 2, shift = emblem != null ? 15 : 0, clockX = w / 2 + shift - (IdleMarks * 13 + (IdleMarks > 0 ? 1 : 0));
+            float cy = h / 2, shift = emblem != null ? 15 : 0, clockX = w / 2 + shift + IdleMarks * 13 + (IdleMarks > 0 ? 1 : 0);
+            if (PrivacyOn && unread == 0) clockX += 12;
+            if (unread > 0 && !PrivacyOn) clockX -= 12;
             if (emblem != null) DrawEmblem(24, cy, 10.5f);
-            // Lock keycaps at the right, Caps outermost
-            float kx = w - 21 - (unread > 0 ? 28 : 0);
-            if (CapsShown) { Keycap(kx, cy, 7f, "A", true); kx -= 26; }
-            if (NumShown) { Keycap(kx, cy, 7f, "1", true); kx -= 26; }
+            float kx = 21 + shift * 2 + (PrivacyOn ? 26 : 0);
+            if (CapsShown) { Keycap(kx, cy, 7f, "A", true); kx += 26; }
+            if (NumShown) { Keycap(kx, cy, 7f, "1", true); kx += 26; }
             if (AwakeOn) p.Icon(IcoAwake, 12f, p.T.Sub, kx, cy);
             if (IdleEyes) DrawEyes(clockX, cy, IdleEyeK);
             else clockRoller.Draw(p, Ink.Display(15.5f), p.T.Text, clockX, cy, StringAlignment.Center, now);
@@ -941,7 +943,16 @@ namespace Tepi
                 else p.Orbit(bx, cy, 7f, orbitPhase, p.T.Text);
             }
             else if (kind == View.Download) p.Icon(IcoDownload, 12f, p.T.Text, bx, cy);
-            else if (kind == View.Locks) Keycap(bx, cy, 7f, CapsShown ? "A" : "1", true);
+            else if (kind == View.Locks)
+            {
+                bool caps = CapsShown, num = NumShown;
+                if (caps && num)
+                {
+                    Keycap(bx - 7.5f, cy, 6f, "A", true);
+                    Keycap(bx + 7.5f, cy, 6f, "1", true);
+                }
+                else if (caps || num) Keycap(bx, cy, 7f, caps ? "A" : "1", true);
+            }
             else if (kind == View.Timer) DrawTimerRing(bx, cy, 7f);
             else if (kind == View.Task)
             {

@@ -2,14 +2,14 @@
 
 [← Kembali ke README](../README.md)
 
-Klik ikon gear di pojok kanan atas panel, atau klik kanan ikon Tepi lalu **Pengaturan**. Jendelanya punya kolom cari dan bagian di samping; setiap perubahan langsung berlaku tanpa perlu menyimpan.
+Klik ikon gear di pojok kanan atas panel, atau klik kanan ikon Deskmate lalu **Pengaturan**. Jendelanya punya kolom cari dan bagian di samping; setiap perubahan langsung berlaku tanpa perlu menyimpan.
 
 Bagian di samping dikelompokkan: **Umum**, **Tampilan**, **Dynamic Island**, **Dock**, dan **Fitur**, lalu **Aksesibilitas**, **Pintasan**, dan **Tentang** di bawah label **Bantuan**. Klik satu kategori untuk melihat daftar halamannya beserta keterangan singkat, lalu klik halaman yang dicari. Judul halaman menunjukkan jalurnya, misalnya **Dynamic Island › Ringkasan**; klik nama kategori di judul itu atau tekan **Alt+←** untuk kembali ke daftar. Dock dan halaman di bawah Bantuan langsung terbuka tanpa daftar.
 
 ### Umum
 
-- **Dasar**: bahasa, format jam (24 jam, atau 12 jam dengan am/pm; jam besar di island tanpa am/pm), mulai bersama Windows, cek versi baru, folder data, ekspor dan impor pengaturan (token agent, port, pasangan HP, dan sesi Kulia tidak pernah ikut; impor hanya menerima kunci yang dikenal Tepi), serta setel ulang pengaturan dengan integrasi, agen, dan HP tetap tersambung.
-- **AI**: layanan teks untuk ringkasan rapat, Suruh Tepi, dan perbaiki atau terjemahkan teks; key, tombol Tes, dan model tiap layanan; alamat server kustom; mesin suara (Groq, OpenAI, kustom, atau offline) beserta unduhan model offline.
+- **Dasar**: bahasa, format jam (24 jam, atau 12 jam dengan am/pm; jam besar di island tanpa am/pm), mulai bersama Windows, cek versi baru, folder data, ekspor dan impor pengaturan (token agent, port, pasangan HP, dan sesi Kulia tidak pernah ikut; impor hanya menerima kunci yang dikenal Deskmate), serta setel ulang pengaturan dengan integrasi, agen, dan HP tetap tersambung.
+- **AI**: layanan teks untuk ringkasan rapat, Suruh Deskmate, dan perbaiki atau terjemahkan teks; key, tombol Tes, dan model tiap layanan; alamat server kustom; mesin suara (Groq, OpenAI, kustom, atau offline) beserta unduhan model offline.
 - **HP**: hubungkan HP lewat kode pasangan, ganti HP, serta pilih apakah notifikasi pesan dan kode OTP dari HP ditampilkan.
 - **Integrasi**: Kulia, Notion, Todoist, dan kalender iCal untuk tab Tugas dan Jadwal.
 
@@ -20,7 +20,7 @@ Bagian di samping dikelompokkan: **Umum**, **Tampilan**, **Dynamic Island**, **D
 
 ### Dynamic Island
 
-- **Letak dan bentuk**: letak lewat sketsa layar (atas tengah, pojok kiri atas, pojok kanan atas, sisi kiri, sisi kanan; di sisi kiri dan kanan island berdiri tegak dan panelnya mekar ke samping), lalu geser, jarak dari pojok, atau tinggi sesuai letaknya; menempel di tepi layar, garis cahaya, lebar panel, layar, dan sisakan ruang di tepi atas. Panel terbuka sebentar selama diatur supaya hasilnya terlihat.
+- **Letak dan bentuk**: letak lewat sketsa layar (atas tengah, pojok kiri atas, pojok kanan atas, sisi kiri, sisi kanan; di sisi kiri dan kanan island berdiri tegak dan panelnya mekar ke samping), lalu geser, jarak dari pojok, atau tinggi sesuai letaknya; menempel di tepi layar, garis cahaya, lebar panel, layar tujuan (beserta resolusinya), dan sisakan ruang di tepi atas. Panel terbuka sebentar selama diatur supaya hasilnya terlihat. Saat layar tujuan dicabut, Deskmate pindah ke layar utama dan kembali saat layar itu tersambung lagi.
 - **Perilaku**: mode (Normal, Mini, Otomatis), notifikasi saat Mini, buka panel dengan arahkan kursor atau klik beserta jedanya, dan aplikasi yang membuat island menyingkir atau menahan notifikasi saat jendelanya di depan.
 - **Saat diam**: mata, mata mengikuti kursor, wajah saat diam (mata atau jam), serta isi kiri dan kanan (kosong, jam, tanggal, baterai, cuaca).
 - **Ringkasan**: urutan kartu (Otomatis: yang sedang berjalan naik; atau Sesuai daftar) dan kartu yang tampil beserta urutannya: kuota AI, musik, agen, timer, kuliah, pesan, rak, cuaca, baterai, clipboard, dan sholat. Klik kanan kartu di Ringkasan untuk menyembunyikannya.
@@ -28,7 +28,7 @@ Bagian di samping dikelompokkan: **Umum**, **Tampilan**, **Dynamic Island**, **D
 
 ### Dock
 
-- **Dock**: bar aplikasi dan widget di tepi bawah, mati sampai dinyalakan. Ganti taskbar Windows (Start, tray, Quick Settings, dan jam pindah ke dock; taskbar kembali saat dimatikan), bentuk (mengambang atau selebar layar), ukuran ikon, perbesar saat disorot, sembunyikan dock (selalu tampil, otomatis, atau saat tertutup jendela), tetap tampil di desktop kosong, tampil di rekaman layar, sisakan ruang, pratinjau jendela, angka notifikasi, tombol cari dan semua jendela, tombol Windows membuka Tepi Start, widget (jam, musik, kuota AI dan agen, timer, cuaca, baterai, CPU dan RAM), dan aplikasi tersemat.
+- **Dock**: bar aplikasi dan widget di tepi bawah setiap layar, mati sampai dinyalakan. Setiap dock mengikuti layar, ukuran, kecerahan, area kerja, layar penuh, dan sembunyi otomatisnya sendiri. Ganti taskbar Windows (Start, tray, Quick Settings, dan jam pindah ke dock di layar island; taskbar kembali saat dimatikan), bentuk (mengambang atau selebar layar), ukuran ikon, perbesar saat disorot, sembunyikan dock (selalu tampil, otomatis, atau saat tertutup jendela), tetap tampil di desktop kosong, tampil di rekaman layar, sisakan ruang, pratinjau jendela, angka notifikasi, tombol cari dan semua jendela, tombol Windows membuka Deskmate Start, widget (jam, musik, kuota AI dan agen, timer, cuaca, baterai, CPU dan RAM), dan aplikasi tersemat.
 
 ### Tugas dan catatan
 
@@ -40,7 +40,7 @@ Bagian di samping dikelompokkan: **Umum**, **Tampilan**, **Dynamic Island**, **D
 ### Fitur
 
 - **Musik**: lirik di island, lirik online, visualizer.
-- **Pesan**: notifikasi pesan dan isinya, aplikasi chat tambahan, pengirim prioritas (nama atau kata yang tetap muncul saat Senyap dan rapat). Banner pesan (Otomatis atau Tepi) dan mode berbagi layar (Otomatis, Nyala, Mati). **Tepi penerima utama** mematikan banner Windows untuk aplikasi chat, panggilan, dan Snipping Tool sekali klik (notifikasinya tetap di pusat notifikasi untuk dibaca Tepi), dan **Kembalikan banner Windows** membatalkannya.
+- **Pesan**: notifikasi pesan dan isinya, aplikasi chat tambahan, pengirim prioritas (nama atau kata yang tetap muncul saat Senyap dan rapat). Banner pesan (Otomatis atau Deskmate) dan mode berbagi layar (Otomatis, Nyala, Mati). **Deskmate penerima utama** mematikan banner Windows untuk aplikasi chat, panggilan, dan Snipping Tool sekali klik (notifikasinya tetap di pusat notifikasi untuk dibaca Deskmate), dan **Kembalikan banner Windows** membatalkannya.
 - **Sistem**: HUD Caps Lock, Num Lock dan Scroll Lock, bahasa input; pengingat cabut charger di 80, 85, atau 90%, flashdisk; kelas yang berlangsung, progres unduhan, mode rapat.
 - **Rak dan berkas**: rak berkas, simpan isi rak, kosongkan rak otomatis; ubah format, riwayat clipboard, preview screenshot.
 - **Agen**: hubungkan atau lepas tiap agent, satu sakelar **Kuota agent** untuk kuota semua agent, suara saat agen minta izin atau selesai dan saat `--run` selesai (suara bawaan Windows, diam saat Senyap atau layar penuh), port server hook (termasuk **Ganti port acak**), dan berapa lama izin ditahan.
@@ -50,14 +50,14 @@ Bagian di samping dikelompokkan: **Umum**, **Tampilan**, **Dynamic Island**, **D
 ### Bantuan
 
 - **Aksesibilitas**: tampil di rekaman layar, umumkan ke pembaca layar, kurangi gerak, gerak (Tenang tanpa pantulan, Bawaan, atau Lincah), Senyap, dan Senyap ikut Jangan ganggu Windows.
-- **Pintasan**: ganti atau kosongkan setiap pintasan, termasuk pintasan teleprompter. Klik pintasannya lalu tekan kombinasi baru (Backspace mengosongkan, Esc batal). Kombinasi yang sudah dipakai aplikasi lain ditolak saat itu juga, dan saat Tepi dibuka island memberi tahu kalau ada pintasan yang direbut aplikasi lain. **Kembalikan** memasang lagi semua pintasan bawaan. Di keyboard yang punya AltGr (misalnya Jerman atau Polandia), AltGr tetap mengetik karakternya walau kombinasinya sama dengan pintasan Ctrl+Alt Tepi.
-- **Tentang**: versi, cek pembaruan, **Apa yang baru**, ulangi **Tur Tepi**, **Kirim saran** (ide fitur atau laporan masalah, langsung dari Tepi tanpa login), dan info pembuat.
+- **Pintasan**: ganti atau kosongkan setiap pintasan, termasuk pintasan teleprompter. Klik pintasannya lalu tekan kombinasi baru (Backspace mengosongkan, Esc batal). Kombinasi yang sudah dipakai aplikasi lain ditolak saat itu juga, dan saat Deskmate dibuka island memberi tahu kalau ada pintasan yang direbut aplikasi lain. **Kembalikan** memasang lagi semua pintasan bawaan. Di keyboard yang punya AltGr (misalnya Jerman atau Polandia), AltGr tetap mengetik karakternya walau kombinasinya sama dengan pintasan Ctrl+Alt Deskmate.
+- **Tentang**: versi, cek pembaruan, **Apa yang baru**, ulangi **Tur Deskmate**, **Kirim saran** (ide fitur atau laporan masalah, langsung dari Deskmate tanpa login), dan info pembuat.
 
 Island yang ikut terekam tidak bisa memakai efek kaca, karena kaca membaca layar di belakangnya dan akan ikut membaca dirinya sendiri. Selama opsi itu menyala, latarnya polos.
 
 ## Pengaturan lanjutan
 
-Semua kunci di `%APPDATA%\Tepi\settings.ini` (ubah saat Tepi tidak berjalan):
+Semua kunci di `%APPDATA%\Deskmate\settings.ini` (ubah saat Deskmate tidak berjalan):
 
 | Kunci | Bawaan | Fungsi |
 |---|---|---|
@@ -77,7 +77,7 @@ Semua kunci di `%APPDATA%\Tepi\settings.ini` (ubah saat Tepi tidak berjalan):
 | `update.check` | `1` | Cek versi baru sekali sehari |
 | `accent` | kosong | Warna aksen, misalnya `#4C8DFF`; kosong untuk monokrom; `album` mengambil warna dari sampul lagu yang diputar |
 | `wall.sync` | `0` | Kaca notch dan dock memakai nuansa warna wallpaper, aksen ikut jika `accent` kosong; mati saat warna sendiri dipakai |
-| `monitor` | kosong | Monitor tempat island tampil; kosong untuk monitor utama |
+| `monitor` | kosong | Monitor tempat island tampil; kosong untuk monitor utama. Nilai perangkat Windows yang sah disimpan otomatis; layar yang sementara dicabut memakai monitor utama sampai tersambung kembali. Dock tampil di semua monitor yang tersambung. |
 | `focus.break` | `5` | Menit istirahat setelah fokus |
 | `dock` | `1` | Menempel di tepi layar; `0` untuk mengambang |
 | `position` | `0` | Geser island, `-40` (kiri) sampai `40` (kanan), persen dari ruang kosong |
@@ -87,7 +87,7 @@ Semua kunci di `%APPDATA%\Tepi\settings.ini` (ubah saat Tepi tidak berjalan):
 | `home.cards` | `quota,media,agents,timer,class,messages,shelf` | Kartu Ringkasan dan urutannya; tambahan: `weather`, `battery`, `clips`, `pray` |
 | `home.sort` | `auto` | `auto`: yang sedang berjalan naik; `list`: sesuai `home.cards` |
 | `dockbar.on` | `0` | Dock di tepi bawah |
-| `dockbar.replace` | `0` | Dock menggantikan taskbar Windows; taskbar kembali saat dimatikan atau Tepi keluar |
+| `dockbar.replace` | `0` | Dock menggantikan taskbar Windows; taskbar kembali saat dimatikan atau Deskmate keluar |
 | `dockbar.reserve` | `1` | Jendela yang dimaksimalkan berhenti di atas dock |
 | `dockbar.magnify` | `1` | Ikon dock membesar saat disentuh kursor |
 | `dockbar.mag` | `150` | Besar ikon saat disorot, persen; `100` sama dengan mati |
@@ -101,7 +101,7 @@ Semua kunci di `%APPDATA%\Tepi\settings.ini` (ubah saat Tepi tidak berjalan):
 | `dockbar.capture` | `0` | Dock ikut screenshot dan screen share; kacanya diganti latar polos |
 | `dockbar.w.clock`, `dockbar.w.media`, `dockbar.w.ai`, `dockbar.w.timer`, `dockbar.w.weather`, `dockbar.w.battery`, `dockbar.w.system` | `1` (`system`: `0`) | Widget dock |
 | `dockbar.pins` | dari taskbar | Aplikasi tersemat dipisah `\|`: shortcut, exe, atau `shell:AppsFolder\<id>`; diisi dari taskbar Windows saat dock pertama kali nyala |
-| `notif.muted` | kosong | Aplikasi yang banner Windows-nya dimatikan oleh Tepi penerima utama |
+| `notif.muted` | kosong | Aplikasi yang banner Windows-nya dimatikan oleh Deskmate penerima utama |
 | `panel.width` | `560` | Lebar panel, `440` sampai `640`; dari sekitar `570` Ringkasan memakai tiga kolom |
 | `panel.tabs` | semua | Tab yang tampil dan urutannya: `home`, `music`, `agents`, `class`, `messages`, `shelf`, `control`, `remind`, `convert`, `phone`. Kunci lama `tabs` dipindahkan sekali |
 | `panel.first` | kosong | Tab yang terbuka pertama, misalnya `music`; kosong untuk tab pertama di urutan |
@@ -112,8 +112,8 @@ Semua kunci di `%APPDATA%\Tepi\settings.ini` (ubah saat Tepi tidak berjalan):
 | `mini` | `auto` | `normal`, `mini`, atau `auto` (Mini saat tepi atas tertutup atau setelah diam semenit) |
 | `mini.notif` | `1` | Notifikasi pesan tetap muncul saat Mini |
 | `island.eyes`, `island.follow` | `1`, `1` | Mata di sliver Mini, dan mata mengikuti kursor |
-| `agent.quota` | `1` | Pasang status line Tepi untuk kuota Claude saat Claude Code dihubungkan; diatur bersama `agent.quota.agents` oleh sakelar **Kuota agent** |
-| `agent.quota.agents` | `1` | Kuota Codex, Antigravity, dan Copilot di tab Agen, termasuk status line Tepi di Antigravity CLI; diatur bersama `agent.quota` |
+| `agent.quota` | `1` | Pasang status line Deskmate untuk kuota Claude saat Claude Code dihubungkan; diatur bersama `agent.quota.agents` oleh sakelar **Kuota agent** |
+| `agent.quota.agents` | `1` | Kuota Codex, Antigravity, dan Copilot di tab Agen, termasuk status line Deskmate di Antigravity CLI; diatur bersama `agent.quota` |
 | `prompter.wpm` | `140` | Kecepatan teleprompter, kata per menit |
 | `prompter.size` | `19` | Ukuran huruf teleprompter, px |
 | `prompter.mirror` | `0` | Teleprompter dicerminkan |
@@ -122,12 +122,12 @@ Semua kunci di `%APPDATA%\Tepi\settings.ini` (ubah saat Tepi tidak berjalan):
 | `clock.24` | `1` | `1` jam 24 (14.30), `0` jam 12 (2.30 pm) |
 | `capture.show` | `0` | Island ikut terekam saat screenshot dan rekam layar (tanpa efek kaca) |
 | `a11y.announce` | `1` | Bacakan toast ke pembaca layar yang sedang aktif |
-| `notif.banner` | `auto` | `auto`: Tepi muncul hanya untuk aplikasi yang banner Windows-nya mati; `tepi`: selalu |
+| `notif.banner` | `auto` | `auto`: Deskmate muncul hanya untuk aplikasi yang banner Windows-nya mati; `tepi`: selalu |
 | `share.mode` | `auto` | Mode berbagi layar: `auto`, `on`, atau `off` |
 | `idle.left`, `idle.right` | kosong | Isi samping island diam: `clock`, `date`, `battery`, `weather` |
 | `tidy` | `0` | Rapikan Downloads |
 | `tidy.layout` | `type` | `type` (per jenis) atau `year` (tahun, lalu jenis) |
-| `tidy.nudge` | `15` | Jumlah berkas lepas sebelum Tepi bertanya; `0` tidak pernah |
+| `tidy.nudge` | `15` | Jumlah berkas lepas sebelum Deskmate bertanya; `0` tidak pernah |
 | `clipboard` | `0` | Riwayat clipboard |
 | `downloads` | `1` | Progres unduhan |
 | `class.island` | `1` | Kelas yang sedang berjalan tampil di island |
@@ -148,7 +148,7 @@ Semua kunci di `%APPDATA%\Tepi\settings.ini` (ubah saat Tepi tidak berjalan):
 | `drink`, `drink.every`, `drink.goal` | `0`, `60`, `8` | Pengingat minum, selang menit, target gelas |
 | `eyes` | `0` | Istirahat mata 20-20-20 |
 | `stretch`, `stretch.every` | `0`, `60` | Peregangan dan selangnya |
-| `theme.pack` | kosong | Nama folder paket tema di `%APPDATA%\Tepi\themes` |
+| `theme.pack` | kosong | Nama folder paket tema di `%APPDATA%\Deskmate\themes` |
 | `theme.voice` | `1` | Suara sapaan paket tema |
 | `look.custom`, `look.bg`, `look.text`, `look.accent` | `0`, kosong | Warna sendiri dalam `#RRGGBB`, ditimpakan di atas paket tema |
 | `weather` | `0` | Cuaca dan peringatan hujan, memakai kota `pray.city` |
@@ -162,26 +162,26 @@ Semua kunci di `%APPDATA%\Tepi\settings.ini` (ubah saat Tepi tidak berjalan):
 | `dictate.engine` | `groq` | Dibaca hanya kalau `ai.stt` belum ada; `lokal` berarti whisper.cpp |
 | `ai.stt` | `groq` | Mesin suara: `groq`, `openai`, `custom`, atau `lokal` |
 | `ai.text` | `groq` | Layanan teks: `groq`, `openai`, `anthropic`, `gemini`, `openrouter`, `deepseek`, `mistral`, `ollama`, `lmstudio`, atau `custom` |
-| `ai.<layanan>.model` | kosong | Model layanan teks; kosong berarti model pertama yang tersedia dari daftar Tepi |
+| `ai.<layanan>.model` | kosong | Model layanan teks; kosong berarti model pertama yang tersedia dari daftar Deskmate |
 | `ai.custom.url` | kosong | Alamat server kustom, `https://` atau `http://localhost` |
 | `ai.custom.stt` | `whisper-1` | Model suara server kustom |
-| `dictate.lang` | `id` | `id`, `en`, atau `auto`. Bawaan mengikuti bahasa Tepi |
+| `dictate.lang` | `id` | `id`, `en`, atau `auto`. Bawaan mengikuti bahasa Deskmate |
 | `dictate.model` | `seimbang` | Model offline: `cepat` (base), `seimbang` (small), `akurat` (large-v3-turbo) |
 | `dictate.fillers`, `dictate.commands`, `dictate.style`, `dictate.duck` | `1` | Buang kata pengisi, perintah baris baru, gaya per aplikasi, kecilkan musik |
 | `rapat.summary` | `1` | Ringkasan dan to-do di transkrip rapat, lewat layanan teks |
 | `edge.light` | `1` | Garis cahaya progres dan kilau pesan di tepi island |
 | `reserve.top` | `0` | Sisakan ruang di tepi atas; jendela yang dimaksimalkan mulai di bawah island |
 | `focus.hold` | `1` | Tahan notifikasi biasa selama sesi fokus, lalu rangkum |
-| `key.suruh` | kosong | Pintasan untuk membuka jendela obrolan Suruh Tepi |
+| `key.suruh` | kosong | Pintasan untuk membuka jendela obrolan Suruh Deskmate |
 | `whatsnew.seen` | versi terpasang | Versi terakhir yang ringkasannya sudah tampil; kosongkan untuk melihatnya lagi saat Pengaturan dibuka |
 | `tour.done` | `0` | Tur pengguna baru sudah selesai atau ditutup |
 | `key.rapat`, `key.dictate.paste` | `Ctrl+Alt+T`, kosong | Mulai atau hentikan rekaman rapat; tempel dikte terakhir |
 
 Variabel lingkungan untuk pengembangan:
 
-- `TEPI_FPS=1` mencatat fps, biaya tiap bagian frame, dan frame yang lambat ke `tepi.log`.
-- `TEPI_DUMP=<folder>` menyimpan frame yang dirender, karena efek kaca tidak terlihat di screenshot.
-- `TEPI_SCALE=<angka>` memaksa skala tampilan.
-- `TEPI_HOME=<folder>` memasang dan melepas hook di folder home lain, untuk menguji tanpa menyentuh konfigurasi agent yang asli.
-- `TEPI_DIR=<folder>` menjalankan salinan uji dengan data sendiri, berdampingan dengan Tepi yang sedang dipakai. Salinan uji tidak menulis registry autostart, tidak mengecek pembaruan, dan memasang hook di `<folder>\home`.
+- `DESKMATE_FPS=1` mencatat fps, biaya tiap bagian frame, dan frame yang lambat ke `deskmate.log`.
+- `DESKMATE_DUMP=<folder>` menyimpan frame yang dirender, karena efek kaca tidak terlihat di screenshot.
+- `DESKMATE_SCALE=<angka>` memaksa skala tampilan.
+- `DESKMATE_HOME=<folder>` memasang dan melepas hook di folder home lain, untuk menguji tanpa menyentuh konfigurasi agent yang asli.
+- `DESKMATE_DIR=<folder>` menjalankan salinan uji dengan data sendiri, berdampingan dengan Deskmate yang sedang dipakai. Salinan uji tidak menulis registry autostart, tidak mengecek pembaruan, dan memasang hook di `<folder>\home`.
 - `build.cmd <keluaran.exe>` membangun ke lokasi lain, supaya exe yang sedang berjalan tidak tersentuh.

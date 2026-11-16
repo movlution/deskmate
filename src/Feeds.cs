@@ -9,7 +9,7 @@ using System.Threading;
 using Microsoft.Win32;
 using Windows.Networking.Connectivity;
 
-namespace Tepi
+namespace Deskmate
 {
     class NetState
     {
@@ -25,6 +25,7 @@ namespace Tepi
     class NetWatcher
     {
         public event Action<NetState, NetState> Changed;
+        readonly object sync = new object();
         Timer debounce;
         NetState last;
 
@@ -32,12 +33,24 @@ namespace Tepi
 
         public void Start()
         {
-            last = Read();
             debounce = new Timer(delegate { Check(); }, null, Timeout.Infinite, Timeout.Infinite);
-            NetworkChange.NetworkAddressChanged += delegate { debounce.Change(1800, Timeout.Infinite); };
-            NetworkChange.NetworkAvailabilityChanged += delegate { debounce.Change(1800, Timeout.Infinite); };
-            // Login done: address stays, level moves
-            NetworkInformation.NetworkStatusChanged += delegate { debounce.Change(1800, Timeout.Infinite); };
+            ThreadPool.QueueUserWorkItem(delegate { InitAsync(); });
+        }
+
+        void InitAsync()
+        {
+            try
+            {
+                NetworkChange.NetworkAddressChanged += delegate { debounce.Change(1800, Timeout.Infinite); };
+                NetworkChange.NetworkAvailabilityChanged += delegate { debounce.Change(1800, Timeout.Infinite); };
+                NetworkInformation.NetworkStatusChanged += delegate { debounce.Change(1800, Timeout.Infinite); };
+            }
+            catch (Exception ex) { Log.Write("net sub: " + ex.Message); }
+            var now = Read();
+            lock (sync)
+            {
+                if (last == null) last = now;
+            }
         }
 
         void Check()
@@ -45,9 +58,14 @@ namespace Tepi
             var now = Read();
             // Windows re-probes; look again while captive
             if (now.Captive) debounce.Change(15000, Timeout.Infinite);
-            if (now.Sig == last.Sig) return;
-            var before = last;
-            last = now;
+            NetState before;
+            lock (sync)
+            {
+                if (last == null) { last = now; return; }
+                if (now.Sig == last.Sig) return;
+                before = last;
+                last = now;
+            }
             var h = Changed;
             if (h != null) h(before, now);
         }
@@ -205,7 +223,7 @@ namespace Tepi
                 foreach (string sub in root.GetSubKeyNames())
                 {
                     if (sub == "NonPackaged") continue;
-                    // Dictation is Tepi itself: not a call
+                    // Dictation is Deskmate itself: not a call
                     if (!packaged && string.Equals(sub.Replace('#', '\\'), SelfPath, StringComparison.OrdinalIgnoreCase)) continue;
                     using (var k = root.OpenSubKey(sub))
                     {

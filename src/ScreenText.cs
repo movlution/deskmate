@@ -6,7 +6,7 @@ using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Snip an area, its text is copied
     partial class Island
@@ -65,7 +65,7 @@ namespace Tepi
             ocrBusy = true;
             ThreadPool.QueueUserWorkItem(delegate
             {
-                string path = Path.Combine(Path.GetTempPath(), "Tepi-teks-" + Guid.NewGuid().ToString("N") + ".png");
+                string path = Path.Combine(Path.GetTempPath(), "Deskmate-teks-" + Guid.NewGuid().ToString("N") + ".png");
                 string text = null;
                 try { copy.Save(path, ImageFormat.Png); text = Ocr.Read(path); }
                 catch (Exception ex) { Log.Write("screen text: " + ex.Message); }

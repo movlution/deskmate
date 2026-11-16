@@ -1,17 +1,19 @@
 # run_e2e.ps1
-# Master End-to-End Test Runner CLI for Tepi
+# Master End-to-End Test Runner CLI for Deskmate
 # Usage:
-#   .\tests\run_e2e.ps1 [-Tier <1-4>] [-Feature <1-26>] [-Rebuild] [-TestFile <path>] [-Verbose]
+#   .\tests\run_e2e.ps1 [-Tier <1-4>] [-Feature <1-32>] [-Rebuild] [-BinaryPath <path>] [-TestFile <path>] [-VerboseOutput]
 
 [CmdletBinding()]
 param(
     [ValidateRange(1, 4)]
     [int]$Tier,
 
-    [ValidateRange(1, 26)]
+    [ValidateRange(1, 34)]
     [int]$Feature,
 
     [switch]$Rebuild,
+
+    [string]$BinaryPath,
 
     [string]$TestFile,
 
@@ -29,7 +31,7 @@ $projectRoot = Split-Path -Parent $scriptDir
 
 # 2. Rebuild step if requested
 if ($Rebuild) {
-    Write-Host "[BUILD] Executing build.cmd to compile fresh Tepi.exe..." -ForegroundColor Cyan
+    Write-Host "[BUILD] Executing build.cmd to compile fresh Deskmate.exe..." -ForegroundColor Cyan
     $buildCmd = Join-Path $projectRoot "build.cmd"
     if (-not (Test-Path $buildCmd)) {
         Write-Host "[ERROR] build.cmd not found at $buildCmd" -ForegroundColor Red
@@ -59,9 +61,29 @@ if ($Rebuild) {
     Write-Host "[BUILD] Compilation successful." -ForegroundColor Green
 }
 
+$previousBinary = $env:DESKMATE_TEST_BINARY
+$previousDeskmateDir = $env:DESKMATE_DIR
+$previousDry = $env:DESKMATE_DOCK_DRY
+if ($BinaryPath) {
+    if (-not (Test-Path -LiteralPath $BinaryPath -PathType Leaf)) {
+        Write-Host "[ERROR] Test binary not found: $BinaryPath" -ForegroundColor Red
+        exit 1
+    }
+    $BinaryPath = (Resolve-Path -LiteralPath $BinaryPath).Path
+    if ([IO.Path]::GetExtension($BinaryPath) -ine ".exe") {
+        Write-Host "[ERROR] Test binary must be an .exe file: $BinaryPath" -ForegroundColor Red
+        exit 1
+    }
+    $env:DESKMATE_TEST_BINARY = $BinaryPath
+}
+$testData = Join-Path ([IO.Path]::GetTempPath()) ("Deskmate\tests\" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $testData -Force | Out-Null
+$env:DESKMATE_DIR = $testData
+$env:DESKMATE_DOCK_DRY = "1"
+try {
 # 3. Load Common Infrastructure
 $harnessPath = Join-Path $scriptDir "common\TestHarness.ps1"
-$loaderPath = Join-Path $scriptDir "common\TepiLoader.ps1"
+$loaderPath = Join-Path $scriptDir "common\DeskmateLoader.ps1"
 
 if (-not (Test-Path $harnessPath) -or -not (Test-Path $loaderPath)) {
     Write-Host "[ERROR] Test harness infrastructure missing in $scriptDir\common" -ForegroundColor Red
@@ -131,11 +153,14 @@ if ($testFilesToRun.Count -eq 0) {
 }
 
 Write-Host "`n========================================================" -ForegroundColor Cyan
-Write-Host "             TEPI E2E TEST RUNNER EXECUTION             " -ForegroundColor White
+Write-Host "             DESKMATE E2E TEST RUNNER EXECUTION             " -ForegroundColor White
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host " Discovered Files: $($testFilesToRun.Count)"
 Write-Host " Working Dir     : $projectRoot"
-Write-Host " Binary Target   : $global:TepiAssemblyPath"
+Write-Host " Binary Target   : $global:DeskmateAssemblyPath"
+Write-Host " Binary SHA-256  : $((Get-FileHash -LiteralPath $global:DeskmateAssemblyPath -Algorithm SHA256).Hash)"
+Write-Host " Isolated Data   : $testData"
+Write-Host " Suite Isolation : fresh PowerShell process per file"
 Write-Host "========================================================`n" -ForegroundColor Cyan
 
 # 5. Execute Test Files and Track Metrics per Tier
@@ -148,29 +173,48 @@ $overallStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 foreach ($tf in $testFilesToRun) {
     Write-Host ">> Executing: $($tf.Name)" -ForegroundColor Magenta
+    if ($global:TestContext) {
+        $global:TestContext.BeforeHooks.Clear()
+        $global:TestContext.AfterHooks.Clear()
+    }
     
     $fileSw = [System.Diagnostics.Stopwatch]::StartNew()
-    $beforeTotal = $global:TestContext.Total
-    $beforePass = $global:TestContext.Passed
-    $beforeFail = $global:TestContext.Failed
 
-    try {
-        # Execute test script
-        & $tf.Path
-    }
-    catch {
-        Write-Host "   [FATAL ERROR IN SCRIPT] $_" -ForegroundColor Red
-        if ($_.ScriptStackTrace) {
-            Write-Host "   $($_.ScriptStackTrace)" -ForegroundColor DarkRed
-        }
-        $global:TestContext.Failed++
-        $global:TestContext.Total++
-    }
+    $suiteData = Join-Path $testData ([IO.Path]::GetFileNameWithoutExtension($tf.Name))
+    New-Item -ItemType Directory -Path $suiteData -Force | Out-Null
+    $suiteInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $suiteInfo.FileName = (Get-Process -Id $PID).Path
+    $suiteInfo.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$scriptDir\common\Invoke-Suite.ps1`" -TestPath `"$($tf.Path)`" -HarnessPath `"$harnessPath`" -LoaderPath `"$loaderPath`""
+    if ($BinaryPath) { $suiteInfo.Arguments += " -BinaryPath `"$BinaryPath`"" }
+    if ($VerboseOutput) { $suiteInfo.Arguments += " -VerboseOutput" }
+    $suiteInfo.WorkingDirectory = $projectRoot
+    $suiteInfo.UseShellExecute = $false
+    $suiteInfo.CreateNoWindow = $true
+    $suiteInfo.RedirectStandardOutput = $true
+    $suiteInfo.RedirectStandardError = $true
+    $suiteInfo.EnvironmentVariables["DESKMATE_DIR"] = $suiteData
+    $suiteInfo.EnvironmentVariables["DESKMATE_DOCK_DRY"] = "1"
 
+    $suiteProcess = [System.Diagnostics.Process]::Start($suiteInfo)
+    $suiteOutput = $suiteProcess.StandardOutput.ReadToEnd()
+    $suiteError = $suiteProcess.StandardError.ReadToEnd()
+    $suiteProcess.WaitForExit()
     $fileSw.Stop()
-    $deltaTotal = $global:TestContext.Total - $beforeTotal
-    $deltaPass = $global:TestContext.Passed - $beforePass
-    $deltaFail = $global:TestContext.Failed - $beforeFail
+
+    if ($suiteOutput) { Write-Host $suiteOutput.TrimEnd() }
+    if ($suiteError) { Write-Host $suiteError.TrimEnd() -ForegroundColor DarkRed }
+    $suiteSummary = [regex]::Match($suiteOutput, "DESKMATE_TEST_SUMMARY TOTAL=(\d+) PASSED=(\d+) FAILED=(\d+)")
+    if ($suiteSummary.Success) {
+        $deltaTotal = [int]$suiteSummary.Groups[1].Value
+        $deltaPass = [int]$suiteSummary.Groups[2].Value
+        $deltaFail = [int]$suiteSummary.Groups[3].Value
+    }
+    else {
+        Write-Host "   [FATAL ERROR IN SCRIPT] No test summary was emitted; the suite did not complete." -ForegroundColor Red
+        $deltaTotal = 1
+        $deltaPass = 0
+        $deltaFail = 1
+    }
 
     $tKey = $tf.Tier
     $tierStats[$tKey].Total += $deltaTotal
@@ -207,7 +251,7 @@ if ($tierStats[0].Total -gt 0) {
     $st0 = $tierStats[0]
     $status0 = if ($st0.Failed -eq 0) { "PASS" } else { "FAIL" }
     [void]$tableRows.Add([PSCustomObject]@{
-        Tier     = "Smoke"
+        Tier     = $(if ($TestFile) { "Custom" } else { "Smoke" })
         Total    = $st0.Total
         Passed   = $st0.Passed
         Failed   = $st0.Failed
@@ -216,10 +260,15 @@ if ($tierStats[0].Total -gt 0) {
     })
 }
 
-# Grand Total Row
-$grandTotal = $global:TestContext.Total
-$grandPassed = $global:TestContext.Passed
-$grandFailed = $global:TestContext.Failed
+# Grand Total Row: child-process counters live in tierStats, not the parent harness.
+$grandTotal = 0
+$grandPassed = 0
+$grandFailed = 0
+foreach ($st in $tierStats.Values) {
+    $grandTotal += $st.Total
+    $grandPassed += $st.Passed
+    $grandFailed += $st.Failed
+}
 $grandStatus = if ($grandTotal -gt 0 -and $grandFailed -eq 0) { "PASS" } else { "FAIL" }
 $grandDuration = "$([Math]::Round($overallStopwatch.Elapsed.TotalMilliseconds, 1)) ms"
 
@@ -238,8 +287,17 @@ $tableRows | Format-Table -Property Tier, Total, Passed, Failed, Duration, Statu
 Write-Host "==========================================================================================" -ForegroundColor Gray
 if ($grandStatus -eq "PASS") {
     Write-Host " OVERALL STATUS: ALL TESTS PASSED SUCCESSFULLY" -ForegroundColor Green
-    exit 0
 } else {
     Write-Host " OVERALL STATUS: TEST FAILURES DETECTED ($grandFailed failed)" -ForegroundColor Red
-    exit 1
 }
+}
+finally {
+    $env:DESKMATE_TEST_BINARY = $previousBinary
+    $env:DESKMATE_DIR = $previousDeskmateDir
+    $env:DESKMATE_DOCK_DRY = $previousDry
+    if (Test-Path -LiteralPath $testData) {
+        Remove-Item -LiteralPath $testData -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+exit $(if ($grandStatus -eq "PASS") { 0 } else { 1 })

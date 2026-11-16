@@ -6,9 +6,9 @@ using System.IO;
 using System.Text;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
-    // Tepi.exe --statusline < status.json
+    // Deskmate.exe --statusline < status.json
     static class StatusLine
     {
         const int InputCap = 1024 * 1024, OutputCap = 16 * 1024, PostMs = 150, ChainMs = 5000;
@@ -35,7 +35,7 @@ namespace Tepi
             }
             string text = null;
             // A chained child never chains again
-            if (Environment.GetEnvironmentVariable("TEPI_STATUSLINE") == null)
+            if (Environment.GetEnvironmentVariable("DESKMATE_STATUSLINE") == null)
             {
                 string prev = StatusSetup.Previous(name);
                 if (prev != null) text = Chain(prev, input);
@@ -101,7 +101,7 @@ namespace Tepi
             return name.StartsWith(".claude-") ? name.Substring(8) : name.TrimStart('.');
         }
 
-        // Only the numbers Tepi shows
+        // Only the numbers Deskmate shows
         static Dictionary<string, object> Usage(Dictionary<string, object> data, string name)
         {
             var limits = Json.Obj(data, "rate_limits");
@@ -219,7 +219,7 @@ namespace Tepi
                 psi.RedirectStandardInput = true;
                 psi.RedirectStandardOutput = true;
                 psi.StandardOutputEncoding = new UTF8Encoding(false);
-                psi.EnvironmentVariables["TEPI_STATUSLINE"] = "1";
+                psi.EnvironmentVariables["DESKMATE_STATUSLINE"] = "1";
                 using (var proc = Process.Start(psi))
                 {
                     var read = proc.StandardOutput.ReadToEndAsync();
@@ -456,7 +456,7 @@ namespace Tepi
         public static string Install()
         {
             // Bash would expand these inside quotes
-            if (Command().IndexOfAny("$`".ToCharArray()) >= 0) return Lang.T("Pindahkan Tepi.exe ke folder tanpa $ atau `");
+            if (Command().IndexOfAny("$`".ToCharArray()) >= 0) return Lang.T("Pindahkan Deskmate.exe ke folder tanpa $ atau `");
             var store = Load();
             int done = 0;
             foreach (var dir in HookSetup.Profiles())

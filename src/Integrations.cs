@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Text box in a well; Enter submits
     class KitField : Panel
@@ -70,6 +70,7 @@ namespace Tepi
         {
             readonly Dictionary<string, KitRow> statusRows = new Dictionary<string, KitRow>();
             bool sourcesHooked;
+            bool showGcalCustom;
 
             public void ShowSection(string id) { Go(id); }
 
@@ -133,6 +134,8 @@ namespace Tepi
                 TodoistRows(hub, add);
                 cap(Lang.T("Kalender"));
                 CalendarRows(hub, add);
+                cap(Lang.T("Google Calendar"));
+                GoogleCalendarRows(add);
             }
 
             void HookSources()
@@ -377,6 +380,9 @@ namespace Tepi
 
             void CalendarRows(SourceHub hub, Action<KitRow> add)
             {
+                var holidayRow = Row(Lang.T("Hari libur nasional (Indonesia)"), Lang.T("Menampilkan tanggal merah & cuti bersama Indonesia di kalender"), Switch("calendar.holidays", true, on => { island.SetFlag("calendar.holidays", on); island.ReloadHolidaySource(); }));
+                holidayRow.Glyph = '\uE787';
+                add(holidayRow);
                 foreach (var feed in hub.Feeds)
                 {
                     var f = feed;
@@ -426,6 +432,118 @@ namespace Tepi
                         Say(row, r.Error);
                     });
                 });
+            }
+
+            void GoogleCalendarRows(Action<KitRow> add)
+            {
+                var vault = GoogleCalVault.Load();
+                var idField = new KitField(Ui, false, "….apps.googleusercontent.com", 300);
+                idField.Box.Text = vault.ClientId ?? "";
+                var idRow = Row(Lang.T("Google Client ID"), null, idField);
+                idRow.Glyph = '\uE787';
+
+                var secField = new KitField(Ui, true, "GOCSPX-…", 300);
+                secField.Box.Text = vault.ClientSecret ?? "";
+                var secRow = Row(Lang.T("Google Client Secret"), null, secField);
+                secRow.Glyph = '\uE787';
+
+                Action saveClient = delegate
+                {
+                    string cid = idField.Box.Text.Trim();
+                    string csec = secField.Box.Text.Trim();
+                    lock (GoogleCalVault.Sync)
+                    {
+                        var v = GoogleCalVault.LoadLocked();
+                        if (cid == (v.ClientId ?? "") && csec == (v.ClientSecret ?? "")) return;
+                        v.ClientId = cid;
+                        v.ClientSecret = csec;
+                        v.SaveLocked();
+                    }
+                };
+                idField.Submit = saveClient;
+                idField.Box.LostFocus += delegate { saveClient(); };
+                secField.Submit = saveClient;
+                secField.Box.LostFocus += delegate { saveClient(); };
+
+                bool connected = island.GoogleCalendarConnected;
+                string email = island.GoogleCalendarEmail;
+                string detail = connected ? (string.IsNullOrEmpty(email) ? Lang.T("Google Workspace tersambung") : email) : Lang.T("Masuk lewat browser untuk sinkron Calendar, Tasks & Catatan Drive");
+                KitRow acctRow = null;
+                if (connected)
+                {
+                    acctRow = Row(Lang.T("Akun Google"), detail, Button(Lang.T("Putuskan"), false, delegate
+                    {
+                        island.DisconnectGoogleCalendar();
+                        Rebuild();
+                    }));
+                }
+                else
+                {
+                    KitButton authBtn = null;
+                    authBtn = Button(Lang.T("Masuk dengan Google…"), true, delegate
+                    {
+                        string cid = idField.Box.Text.Trim();
+                        string csec = secField.Box.Text.Trim();
+                        saveClient();
+                        authBtn.Enabled = false;
+                        island.ConnectGoogleCalendar(cid, csec, delegate(string err)
+                        {
+                            if (IsDisposed) return;
+                            if (err != null)
+                            {
+                                if (!authBtn.IsDisposed) authBtn.Enabled = true;
+                                if (!acctRow.IsDisposed) Say(acctRow, err);
+                                return;
+                            }
+                            Relayout();
+                        });
+                    });
+                    acctRow = Row(Lang.T("Akun Google"), detail, authBtn);
+                }
+                acctRow.Glyph = '\uE787';
+                add(acctRow);
+
+                if (connected)
+                {
+                    var tasksRow = Row(Lang.T("Sinkronkan Google Tasks"), Lang.T("Sinkron dua arah tugas dengan Google Tasks"), Switch("google.tasks", true, on => { island.SetFlag("google.tasks", on); island.ReloadGoogleWorkspaceSources(); }));
+                    tasksRow.Glyph = '\uE762';
+                    add(tasksRow);
+
+                    var driveRow = Row(Lang.T("Sinkronkan Catatan ke Google Drive"), Lang.T("Simpan & sinkron catatan Markdown di folder Deskmate Catatan"), Switch("google.drive.notes", true, on => { island.SetFlag("google.drive.notes", on); island.ReloadGoogleWorkspaceSources(); }));
+                    driveRow.Glyph = '\uE753';
+                    add(driveRow);
+
+                    KitRow syncRow = null;
+                    KitButton syncBtn = null;
+                    syncBtn = Button(Lang.T("Sinkronkan sekarang"), false, delegate
+                    {
+                        syncBtn.Enabled = false;
+                        island.SyncGoogleAllNow(delegate(string err)
+                        {
+                            if (IsDisposed || syncBtn.IsDisposed) return;
+                            syncBtn.Enabled = true;
+                            if (syncRow != null && !syncRow.IsDisposed)
+                                Say(syncRow, err ?? Lang.T("Tersinkron"));
+                        });
+                    });
+                    syncRow = Row(Lang.T("Sinkronkan sekarang"), null, syncBtn);
+                    syncRow.Glyph = '\uE895';
+                    add(syncRow);
+                }
+
+                var customRow = Row(Lang.T("Kredensial OAuth kustom"), null, Button(Lang.T(showGcalCustom ? "Tutup" : "Atur"), false, delegate
+                {
+                    showGcalCustom = !showGcalCustom;
+                    Rebuild();
+                }));
+                customRow.Glyph = '\uE787';
+                add(customRow);
+
+                if (showGcalCustom)
+                {
+                    add(idRow);
+                    add(secRow);
+                }
             }
         }
     }

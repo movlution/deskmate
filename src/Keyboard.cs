@@ -2,7 +2,7 @@
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Keyboard control: Ctrl+Alt+I focuses the island
     partial class Island
@@ -136,6 +136,11 @@ namespace Tepi
                 case "prefsOpen": return Lang.T("Pengaturan");
                 case "voiceFolder": return Lang.T("Folder rekaman");
                 case "clearVoice": return Lang.T("Kosongkan");
+                case "historyText": return Lang.T("Teks");
+                case "historyImage": return Lang.T("Gambar");
+                case "historyPrev": return Lang.T("Sebelumnya");
+                case "historyNext": return Lang.T("Berikutnya");
+                case "clearClips": return Lang.T("Kosongkan");
                 case "prayCity": return Lang.T("Pilih kota");
                 case "praySwitch": return Lang.T("Pengingat sholat");
                 case "drinkPlus": return Lang.T("Minum air");
@@ -146,6 +151,7 @@ namespace Tepi
                 case "repeat": return Lang.T(mediaInfo.Repeat == 1 ? "Ulang satu lagu" : mediaInfo.Repeat == 2 ? "Ulang semua" : "Ulang mati");
             }
             if (id.StartsWith("send", StringComparison.Ordinal)) return Lang.T("Chat");
+            if (id.StartsWith("clipEdit", StringComparison.Ordinal)) return Lang.T("Edit gambar…");
             return "";
         }
 

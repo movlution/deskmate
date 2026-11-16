@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Overview: the user's cards, live ones first
     partial class Island
@@ -124,7 +124,6 @@ namespace Tepi
                 page = keepPage;
                 hitsOn = keepHits;
                 p.T = keepT;
-                tabSnap = true;
             }
         }
 
@@ -161,7 +160,7 @@ namespace Tepi
                 case HomeCard.Messages: return notifs.Count > 0 && NotifOn;
                 case HomeCard.Shelf: return shelf.Count > 0;
                 case HomeCard.Battery: return hasBattery || btBattery.Count > 0;
-                case HomeCard.Clips: return !ClipsOn || clips.Count > 0;
+                case HomeCard.Clips: return !ClipsOn || clips.Count > 0 || imageClips.Count > 0;
                 case HomeCard.Combo: return ComboOn || ComboXp > 0 || ComboAllTimeBest > 0 || TypingSprintActive;
                 case HomeCard.Priorities: return PriorityCount > 0;
                 case HomeCard.Focus: return FocusTotalMin > 0 || FocusMinToday > 0 || FocusStreakDays > 0 || TimerOn || PriorityCount > 0 || ComboOn;
@@ -343,9 +342,7 @@ namespace Tepi
             m.Items.Add(new ToolStripSeparator());
             m.Items.Add(Lang.T("Sembunyikan dari Ringkasan"), null, delegate { HideHomeCard(c); });
             m.Items.Add(Lang.T("Atur Ringkasan…"), null, delegate { BeginInvoke(new Action(delegate { OpenPrefs("home"); })); });
-            StyleMenu(m);
-            m.Closed += delegate { BeginInvoke(new Action(m.Dispose)); };
-            m.Show(Control.MousePosition);
+            ShowIslandMenu(m);
         }
 
         // Card shell: hover lifts, press sinks; null act means look only
@@ -512,7 +509,7 @@ namespace Tepi
         {
             if (!WeatherOn)
             {
-                CardBase(r, "homeWeather", HomeCard.Weather, delegate { BeginInvoke(new Action(delegate { OpenPrefs("system"); })); });
+                CardBase(r, "homeWeather", HomeCard.Weather, delegate { BeginInvoke(new Action(delegate { OpenPrefs("remind"); })); });
                 CardCaption(r, '', Lang.T("Cuaca"));
                 CardSetup(r, Lang.T("Pilih kota"), Lang.T("Untuk cuaca dan peringatan hujan"));
                 return;
@@ -587,11 +584,15 @@ namespace Tepi
                 CardSetup(r, Lang.T("Riwayat clipboard mati"), Lang.T("Klik untuk menyalakan"));
                 return;
             }
-            CardBase(r, "homeClips", HomeCard.Clips, delegate { ShowClips(); });
+            var c = LatestClip();
+            if (c == null) return;
+            bool image = c.Image != null;
+            CardBase(r, "homeClips", HomeCard.Clips, delegate { ChooseClipKind(image); ShowClips(); });
             CardCaption(r, '', Lang.T("Clipboard"));
-            var c = clips[0];
-            p.TextBox(Preview(c.Text, 160), Ink.Text(12.5f), p.T.Text, new RectangleF(r.X + 16, r.Y + 36, r.Width - 30, 36), StringAlignment.Near);
-            p.Text(Lang.F("{0} karakter", c.Text.Length) + " · " + Fmt.Ago(c.Utc), Ink.Small(11f), p.T.Faint, r.X + 16, r.Y + 78, r.Width - 30, StringAlignment.Near);
+            if (image) p.Image(c.Thumb, new RectangleF(r.X + 16, r.Y + 34, 60, 34), 5);
+            else p.TextBox(Preview(c.Text, 160), Ink.Text(12.5f), p.T.Text, new RectangleF(r.X + 16, r.Y + 36, r.Width - 30, 36), StringAlignment.Near);
+            string meta = image ? ClipImageSize(c) : Lang.F("{0} karakter", c.Text.Length);
+            p.Text(meta + " · " + Fmt.Ago(c.Utc), Ink.Small(11f), p.T.Faint, r.X + 16, r.Y + 78, r.Width - 30, StringAlignment.Near);
         }
 
         void DrawHomePray(RectangleF r)

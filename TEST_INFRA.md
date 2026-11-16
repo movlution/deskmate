@@ -1,7 +1,7 @@
-# Tepi End-to-End (E2E) Test Infrastructure Specification
+# Deskmate End-to-End (E2E) Test Infrastructure Specification
 
 **Document Version**: 1.0.0  
-**Target Application**: Tepi (`Tepi.exe`)  
+**Target Application**: Deskmate (`Deskmate.exe`)
 **Target Platform**: Windows 10/11 x64, .NET Framework 4.8  
 **Author**: Test Infrastructure Architect & Test Writer  
 **Milestone**: TM1 — Test Infrastructure & Harness Foundation  
@@ -12,7 +12,7 @@
 ## 1. Test Philosophy & Design Principles
 
 ### 1.1 Opaque-Box, Requirement-Driven Verification
-The Tepi E2E Test Suite operates strictly from an **opaque-box** perspective. Tests treat the compiled target binary (`Tepi.exe`) as a black box with observable interfaces. Tests are authored strictly against documented requirements from `ORIGINAL_REQUEST.md`, architectural specifications in `PROJECT.md`, and design token guidelines in `docs/analisis/`.
+The Deskmate E2E Test Suite operates strictly from an **opaque-box** perspective. Tests treat the compiled target binary (`Deskmate.exe`) as a black box with observable interfaces. Tests are authored strictly against documented requirements from `ORIGINAL_REQUEST.md`, architectural specifications in `PROJECT.md`, and design token guidelines in `docs/analisis/`.
 
 Key principles:
 1. **Zero Source Code Mutation for Testing**: Production source files (`src/*.cs`) are never altered to accommodate test fixtures or bypass production logic.
@@ -27,10 +27,12 @@ To ensure complete portability, frictionless continuous integration, and seamles
 - **Native Windows Tooling**: Powered entirely by native Windows PowerShell 5.1+ (or PowerShell 7+ on Windows) and the .NET Framework 4.8 CLR already bundled with the Windows operating system.
 
 ### 1.3 Determinism and State Isolation
-Tepi's design tokens and theme engine rely on static singletons (`Ink.Base`, `Ink.Flip`, `Ink.Light`, `KitInk`). To prevent cross-test contamination and non-deterministic cascading failures:
+Deskmate's design tokens and theme engine rely on static singletons (`Ink.Base`, `Ink.Flip`, `Ink.Light`, `KitInk`). To prevent cross-test contamination and non-deterministic cascading failures:
 - Every test suite and test case must operate within an isolated context.
-- Before and after each test execution, the environment is restored using `Reset-TepiTheme`.
+- Before and after each test execution, the environment is restored using `Reset-DeskmateTheme`.
 - In-memory bitmap rendering resources, GDI+ handles, and control instances are cleanly disposed via `.Dispose()`.
+- The runner sets `DESKMATE_DIR` before the loader is loaded and gives every suite a separate temporary data directory and PowerShell process. This is required because `Settings.Dir` is static and `DESKMATE_TEST_BINARY` cannot replace an assembly already loaded in the same process.
+- `DESKMATE_DOCK_DRY=1` reduces Dock planning side effects; it does **not** make `.Show()`, shell hooks, CLI toast, or external process tests passive. Review a suite's effects before running it on an active desktop.
 
 ---
 
@@ -71,11 +73,11 @@ The following table provides the authoritative inventory of all 26 features unde
 
 ## 3. Test Architecture: The 4 Testing Modalities
 
-Testing a custom GDI+ owner-drawn WinForms application in an opaque-box manner requires four complementary testing modalities. Each modality targets a specific architectural layer of `Tepi.exe`.
+Testing a custom GDI+ owner-drawn WinForms application in an opaque-box manner requires four complementary testing modalities. Each modality targets a specific architectural layer of `Deskmate.exe`.
 
 ```
 +-----------------------------------------------------------------------------------+
-|                            Tepi E2E Test Runner                                   |
+|                            Deskmate E2E Test Runner                                   |
 +-----------------------------------------------------------------------------------+
         |                         |                         |                    |
         v                         v                         v                    v
@@ -94,12 +96,12 @@ Testing a custom GDI+ owner-drawn WinForms application in an opaque-box manner r
 
 ### 3.1 Modality A: Mathematical & Contract Reflection
 - **Scope**: Direct validation of algorithmic color transformations, luminance calculations, and WCAG contrast evaluations.
-- **Execution Mechanism**: Reflection invocation via `Invoke-TepiStaticMethod` and direct field inspection via `Get-TepiStaticField`.
+- **Execution Mechanism**: Reflection invocation via `Invoke-DeskmateStaticMethod` and direct field inspection via `Get-DeskmateStaticField`.
 - **Target Subsystems**:
-  - `Tepi.Island.Contrast(Color a, Color b)`
-  - `Tepi.Island.DerivePalette(Color bg, Color text, Color accent)`
-  - `Tepi.Ink.Mix(Color a, Color b, float k)`
-  - `Tepi.Ink.Over(Color top, Color bottom)`
+  - `Deskmate.Island.Contrast(Color a, Color b)`
+  - `Deskmate.Island.DerivePalette(Color bg, Color text, Color accent)`
+  - `Deskmate.Ink.Mix(Color a, Color b, float k)`
+  - `Deskmate.Ink.Over(Color top, Color bottom)`
   - Relative luminance calculations:
     $$\text{Luminance}(C) = 0.2126 \times R_{\text{lin}} + 0.7152 \times G_{\text{lin}} + 0.0722 \times B_{\text{lin}}$$
     $$\text{Contrast}(C_1, C_2) = \frac{\max(L_1, L_2) + 0.05}{\min(L_1, L_2) + 0.05}$$
@@ -111,7 +113,7 @@ Testing a custom GDI+ owner-drawn WinForms application in an opaque-box manner r
 
 ### 3.2 Modality B: Design Token & Typography Registry Inspection
 - **Scope**: Verification of centralized token structures, elimination of arbitrary hardcoded values, and validation of typographic hierarchy.
-- **Execution Mechanism**: Inspection of static properties and fields on `Tepi.Ink`, `Tepi.KitInk`, and `Tepi.Tone`.
+- **Execution Mechanism**: Inspection of static properties and fields on `Deskmate.Ink`, `Deskmate.KitInk`, and `Deskmate.Tone`.
 - **Target Tokens**:
   - **Typography Scale**: `Hero` (40pt), `Title1` (22pt), `Title2` (17pt), `Headline` (14.5pt), `Body` (13.5pt), `Callout` (12.5pt), `Caption` (11pt).
   - **Corner Radii Tokens**: `RadiusShell` (32px), `RadiusModule` (20px), `RadiusControl` (12px).
@@ -128,18 +130,18 @@ Testing a custom GDI+ owner-drawn WinForms application in an opaque-box manner r
   4. Pixel-level inspection via `Bitmap.GetPixel(x, y)` to sample rendered borders, backgrounds, glyphs, and focus indicators.
   5. Deterministic disposal of GDI+ bitmaps and control handles.
 - **Key Advantages**:
-  - 100% headless execution (safe for CI and automated pipelines).
+  - The offscreen operation itself does not display a window. The complete suite is headless only if it avoids `.Show()`, process/CLI activation, shell hooks, and other desktop side effects.
   - No focus stealing, window flashing, or display resolution dependencies.
   - Sub-millisecond rendering cycle per control.
 
 ### 3.4 Modality D: Process & CLI Execution
 - **Scope**: Verification of command-line entrypoints, exit codes, IPC bridge behavior, and instance concurrency.
-- **Execution Mechanism**: Launching `Tepi.exe` as a subprocess using PowerShell `Start-Process` or `System.Diagnostics.Process`.
+- **Execution Mechanism**: Launching `Deskmate.exe` as a subprocess using PowerShell `Start-Process` or `System.Diagnostics.Process`.
 - **Target Invocations**:
   - `build.cmd`: Clean compilation and zero exit code verification.
-  - `Tepi.exe --notify <title> <detail>`: Toast notification parameter validation and exit code verification.
-  - `Tepi.exe --run <command>`: Headless command runner invocation.
-  - `Tepi.exe --statusline`: Standard input JSON processing and statusline formatting.
+  - `Deskmate.exe --notify <title> <detail>`: Toast notification parameter validation and exit code verification.
+  - `Deskmate.exe --run <command>`: Headless command runner invocation.
+  - `Deskmate.exe --statusline`: Standard input JSON processing and statusline formatting.
   - Single-instance mutex validation (`Settings.MutexName`).
 
 ---
@@ -261,7 +263,7 @@ Tier 4 tests model realistic, comprehensive user workloads that integrate multip
 
 ### Scenario S11: Toast Notification Ingestion under Extreme Metadata Collisions
 - **Description**: Simulates the external CLI posting toast notifications with exceptionally long app names and detailed notification payloads.
-- **Subsystems Exercised**: `Tepi.exe --notify`, `Views.cs` toast measurement, text truncation.
+- **Subsystems Exercised**: `Deskmate.exe --notify`, `Views.cs` toast measurement, text truncation.
 - **Verification Criteria**:
   - Notifications with titles exceeding 100 characters and long application headers do not collide or overlap.
   - Geometry measurements enforce text clipping with ellipses without overlapping sibling labels.
@@ -293,7 +295,8 @@ tests/
 ├── smoke_test.ps1                   # Infrastructure & reflection smoke test suite
 ├── common/
 │   ├── TestHarness.ps1              # Core assertion library and test execution harness
-│   └── TepiLoader.ps1               # Binary loader, reflection helpers, and offscreen renderers
+│   ├── DeskmateLoader.ps1               # Explicit binary loader, reflection helpers, and offscreen renderers
+│   └── Invoke-Suite.ps1             # One-suite process wrapper and machine-readable summary
 ├── tier1_features/                  # Tier 1: Feature Coverage (>= 5 tests/feat, >= 130 tests)
 │   ├── test_f01_typography.ps1
 │   ├── test_f02_accents.ps1
@@ -330,17 +333,34 @@ The test runner provides a standardized command-line interface with exit code co
 # Run all tests targeting a specific feature (e.g. Feature 2: Light Mode Accents)
 .\tests\run_e2e.ps1 -Feature 2
 
-# Force recompilation of Tepi.exe using build.cmd before running tests
+# Force recompilation of Deskmate.exe using build.cmd before running tests
 .\tests\run_e2e.ps1 -Rebuild
 
 # Run a single specific test file
 .\tests\run_e2e.ps1 -TestFile tests\smoke_test.ps1
 
 # Verbose output with per-assertion traces
-.\tests\run_e2e.ps1 -Verbose
+.\tests\run_e2e.ps1 -VerboseOutput
+
+# Test an explicitly staged executable (does not install or restart Deskmate)
+.\tests\run_e2e.ps1 -Tier 2 -BinaryPath "$env:TEMP\Sentinel\build\Deskmate.exe"
+
+# Run one reviewed suite against the same explicit binary
+.\tests\run_e2e.ps1 -TestFile tests\tier1_features\test_f27_dock_app_menu.ps1 -BinaryPath "$env:TEMP\Sentinel\build\Deskmate.exe" -VerboseOutput
+
+# Build to staging, then pass that exact binary to -BinaryPath
+& cmd /c ".\build.cmd `"$env:TEMP\Sentinel\build\Deskmate.exe`""
 ```
 
-### 6.2 Exit Code Contract
+### 6.2 Binary Selection, Isolation, and Result Reporting
+- `-BinaryPath` takes precedence over the repository `Deskmate.exe`; `DESKMATE_TEST_BINARY` is the equivalent loader override for a standalone suite. Both must identify an existing `.exe`.
+- The loader refuses to substitute a different assembly after one has already been loaded. Use a new PowerShell process for each binary; the runner already does this for each suite.
+- The runner prints the absolute binary path and SHA-256. Keep these with test logs when comparing staged, repository, and installed artifacts.
+- `Invoke-Suite.ps1` emits `DESKMATE_TEST_SUMMARY TOTAL=<n> PASSED=<n> FAILED=<n>` on the output stream. The runner aggregates these child summaries, including fatal script failures, rather than reading the parent's unused counters.
+- `-Rebuild` uses the default `build.cmd` output. To avoid replacing the repository executable, build to staging first and supply `-BinaryPath` instead of combining `-Rebuild` with `-BinaryPath`.
+- Runner isolation covers settings data and .NET assembly state; it does not prove that a suite is free of desktop side effects or that GPU/window-manager rendering matches an offscreen bitmap.
+
+### 6.3 Exit Code Contract
 - Exit Code `0`: All executed tests passed cleanly.
 - Exit Code `1`: One or more tests failed, or a fatal build/runtime error occurred.
 

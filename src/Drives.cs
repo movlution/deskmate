@@ -4,7 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     // Removable drives: plugged in, ejected
     partial class Island

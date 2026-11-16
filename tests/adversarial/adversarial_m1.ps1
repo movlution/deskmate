@@ -5,13 +5,13 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Adversarial Suite M1: Colors.DerivePalette & Ink.Apply Stress Testing" {
 
-    $islandType = Get-TepiType "Island"
-    $inkType = Get-TepiType "Ink"
-    $toneType = Get-TepiType "Tone"
+    $islandType = Get-DeskmateType "Island"
+    $inkType = Get-DeskmateType "Ink"
+    $toneType = Get-DeskmateType "Tone"
 
     $deriveMethod = $islandType.GetMethod("DerivePalette", [System.Reflection.BindingFlags]'Public,Static')
     $contrastMethod = $islandType.GetMethod("Contrast", [System.Reflection.BindingFlags]'Public,Static')

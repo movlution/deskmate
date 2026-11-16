@@ -2,7 +2,7 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Row that opens a page: chevron, hover, Enter
     class NavRow : KitRow

@@ -5,7 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Runtime.InteropServices;
 
-namespace Tepi
+namespace Deskmate
 {
     // One live area: place, state, schedule
     sealed class LiveSlot
@@ -208,6 +208,7 @@ namespace Tepi
             g.Flush(FlushIntention.Sync);
             double p2 = Prof.T();
             PresentLive();
+            if (islandBackdrop != null && GpuGlassOn) islandBackdrop.SyncOrder(Handle);
             if (fpsLog) { liveRestoreMs += p1 - p0; liveDrawMs += p2 - p1; livePresentMs += Prof.T() - p2; }
             lastPresentTick = Environment.TickCount;
             presented.Set();
@@ -365,22 +366,9 @@ namespace Tepi
             double t = clock.Elapsed.TotalSeconds;
             for (int i = 0; i < slotCount; i++)
                 if (slots[i].Next == draw) { slots[i].Due = t; found = true; }
-            // Vsync loop already running: picks it up
+            // An animation frame is already scheduled.
             if (!found || animating) return;
-            ambientTimer.Stop();
-            ambientTimer.Interval = 1;
-            ambientTimer.Start();
-        }
-
-        // Sleep whole vsyncs, no empty frames
-        void PaceToDue()
-        {
-            for (int n = 0; n < 4 && !Native.HasPendingMessage(); n++)
-            {
-                double due = double.MaxValue;
-                for (int i = 0; i < slotCount; i++) if (slots[i].Due > 0) due = Math.Min(due, slots[i].Due - slots[i].Slack);
-                if (due - clock.Elapsed.TotalSeconds < 0.002 || Native.DwmFlush() != 0) return;
-            }
+            ScheduleFrame(1);
         }
 
         bool LiveDue()
@@ -390,13 +378,9 @@ namespace Tepi
             return false;
         }
 
-        // Fast areas follow vsync, not timer
         int LiveMode()
         {
-            if (!LiveDue()) return Stopped;
-            if (livePower > 1) return Ambient;
-            for (int i = 0; i < slotCount; i++) if (slots[i].Due > 0 && slots[i].Wait < 0.045) return Paced;
-            return Ambient;
+            return LiveDue() ? Ambient : Stopped;
         }
 
         // Next wake: due areas or whole frames
@@ -412,7 +396,7 @@ namespace Tepi
             return Math.Max(1, Math.Min(60000, (int)Math.Ceiling(wait * 1000)));
         }
 
-        // TEPI_FPS: partial frames, CPU split, kick sources
+        // DESKMATE_FPS: partial frames, CPU split, kick sources
 
         int liveFrames;
         double liveMs, liveWorst, liveRestoreMs, liveDrawMs, livePresentMs, liveLastT, liveGapWorst, liveGaps, liveGaps2;

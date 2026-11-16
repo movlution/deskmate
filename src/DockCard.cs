@@ -6,7 +6,7 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -90,7 +90,7 @@ namespace Tepi
                 ShowInTaskbar = false;
                 StartPosition = FormStartPosition.Manual;
                 AutoScaleMode = AutoScaleMode.None;
-                Text = "Tepi Dock";
+                Text = "Deskmate Dock";
                 Bounds = new Rectangle(-32000, -32000, 10, 10);
                 Tune(open, 420, 0.86f);
                 closeSoon.Tick += delegate { closeSoon.Stop(); if (!over) dock.CardDone(this); };
@@ -120,7 +120,7 @@ namespace Tepi
                 int none = unchecked((int)0xFFFFFFFE), square = 1;
                 DwmSetWindowAttribute(Handle, 34, ref none, 4);
                 DwmSetWindowAttribute(Handle, 33, ref square, 4);
-                if (dock.Glass) Native.SetWindowDisplayAffinity(Handle, Native.WDA_EXCLUDEFROMCAPTURE);
+                if (dock.Glass && !CompGlass.Available) Native.SetWindowDisplayAffinity(Handle, Native.WDA_EXCLUDEFROMCAPTURE);
             }
 
             protected override void WndProc(ref Message m)
@@ -134,6 +134,7 @@ namespace Tepi
                 closeSoon.Stop();
                 frames.Stop();
                 if (frost != null) frost.Stop();
+                if (cardBackdrop != null) { cardBackdrop.Dispose(); cardBackdrop = null; }
                 DropThumbs();
                 Free();
                 if (plate != null) plate.Dispose();
@@ -143,6 +144,7 @@ namespace Tepi
             public bool Covers(DockApp a) { return Kind == WindowsKind && App == a; }
 
             bool allowClose;
+            public bool Leaving { get { return leaving; } }
 
             // Sinks and fades, then closes
             public void Dismiss()
@@ -151,7 +153,7 @@ namespace Tepi
                 closeSoon.Stop();
                 if (!Visible || Anim.Reduced || g == null || open.Value < 0.05f) { Finish(); return; }
                 leaving = true;
-                Tune(open, 2600, 1f);
+                Tune(open, Kind == TrayKind ? 900 : 2600, 0.98f);
                 open.Target = 0;
                 lastStep = DateTime.UtcNow;
                 frames.Start();
@@ -200,29 +202,38 @@ namespace Tepi
             public void ShowTray(List<TrayIcon> list, Rectangle at, Rectangle monitor, int top, float sc)
             {
                 if (!IsHandleCreated) CreateHandle();
-                icons = list;
+                closeSoon.Stop();
+                icons = list ?? new List<TrayIcon>();
                 anchor = at;
                 mon = monitor;
                 barTop = top;
                 scale = sc;
-                Refill();
+                if (!Visible && Anim.Reduced) open.Snap(1);
+                Arrange();
                 if (!Visible) Appear();
             }
 
             void Appear()
             {
-                open.Snap(0);
-                open.Target = 1;
+                if (Anim.Reduced) open.Snap(1);
+                else { open.Snap(0); open.Target = 1; }
                 lastStep = DateTime.UtcNow;
+                Location = new Point(Location.X, baseY + Rise());
+                Render();
                 Show();
-                frames.Start();
+                SyncCardBackdrop(Ease.Clamp01(open.Value));
+                if (!Anim.Reduced) frames.Start();
             }
 
             // Content changed: titles, windows, icons
             public void Refill()
             {
                 if (IsDisposed || leaving) return;
-                if (Kind == TrayKind) icons = dock.TrayOverflow();
+                if (Kind == TrayKind)
+                {
+                    icons = dock.TrayOverflow();
+                    if (icons.Count == 0) { dock.CardDone(this); return; }
+                }
                 if (Kind == WindowsKind)
                 {
                     if (App == null || App.Wins.Count == 0) { dock.CardDone(this); return; }
@@ -280,11 +291,11 @@ namespace Tepi
                 int cx = anchor.X + anchor.Width / 2;
                 int left = Math.Max(mon.Left + (int)(8 * scale), Math.Min(mon.Right - (int)(8 * scale) - pw2, cx - pw2 / 2));
                 // Above the bar, and above a magnified icon too
-                int top = Math.Min(barTop, anchor.Top) - (int)(10 * scale) - ph2;
+                int top = (Kind == TrayKind ? barTop : Math.Min(barTop, anchor.Top)) - (int)(10 * scale) - ph2;
                 baseY = top;
                 if (pw2 != cw || ph2 != ch) MakeCanvas(pw2, ph2);
                 Bounds = new Rectangle(left, top + Rise(), pw2, ph2);
-                if (dock.Glass)
+                if (dock.Glass && !CompGlass.Available)
                 {
                     if (frost == null)
                     {
@@ -367,11 +378,12 @@ namespace Tepi
                 g.ScaleTransform(scale, scale);
                 var r = new RectangleF(0.5f, 0.5f, cw / scale - 1, ch / scale - 1);
                 float radius = 16;
+                bool gpu = dock.Glass && CompGlass.Available;
                 using (var path = Ink.Round(r, radius))
                 {
                     var st = g.Save();
                     g.SetClip(path, CombineMode.Intersect);
-                    if (plate != null && dock.Glass)
+                    if (!gpu && plate != null && dock.Glass)
                     {
                         var inner = g.Save();
                         g.ResetTransform();
@@ -383,14 +395,14 @@ namespace Tepi
                         }
                         g.Restore(inner);
                     }
-                    g.FillPath(p.B(Ink.A(Ink.Veil, plate != null && dock.Glass ? 0.3f : 0.94f)), path);
+                    g.FillPath(p.B(Ink.A(Ink.Veil, gpu ? 0.14f * fade : (plate != null && dock.Glass ? 0.3f : 0.94f))), path);
                     using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 40), Color.FromArgb((int)(fade * (Ink.Light ? 80 : 22)), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
                         g.FillRectangle(lg, r.X, r.Y, r.Width, 39);
                     g.Restore(st);
                     g.DrawPath(p.P(Color.FromArgb(Ink.Light ? 70 : 40, p.T.Highlight), 1f), path);
                 }
                 if (Kind == WindowsKind) DrawWindows(fade);
-                else DrawTray();
+                else DrawTray(fade);
                 DrawCardFlyers(DateTime.UtcNow);
                 p.Alpha = 1;
                 g.Flush(FlushIntention.Sync);
@@ -402,7 +414,25 @@ namespace Tepi
                         BitBlt(hdc, 0, 0, cw, ch, memDC, 0, 0, 0x00CC0020);
                         wg.ReleaseHdc(hdc);
                     }
+                    SyncCardBackdrop(fade);
                 }
+            }
+
+            CompGlass.CompBackdrop cardBackdrop;
+            readonly CompGlass.PillSpec[] cardPills = new CompGlass.PillSpec[1];
+
+            void SyncCardBackdrop(float fade)
+            {
+                if (!dock.Glass || !CompGlass.Available || !Visible || fade <= 0.01f)
+                {
+                    if (cardBackdrop != null) cardBackdrop.HideBackdrop();
+                    return;
+                }
+                if (cardBackdrop == null) cardBackdrop = new CompGlass.CompBackdrop();
+                bool liquid = isle != null && isle.LiquidOn;
+                var spec = CompGlass.Spec(liquid, true, scale, fade);
+                cardPills[0] = new CompGlass.PillSpec(0.5f * scale, 0.5f * scale, cw - scale, ch - scale, 16f * scale);
+                cardBackdrop.Sync(Handle, new Rectangle(Location.X, Location.Y, cw, ch), true, spec, cardPills, 1, null, null, scale, "");
             }
 
             protected override void OnPaint(PaintEventArgs e)
@@ -542,22 +572,37 @@ namespace Tepi
                 }
             }
 
-            void DrawTray()
+            void DrawTray(float fade)
             {
                 int cols = Math.Max(1, Math.Min(5, icons.Count));
                 float x0 = (cw / scale - cols * Cell) / 2;
                 string tip = "";
-                for (int i = 0; i < icons.Count; i++)
+                ImageAttributes ia = null;
+                if (fade < 0.995f)
                 {
-                    var ic = icons[i];
-                    var cell = new RectangleF(x0 + (i % cols) * Cell, Pad + (i / cols) * Cell, Cell, Cell);
-                    string id = "t" + i;
-                    hits.Add(new KeyValuePair<RectangleF, string>(cell, id));
-                    ic.Spot = ToScreen(cell);
-                    if (hot == id) { p.FillRound(Inset(cell, 2), 8, press == id ? p.T.FillPressed : p.T.FillHover); tip = FirstLine(ic.Tip); }
-                    var bmp = dock.TrayPicture(ic);
-                    if (bmp != null) g.DrawImage(bmp, new RectangleF(cell.X + (Cell - 16) / 2, cell.Y + (Cell - 16) / 2, 16, 16));
+                    ia = new ImageAttributes();
+                    ia.SetColorMatrix(new ColorMatrix { Matrix00 = 1, Matrix11 = 1, Matrix22 = 1, Matrix33 = fade, Matrix44 = 1 });
                 }
+                try
+                {
+                    for (int i = 0; i < icons.Count; i++)
+                    {
+                        var ic = icons[i];
+                        var cell = new RectangleF(x0 + (i % cols) * Cell, Pad + (i / cols) * Cell, Cell, Cell);
+                        string id = "t" + i;
+                        hits.Add(new KeyValuePair<RectangleF, string>(cell, id));
+                        ic.Spot = ToScreen(cell);
+                        if (hot == id) { p.FillRound(Inset(cell, 2), 8, press == id ? p.T.FillPressed : p.T.FillHover); tip = FirstLine(ic.Tip); }
+                        var bmp = dock.TrayPicture(ic);
+                        if (bmp != null)
+                        {
+                            var dst = new RectangleF(cell.X + (Cell - 16) / 2, cell.Y + (Cell - 16) / 2, 16, 16);
+                            if (ia != null) g.DrawImage(bmp, Rectangle.Round(dst), 0, 0, bmp.Width, bmp.Height, GraphicsUnit.Pixel, ia);
+                            else g.DrawImage(bmp, dst);
+                        }
+                    }
+                }
+                finally { if (ia != null) ia.Dispose(); }
                 // Footer: the hovered icon's name, and where Windows sorts them
                 float fy = ch / scale - Pad - 13;
                 var gear = new RectangleF(cw / scale - Pad - 26, fy - 12, 26, 24);
@@ -605,7 +650,7 @@ namespace Tepi
                 hot = null;
                 press = null;
                 dock.HoldOpen(false);
-                CloseSoon();
+                if (Kind == WindowsKind) CloseSoon();
                 Render();
             }
 

@@ -4,17 +4,17 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 12 - Semantic Negative Token Boundaries" {
 
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Verifies Dark mode Tone.Negative contrast against Base.Bg exceeds 4.5:1" {
-        Reset-TepiTheme -Light $false
-        $base = Get-TepiStaticField "Ink" "Base"
+        Reset-DeskmateTheme -Light $false
+        $base = Get-DeskmateStaticField "Ink" "Base"
         Assert-NotNull $base.Negative "Negative token in dark mode must not be null"
 
         $ratio = Get-WcagContrastRatio $base.Negative $base.Bg
@@ -22,8 +22,8 @@ Describe "Tier 2 Boundary Suite: Feature 12 - Semantic Negative Token Boundaries
     }
 
     It "Verifies Light mode Tone.Negative contrast against Base.Bg exceeds 4.5:1" {
-        Reset-TepiTheme -Light $true
-        $base = Get-TepiStaticField "Ink" "Base"
+        Reset-DeskmateTheme -Light $true
+        $base = Get-DeskmateStaticField "Ink" "Base"
         Assert-NotNull $base.Negative "Negative token in light mode must not be null"
 
         $ratio = Get-WcagContrastRatio $base.Negative $base.Bg
@@ -34,7 +34,7 @@ Describe "Tier 2 Boundary Suite: Feature 12 - Semantic Negative Token Boundaries
         $paperBg = [System.Drawing.Color]::FromArgb(255, 245, 245, 245)
         $legacyIndianRed = [System.Drawing.Color]::IndianRed
 
-        $paperTone = Invoke-TepiStaticMethod "Tone" "Paper" @()
+        $paperTone = Invoke-DeskmateStaticMethod "Tone" "Paper" @()
         $tokenNegative = $paperTone.Negative
 
         $ratioToken = Get-WcagContrastRatio $tokenNegative $paperBg
@@ -46,8 +46,8 @@ Describe "Tier 2 Boundary Suite: Feature 12 - Semantic Negative Token Boundaries
 
     It "Guarantees full opacity (A=255) for Negative and Positive tokens across all modes" {
         foreach ($light in @($false, $true)) {
-            Reset-TepiTheme -Light $light
-            $base = Get-TepiStaticField "Ink" "Base"
+            Reset-DeskmateTheme -Light $light
+            $base = Get-DeskmateStaticField "Ink" "Base"
 
             Assert-Equal $base.Negative.A 255 "Negative token must be fully opaque in Light=$light"
             Assert-Equal $base.Positive.A 255 "Positive token must be fully opaque in Light=$light"
@@ -58,8 +58,8 @@ Describe "Tier 2 Boundary Suite: Feature 12 - Semantic Negative Token Boundaries
         $pureWhite = [System.Drawing.Color]::White
         $pureBlack = [System.Drawing.Color]::Black
 
-        $darkTone = Invoke-TepiStaticMethod "Tone" "Dark" @()
-        $paperTone = Invoke-TepiStaticMethod "Tone" "Paper" @()
+        $darkTone = Invoke-DeskmateStaticMethod "Tone" "Dark" @()
+        $paperTone = Invoke-DeskmateStaticMethod "Tone" "Paper" @()
 
         $darkNegOnBlack = Get-WcagContrastRatio $darkTone.Negative $pureBlack
         $paperNegOnWhite = Get-WcagContrastRatio $paperTone.Negative $pureWhite

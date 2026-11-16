@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Keep awake: screen and system stay on
     partial class Island
@@ -45,9 +45,7 @@ namespace Tepi
         void AwakeMenu()
         {
             var m = AwakeItems();
-            StyleMenu(m);
-            m.Closed += delegate { BeginInvoke(new Action(m.Dispose)); };
-            m.Show(Control.MousePosition);
+            ShowIslandMenu(m);
         }
 
         ContextMenuStrip AwakeItems()

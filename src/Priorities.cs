@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     public sealed class PriorityItem
     {
@@ -321,8 +321,7 @@ namespace Tepi
             clearItem.Click += delegate { ClearFocusTask(); };
             menu.Items.Add(clearItem);
 
-            MenuLook.Apply(menu);
-            menu.Show(System.Windows.Forms.Control.MousePosition);
+            ShowIslandMenu(menu);
         }
 
         sealed class PriorityPromptDialog : KitWindow

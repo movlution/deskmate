@@ -7,7 +7,7 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -19,6 +19,9 @@ namespace Tepi
             int restPx;
             readonly Spring labelShow = new Spring(0, 1, 1, 0.002f);
             string labelText = "";
+            readonly CompGlass.PillSpec[] gpuBarPills = new CompGlass.PillSpec[1];
+            int gpuBarCount;
+            bool gpuBarText;
 
             static RectangleF Inset(RectangleF r, float d) { return new RectangleF(r.X + d, r.Y + d, r.Width - d * 2, r.Height - d * 2); }
             static RectangleF Inset(RectangleF r, float dx, float dy) { return new RectangleF(r.X + dx, r.Y + dy, r.Width - dx * 2, r.Height - dy * 2); }
@@ -32,6 +35,8 @@ namespace Tepi
                 hits.Clear();
                 acts.Clear();
                 menus.Clear();
+                gpuBarCount = 0;
+                gpuBarText = false;
                 p.T = Glass ? Ink.Base.OnGlass() : Ink.Base;
                 p.Alpha = 1;
                 p.HalfPx = 0.5f / scale;
@@ -48,11 +53,7 @@ namespace Tepi
                     // Text on the bar needs the guarded glass; icons alone get the vivid one
                     bool text = !leftPill.IsEmpty || !rightPill.IsEmpty;
                     if (Full) DrawBar(new RectangleF(-1, barTop, cw / scale + 2, BarH + Edge + 2), 0, true);
-                    else
-                    {
-                        Shadow(centerPill);
-                        DrawBar(centerPill, Radius, text);
-                    }
+                    else DrawBar(centerPill, Radius, text);
                     Dividers();
                     DrawSpan(leftPill, true);
                     DrawSpan(rightPill, false);
@@ -71,10 +72,27 @@ namespace Tepi
                 var src = new Native.POINT(0, 0);
                 var blend = new Native.BLENDFUNCTION { SourceConstantAlpha = 255, AlphaFormat = 1 };
                 Native.UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, memDC, ref src, 0, ref blend, Native.ULW_ALPHA);
+                Bounds = new Rectangle(at.X, at.Y, cw, ch);
+                SyncDockBackdrop(at.X, at.Y);
                 if (dumpDir != null) DumpDock();
             }
 
-            // TEPI_DUMP: the dock skips screenshots too
+            void SyncDockBackdrop(int winX, int winY)
+            {
+                if (!GpuGlass || !shown || closing || gpuBarCount == 0)
+                {
+                    if (dockBackdrop != null) dockBackdrop.HideBackdrop();
+                    return;
+                }
+                if (dockBackdrop == null) dockBackdrop = new CompGlass.CompBackdrop();
+                bool liquid = isle != null && isle.LiquidOn;
+                // bar: true asks for the denser tint. The bar spans whatever window is behind it, so it needs to
+                // hide background detail that the island can safely let through over wallpaper.
+                var spec = CompGlass.Spec(liquid, gpuBarText, scale, 1f, true);
+                dockBackdrop.Sync(Handle, new Rectangle(winX, winY, cw, ch), true, spec, gpuBarPills, gpuBarCount, null, null, scale, "", clipToPill: true);
+            }
+
+            // DESKMATE_DUMP: the dock skips screenshots too
             void DumpDock()
             {
                 try
@@ -93,60 +111,6 @@ namespace Tepi
                 Hit(new RectangleF(0, ch / scale - h, cw / scale, h), "sensor", null, null);
             }
 
-            // Elevation from a cached nine-slice tile; the middle hides under glass
-            Bitmap shadowTile;
-            int shadowKey, shadowPad, shadowCore;
-            const float ShadowRoom = 20;
-
-            void Shadow(RectangleF r)
-            {
-                if (r.IsEmpty) return;
-                int key = (int)(Radius * 100) * 1000 + (int)(scale * 100);
-                if (shadowTile == null || key != shadowKey) ShadowTile(key);
-                int c = shadowPad + shadowCore;
-                var b = Rectangle.FromLTRB((int)Math.Floor(r.Left * scale) - shadowPad, (int)Math.Floor(r.Top * scale) - shadowPad, (int)Math.Ceiling(r.Right * scale) + shadowPad, (int)Math.Ceiling(r.Bottom * scale) + shadowPad);
-                b.Offset(-offX, -offY);
-                if (b.Width < c * 2 || b.Height < c * 2) return;
-                var st = g.Save();
-                g.ResetTransform();
-                g.InterpolationMode = InterpolationMode.NearestNeighbor;
-                g.PixelOffsetMode = PixelOffsetMode.Half;
-                int t = shadowTile.Width;
-                // Corners as is, edges stretched from the tile's middle line
-                Piece(new Rectangle(b.Left, b.Top, c, c), new Rectangle(0, 0, c, c));
-                Piece(new Rectangle(b.Right - c, b.Top, c, c), new Rectangle(t - c, 0, c, c));
-                Piece(new Rectangle(b.Left, b.Bottom - c, c, c), new Rectangle(0, t - c, c, c));
-                Piece(new Rectangle(b.Right - c, b.Bottom - c, c, c), new Rectangle(t - c, t - c, c, c));
-                Piece(new Rectangle(b.Left + c, b.Top, b.Width - c * 2, c), new Rectangle(c, 0, 1, c));
-                Piece(new Rectangle(b.Left + c, b.Bottom - c, b.Width - c * 2, c), new Rectangle(c, t - c, 1, c));
-                Piece(new Rectangle(b.Left, b.Top + c, c, b.Height - c * 2), new Rectangle(0, c, c, 1));
-                Piece(new Rectangle(b.Right - c, b.Top + c, c, b.Height - c * 2), new Rectangle(t - c, c, c, 1));
-                g.Restore(st);
-            }
-
-            void Piece(Rectangle dst, Rectangle src)
-            {
-                if (dst.Width > 0 && dst.Height > 0) g.DrawImage(shadowTile, dst, src, GraphicsUnit.Pixel);
-            }
-
-            void ShadowTile(int key)
-            {
-                if (shadowTile != null) shadowTile.Dispose();
-                shadowKey = key;
-                shadowPad = (int)Math.Ceiling(ShadowRoom * scale);
-                shadowCore = (int)Math.Ceiling(Radius * scale) + 2;
-                int size = (shadowPad + shadowCore) * 2 + 1;
-                shadowTile = new Bitmap(size, size, PixelFormat.Format32bppPArgb);
-                using (var tg = Graphics.FromImage(shadowTile))
-                using (var sp = new Painter { G = tg })
-                {
-                    tg.SmoothingMode = SmoothingMode.AntiAlias;
-                    tg.ScaleTransform(scale, scale);
-                    float pad = shadowPad / scale, side = (size - shadowPad * 2) / scale;
-                    ShadowLayers(sp, new RectangleF(pad, pad, side, side), Radius, 0.85f);
-                }
-            }
-
             void DrawBar(RectangleF r, float radius, bool text)
             {
                 if (r.IsEmpty) return;
@@ -154,12 +118,20 @@ namespace Tepi
                 {
                     var st = g.Save();
                     g.SetClip(path, CombineMode.Intersect);
-                    bool glass = plate != null && Glass;
+                    bool gpu = GpuGlass;
+                    bool glass = !gpu && plate != null && Glass;
+                    if (gpu)
+                    {
+                        gpuBarPills[0] = new CompGlass.PillSpec(r.X * scale, r.Y * scale, r.Width * scale, r.Height * scale, radius * scale);
+                        gpuBarCount = 1;
+                        gpuBarText |= text;
+                    }
                     var img = glass ? (text ? plate.Text : plate.Image) : null;
                     if (glass) Backdrop(img, r, 1f);
                     if (glass && isle.LiquidOn && radius > 0) Lens(img, r, radius);
-                    // Solid until glass arrives; over glass only a light veil
-                    g.FillPath(p.B(Ink.A(Ink.Veil, glass ? (isle.LiquidOn ? 0.1f : 0.06f) : 0.9f)), path);
+                    // Solid until glass arrives; over glass only a light veil (alpha >= 10 keeps hit-testing active)
+                    float veilA = (gpu || glass) ? (isle != null && isle.LiquidOn ? 0.05f : 0.08f) : 0.9f;
+                    g.FillPath(p.B(Ink.A(Ink.Veil, veilA)), path);
                     Sheen(r);
                     g.Restore(st);
                     RimLight(r, path);
@@ -210,14 +182,15 @@ namespace Tepi
                 g.Restore(st);
             }
 
-            // Glass catches light on its top edge, a little on the bottom
+            // One specular line: clear along the top edge, softer along the bottom. Two stops only, because a
+            // bright stop in the middle lit the bar's waist and read as a seam across the dock.
             void RimLight(RectangleF r, GraphicsPath path)
             {
-                using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, r.Height + 2), p.T.Highlight, p.T.Highlight, 90f))
+                using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y, r.Width, Math.Max(1f, r.Height)), p.T.Highlight, p.T.Highlight, 90f))
                 {
-                    var cb = new ColorBlend(3);
-                    cb.Colors = new[] { Color.FromArgb(Ink.Light ? 170 : 120, p.T.Highlight), Color.FromArgb(Ink.Light ? 50 : 16, p.T.Highlight), Color.FromArgb(Ink.Light ? 110 : 52, p.T.Highlight) };
-                    cb.Positions = new[] { 0f, 0.5f, 1f };
+                    var cb = new ColorBlend(2);
+                    cb.Colors = new[] { Color.FromArgb(Ink.Light ? 150 : 92, p.T.Highlight), Color.FromArgb(Ink.Light ? 44 : 30, p.T.Highlight) };
+                    cb.Positions = new[] { 0f, 1f };
                     lg.InterpolationColors = cb;
                     using (var pen = new Pen(lg, 1f)) g.DrawPath(pen, path);
                 }
@@ -230,24 +203,14 @@ namespace Tepi
                 return gp;
             }
 
-            // Light from above; the pointer warms the glass under it
+            // A single wash of light from above, spread over the whole height so it never ends in a visible line.
+            // There is deliberately no glow tracking the pointer: that lobe was centred on the bar's waist with a
+            // radius taller than the bar, so it painted a pale seam across the dock wherever the cursor sat. The
+            // per-icon plate already marks the pointer, which is what a dock is supposed to do.
             void Sheen(RectangleF r)
             {
-                float h = Math.Min(r.Height * 0.55f, 28);
-                using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, h + 2), Color.FromArgb(Ink.Light ? 80 : 24, p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
-                    g.FillRectangle(lg, r.X, r.Y, r.Width, h);
-                if (hover.Value < 0.01f || mouseX < r.Left - 60 || mouseX > r.Right + 60) return;
-                float rx = Math.Max(70, r.Height * 1.7f), ry = r.Height * 1.05f;
-                using (var gp = new GraphicsPath())
-                {
-                    gp.AddEllipse(mouseX - rx, r.Top - ry * 0.55f, rx * 2, ry * 2);
-                    using (var pb = new PathGradientBrush(gp))
-                    {
-                        pb.CenterColor = Color.FromArgb((int)(hover.Value * (Ink.Light ? 80 : 40)), p.T.Highlight);
-                        pb.SurroundColors = new[] { Color.FromArgb(0, p.T.Highlight) };
-                        g.FillPath(pb, gp);
-                    }
-                }
+                using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, r.Height + 2), Color.FromArgb(Ink.Light ? 60 : 17, p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
+                    g.FillRectangle(lg, r.X, r.Y, r.Width, r.Height);
             }
 
             // Top edge catches the light near the pointer
@@ -295,22 +258,37 @@ namespace Tepi
             {
                 string id = "sys:" + s.Id;
                 bool hot = hoverId == id;
+                float press = SysPressValue(s.Id);
                 var r = s.Icon;
-                if (pressId == id) r = Inset(r, r.Width * 0.05f);
+                if (press > 0.001f) r = Inset(r, r.Width * (0.055f * press));
                 Action act = null, menu = null;
                 switch (s.Id)
                 {
                     case "start": act = delegate { ToggleSheet("start"); }; menu = QuickMenu; break;
-                    case "search": act = delegate { ToggleSheet("start"); }; break;
                     case "taskview": act = delegate { ShellVerb("WindowSwitcher"); }; break;
                     case "work": act = delegate { isle.OpenWork(); }; menu = WorkMenu; break;
                 }
                 Hit(s.Hit, id, act, menu);
                 hot |= keyMode && keySel == id;
-                Plate(OnBar(s.Icon, 0, pressId == id), hot, pressId == id, 1);
+                bool startOpen = s.Id == "start" && sheet != null && sheet.Kind == "start";
+                var plateRect = OnBar(s.Icon, 0, press);
+                Color baseFill = startOpen ? Ink.Mix(p.T.FillHover, Ink.A(p.T.Accent, 0.32f), 0.4f) : hot ? p.T.FillHover : p.T.Fill;
+                Color tileFill = press > 0.001f ? Ink.Mix(baseFill, p.T.FillPressed, press) : baseFill;
+                p.FillRound(plateRect, Math.Min(plateRect.Width, plateRect.Height) * 0.3f, tileFill);
                 if (keyMode && keySel == id) FocusRing(s.Icon);
+                if (s.Id == "start" && !Anim.Reduced && startPulseUtc > DateTime.MinValue)
+                {
+                    double pt = (DateTime.UtcNow - startPulseUtc).TotalSeconds;
+                    if (pt >= 0 && pt < 0.38)
+                    {
+                        float pu = (float)(pt / 0.38), eu = Ease.OutCubic(pu);
+                        float grow = r.Width * (0.08f + 0.36f * eu);
+                        var halo = new RectangleF(r.X - grow / 2, r.Y - grow / 2, r.Width + grow, r.Height + grow);
+                        p.StrokeRound(halo, halo.Width * 0.30f, Ink.A(p.T.Text, 0.28f * (1 - pu)), 1.8f * (1 - pu * 0.5f));
+                    }
+                }
                 float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2, u = r.Width / 42f;
-                bool active = s.Id == "work" && isle.WorkOpen && GetForegroundWindow() == isle.WorkHwnd;
+                bool active = (s.Id == "work" && isle.WorkOpen && GetForegroundWindow() == isle.WorkHwnd) || startOpen;
                 Color ink = hot || active ? p.T.Text : Ink.Mix(p.T.Sub, p.T.Text, 0.55f);
                 switch (s.Id)
                 {
@@ -319,7 +297,6 @@ namespace Tepi
                         for (int i = 0; i < 4; i++)
                             p.FillRound(new RectangleF(cx - q - gap / 2 + (i % 2) * (q + gap), cy - q - gap / 2 + (i / 2) * (q + gap), q, q), 1.4f * u, ink);
                         break;
-                    case "search": p.Icon('\uE721', 16 * u, ink, cx, cy); break;
                     case "taskview": p.Icon('\uE7C4', 16 * u, ink, cx, cy); break;
                     case "work":
                         p.Icon('\uE73A', 21 * u, ink, cx, cy);
@@ -335,7 +312,7 @@ namespace Tepi
                 var app = a;
                 Hit(s.Hit, s.Id, delegate { OpenApp(app, false); }, delegate { AppMenu(app); });
                 bool focus = keyMode && keySel == s.Id;
-                bool hot = (hoverId == s.Id && dragApp == null) || focus, down = pressId == s.Id && dragApp == null;
+                bool hot = hoverId == s.Id && dragApp == null, down = pressId == s.Id && dragApp == null;
                 var now = DateTime.UtcNow;
                 Plate(OnBar(s.Icon, HopLift(a, now), down), hot, down, s.Show);
                 if (focus) FocusRing(s.Icon);
@@ -384,7 +361,12 @@ namespace Tepi
             // Icon may rise; plate stays put
             RectangleF OnBar(RectangleF slot, float lift, bool down)
             {
-                var plate = Inset(new RectangleF(slot.X, slot.Y + lift, slot.Width, slot.Height), slot.Width * (down ? 0.1f : 0.07f));
+                return OnBar(slot, lift, down ? 1f : 0f);
+            }
+
+            RectangleF OnBar(RectangleF slot, float lift, float press)
+            {
+                var plate = Inset(new RectangleF(slot.X, slot.Y + lift, slot.Width, slot.Height), slot.Width * (0.07f + 0.03f * press));
                 float top = Math.Max(plate.Y, barTop + 4);
                 return RectangleF.FromLTRB(plate.Left, Math.Min(top, plate.Bottom - 8), plate.Right, plate.Bottom);
             }
@@ -404,8 +386,7 @@ namespace Tepi
 
             void DrawIconImage(DockApp a, RectangleF r, float alpha)
             {
-                Bitmap ic;
-                icons.TryGetValue(a.Key, out ic);
+                Bitmap ic = IconFor(a.Key);
                 if (ic == null)
                 {
                     // No icon: the name's first letter on a tile
@@ -621,7 +602,7 @@ namespace Tepi
                 else
                 {
                     foreach (var ic in InlineTray()) sb.Append(ic.Key).Append(ic.Stamp).Append(',');
-                    sb.Append(OverflowTray().Count > 0).Append(card != null && card.Kind == DockCard.TrayKind);
+                    sb.Append(OverflowTray().Count > 0).Append(TrayExpanded);
                     sb.Append(isle.net.Current.Sig).Append(Math.Round(isle.vol, 2)).Append(isle.muted);
                     sb.Append(isle.hasBattery).Append(isle.battery).Append(isle.onAc);
                     sb.Append(Fmt.Clock(now)).Append(now.Day).Append(isle.unread);
@@ -663,8 +644,8 @@ namespace Tepi
             {
                 if (v < 0.02f) return;
                 float focus = Ease.Clamp01(v - 1), cx = r.X + r.Width / 2, cy = barBottom - 4.6f;
-                float w = 4 + 12 * focus, h = 3.6f;
-                Color c = attention ? p.T.Accent : Ink.Mix(Ink.A(p.T.Text, 0.62f), p.T.Text, focus);
+                float w = 4 + 10 * focus, h = 3.2f;
+                Color c = attention ? p.T.Accent : Ink.Mix(Ink.A(p.T.Text, 0.68f), p.T.Text, focus);
                 p.FillRound(new RectangleF(cx - w / 2, cy - h / 2, w, h), h / 2, Ink.A(c, Ease.Clamp01(v)));
             }
 
@@ -711,8 +692,7 @@ namespace Tepi
             void ShatterDockIcon(DockApp a, RectangleF r)
             {
                 if (Anim.Reduced || a == null || r.Width < 8 || r.Height < 8) return;
-                Bitmap src;
-                icons.TryGetValue(a.Key, out src);
+                Bitmap src = IconFor(a.Key);
                 Bitmap bmp;
                 if (src != null) bmp = new Bitmap(src);
                 else
@@ -806,7 +786,7 @@ namespace Tepi
                     else if (s.Id == id.Replace("sys:", "") && id.StartsWith("sys:", StringComparison.Ordinal))
                     {
                         anchor = s.Icon;
-                        return s.Id == "work" ? Lang.T("Tugas dan catatan") : s.Id == "start" ? "Start" : s.Id == "search" ? Lang.T("Cari") : Lang.T("Semua jendela");
+                        return s.Id == "work" ? Lang.T("Tugas dan catatan") : s.Id == "start" ? "Start" : Lang.T("Semua jendela");
                     }
                 foreach (var kv in hits)
                     if (kv.Value == id && id.StartsWith("tray:", StringComparison.Ordinal))
@@ -857,11 +837,11 @@ namespace Tepi
                 if (OverflowTray().Count > 0)
                 {
                     var cr = new RectangleF(x, top, 24, PlateH);
-                    bool hot = hoverId == "chev" || (card != null && card.Kind == DockCard.TrayKind);
+                    bool hot = hoverId == "chev" || TrayExpanded;
                     Hit(cr, "chev", ToggleTrayCard, null);
                     if (hot) p.FillRound(cr, PlateR, pressId == "chev" ? p.T.FillPressed : p.T.FillHover);
                     // Points up while closed, down while the grid is open
-                    p.Icon(card != null && card.Kind == DockCard.TrayKind ? '\uE70D' : '\uE70E', 10f, hot ? p.T.Text : p.T.Sub, cr.X + cr.Width / 2, cr.Y + cr.Height / 2);
+                    p.Icon(TrayExpanded ? '\uE70D' : '\uE70E', 10f, hot ? p.T.Text : p.T.Sub, cr.X + cr.Width / 2, cr.Y + cr.Height / 2);
                     x += 24;
                 }
                 DrawStatus(new RectangleF(x, top, StatusWidth(), PlateH));

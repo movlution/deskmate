@@ -4,11 +4,11 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 function Invoke-FrostTint {
     param([byte[]]$sig, [int]$len, [System.Drawing.Color]$bg, [bool]$light)
-    $t = Get-TepiType "Island"
+    $t = Get-DeskmateType "Island"
     $m = $t.GetMethod("ComputeFrostTint", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
     $p = [object[]]::new(4)
     $p[0] = $sig

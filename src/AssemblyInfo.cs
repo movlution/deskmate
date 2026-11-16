@@ -1,11 +1,11 @@
 using System.Reflection;
 
 // File properties shown by Windows
-[assembly: AssemblyTitle("Tepi")]
+[assembly: AssemblyTitle("Deskmate")]
 [assembly: AssemblyDescription("Dynamic island untuk Windows")]
-[assembly: AssemblyProduct("Tepi")]
+[assembly: AssemblyProduct("Deskmate")]
 [assembly: AssemblyCompany("R. Revaldo Vabiansyah")]
 [assembly: AssemblyCopyright("© 2026 R. Revaldo Vabiansyah")]
-[assembly: AssemblyVersion(Tepi.Island.AppVersion)]
-[assembly: AssemblyFileVersion(Tepi.Island.AppVersion)]
-[assembly: AssemblyInformationalVersion(Tepi.Island.AppVersion)]
+[assembly: AssemblyVersion(Deskmate.Island.AppVersion)]
+[assembly: AssemblyFileVersion(Deskmate.Island.AppVersion)]
+[assembly: AssemblyInformationalVersion(Deskmate.Island.AppVersion)]

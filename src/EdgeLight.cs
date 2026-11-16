@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 
-namespace Tepi
+namespace Deskmate
 {
     // Progress traced along the island's edge
     partial class Island

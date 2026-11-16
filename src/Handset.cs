@@ -5,7 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // One file moving between laptop and phone
     class Transfer
@@ -37,7 +37,7 @@ namespace Tepi
         void WirePhone()
         {
             // Test copies keep files to themselves
-            phone.Inbox = Path.Combine(Settings.TestMode ? Settings.Dir : DownloadsFolder() ?? Settings.Dir, "Tepi");
+            phone.Inbox = Path.Combine(Settings.TestMode ? Settings.Dir : DownloadsFolder() ?? Settings.Dir, "Deskmate");
             phone.Pushed += req => Post(() => OnPhonePush(req));
             phone.Received += (path, name) => Post(() =>
             {
@@ -343,7 +343,7 @@ namespace Tepi
             float bw = p.Measure(label, Ink.Semi(13f)) + 32;
             var pill = new RectangleF(r.Right - pad - bw, hy - 15, bw, 30);
             p.Text(Lang.T("Berkas"), Ink.Headline, p.T.Text, r.X + pad, hy - 8, pill.X - r.X - pad - 10, StringAlignment.Near);
-            p.Text(Lang.T("Dari HP masuk ke Downloads\\Tepi dan Rak"), Ink.Small(11f), p.T.Sub, r.X + pad, hy + 9, pill.X - r.X - pad - 10, StringAlignment.Near);
+            p.Text(Lang.T("Dari HP masuk ke Downloads\\Deskmate dan Rak"), Ink.Small(11f), p.T.Sub, r.X + pad, hy + 9, pill.X - r.X - pad - 10, StringAlignment.Near);
             Pill(pill, "phoneSend", label, PillKind.Secondary, delegate { BeginInvoke(new Action(PickForPhone)); });
             for (int i = 0; i < transfers.Count; i++)
             {

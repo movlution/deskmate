@@ -19,7 +19,7 @@ using Windows.Storage;
 using Windows.Storage.Streams;
 using WinBitmapDecoder = Windows.Graphics.Imaging.BitmapDecoder;
 
-namespace Tepi
+namespace Deskmate
 {
     enum ConvKind { Image, Video, Audio, Doc, Slides, Sheet, Pdf, Markdown, Html, Zip, Folder, Other }
 
@@ -314,7 +314,7 @@ namespace Tepi
                     string first = job.Files[0];
                     string dir = Path.GetDirectoryName(first.TrimEnd('\\'));
                     string name = job.Files.Count == 1 ? Path.GetFileNameWithoutExtension(first.TrimEnd('\\')) : new DirectoryInfo(dir).Name;
-                    if (string.IsNullOrEmpty(name)) name = "Tepi";
+                    if (string.IsNullOrEmpty(name)) name = "Deskmate";
                     string outPath = UniqueFile(dir, name, id == "zip" ? ".zip" : ".pdf");
                     Guard(job, outPath, delegate
                     {
@@ -552,7 +552,7 @@ namespace Tepi
         // WIC has no WebP encoder
         static void ImageViaFfmpeg(string src, string outPath)
         {
-            string tmp = Path.Combine(Path.GetTempPath(), "tepi-" + Guid.NewGuid().ToString("N") + ".png");
+            string tmp = Path.Combine(Path.GetTempPath(), "deskmate-" + Guid.NewGuid().ToString("N") + ".png");
             try
             {
                 using (var bmp = Decode(src)) bmp.Save(tmp, ImageFormat.Png);
@@ -910,8 +910,8 @@ namespace Tepi
         {
             string exe = Converter.Tool("soffice");
             if (exe == null) throw new FileNotFoundException(Lang.T("LibreOffice tidak ditemukan"));
-            string tmp = Path.Combine(Path.GetTempPath(), "tepi-ubah-" + Guid.NewGuid().ToString("N"));
-            string profile = new Uri(Path.Combine(Path.GetTempPath(), "tepi-lo-profile")).AbsoluteUri;
+            string tmp = Path.Combine(Path.GetTempPath(), "deskmate-ubah-" + Guid.NewGuid().ToString("N"));
+            string profile = new Uri(Path.Combine(Path.GetTempPath(), "deskmate-lo-profile")).AbsoluteUri;
             Directory.CreateDirectory(tmp);
             try
             {
@@ -960,7 +960,7 @@ namespace Tepi
             finally { TryDelete(tmp); }
         }
 
-        static string TempPath(string ext) { return Path.Combine(Path.GetTempPath(), "tepi-" + Guid.NewGuid().ToString("N") + ext); }
+        static string TempPath(string ext) { return Path.Combine(Path.GetTempPath(), "deskmate-" + Guid.NewGuid().ToString("N") + ext); }
 
         // Slides: through PDF, then a picture per slide
         static void SlidesToImages(ConvJob job, string src, string dir, string name, string id)

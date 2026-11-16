@@ -7,7 +7,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     class FetchResult
     {
@@ -47,7 +47,7 @@ namespace Tepi
                     // Gzip only: .NET misreads zlib deflate
                     req.AutomaticDecompression = DecompressionMethods.GZip;
                     req.Timeout = req.ReadWriteTimeout = timeoutMs;
-                    req.UserAgent = "Tepi/" + Island.AppVersion + " (+https://github.com/odlaver/tepi)";
+                    req.UserAgent = "Deskmate/" + Island.AppVersion + " (+https://github.com/movlution/deskmate)";
                     req.ServicePoint.Expect100Continue = false;
                     if (headers != null)
                         foreach (var h in headers)
@@ -174,9 +174,9 @@ namespace Tepi
         public abstract object Snapshot();
         // Worker thread; reads the snapshot only
         public abstract SourceResult Fetch(object snap, DateTime nowUtc);
-        public virtual string Close(object snap, KuliaTask t) { return Lang.T("Tidak bisa ditandai dari Tepi"); }
+        public virtual string Close(object snap, KuliaTask t) { return Lang.T("Tidak bisa ditandai dari Deskmate"); }
         // New task from a quick note; null when saved
-        public virtual string Create(object snap, string text) { return Lang.T("Tidak bisa dibuat dari Tepi"); }
+        public virtual string Create(object snap, string text) { return Lang.T("Tidak bisa dibuat dari Deskmate"); }
         // UI thread; true means save config
         public virtual bool Absorb(SourceResult r) { return false; }
         public virtual bool GivesTasks { get { return true; } }
@@ -226,12 +226,76 @@ namespace Tepi
         }
     }
 
+    // Indonesian National Holidays via public Google Calendar ICS
+    class NationalHolidaysSource : Source
+    {
+        const string PublicIdUrl = "https://calendar.google.com/calendar/ical/id.indonesian%23holiday%40group.v.calendar.google.com/public/basic.ics";
+        public volatile bool Enabled = true;
+
+        public NationalHolidaysSource()
+        {
+            Key = "holiday";
+            Name = "Hari libur nasional";
+            Every = TimeSpan.FromHours(12);
+        }
+
+        public override bool GivesTasks { get { return false; } }
+        public override bool GivesEvents { get { return true; } }
+        public override object Snapshot() { return Enabled; }
+        public override SourceResult Fetch(object snap, DateTime nowUtc)
+        {
+            if (!(bool)snap) return new SourceResult { Events = new List<ClassSlot>() };
+            return Pull(nowUtc);
+        }
+
+        public SourceResult Pull(DateTime now)
+        {
+            if (!Enabled) return new SourceResult { Events = new List<ClassSlot>() };
+            var res = Deskmate.Fetch.Send("GET", PublicIdUrl, null, null, 512 * 1024, 15000);
+            if (!res.Ok) return SourceResult.Http(Lang.T("Hari libur nasional"), res);
+            var list = ParseHolidayIcs(res.Text, DateTime.Today.AddDays(-30), DateTime.Today.AddDays(365));
+            return new SourceResult { Events = list };
+        }
+
+        public static List<ClassSlot> ParseHolidayIcs(string icsText, DateTime fromDay, DateTime toDay)
+        {
+            var list = new List<ClassSlot>();
+            if (string.IsNullOrEmpty(icsText)) return list;
+            var bytes = Encoding.UTF8.GetBytes(icsText);
+            var ics = Ics.Parse(bytes, bytes.Length, fromDay.ToUniversalTime(), toDay.ToUniversalTime());
+            foreach (var it in ics.Items)
+            {
+                if (it.Todo || it.Cancelled) continue;
+                var start = it.Start.Date;
+                var end = it.End.Date > start ? it.End.Date : start.AddDays(1);
+                list.Add(new ClassSlot
+                {
+                    Title = Clean(it.Summary, 160),
+                    Kind = "libur",
+                    Source = "holiday",
+                    AllDay = true,
+                    Start = start,
+                    End = end,
+                });
+            }
+            list.Sort((a, b) => a.Start.CompareTo(b.Start));
+            return list;
+        }
+    }
+
     // Subscribed sources; sync off the UI thread
     class SourceHub
     {
         public NotionSource Notion;
         public TodoistSource Todoist;
+        readonly GoogleCalendarSource google = new GoogleCalendarSource();
+        public readonly NationalHolidaysSource Holidays = new NationalHolidaysSource();
+        public readonly GoogleTasksSource GoogleTasks = new GoogleTasksSource();
         public readonly List<IcsFeed> Feeds = new List<IcsFeed>();
+
+        public GoogleCalendarSource Google { get { return google; } }
+        public bool GoogleConnected { get { return google.Connected; } }
+        public string GoogleEmail { get { return google.Email; } }
         // true: data changed
         public event Action<bool> Changed;
 
@@ -256,6 +320,7 @@ namespace Tepi
             Todoist = TodoistSource.Load();
             Feeds.Clear();
             Feeds.AddRange(IcsFeed.LoadAll());
+            google.Reload();
         }
 
         public List<Source> All()
@@ -264,16 +329,22 @@ namespace Tepi
             if (Notion != null) list.Add(Notion);
             if (Todoist != null) list.Add(Todoist);
             list.AddRange(Feeds);
+            if (google.Connected) list.Add(google);
+            if (google.Connected && GoogleTasks.Enabled) list.Add(GoogleTasks);
+            if (Holidays.Enabled) list.Add(Holidays);
             return list;
         }
 
-        public bool Any { get { return Notion != null || Todoist != null || Feeds.Count > 0; } }
+        public bool Any { get { return Notion != null || Todoist != null || google.Connected || Holidays.Enabled || Feeds.Count > 0; } }
 
         public bool Busy
         {
             get
             {
                 if ((Notion != null && Notion.Busy) || (Todoist != null && Todoist.Busy)) return true;
+                if (google.Busy) return true;
+                if (GoogleTasks.Busy) return true;
+                if (Holidays.Busy) return true;
                 foreach (var f in Feeds) if (f.Busy) return true;
                 return false;
             }
@@ -285,6 +356,7 @@ namespace Tepi
             {
                 if (Notion != null || Todoist != null) return true;
                 foreach (var f in Feeds) if (f.GivesTasks) return true;
+                if (google.Connected && GoogleTasks.Enabled) return true;
                 return false;
             }
         }
@@ -294,6 +366,8 @@ namespace Tepi
             get
             {
                 foreach (var f in Feeds) if (f.GivesEvents) return true;
+                if (google.Connected && google.GivesEvents) return true;
+                if (Holidays.Enabled && Holidays.GivesEvents) return true;
                 return false;
             }
         }
@@ -303,7 +377,10 @@ namespace Tepi
         {
             if (Notion != null && Pending(Notion, tasks)) return true;
             if (Todoist != null && Pending(Todoist, tasks)) return true;
+            if (google.Connected && Pending(google, tasks)) return true;
+            if (google.Connected && GoogleTasks.Enabled && Pending(GoogleTasks, tasks)) return true;
             foreach (var f in Feeds) if (Pending(f, tasks)) return true;
+            if (Holidays.Enabled && Pending(Holidays, tasks)) return true;
             return false;
         }
 
@@ -315,14 +392,17 @@ namespace Tepi
             return null;
         }
 
-        bool Has(Source s) { return s == Notion || s == Todoist || (s is IcsFeed && Feeds.Contains((IcsFeed)s)); }
+        bool Has(Source s) { return s == Notion || s == Todoist || (s == google && google.Connected) || (s == GoogleTasks && google.Connected && GoogleTasks.Enabled) || (s == Holidays && Holidays.Enabled) || (s is IcsFeed && Feeds.Contains((IcsFeed)s)); }
 
         // Every second; queues what is due
         public void Tick(DateTime now)
         {
             if (Notion != null && Due(Notion, now)) Queue(Notion);
             if (Todoist != null && Due(Todoist, now)) Queue(Todoist);
+            if (google.Connected && Due(google, now)) Queue(google);
+            if (google.Connected && GoogleTasks.Enabled && Due(GoogleTasks, now)) Queue(GoogleTasks);
             for (int i = 0; i < Feeds.Count; i++) if (Due(Feeds[i], now)) Queue(Feeds[i]);
+            if (Holidays.Enabled && Due(Holidays, now)) Queue(Holidays);
         }
 
         static bool Due(Source s, DateTime now) { return !s.Busy && now >= s.NextUtc && now >= s.HoldUtc; }
@@ -552,6 +632,56 @@ namespace Tepi
             Raise(true);
         }
 
+        public void RefreshGoogle()
+        {
+            google.Reload();
+            if (!google.Connected) return;
+            google.Gone = false;
+            google.Version++;
+            google.Stopped = false;
+            google.Error = null;
+            google.HoldUtc = DateTime.MinValue;
+            google.Failures = 0;
+            if (!google.Busy) Queue(google);
+            else google.NextUtc = DateTime.UtcNow;
+            Raise(true);
+        }
+
+        public void RefreshHolidays()
+        {
+            Holidays.Version++;
+            Holidays.Stopped = false;
+            Holidays.Error = null;
+            Holidays.HoldUtc = DateTime.MinValue;
+            Holidays.Failures = 0;
+            if (!Holidays.Enabled)
+            {
+                Holidays.Events = null;
+                Raise(true);
+                return;
+            }
+            if (!Holidays.Busy) Queue(Holidays);
+            else Holidays.NextUtc = DateTime.UtcNow;
+            Raise(true);
+        }
+
+        public void DisconnectGoogle()
+        {
+            bool was = google.Connected || google.Events != null || google.Error != null;
+            GoogleCalVault.Forget();
+            google.Reload();
+            google.Version++;
+            google.Events = null;
+            google.Error = null;
+            google.OkUtc = DateTime.MinValue;
+            google.TriedUtc = DateTime.MinValue;
+            google.NextUtc = DateTime.MinValue;
+            google.HoldUtc = DateTime.MinValue;
+            google.Failures = 0;
+            google.Stopped = false;
+            if (was) Raise(true);
+        }
+
         public IcsFeed AddFeed(string id, string url, string kind, SourceResult first)
         {
             var f = IcsFeed.Make(id, url, first != null ? first.Name : "", kind);
@@ -726,7 +856,7 @@ namespace Tepi
         // Fetch and expand; also validates links
         public static SourceResult Pull(string url, string kind, string name, string key, DateTime nowUtc)
         {
-            var r = Tepi.Fetch.Send("GET", url, new Dictionary<string, string> { { "Accept", "text/calendar, text/plain;q=0.8, */*;q=0.5" } }, null, Ics.MaxBytes, 30000);
+            var r = Deskmate.Fetch.Send("GET", url, new Dictionary<string, string> { { "Accept", "text/calendar, text/plain;q=0.8, */*;q=0.5" } }, null, Ics.MaxBytes, 30000);
             if (r.Insecure) return SourceResult.Fail(Lang.T("Hanya tautan https"), "insecure", true);
             if (r.Revoked || r.Status == 400 || r.Status == 401 || r.Status == 403 || r.Status == 404 || r.Status == 410)
                 return SourceResult.Fail(Lang.T("Tautan kalender tidak berlaku"), "http " + r.Status, true);
@@ -859,7 +989,477 @@ namespace Tepi
             sources.Changed += OnSourcesChanged;
             try { sources.Load(); }
             catch (Exception ex) { Log.Write("sources load: " + ex.GetType().Name); }
+            sources.Holidays.Enabled = settings.GetBool("calendar.holidays", true);
+            sources.GoogleTasks.Enabled = settings.GetBool("google.tasks", true);
+            sources.RefreshHolidays();
             sources.Tick(DateTime.UtcNow);
+            if (GoogleCalendarConnected) SyncGoogleWorkAsync(null);
+            WorkSyncHook = ScheduleGoogleWorkSync;
+            IsGoogleConnected = delegate { return GoogleCalendarConnected; };
+            SyncGoogleWorkAction = SyncGoogleWorkAsync;
+            try { System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailability; }
+            catch (Exception ex) { Log.Write("network watch: " + ex.Message); }
+            if (googleWorkPeriodicTimer == null)
+            {
+                googleWorkPeriodicTimer = new System.Threading.Timer(delegate
+                {
+                    Post(delegate
+                    {
+                        if (!IsDisposed && GoogleCalendarConnected && !WorkSyncBusy)
+                            SyncGoogleWorkAsync(null);
+                    });
+                }, null, 180000, 180000);
+            }
+        }
+
+        public void ReloadHolidaySource()
+        {
+            if (sources == null) return;
+            sources.Holidays.Enabled = settings.GetBool("calendar.holidays", true);
+            sources.RefreshHolidays();
+        }
+
+        public bool GoogleCalendarConnected
+        {
+            get { return sources != null && sources.GoogleConnected; }
+        }
+
+        public string GoogleCalendarEmail
+        {
+            get { return sources != null ? sources.GoogleEmail : ""; }
+        }
+
+        public void RefreshGoogleCalendar()
+        {
+            if (sources != null) sources.RefreshGoogle();
+            SyncGoogleWorkAsync(null);
+        }
+
+        public void DisconnectGoogleCalendar()
+        {
+            if (sources != null) sources.DisconnectGoogle();
+            else GoogleCalVault.Forget();
+        }
+
+        public void SyncGoogleAllNow(Action<string> done)
+        {
+            if (sources != null) sources.RefreshGoogle();
+            SyncGoogleWorkAsync(done);
+        }
+
+        System.Threading.Timer googleWorkSyncTimer;
+        System.Threading.Timer googleWorkPeriodicTimer;
+        readonly object googleWorkSyncGate = new object();
+        bool googleWorkSyncing;
+        readonly List<Action<string>> googleWorkWaiters = new List<Action<string>>();
+
+        public void ReloadGoogleWorkspaceSources()
+        {
+            if (sources != null)
+                sources.GoogleTasks.Enabled = settings.GetBool("google.tasks", true);
+            RefreshGoogleCalendar();
+        }
+
+        public void ScheduleGoogleWorkSync()
+        {
+            if (!GoogleCalendarConnected) return;
+            if (googleWorkSyncTimer == null)
+            {
+                googleWorkSyncTimer = new System.Threading.Timer(delegate
+                {
+                    SyncGoogleWorkAsync(null);
+                }, null, 2500, System.Threading.Timeout.Infinite);
+            }
+            else
+            {
+                googleWorkSyncTimer.Change(2500, System.Threading.Timeout.Infinite);
+            }
+        }
+
+        static TodoItem CloneTodo(TodoItem s)
+        {
+            return new TodoItem { Id = s.Id, Title = s.Title, Done = s.Done, Star = s.Star, Due = s.Due, Created = s.Created, DoneAt = s.DoneAt, ListName = s.ListName, Notes = s.Notes, GoogleTaskId = s.GoogleTaskId, GoogleListId = s.GoogleListId, UpdatedUtc = s.UpdatedUtc, Dirty = s.Dirty, ParentId = s.ParentId, Position = s.Position, Moved = s.Moved };
+        }
+
+        // What the Work window shows about the sync; written on the UI thread
+        internal bool WorkSyncBusy;
+        internal string WorkSyncError;
+        internal DateTime WorkSyncOkUtc = DateTime.MinValue, WorkSyncTriedUtc = DateTime.MinValue;
+        internal event Action WorkSyncStatusChanged;
+        internal DateTime LastSyncUtc { get { return WorkSyncOkUtc; } }
+        internal string LastSyncError { get { return WorkSyncError; } }
+
+        void PublishWorkSync()
+        {
+            var h = WorkSyncStatusChanged;
+            if (h != null) h();
+        }
+
+        bool AnyGoogleWorkEnabled()
+        {
+            return settings.GetBool("google.tasks", true) || settings.GetBool("google.drive.notes", true);
+        }
+
+        // The window opening or coming forward: sync unless one just ran
+        internal void SyncGoogleWorkIfStale(double seconds)
+        {
+            if (!GoogleCalendarConnected || WorkSyncBusy || !AnyGoogleWorkEnabled()) return;
+            if ((DateTime.UtcNow - WorkSyncTriedUtc).TotalSeconds < seconds) return;
+            SyncGoogleWorkAsync(null);
+        }
+
+        // Called every second by the clock; syncs every few minutes while connected
+        void GoogleWorkTick(DateTime nowUtc)
+        {
+            if (WorkSyncBusy || !GoogleCalendarConnected || !AnyGoogleWorkEnabled()) return;
+            if ((nowUtc - WorkSyncTriedUtc).TotalMinutes >= 3) SyncGoogleWorkAsync(null);
+        }
+
+        void OnNetworkAvailability(object sender, System.Net.NetworkInformation.NetworkAvailabilityEventArgs e)
+        {
+            if (e.IsAvailable) Post(delegate { ScheduleGoogleWorkSync(); });
+        }
+
+        void MergeSyncedLists(List<TaskListInfo> synced, Dictionary<string, TaskListInfo> orig)
+        {
+            EnsureWorkData();
+            var kept = new HashSet<string>();
+            foreach (var c in synced)
+            {
+                kept.Add(c.Id);
+                TaskListInfo o;
+                orig.TryGetValue(c.Id, out o);
+                var l = taskLists.Find(x => x.Id == c.Id);
+                if (l == null)
+                {
+                    // Deleted here while the sync ran: whatever it made on Google goes too
+                    if (o != null) { TaskLists.AddDeleted(c.GoogleId); continue; }
+                    var same = TaskLists.Find(taskLists, c.Name);
+                    if (same == null) taskLists.Add(c);
+                    else if (string.IsNullOrEmpty(same.GoogleId)) same.GoogleId = c.GoogleId;
+                    continue;
+                }
+                if (o != null && l.Name == o.Name && l.Dirty == o.Dirty)
+                {
+                    // Untouched meanwhile; a rename made on Google reaches the tasks as well
+                    if (l.Name != c.Name)
+                        foreach (var t in todos)
+                            if (TaskLists.Same(TaskLists.NameOf(t), l.Name)) t.ListName = c.Name;
+                    l.Name = c.Name; l.Dirty = c.Dirty; l.GoogleId = c.GoogleId;
+                }
+                else if (string.IsNullOrEmpty(l.GoogleId)) l.GoogleId = c.GoogleId;
+            }
+            // Dropped by the sync: deleted on Google
+            foreach (var o in orig.Values)
+            {
+                if (kept.Contains(o.Id)) continue;
+                var l = taskLists.Find(x => x.Id == o.Id);
+                if (l == null) continue;
+                if (l.Name == o.Name && l.Dirty == o.Dirty && !TaskLists.IsDefault(l.Name)) taskLists.Remove(l);
+                else l.GoogleId = "";
+            }
+            TaskLists.Ensure(taskLists, todos ?? new List<TodoItem>());
+            TaskLists.Save(taskLists);
+        }
+
+        void MergeSyncedTodos(List<TodoItem> synced, Dictionary<string, DateTime> origUpdated)
+        {
+            if (todos == null) todos = new List<TodoItem>();
+            var live = new Dictionary<string, TodoItem>();
+            foreach (var l in todos) live[l.Id] = l;
+            var kept = new HashSet<string>();
+            foreach (var c in synced)
+            {
+                kept.Add(c.Id);
+                TodoItem l;
+                if (!live.TryGetValue(c.Id, out l))
+                {
+                    if (origUpdated.ContainsKey(c.Id))
+                    {
+                        // Deleted here while the sync ran: what the sync made on Google must go too
+                        if (!string.IsNullOrEmpty(c.GoogleTaskId)) TodoFile.AddDeletedGoogle(c.GoogleListId, c.GoogleTaskId);
+                        continue;
+                    }
+                    todos.Add(c);
+                    continue;
+                }
+                DateTime orig;
+                if (origUpdated.TryGetValue(c.Id, out orig) && l.UpdatedUtc <= orig)
+                {
+                    l.Title = c.Title; l.Done = c.Done; l.Star = c.Star; l.Due = c.Due; l.Created = c.Created; l.DoneAt = c.DoneAt;
+                    l.ListName = c.ListName; l.Notes = c.Notes; l.GoogleTaskId = c.GoogleTaskId; l.GoogleListId = c.GoogleListId;
+                    l.ParentId = c.ParentId; l.Position = c.Position; l.Moved = c.Moved;
+                    l.UpdatedUtc = c.UpdatedUtc; l.Dirty = c.Dirty;
+                }
+                else
+                {
+                    if (string.IsNullOrEmpty(l.GoogleTaskId)) l.GoogleTaskId = c.GoogleTaskId;
+                    if (string.IsNullOrEmpty(l.GoogleListId)) l.GoogleListId = c.GoogleListId;
+                }
+            }
+            // Gone from Google: removed, unless edited here meanwhile; then it is sent again
+            foreach (var kv in origUpdated)
+            {
+                if (kept.Contains(kv.Key)) continue;
+                TodoItem l;
+                if (!live.TryGetValue(kv.Key, out l)) continue;
+                if (l.UpdatedUtc <= kv.Value) todos.Remove(l);
+                else { l.GoogleTaskId = ""; l.GoogleListId = ""; l.Dirty = true; }
+            }
+            TodosChanged(true);
+        }
+
+        public void SyncGoogleWorkAsync(Action<string> done)
+        {
+            if (InvokeRequired)
+            {
+                Post(delegate { SyncGoogleWorkAsync(done); });
+                return;
+            }
+            bool doTasks = settings.GetBool("google.tasks", true);
+            bool doDrive = settings.GetBool("google.drive.notes", true);
+            if (!GoogleCalendarConnected || (!doTasks && !doDrive))
+            {
+                if (!doTasks && !doDrive) WorkSyncTriedUtc = DateTime.UtcNow;
+                if (done != null) Post(delegate { done(null); });
+                return;
+            }
+            lock (googleWorkSyncGate)
+            {
+                if (googleWorkSyncing)
+                {
+                    if (done != null) googleWorkWaiters.Add(done);
+                    return;
+                }
+                googleWorkSyncing = true;
+            }
+            if (doTasks) EnsureWorkData();
+            var snapshot = new List<TodoItem>();
+            var origUpdated = new Dictionary<string, DateTime>();
+            var listSnapshot = new List<TaskListInfo>();
+            var origLists = new Dictionary<string, TaskListInfo>();
+            if (doTasks && todos != null)
+            {
+                foreach (var s in todos)
+                {
+                    snapshot.Add(CloneTodo(s));
+                    origUpdated[s.Id] = s.UpdatedUtc;
+                }
+                listSnapshot = TaskLists.CloneAll(taskLists);
+                foreach (var l in taskLists) origLists[l.Id] = l.Clone();
+            }
+            WorkSyncBusy = true;
+            WorkSyncTriedUtc = DateTime.UtcNow;
+            PublishWorkSync();
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                string err = null;
+                bool anyChanged = false, tasksChanged = false;
+                try
+                {
+                    if (doTasks)
+                    {
+                        var localTodos = snapshot;
+                        var pendingTaskDeletes = TodoFile.LoadDeletedGoogle();
+                        int prevDelCount = pendingTaskDeletes.Count;
+                        var pendingListDeletes = TaskLists.LoadDeleted();
+                        int prevListDelCount = pendingListDeletes.Count;
+                        bool tChanged;
+                        string tErr;
+                        GoogleTasksClient.Sync(localTodos, pendingTaskDeletes, listSnapshot, pendingListDeletes, out tChanged, out tErr);
+                        if (tChanged || pendingTaskDeletes.Count != prevDelCount)
+                        {
+                            TodoFile.SaveDeletedGoogle(pendingTaskDeletes);
+                        }
+                        if (pendingListDeletes.Count != prevListDelCount) TaskLists.SaveDeleted(pendingListDeletes);
+                        if (tChanged)
+                        {
+                            tasksChanged = true;
+                            anyChanged = true;
+                        }
+                        if (tErr != null) err = tErr;
+                    }
+                    if (doDrive)
+                    {
+                        var meta = NoteFiles.LoadMeta();
+                        var pins = NoteFiles.LoadPins();
+                        var pendingNoteDeletes = NoteFiles.LoadDeletedDrive();
+                        var completedDeletes = new List<string>();
+                        bool nChanged;
+                        string nErr;
+                        GoogleDriveNotesClient.Sync(NoteFiles.Dir, NoteFiles.QuickPath, meta, pins, pendingNoteDeletes, completedDeletes, out nChanged, out nErr);
+                        if (completedDeletes.Count > 0)
+                        {
+                            var freshDeletes = NoteFiles.LoadDeletedDrive();
+                            freshDeletes.RemoveAll(d => completedDeletes.Exists(c => string.Equals(c, d, StringComparison.OrdinalIgnoreCase)));
+                            NoteFiles.SaveDeletedDrive(freshDeletes);
+                        }
+                        if (nChanged)
+                        {
+                            var freshMeta = NoteFiles.LoadMeta();
+                            foreach (var kv in meta)
+                            {
+                                if (kv.Value == null || NoteFiles.IsDeletedRemote(kv.Value.DriveId, kv.Key)) continue;
+                                NoteMeta fm;
+                                if (freshMeta.TryGetValue(kv.Key, out fm))
+                                {
+                                    if (string.IsNullOrEmpty(fm.DriveId) && !string.IsNullOrEmpty(kv.Value.DriveId)) fm.DriveId = kv.Value.DriveId;
+                                    if (kv.Value.UpdatedUtc > fm.UpdatedUtc)
+                                    {
+                                        fm.Color = kv.Value.Color;
+                                        fm.Labels = kv.Value.Labels;
+                                        fm.Archived = kv.Value.Archived;
+                                        fm.UpdatedUtc = kv.Value.UpdatedUtc;
+                                    }
+                                }
+                                else
+                                {
+                                    freshMeta[kv.Key] = kv.Value;
+                                }
+                            }
+                            NoteFiles.SaveMeta(freshMeta);
+                            var freshPins = NoteFiles.LoadPins();
+                            foreach (var pk in pins)
+                                if (!NoteFiles.IsDeletedRemote(null, pk)) freshPins.Add(pk);
+                            NoteFiles.SavePins(freshPins);
+                        }
+                        if (nChanged) anyChanged = true;
+                        if (nErr != null && err == null) err = nErr;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    err = Lang.T("Gagal memuat");
+                    Log.Write("google work sync: " + ex.Message);
+                }
+                Action<string>[] waiters;
+                lock (googleWorkSyncGate)
+                {
+                    googleWorkSyncing = false;
+                    waiters = googleWorkWaiters.ToArray();
+                    googleWorkWaiters.Clear();
+                }
+                Post(delegate
+                {
+                    if (tasksChanged)
+                    {
+                        MergeSyncedLists(listSnapshot, origLists);
+                        MergeSyncedTodos(snapshot, origUpdated);
+                    }
+                    if (anyChanged && sources != null) sources.RefreshGoogle();
+                    if (anyChanged) ReloadWorkFromSync();
+                    WorkSyncBusy = false;
+                    WorkSyncError = err;
+                    if (err == null) WorkSyncOkUtc = DateTime.UtcNow;
+                    PublishWorkSync();
+                    if (done != null) done(err);
+                    foreach (var w in waiters) w(err);
+                });
+            });
+        }
+
+        public bool CreateGoogleCalendarEvent(string title, DateTime startLocal, DateTime endLocal, string location, bool allDay, out string error)
+        {
+            if (sources == null)
+            {
+                error = Lang.T("Belum terhubung");
+                return false;
+            }
+            ClassSlot slot = sources.Google.CreateEventSlot(title, startLocal, endLocal, location, allDay, out error);
+            if (slot == null) return false;
+            Action ui = delegate
+            {
+                if (IsDisposed || sources == null) return;
+                if (sources.Google.Events == null) sources.Google.Events = new List<ClassSlot>();
+                sources.Google.Events.Add(slot);
+                sources.Google.Events.Sort(SlotOrder);
+                if (classes == null) classes = new List<ClassSlot>();
+                classes.Add(slot);
+                classes.Sort(SlotOrder);
+                Kick();
+                ShowInfo(Ink.IcoCalendar, Lang.T("Acara ditambahkan"), slot.Title, true);
+                RefreshGoogleCalendar();
+            };
+            if (InvokeRequired) Post(ui);
+            else ui();
+            return true;
+        }
+
+        public bool UpdateGoogleCalendarEvent(string eventId, string title, DateTime startLocal, DateTime endLocal, string location, bool allDay, out string error)
+        {
+            if (sources == null)
+            {
+                error = Lang.T("Belum terhubung");
+                return false;
+            }
+            ClassSlot slot = sources.Google.UpdateEventSlot(eventId, title, startLocal, endLocal, location, allDay, out error);
+            if (slot == null) return false;
+            Action ui = delegate
+            {
+                if (IsDisposed || sources == null) return;
+                if (sources.Google.Events == null) sources.Google.Events = new List<ClassSlot>();
+                sources.Google.Events.RemoveAll(delegate(ClassSlot c) { return c != null && c.Id == eventId; });
+                sources.Google.Events.Add(slot);
+                sources.Google.Events.Sort(SlotOrder);
+                if (classes == null) classes = new List<ClassSlot>();
+                classes.RemoveAll(delegate(ClassSlot c) { return c != null && c.Source == "google" && c.Id == eventId; });
+                classes.Add(slot);
+                classes.Sort(SlotOrder);
+                Kick();
+                ShowInfo(Ink.IcoCalendar, Lang.T("Acara diperbarui"), slot.Title, true);
+                RefreshGoogleCalendar();
+            };
+            if (InvokeRequired) Post(ui);
+            else ui();
+            return true;
+        }
+
+        public bool DeleteGoogleCalendarEvent(string eventId, out string error)
+        {
+            if (sources == null)
+            {
+                error = Lang.T("Belum terhubung");
+                return false;
+            }
+            if (!sources.Google.DeleteEvent(eventId, out error)) return false;
+            Action ui = delegate
+            {
+                if (IsDisposed || sources == null) return;
+                if (sources.Google.Events != null)
+                    sources.Google.Events.RemoveAll(delegate(ClassSlot c) { return c != null && c.Id == eventId; });
+                if (classes != null)
+                    classes.RemoveAll(delegate(ClassSlot c) { return c != null && c.Source == "google" && c.Id == eventId; });
+                Kick();
+                ShowInfo(Ink.IcoCalendar, Lang.T("Acara dihapus"), "", true);
+                RefreshGoogleCalendar();
+            };
+            if (InvokeRequired) Post(ui);
+            else ui();
+            return true;
+        }
+
+        public void ConnectGoogleCalendar(string clientId, string clientSecret, Action<string> done)
+        {
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                string email, refreshToken, accessToken;
+                DateTime expiresUtc;
+                string err;
+                try
+                {
+                    err = GoogleCalAuth.StartLoopbackLogin(clientId, clientSecret, out email, out refreshToken, out accessToken, out expiresUtc);
+                }
+                catch (Exception ex)
+                {
+                    err = Lang.T("Gagal terhubung");
+                    Log.Write("googlecal connect: " + ex.GetType().Name);
+                }
+                Post(delegate
+                {
+                    if (err == null && sources != null) sources.RefreshGoogle();
+                    if (done != null) done(err);
+                });
+            });
         }
 
         void OnSourcesChanged(bool data)
@@ -920,6 +1520,14 @@ namespace Tepi
             {
                 var now = DateTime.Now;
                 slots.RemoveAll(c => c.End < now);
+                var nonHoliday = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    var c = slots[i];
+                    if (c.Source != "holiday")
+                        nonHoliday.Add(c.Start.Date.ToString("yyyy-MM-dd") + "|" + (c.Title ?? ""));
+                }
+                slots.RemoveAll(c => c.Source == "holiday" && nonHoliday.Contains(c.Start.Date.ToString("yyyy-MM-dd") + "|" + (c.Title ?? "")));
                 slots.Sort(SlotOrder);
                 if (slots.Count > 1500) slots.RemoveRange(1500, slots.Count - 1500);
             }

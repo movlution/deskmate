@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
-namespace Tepi
+namespace Deskmate
 {
     // Requests that always need a fresh yes
     static class AgentRisk

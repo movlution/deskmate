@@ -9,7 +9,7 @@ using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
     // PDF values: dict, array (List<object>), name, ref, stream, raw token
     class PdfName

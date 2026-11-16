@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 $commonDir = Join-Path $PSScriptRoot "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
@@ -21,18 +21,18 @@ Write-Host "  CHALLENGER 1: EMPIRICAL ADVERSARIAL STRESS HARNESS (M4) " -Foregro
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # 1. Initialize Assembly
-$binPath = Find-TepiBinary
+$binPath = Find-DeskmateBinary
 if (-not $binPath) {
-    throw "Tepi.exe not found! Please build before running tests."
+    throw "Deskmate.exe not found! Please build before running tests."
 }
-Initialize-TepiLoader | Out-Null
+Initialize-DeskmateLoader | Out-Null
 
-$inkType = Get-TepiType "Ink"
-if (-not $inkType) { throw "Could not resolve Tepi.Ink type" }
-$toneType = Get-TepiType "Tone"
-if (-not $toneType) { throw "Could not resolve Tepi.Tone type" }
-$islandType = Get-TepiType "Island"
-if (-not $islandType) { throw "Could not resolve Tepi.Island type" }
+$inkType = Get-DeskmateType "Ink"
+if (-not $inkType) { throw "Could not resolve Deskmate.Ink type" }
+$toneType = Get-DeskmateType "Tone"
+if (-not $toneType) { throw "Could not resolve Deskmate.Tone type" }
+$islandType = Get-DeskmateType "Island"
+if (-not $islandType) { throw "Could not resolve Deskmate.Island type" }
 
 $passCount = 0
 $failCount = 0
@@ -215,8 +215,8 @@ Describe "2. RimLight and Sheen Tokenization Verification" {
         Assert-NotNull $hlField "Tone.Highlight field must exist"
         $fieldMetadataToken = $hlField.MetadataToken
 
-        # Find all types in Tepi namespace related to Dock, DockCard, GlassSheet
-        $allTypes = $global:TepiAssembly.GetTypes()
+        # Find all types in Deskmate namespace related to Dock, DockCard, GlassSheet
+        $allTypes = $global:DeskmateAssembly.GetTypes()
         $dockTypes = $allTypes | Where-Object {
             $_.Name -match 'Dock' -or $_.Name -match 'GlassSheet' -or $_.FullName -match 'Dock'
         }
@@ -373,7 +373,7 @@ Describe "3. Mini Indicator Geometry & Bezel Contrast Oracles" {
 # ==========================================================================
 Describe "4. Dock Module Interactive Pressed State & Tactile Feedback Verification" {
 
-    $calType = $global:TepiAssembly.GetTypes() | Where-Object { $_.Name -match 'CalendarSheet' }
+    $calType = $global:DeskmateAssembly.GetTypes() | Where-Object { $_.Name -match 'CalendarSheet' }
     Assert-NotNull $calType "CalendarSheet type must exist in compiled assembly"
 
     It "Validates CalendarSheet pressedId tracking field and helper methods" {
@@ -404,7 +404,7 @@ Describe "4. Dock Module Interactive Pressed State & Tactile Feedback Verificati
     }
 
     It "Validates GlassSheet base Down method and pressId clearance" {
-        $sheetType = $global:TepiAssembly.GetTypes() | Where-Object { $_.Name -match 'GlassSheet' }
+        $sheetType = $global:DeskmateAssembly.GetTypes() | Where-Object { $_.Name -match 'GlassSheet' }
         Assert-NotNull $sheetType "GlassSheet type must exist in compiled assembly"
 
         $flags = [System.Reflection.BindingFlags]'Public,NonPublic,Instance'

@@ -11,7 +11,7 @@ using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-namespace Tepi
+namespace Deskmate
 {
     // Lock, sleep, sign out, restart, shut down
     static class SessionPower
@@ -36,7 +36,7 @@ namespace Tepi
 
     partial class Island
     {
-        // An app, a pin or a recent file on Tepi Start
+        // An app, a pin or a recent file on Deskmate Start
         sealed class AppEntry
         {
             public string Name = "", Id = "", Target = "", Sub = "";
@@ -47,15 +47,20 @@ namespace Tepi
             public Bitmap Icon;
         }
 
-        // Start: Tepi's own launcher above the dock, in the dock's glass.
+        // Start: Deskmate's own launcher above the dock, in the dock's glass.
         // Pinned, recent, all apps; takes focus for typing, closes when focus leaves.
         sealed class StartCard : GlassSheet
         {
             static List<AppEntry> catalog;
             static DateTime catalogUtc = DateTime.MinValue;
             static readonly Dictionary<string, Bitmap> iconCache = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
-            static readonly object iconGate = new object();
-            static bool importing;
+            static readonly object iconGate = new object(), profileGate = new object();
+            static string cachedUserName, cachedPinsRaw;
+            static Bitmap cachedAvatar;
+            static List<AppEntry> cachedPins;
+            static bool cachedProfileLoaded, importing;
+            static int loadingProfile;
+            static volatile StartCard profileWaiter;
 
             float scroll, scrollTo, allTop, contentH;
             Bitmap avatar;
@@ -75,6 +80,7 @@ namespace Tepi
             readonly AutoResetEvent iconWake = new AutoResetEvent(false);
             volatile bool iconRun = true;
             int iconPx = 48;
+            int iconRenderPosted;
 
             const float Pad = 20, CellW = 100, CellH = 90, RowH = 56, Head = 34, BodyTop = 72, Foot = 64;
             const int Cols = 6;
@@ -83,7 +89,7 @@ namespace Tepi
             [DllImport("secur32.dll", CharSet = CharSet.Unicode)] static extern bool GetUserNameEx(int format, StringBuilder name, ref int size);
             [DllImport("shell32.dll", EntryPoint = "#261", CharSet = CharSet.Unicode)] static extern int SHGetUserPicturePath(string user, uint flags, StringBuilder path, int len);
 
-            public StartCard(Island isle, DockWindow dock) : base(isle, dock, "start", "Tepi Start")
+            public StartCard(Island isle, DockWindow dock) : base(isle, dock, "start", "Deskmate Start")
             {
                 W = 640;
                 H = 720;
@@ -91,16 +97,53 @@ namespace Tepi
 
             protected override void Teardown()
             {
+                if (profileWaiter == this) profileWaiter = null;
                 iconRun = false;
                 iconWake.Set();
-                if (avatar != null) avatar.Dispose();
+                avatar = null;
             }
 
             protected override void Opening(Rectangle mon, int barTop)
             {
                 iconPx = Math.Max(32, (int)Math.Ceiling(40 * scale));
-                userName = UserName();
-                avatar = Avatar();
+                lock (profileGate)
+                {
+                    userName = cachedUserName ?? Environment.UserName;
+                    avatar = cachedAvatar;
+                }
+                if (!cachedProfileLoaded)
+                {
+                    profileWaiter = this;
+                    if (Interlocked.CompareExchange(ref loadingProfile, 1, 0) == 0)
+                    {
+                        Background(delegate
+                        {
+                            string u = UserName();
+                            Bitmap av = Avatar();
+                            lock (profileGate)
+                            {
+                                if (cachedAvatar != null && av != null) av.Dispose();
+                                else if (cachedAvatar == null) cachedAvatar = av;
+                                cachedUserName = u;
+                                cachedProfileLoaded = true;
+                                Interlocked.Exchange(ref loadingProfile, 0);
+                            }
+                            var w = profileWaiter;
+                            if (w != null)
+                            {
+                                w.Post(delegate
+                                {
+                                    lock (profileGate)
+                                    {
+                                        w.userName = cachedUserName ?? Environment.UserName;
+                                        w.avatar = cachedAvatar;
+                                    }
+                                    w.RequestRender();
+                                });
+                            }
+                        });
+                    }
+                }
                 iconThread = new Thread(IconLoop) { IsBackground = true, Name = "start icons" };
                 iconThread.SetApartmentState(ApartmentState.STA);
                 iconThread.Start();
@@ -155,10 +198,11 @@ namespace Tepi
                     {
                         catalog = list;
                         catalogUtc = DateTime.UtcNow;
+                        cachedPinsRaw = null;
                         loading = false;
                         LoadPins();
                         Filter();
-                        Render();
+                        RequestRender();
                     });
                 });
             }
@@ -175,7 +219,7 @@ namespace Tepi
                 try { if (!IsDisposed) BeginInvoke(a); } catch (Exception) { }
             }
 
-            // Pins live in Tepi's settings; the first time they come from Windows' Start
+            // Pins live in Deskmate's settings; the first time they come from Windows' Start
             void LoadPins()
             {
                 string saved = isle.settings.Get("start.pins", null);
@@ -184,25 +228,49 @@ namespace Tepi
                     if (!importing) ImportPins();
                     return;
                 }
+                if (saved == cachedPinsRaw && cachedPins != null)
+                {
+                    pins = new List<AppEntry>(cachedPins);
+                    return;
+                }
+                string raw = saved;
+                var catSnap = catalog;
+                Background(delegate
+                {
+                    var list = BuildPins(raw, catSnap);
+                    Post(delegate
+                    {
+                        if (isle.settings.Get("start.pins", null) != raw) return;
+                        cachedPinsRaw = raw;
+                        cachedPins = list;
+                        pins = new List<AppEntry>(list);
+                        Filter();
+                        RequestRender();
+                    });
+                });
+            }
+
+            static List<AppEntry> BuildPins(string saved, List<AppEntry> catSnap)
+            {
                 var list = new List<AppEntry>();
                 foreach (var part in saved.Split('|'))
                 {
                     string t = part.Trim();
                     if (t.Length == 0) continue;
-                    var e = EntryFor(t);
+                    var e = EntryFor(t, catSnap);
                     if (e != null) list.Add(e);
                 }
-                pins = list;
+                return list;
             }
 
-            AppEntry EntryFor(string target)
+            static AppEntry EntryFor(string target, List<AppEntry> catSnap)
             {
                 if (ShellApp.IsAppsFolder(target))
                 {
                     string id = ShellApp.AumidOf(target);
-                    var known = catalog != null ? catalog.Find(x => string.Equals(x.Id, id, StringComparison.OrdinalIgnoreCase)) : null;
+                    var known = catSnap != null ? catSnap.Find(x => string.Equals(x.Id, id, StringComparison.OrdinalIgnoreCase)) : null;
                     // Not installed any more: no pin
-                    if (catalog != null && known == null) return null;
+                    if (catSnap != null && known == null) return null;
                     return new AppEntry { Name = known != null ? known.Name : id, Id = id, Target = target };
                 }
                 if (!System.IO.File.Exists(target)) return null;
@@ -210,13 +278,14 @@ namespace Tepi
                 return new AppEntry { Name = name, Target = target };
             }
 
+
             void ImportPins()
             {
                 importing = true;
                 Background(delegate
                 {
                     var list = new List<string>();
-                    string file = Path.Combine(Path.GetTempPath(), "tepi-start-" + Guid.NewGuid().ToString("N") + ".json");
+                    string file = Path.Combine(Path.GetTempPath(), "deskmate-start-" + Guid.NewGuid().ToString("N") + ".json");
                     try
                     {
                         var psi = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -Command \"Export-StartLayout -Path '" + file + "'\"") { UseShellExecute = false, CreateNoWindow = true };
@@ -246,9 +315,10 @@ namespace Tepi
             {
                 isle.settings.Set("start.pins", string.Join("|", targets.ToArray()));
                 isle.settings.Save();
+                cachedPinsRaw = null;
                 LoadPins();
                 Filter();
-                Render();
+                RequestRender();
             }
 
             List<string> PinTargets()
@@ -301,7 +371,7 @@ namespace Tepi
                     list.AddRange(added);
                     list.Sort((a, b) => b.When.CompareTo(a.When));
                     if (list.Count > 6) list.RemoveRange(6, list.Count - 6);
-                    Post(delegate { recent = list; Render(); });
+                    Post(delegate { recent = list; RequestRender(); });
                 });
             }
 
@@ -316,11 +386,24 @@ namespace Tepi
 
             void IconLoop()
             {
+                bool dirty = false;
+                long lastPostMs = 0;
+                var sw = Stopwatch.StartNew();
                 while (iconRun)
                 {
                     AppEntry e = null;
                     lock (iconGate) if (iconQueue.Count > 0) e = iconQueue.Dequeue();
-                    if (e == null) { iconWake.WaitOne(500); continue; }
+                    if (e == null)
+                    {
+                        if (dirty)
+                        {
+                            dirty = false;
+                            lastPostMs = sw.ElapsedMilliseconds;
+                            PostIconRender();
+                        }
+                        iconWake.WaitOne(500);
+                        continue;
+                    }
                     Bitmap bmp;
                     lock (iconGate) iconCache.TryGetValue(e.Target, out bmp);
                     if (bmp == null)
@@ -329,8 +412,26 @@ namespace Tepi
                         lock (iconGate) if (bmp != null) iconCache[e.Target] = bmp;
                     }
                     lock (iconGate) e.Icon = bmp;
-                    Post(Render);
+                    dirty = true;
+                    int qCount;
+                    lock (iconGate) qCount = iconQueue.Count;
+                    if (qCount == 0 || sw.ElapsedMilliseconds - lastPostMs >= 50)
+                    {
+                        dirty = false;
+                        lastPostMs = sw.ElapsedMilliseconds;
+                        PostIconRender();
+                    }
                 }
+            }
+
+            void PostIconRender()
+            {
+                if (Interlocked.CompareExchange(ref iconRenderPosted, 1, 0) != 0) return;
+                Post(delegate
+                {
+                    Interlocked.Exchange(ref iconRenderPosted, 0);
+                    RequestRender();
+                });
             }
 
             Bitmap IconOf(AppEntry e)
@@ -692,7 +793,7 @@ namespace Tepi
 
             void Launch(AppEntry e, bool admin)
             {
-                if (e.Uri == SettingsPages.TepiPrefs) { Done(); isle.OpenPrefs(); return; }
+                if (e.Uri == SettingsPages.DeskmatePrefs) { Done(); isle.OpenPrefs(); return; }
                 if (e.Uri.Length > 0) Open(e.Uri, null);
                 else ShellApp.Launch(e.Target, admin);
                 dock.PulseLaunchedApp(DockTarget(e), e.Id);

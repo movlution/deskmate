@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     class NotionProp
     {
@@ -134,7 +134,7 @@ namespace Tepi
             {
                 var wait = lastCall.AddMilliseconds(350) - DateTime.UtcNow;
                 if (wait > TimeSpan.Zero) Thread.Sleep(wait);
-                var r = Tepi.Fetch.Send(method, Api + path, h, body != null ? Json.Encode(body) : null, Tepi.Fetch.JsonCap, 20000);
+                var r = Deskmate.Fetch.Send(method, Api + path, h, body != null ? Json.Encode(body) : null, Deskmate.Fetch.JsonCap, 20000);
                 lastCall = DateTime.UtcNow;
                 return r;
             }
@@ -242,7 +242,7 @@ namespace Tepi
             return list;
         }
 
-        // Only the columns Tepi reads
+        // Only the columns Deskmate reads
         static string Trim(NotionDb db)
         {
             var ids = new List<string> { "title", db.Date.Id };

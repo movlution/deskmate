@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 
-namespace Tepi
+namespace Deskmate
 {
     enum PillKind { Primary, Secondary, Tertiary }
 
@@ -160,22 +160,41 @@ namespace Tepi
             if (tail != null) p.Text(tail, Ink.Semi(12.5f), p.Split(r.X, r.Width, at, Ink.A(p.T.OnAccent, 0.72f), p.T.Sub), r.Right - 16, cy, 60, StringAlignment.Far);
         }
 
-        // Round toggle with caption below
-        void CircleToggle(float cx, float cy, float d, char glyph, bool on, bool available, string label, string id, Action act, Action menu = null, float hitW = 80)
+        // Round toggle with caption below; optional secondary click on caption chip
+        void CircleToggle(float cx, float cy, float d, char glyph, bool on, bool available, string label, string id, Action act, Action menu = null, float hitW = 80, Action expandAct = null, string expandId = null)
         {
             float r = d / 2, hw = Math.Max(d + 4, hitW);
-            if (available) AddHit(new RectangleF(cx - hw / 2, cy - r - 6, hw, d + 32), id, act, null, menu);
+            bool hasChip = available && expandAct != null;
+            if (available) AddHit(new RectangleF(cx - hw / 2, cy - r - 6, hw, hasChip ? d + 9 : d + 32), id, act, null, menu ?? expandAct);
             bool hover = available && Hover(id), down = available && Pressed(id);
             var circle = new RectangleF(cx - r, cy - r, d, d);
             float s = Squish(id, circle, 0.92f);
             Color fill = on ? (down ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.22f) : hover ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent)
                             : down ? p.T.FillPressed : hover ? p.T.FillHover : p.T.Fill;
-            // Accent stays solid; off gets module light
-            if (on) p.Circle(cx, cy, r, fill);
+            // Accent stays solid with a subtle outer halo; off gets module light
+            if (on)
+            {
+                p.Circle(cx, cy, r, fill);
+                p.StrokeRound(RectangleF.Inflate(circle, 2f, 2f), r + 2f, Ink.A(p.T.Accent, 0.28f), 1.4f);
+            }
             else p.Module(circle, r, fill);
             p.Icon(glyph, 17f, on ? p.T.OnAccent : available ? p.T.Text : p.T.Quaternary, cx, cy);
             Unsquish(circle, s);
-            p.TextCenter(label, Ink.Caption, available ? p.T.Sub : p.T.Faint, cx, cy + r + 13);
+            if (!hasChip)
+            {
+                p.TextCenter(label, Ink.Caption, available ? p.T.Sub : p.T.Faint, cx, cy + r + 13);
+                return;
+            }
+            string chipId = expandId ?? (id + "More");
+            float maxLabelW = Math.Max(24f, hw - 14f);
+            float tw = Math.Min(maxLabelW, p.Measure(label, Ink.Caption));
+            float chipW = Math.Min(hw + 4f, tw + 20f);
+            var chip = new RectangleF(cx - chipW / 2f, cy + r + 3f, chipW, 20f);
+            AddHit(chip, chipId, expandAct, null, expandAct);
+            bool chipHot = Hover(chipId), chipDown = Pressed(chipId);
+            if (chipHot) p.FillRound(chip, chip.Height / 2f, chipDown ? p.T.FillPressed : p.T.FillHover);
+            p.Text(label, Ink.Caption, chipHot ? p.T.Text : p.T.Sub, cx - 4.5f, cy + r + 13f, maxLabelW, StringAlignment.Center);
+            p.Symbol(Sym.ChevronDown, cx + tw / 2f + 2.5f, cy + r + 13.5f, 7f, chipHot ? p.T.Text : p.T.Faint);
         }
 
         void Pill(RectangleF r, string id, string label, PillKind kind, Action act) { Pill(r, id, label, kind, act, true); }

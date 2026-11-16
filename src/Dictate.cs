@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     enum DictState { Off, Listening, Working }
 
@@ -112,7 +112,7 @@ namespace Tepi
 
         static bool IsModifier(uint vk) { return (vk >= 0xA0 && vk <= 0xA5) || vk == 0x10 || vk == 0x11 || vk == 0x12 || vk == 0x5B || vk == 0x5C || vk == 0x14; }
 
-        // UI thread; a throw kills Tepi
+        // UI thread; a throw kills Deskmate
         IntPtr OnKey(int code, IntPtr msg, IntPtr info)
         {
             if (code < 0) return CallNextHookEx(keyHook, code, msg, info);

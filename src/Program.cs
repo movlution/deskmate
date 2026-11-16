@@ -1,9 +1,10 @@
 using System;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     static class Program
     {
@@ -29,6 +30,8 @@ namespace Tepi
         [MethodImpl(MethodImplOptions.NoInlining)]
         static int RunIsland()
         {
+            // Timeline starts here, before any window exists
+            Boot.Mark("entry");
             // After an update: wait for the old copy to quit
             int old = 0;
             bool after = Environment.GetCommandLineArgs().Length > 2 && Environment.GetCommandLineArgs()[1] == "--after" && int.TryParse(Environment.GetCommandLineArgs()[2], out old);
@@ -41,6 +44,12 @@ namespace Tepi
             using (var mutex = new Mutex(true, Settings.MutexName, out created))
             {
                 if (!created && !(after && Take(mutex))) return 0;
+                try { Settings.MigrateLegacyDirectory(); }
+                catch (IOException ex)
+                {
+                    MessageBox.Show(ex.Message, "Deskmate", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return 1;
+                }
                 // Full collections must not block a frame
                 System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
                 try { Native.SetProcessDpiAwarenessContext(new IntPtr(-4)); }

@@ -5,7 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -26,7 +26,7 @@ namespace Tepi
             {
                 get
                 {
-                    string s = S.Get("dockbar.size", "m");
+                    string s = S != null ? S.Get("dockbar.size", "m") : "m";
                     return s == "s" ? 34f : s == "l" ? 50f : 42f;
                 }
             }
@@ -35,7 +35,7 @@ namespace Tepi
             {
                 get
                 {
-                    if (!S.GetBool("dockbar.magnify", true) || Anim.Reduced) return 1f;
+                    if (S == null || !S.GetBool("dockbar.magnify", true) || Anim.Reduced) return 1f;
                     return Math.Max(1f, Math.Min(2f, S.GetInt("dockbar.mag", 150) / 100f));
                 }
             }
@@ -56,7 +56,8 @@ namespace Tepi
 
             readonly List<Slot> slots = new List<Slot>();
             readonly Dictionary<string, Spring> sysGrow = new Dictionary<string, Spring>();
-            // Widget presence: 0 gone, 1 full width
+            readonly Dictionary<string, Spring> sysPress = new Dictionary<string, Spring>();
+            DateTime startPulseUtc = DateTime.MinValue;
             readonly Dictionary<string, Spring> widgetShow = new Dictionary<string, Spring>();
             bool widgetsPrimed;
             float leftPresence = 1;
@@ -159,14 +160,32 @@ namespace Tepi
                 return s;
             }
 
-            // Centre content: Start and search when replacing, then the apps
+            Spring SysPress(string id)
+            {
+                Spring s;
+                if (!sysPress.TryGetValue(id, out s))
+                {
+                    s = new Spring(0, 1, 1, 0.001f);
+                    Tune(s, 520, 0.85f);
+                    sysPress[id] = s;
+                }
+                return s;
+            }
+
+            float SysPressValue(string id)
+            {
+                if (Anim.Reduced) return (pressId == "sys:" + id && hoverId == "sys:" + id) ? 1f : 0f;
+                Spring s;
+                return sysPress.TryGetValue(id, out s) ? Ease.Clamp01(s.Value) : 0f;
+            }
+
+            // Centre content: Start when replacing, then the apps
             void CenterSlots()
             {
                 slots.Clear();
                 if (Replacing)
                 {
                     slots.Add(new Slot { Id = "start" });
-                    if (S.GetBool("dockbar.search", true)) slots.Add(new Slot { Id = "search" });
                     if (S.GetBool("dockbar.taskview", false)) slots.Add(new Slot { Id = "taskview" });
                     if (apps.Count > 0) slots.Add(new Slot { Id = "sep", Sep = true });
                 }
@@ -231,7 +250,7 @@ namespace Tepi
                         float d = mouseX - (x + w / 2);
                         float target = wave ? 1 + (mag - 1) * (float)Math.Exp(-(d * d) / (2 * sigma * sigma)) : 1;
                         var spring = s.App != null ? s.App.Grow : s.Id == "gap" ? null : SysSpring(s.Id);
-                        if (spring != null) { spring.Target = target; s.Grow = Math.Max(1, spring.Value); }
+                        if (spring != null) { spring.Target = target; s.Grow = Math.Max(0.92f, spring.Value); }
                     }
                     x += w + gap * s.Show;
                 }
@@ -346,6 +365,20 @@ namespace Tepi
                 workDot.Step(dt);
                 moving |= !reveal.Settled || !hover.Settled || !workDot.Settled;
                 foreach (var s in sysGrow.Values) { s.Step(dt); moving |= !s.Settled; }
+                foreach (var kv in sysPress)
+                {
+                    string fullId = "sys:" + kv.Key;
+                    bool held = pressId == fullId && hoverId == fullId;
+                    if (Anim.Reduced) kv.Value.Snap(held ? 1f : 0f);
+                    else
+                    {
+                        kv.Value.Target = held ? 1f : 0f;
+                        Tune(kv.Value, held ? 520f : 420f, held ? 0.85f : 0.72f);
+                        kv.Value.Step(dt);
+                        moving |= !kv.Value.Settled;
+                    }
+                }
+                if (!Anim.Reduced && startPulseUtc > DateTime.MinValue && (DateTime.UtcNow - startPulseUtc).TotalSeconds < 0.40) moving = true;
                 foreach (var s in widgetShow.Values) { s.Step(dt); moving |= !s.Settled; }
                 for (int i = apps.Count - 1; i >= 0; i--)
                 {

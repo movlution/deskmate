@@ -5,7 +5,7 @@ using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Quick note: one line, Ctrl+Alt+N
     partial class Island

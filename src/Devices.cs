@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using Windows.Devices.Radios;
 
-namespace Tepi
+namespace Deskmate
 {
     // One output endpoint
     class AudioDevice
@@ -179,7 +179,7 @@ namespace Tepi
     // Panel brightness over WMI; latest wins
     class BrightnessService
     {
-        public event Action<int, bool> Changed; // level, from Tepi itself
+        public event Action<int, bool> Changed; // level, from Deskmate itself
         public volatile bool Supported;
         public volatile int Level = -1;
         int want = -1;
@@ -276,17 +276,49 @@ namespace Tepi
             signal.Set();
         }
 
+        public void SetPower(bool isWifi, bool on)
+        {
+            lock (work) work.Enqueue(delegate
+            {
+                if (MediaService.Await(Radio.RequestAccessAsync()) != RadioAccessStatus.Allowed) { Denied = true; Raise(); return; }
+                Denied = false;
+                LoadRadios();
+                var r = isWifi ? wifi : bluetooth;
+                if (r == null) { Read(); return; }
+                var to = on ? RadioState.On : RadioState.Off;
+                if (r.State != to && MediaService.Await(r.SetStateAsync(to)) != RadioAccessStatus.Allowed) Denied = true;
+                Read();
+            });
+            signal.Set();
+        }
+
+        public void Refresh()
+        {
+            lock (work) work.Enqueue(delegate
+            {
+                LoadRadios();
+                Read();
+            });
+            signal.Set();
+        }
+
+        void LoadRadios()
+        {
+            if (wifi != null && bluetooth != null) return;
+            foreach (var r in MediaService.Await(Radio.GetRadiosAsync()))
+            {
+                if (r.Kind == RadioKind.WiFi && wifi == null) wifi = r;
+                else if (r.Kind == RadioKind.Bluetooth && bluetooth == null) bluetooth = r;
+                else continue;
+                r.StateChanged += delegate { Read(); };
+            }
+        }
+
         void Run()
         {
             try
             {
-                foreach (var r in MediaService.Await(Radio.GetRadiosAsync()))
-                {
-                    if (r.Kind == RadioKind.WiFi && wifi == null) wifi = r;
-                    else if (r.Kind == RadioKind.Bluetooth && bluetooth == null) bluetooth = r;
-                    else continue;
-                    r.StateChanged += delegate { Read(); };
-                }
+                LoadRadios();
                 Read();
             }
             catch (Exception ex) { Log.Write("radios: " + ex.Message); }

@@ -4,17 +4,17 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 21 - Toast Notification Collision Boundaries" {
 
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Clamps metadata width measurement to a maximum ceiling of 130px" {
         $longAppName = ("SuperLongEnterpriseApplicationHeaderNameWithoutSpaces" * 3)
-        $font = Invoke-TepiStaticMethod "Ink" "Small" @([float]11.0)
+        $font = Invoke-DeskmateStaticMethod "Ink" "Small" @([float]11.0)
         Assert-NotNull $font "Small 11px font must exist"
 
         # Simulate GDI+ TextRenderer measurement
@@ -48,7 +48,7 @@ Describe "Tier 2 Boundary Suite: Feature 21 - Toast Notification Collision Bound
         $payloads = @(
             @{ App = ""; Title = ""; Body = "" },
             @{ App = "A"; Title = "B"; Body = "C" },
-            @{ App = "Tepi"; Title = ("X" * 150); Body = ("Y" * 300) }
+            @{ App = "Deskmate"; Title = ("X" * 150); Body = ("Y" * 300) }
         )
 
         foreach ($p in $payloads) {
@@ -57,8 +57,8 @@ Describe "Tier 2 Boundary Suite: Feature 21 - Toast Notification Collision Bound
     }
 
     It "Dispatches toast notification via CLI process invocation with long payloads" {
-        $binPath = Find-TepiBinary
-        Assert-NotNull $binPath "Tepi binary must be found"
+        $binPath = Find-DeskmateBinary
+        Assert-NotNull $binPath "Deskmate binary must be found"
 
         $pinfo = New-Object System.Diagnostics.ProcessStartInfo
         $pinfo.FileName = $binPath

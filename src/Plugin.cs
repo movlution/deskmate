@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
-    // Scripts talk to the island: Tepi.exe --notify, or POST /notify
+    // Scripts talk to the island: Deskmate.exe --notify, or POST /notify
     partial class Island
     {
         DateTime lastPluginUtc;
@@ -59,7 +59,7 @@ namespace Tepi
         }
     }
 
-    // Tepi.exe --notify <title> [detail] [--progress 0-100] [--id name]
+    // Deskmate.exe --notify <title> [detail] [--progress 0-100] [--id name]
     static class NotifyCommand
     {
         public static int Run(string[] args)

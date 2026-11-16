@@ -14,14 +14,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build Tepi.exe from source
+      - name: Build Deskmate.exe from source
         shell: cmd
         run: build.cmd
       - name: SHA-256
         shell: pwsh
-        run: (Get-FileHash Tepi.exe -Algorithm SHA256).Hash
+        run: (Get-FileHash Deskmate.exe -Algorithm SHA256).Hash
       - uses: actions/upload-artifact@v4
         with:
-          name: Tepi
-          path: Tepi.exe
+          name: Deskmate
+          path: Deskmate.exe
           if-no-files-found: error

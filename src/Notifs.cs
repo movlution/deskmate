@@ -11,7 +11,7 @@ using Windows.Storage.Streams;
 using Windows.UI.Notifications;
 using Windows.UI.Notifications.Management;
 
-namespace Tepi
+namespace Deskmate
 {
     class NotifItem
     {
@@ -34,7 +34,7 @@ namespace Tepi
         static readonly Dictionary<string, Bitmap> logos = new Dictionary<string, Bitmap>();
         public static readonly string Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Microsoft\Windows\Notifications");
 
-        // WinRT only serves a process with package identity; Tepi ships as a loose exe
+        // WinRT only serves a process with package identity; Deskmate ships as a loose exe
         static bool? packaged;
         public static bool Packaged
         {
@@ -108,7 +108,7 @@ namespace Tepi
             return list;
         }
 
-        // Clearing works on Tepi's own list for any build: the listener can only drop
+        // Clearing works on Deskmate's own list for any build: the listener can only drop
         // toasts for a packaged process, and this is the only path that always works
         public static bool CanRemove { get { return true; } }
 
@@ -254,7 +254,7 @@ namespace Tepi
                         string payload = Column16(stmt, 1);
                         long arrival = sqlite3_column_int64(stmt, 2);
                         item.AppId = Column16(stmt, 3) ?? "";
-                        // ArrivalTime is a FILETIME, so it is already UTC like the rest of Tepi
+                        // ArrivalTime is a FILETIME, so it is already UTC like the rest of Deskmate
                         try { item.Time = DateTime.FromFileTimeUtc(arrival); }
                         catch (Exception) { item.Time = DateTime.UtcNow; }
                         ParseToast(payload, item);
@@ -373,7 +373,7 @@ namespace Tepi
                 string item = appId.IndexOf(':') >= 0 ? appId : ShellApp.AppsFolderOf(appId);
                 logo = ShellApp.Icon(item, 48);
                 if (logo == null) logo = ShellApp.Icon(appId, 48);
-                if (logo != null) logo = Ink.Grayscale(logo, 48);
+                if (logo != null) logo = Ink.Grayscale(logo, 48, true);
             }
             catch (Exception ex) { Log.Write("notif logo: " + ex.Message); logo = null; }
             lock (logos) logos[appId] = logo;
@@ -402,7 +402,7 @@ namespace Tepi
                             reader.ReadBytes(bytes);
                             using (var ms = new MemoryStream(bytes))
                             using (var src = Image.FromStream(ms))
-                                logo = Ink.Grayscale(src, 48);
+                                logo = Ink.Grayscale(src, 48, true);
                         }
                 }
             }

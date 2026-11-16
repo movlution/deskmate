@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 
-namespace Tepi
+namespace Deskmate
 {
     // Authenticode check: signed by a trusted chain, and who signed it
     static class Signature

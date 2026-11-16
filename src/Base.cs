@@ -9,13 +9,13 @@ using System.Text;
 using System.Web.Script.Serialization;
 using Microsoft.Win32;
 
-namespace Tepi
+namespace Deskmate
 {
     static class Log
     {
         static readonly object sync = new object();
 
-        public static string FilePath { get { return Path.Combine(Settings.Dir, "tepi.log"); } }
+        public static string FilePath { get { return Path.Combine(Settings.Dir, "deskmate.log"); } }
 
         static string lastMessage;
         static DateTime lastUtc;
@@ -52,32 +52,51 @@ namespace Tepi
         }
     }
 
-    // key=value store in %APPDATA%\Tepi\settings.ini
+    // key=value store in %APPDATA%\Deskmate\settings.ini
     class Settings
     {
-        // TEPI_DIR: isolated copy for test runs
-        static readonly string testDir = Environment.GetEnvironmentVariable("TEPI_DIR");
+        // DESKMATE_DIR: isolated copy for test runs
+        static readonly string testDir = Environment.GetEnvironmentVariable("DESKMATE_DIR");
         public static bool TestMode { get { return !string.IsNullOrEmpty(testDir); } }
 
-        public static readonly string Dir = TestMode ? Path.GetFullPath(testDir) : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Tepi");
+        static readonly string AppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        public static readonly string Dir = TestMode ? Path.GetFullPath(testDir) : Path.Combine(AppData, "Deskmate");
+
+        internal static void MigrateLegacyDirectory()
+        {
+            if (TestMode) return;
+            string legacy = Path.Combine(AppData, "Tepi");
+            if (!Directory.Exists(Dir) && Directory.Exists(legacy))
+            {
+                bool created;
+                using (var oldInstance = new System.Threading.Mutex(true, @"Local\TepiIsland", out created))
+                {
+                    if (!created) throw new IOException("Close the previous app before opening Deskmate.");
+                    Directory.Move(legacy, Dir);
+                }
+            }
+            string oldLog = Path.Combine(Dir, "tepi.log");
+            string log = Path.Combine(Dir, "deskmate.log");
+            if (File.Exists(oldLog) && !File.Exists(log)) File.Move(oldLog, log);
+        }
 
         // Agent config home; tests get a fake
         public static string Home
         {
             get
             {
-                string home = Environment.GetEnvironmentVariable("TEPI_HOME");
+                string home = Environment.GetEnvironmentVariable("DESKMATE_HOME");
                 if (!string.IsNullOrEmpty(home)) return home;
                 return TestMode ? Path.Combine(Dir, "home") : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             }
         }
 
-        public static bool FakeHome { get { return TestMode || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("TEPI_HOME")); } }
+        public static bool FakeHome { get { return TestMode || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DESKMATE_HOME")); } }
 
         // Test copies run beside the real island
         public static string MutexName
         {
-            get { return TestMode ? @"Local\TepiIsland-" + (Dir.ToLowerInvariant().GetHashCode() & 0x7fffffff) : @"Local\TepiIsland"; }
+            get { return TestMode ? @"Local\DeskmateIsland-" + (Dir.ToLowerInvariant().GetHashCode() & 0x7fffffff) : @"Local\DeskmateIsland"; }
         }
 
         readonly Dictionary<string, string> values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -114,6 +133,8 @@ namespace Tepi
                 }
             }
             catch (Exception ex) { Log.Write("settings load: " + ex.Message); }
+            string banner;
+            if (values.TryGetValue("notif.banner", out banner) && banner == "tepi") values["notif.banner"] = "deskmate";
         }
 
         public void Save()
@@ -182,15 +203,16 @@ namespace Tepi
             get
             {
                 using (var k = Registry.CurrentUser.OpenSubKey(RunKey))
-                    return k != null && k.GetValue("Tepi") != null;
+                    return k != null && (k.GetValue("Deskmate") != null || k.GetValue("Tepi") != null);
             }
             set
             {
                 if (Settings.TestMode) { Log.Write("test mode: autostart untouched"); return; }
                 using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
                 {
-                    if (value) k.SetValue("Tepi", "\"" + System.Windows.Forms.Application.ExecutablePath + "\"");
-                    else k.DeleteValue("Tepi", false);
+                    if (value) k.SetValue("Deskmate", "\"" + System.Windows.Forms.Application.ExecutablePath + "\"");
+                    else k.DeleteValue("Deskmate", false);
+                    k.DeleteValue("Tepi", false);
                 }
             }
         }
@@ -227,7 +249,7 @@ namespace Tepi
         public void Snap(float v) { Value = Target = v; Velocity = 0; }
     }
 
-    // Reduced motion: Windows setting or Tepi's
+    // Reduced motion: Windows setting or Deskmate's
     static class Anim
     {
         public static bool Reduced;
@@ -415,7 +437,7 @@ namespace Tepi
             req.Method = method;
             req.Timeout = timeoutMs;
             req.ReadWriteTimeout = timeoutMs;
-            req.UserAgent = "Tepi/" + Island.AppVersion + " (+https://github.com/odlaver/tepi)";
+            req.UserAgent = "Deskmate/" + Island.AppVersion + " (+https://github.com/movlution/deskmate)";
             if (headers != null)
                 foreach (var h in headers)
                 {
@@ -506,10 +528,10 @@ namespace Tepi
         }
     }
 
-    // TEPI_FPS=1: per-section frame cost
+    // DESKMATE_FPS=1: per-section frame cost
     static class Prof
     {
-        public static readonly bool On = Environment.GetEnvironmentVariable("TEPI_FPS") == "1";
+        public static readonly bool On = Environment.GetEnvironmentVariable("DESKMATE_FPS") == "1";
         static readonly Dictionary<string, double> sums = new Dictionary<string, double>();
         static readonly System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
 
@@ -558,6 +580,49 @@ namespace Tepi
             foreach (var kv in sums) sb.Append(kv.Key).Append('=').Append((kv.Value / Math.Max(1, frames)).ToString("0.00")).Append(' ');
             sums.Clear();
             return sb.ToString();
+        }
+    }
+
+    // Startup timeline, always on and log-only: one line when the first frame is up.
+    // Marks are cheap enough to leave in place; the log line replaces guesswork.
+    static class Boot
+    {
+        static readonly System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+        static readonly List<string> marks = new List<string>();
+        static readonly object gate = new object();
+        // Frame reads this without the lock to skip the call; Ready re-checks inside it
+        public static volatile bool Logged;
+
+        // Marks are relative to the previous one, so they read as a step budget
+        public static void Mark(string name)
+        {
+            // Once the line is out, later marks would only pile up for the life of the process
+            if (Logged) return;
+            lock (gate)
+            {
+                if (Logged) return;
+                marks.Add(name + "=" + watch.Elapsed.TotalMilliseconds.ToString("0"));
+            }
+        }
+
+        // Once, first painted frame: the number that matters is the last one
+        public static void Ready()
+        {
+            lock (gate)
+            {
+                if (Logged) return;
+                Logged = true;
+                var sb = new StringBuilder("boot ").Append(watch.Elapsed.TotalMilliseconds.ToString("0")).Append("ms");
+                double prev = 0;
+                foreach (var m in marks)
+                {
+                    int eq = m.IndexOf('=');
+                    double at = double.Parse(m.Substring(eq + 1), CultureInfo.InvariantCulture);
+                    sb.Append(' ').Append(m.Substring(0, eq)).Append('+').Append((at - prev).ToString("0"));
+                    prev = at;
+                }
+                Log.Write(sb.ToString());
+            }
         }
     }
 

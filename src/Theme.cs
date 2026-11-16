@@ -7,7 +7,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using WinTimer = System.Windows.Forms.Timer;
 
-namespace Tepi
+namespace Deskmate
 {
     // Emblem or mascot frames
     sealed class Sprite : IDisposable

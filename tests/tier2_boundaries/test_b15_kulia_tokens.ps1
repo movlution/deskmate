@@ -4,22 +4,22 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 15 - KuliaLogin Token & Input Boundaries" {
 
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Inspects KuliaLogin type hierarchy and form properties" {
-        $loginType = Get-TepiType "KuliaLogin"
+        $loginType = Get-DeskmateType "KuliaLogin"
         Assert-NotNull $loginType "KuliaLogin type must exist"
         Assert-True ([System.Windows.Forms.Form].IsAssignableFrom($loginType)) "KuliaLogin must inherit from Form"
     }
 
     It "Initializes KuliaClient with degenerate URL and key boundary parameters" {
-        $clientType = Get-TepiType "KuliaClient"
+        $clientType = Get-DeskmateType "KuliaClient"
         Assert-NotNull $clientType "KuliaClient type must exist"
 
         $degenerateConfigs = @(
@@ -53,7 +53,7 @@ Describe "Tier 2 Boundary Suite: Feature 15 - KuliaLogin Token & Input Boundarie
     }
 
     It "Verifies KuliaLogin adopts KitText for text input" {
-        $loginType = Get-TepiType "KuliaLogin"
+        $loginType = Get-DeskmateType "KuliaLogin"
         $flags = [System.Reflection.BindingFlags]'NonPublic,Instance'
         $fieldMember = $loginType.GetField("field", $flags)
         Assert-NotNull $fieldMember "KuliaLogin must have field member"
@@ -64,7 +64,7 @@ Describe "Tier 2 Boundary Suite: Feature 15 - KuliaLogin Token & Input Boundarie
         $dummyForm = New-Object System.Windows.Forms.Form
         $dummyForm.ClientSize = New-Object System.Drawing.Size(400, 300)
 
-        $kwType = Get-TepiType "KitWindow"
+        $kwType = Get-DeskmateType "KitWindow"
         $scaleMethod = $kwType.GetMethod("ScaleToDpi", [System.Reflection.BindingFlags]'Public,Static')
         Assert-NotNull $scaleMethod "KitWindow.ScaleToDpi method must exist"
 

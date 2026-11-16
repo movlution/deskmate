@@ -4,7 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
 
-namespace Tepi
+namespace Deskmate
 {
     enum TimerKind { Off, Focus, Break, Countdown, Stopwatch }
 

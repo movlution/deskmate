@@ -4,10 +4,10 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 13: Centralized Dialog Theme Propagation" {
-    $kitWindowType = Get-TepiType "KitWindow"
+    $kitWindowType = Get-DeskmateType "KitWindow"
     $flags = [System.Reflection.BindingFlags]'Public,NonPublic,Static'
 
     It "Verifies KitWindow declares static BroadcastThemeChange method" {
@@ -22,7 +22,7 @@ Describe "Feature 13: Centralized Dialog Theme Propagation" {
     }
 
     It "Verifies KitWindow instances register on show and unregister on dispose" {
-        $win = New-TepiControl "KitWindow"
+        $win = New-DeskmateControl "KitWindow"
         Assert-NotNull $win "KitWindow instance must be created"
         Assert-True ($win -is [System.Windows.Forms.Form]) "KitWindow must inherit from Form"
         $win.Dispose()
@@ -40,7 +40,7 @@ Describe "Feature 13: Centralized Dialog Theme Propagation" {
     }
 
     It "Verifies Island declares ApplyThemeMode orchestration method" {
-        $island = Get-TepiType "Island"
+        $island = Get-DeskmateType "Island"
         $applyTheme = $island.GetMethod("ApplyThemeMode", [System.Reflection.BindingFlags]'NonPublic,Instance,Public')
         Assert-NotNull $applyTheme "ApplyThemeMode method must exist on Island"
     }

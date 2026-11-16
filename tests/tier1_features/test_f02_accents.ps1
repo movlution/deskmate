@@ -4,13 +4,13 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 2: Light Mode Accent Preset Calibration" {
     $paperBg = [System.Drawing.ColorTranslator]::FromHtml("#F5F5F5")
 
     BeforeEach {
-        Reset-TepiTheme -Light $true
+        Reset-DeskmateTheme -Light $true
     }
 
     It "Verifies Biru (#1668E8) preset in light mode achieves >= 3.5:1 contrast against #F5F5F5" {
@@ -50,7 +50,7 @@ Describe "Feature 2: Light Mode Accent Preset Calibration" {
     }
 
     It "Verifies all 7 light mode accents registered in AccentsLight maintain >= 3.5:1 contrast" {
-        $table = Get-TepiStaticField "Island" "AccentsLight"
+        $table = Get-DeskmateStaticField "Island" "AccentsLight"
         Assert-NotNull $table "AccentsLight field must exist on Island"
 
         $checkedCount = 0

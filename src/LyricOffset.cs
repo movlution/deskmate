@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Per-song lyric shift, kept in lyrics\offsets.txt
     partial class Island
@@ -90,9 +90,7 @@ namespace Tepi
             m.Items.Add(Lang.T("Lirik lebih awal 0,5 dtk"), null, delegate { NudgeLyrics(-LyricStep); });
             m.Items.Add(Lang.T("Lirik lebih lambat 0,5 dtk"), null, delegate { NudgeLyrics(LyricStep); });
             if (now != 0) m.Items.Add(Lang.T("Kembalikan waktu asli"), null, delegate { NudgeLyrics(0); });
-            StyleMenu(m);
-            m.Closed += delegate { BeginInvoke(new Action(m.Dispose)); };
-            m.Show(Control.MousePosition);
+            ShowIslandMenu(m);
         }
     }
 }

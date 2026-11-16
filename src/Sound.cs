@@ -3,7 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
     // sound.agent: Windows' own sounds for agents and runs
     partial class Island
@@ -20,7 +20,7 @@ namespace Tepi
 
         // Reminder sounds: "" default, "none", or a file
         public const string CueRemind = "Windows Notify Calendar.wav", SoundNone = "none";
-        const string MciAlias = "tepiremind";
+        const string MciAlias = "deskmateremind";
         [DllImport("winmm.dll", CharSet = CharSet.Unicode)] static extern int mciSendString(string cmd, StringBuilder ret, int len, IntPtr cb);
         readonly StringBuilder mciMode = new StringBuilder(32);
         bool remindPlaying, remindDucked;

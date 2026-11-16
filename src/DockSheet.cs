@@ -7,7 +7,7 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -26,14 +26,18 @@ namespace Tepi
             protected Graphics g;
             protected readonly List<KeyValuePair<RectangleF, string>> hits = new List<KeyValuePair<RectangleF, string>>();
             protected readonly Spring open = new Spring(0, 1, 1, 0.003f);
+            static readonly int FrameMsg = Taskbar.RegisterWindowMessage("DeskmateSheetFrame");
             IntPtr memDC, dib, oldBmp;
             Bitmap canvas;
-            int cw, ch, baseY;
+            int cw, ch, baseX, baseY;
             DockFrost frost;
             DockPlate plate;
             bool allowClose, leaving;
-            readonly System.Windows.Forms.Timer frames = new System.Windows.Forms.Timer { Interval = 15 };
-            DateTime lastStep;
+            readonly Stopwatch clock = Stopwatch.StartNew();
+            double lastT;
+            DockPacer pacer;
+            volatile bool pacerActive;
+            DateTime lastStep = DateTime.UtcNow;
             readonly Dictionary<string, Spring> squish = new Dictionary<string, Spring>();
             sealed class SheetFlyer
             {
@@ -50,10 +54,6 @@ namespace Tepi
             // Fading out: no more input
             protected bool Leaving { get { return leaving; } }
 
-            [StructLayout(LayoutKind.Sequential)] struct Margins { public int L, R, T, B; }
-            [DllImport("dwmapi.dll")] static extern int DwmExtendFrameIntoClientArea(IntPtr hw, ref Margins m);
-            [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hw, int attr, ref int value, int size);
-            [DllImport("gdi32.dll")] static extern bool BitBlt(IntPtr dst, int x, int y, int w, int hh, IntPtr src, int sx, int sy, int rop);
 
             protected GlassSheet(Island isle, DockWindow dock, string kind, string title)
             {
@@ -68,7 +68,6 @@ namespace Tepi
                 Text = title;
                 Bounds = new Rectangle(-32000, -32000, 10, 10);
                 Tune(open, 420, 0.86f);
-                frames.Tick += delegate { Step(); };
             }
 
             protected override CreateParams CreateParams
@@ -77,7 +76,7 @@ namespace Tepi
                 {
                     var cp = base.CreateParams;
                     cp.Style = Native.WS_POPUP;
-                    cp.ExStyle |= Native.WS_EX_TOOLWINDOW | Native.WS_EX_TOPMOST;
+                    cp.ExStyle |= Native.WS_EX_LAYERED | Native.WS_EX_TOOLWINDOW | Native.WS_EX_TOPMOST;
                     return cp;
                 }
             }
@@ -88,12 +87,14 @@ namespace Tepi
             protected override void OnHandleCreated(EventArgs e)
             {
                 base.OnHandleCreated(e);
-                var m = new Margins { L = -1, R = -1, T = -1, B = -1 };
-                DwmExtendFrameIntoClientArea(Handle, ref m);
-                int none = unchecked((int)0xFFFFFFFE), square = 1;
-                DwmSetWindowAttribute(Handle, 34, ref none, 4);
-                DwmSetWindowAttribute(Handle, 33, ref square, 4);
-                if (dock.Glass) Native.SetWindowDisplayAffinity(Handle, Native.WDA_EXCLUDEFROMCAPTURE);
+                pacer = new DockPacer(Handle, FrameMsg);
+                if (dock.Glass && !CompGlass.Available) Native.SetWindowDisplayAffinity(Handle, Native.WDA_EXCLUDEFROMCAPTURE);
+            }
+
+            protected override void WndProc(ref Message m)
+            {
+                if (m.Msg == FrameMsg && FrameMsg != 0) { OnFrame(); return; }
+                base.WndProc(ref m);
             }
 
             // Sinks and fades, then closes
@@ -102,10 +103,10 @@ namespace Tepi
                 if (leaving) return;
                 if (!Visible || Anim.Reduced || g == null || open.Value < 0.05f) { Finish(); return; }
                 leaving = true;
-                Tune(open, 2600, 1f);
+                Tune(open, 760, 0.96f);
                 open.Target = 0;
                 lastStep = DateTime.UtcNow;
-                frames.Start();
+                Animate();
             }
 
             void Finish()
@@ -123,8 +124,10 @@ namespace Tepi
 
             protected override void OnFormClosed(FormClosedEventArgs e)
             {
-                frames.Stop();
+                pacerActive = false;
+                if (pacer != null) pacer.Stop();
                 if (frost != null) frost.Stop();
+                if (sheetBackdrop != null) { sheetBackdrop.Dispose(); sheetBackdrop = null; }
                 Teardown();
                 Free();
                 if (plate != null) plate.Dispose();
@@ -151,9 +154,16 @@ namespace Tepi
 
             protected void Animate()
             {
-                if (frames.Enabled) return;
-                lastStep = DateTime.UtcNow;
-                frames.Start();
+                if (IsDisposed || pacer == null) return;
+                pacerActive = true;
+                if (pacer.Want()) lastT = clock.Elapsed.TotalSeconds - 1 / 60.0;
+            }
+
+            protected void RequestRender()
+            {
+                if (IsDisposed) return;
+                if (pacerActive && pacer != null) return;
+                Render();
             }
 
             // Over its button, within the dock
@@ -161,50 +171,79 @@ namespace Tepi
             {
                 scale = sc;
                 Opening(mon, barTop);
-                H = Math.Min(H, (barTop - mon.Top) / scale - 40);
+                H = Math.Max(80, Math.Min(H, (barTop - mon.Top) / scale - 40));
                 if (!IsHandleCreated) CreateHandle();
                 int pw = (int)Math.Ceiling(W * scale), ph = (int)Math.Ceiling(H * scale);
                 int want = anchor.X + anchor.Width / 2 - pw / 2;
                 // Wider than the dock: centred
                 if (!span.IsEmpty) want = pw <= span.Width ? Math.Max(span.Left, Math.Min(span.Right - pw, want)) : span.Left + (span.Width - pw) / 2;
                 int left = Math.Max(mon.Left + (int)(8 * scale), Math.Min(mon.Right - (int)(8 * scale) - pw, want));
+                baseX = left;
                 baseY = Math.Min(barTop, anchor.Top) - (int)(10 * scale) - ph;
                 MakeCanvas(pw, ph);
-                Bounds = new Rectangle(left, baseY + Rise(), pw, ph);
-                if (dock.Glass)
+                Bounds = new Rectangle(baseX, baseY + Rise(), pw, ph);
+                if (dock.Glass && !CompGlass.Available)
                 {
                     frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
                     frost.Start();
-                    frost.Request(new Rectangle(left, baseY, pw, ph), Ink.Veil, Ink.Light, isle.LiquidOn);
+                    frost.Request(new Rectangle(baseX, baseY, pw, ph), Ink.Veil, Ink.Light, isle != null && isle.LiquidOn, false);
                 }
-                open.Snap(0);
-                open.Target = 1;
+                if (Anim.Reduced) open.Snap(1);
+                else { open.Snap(0); open.Target = 1; }
                 lastStep = DateTime.UtcNow;
                 Render();
                 Show();
-                frames.Start();
+                Present();
+                if (!Anim.Reduced) Animate();
                 // Test runs leave the user's focus alone
                 if (DockWindow.Dry) return;
                 // Keyboard opens too: take focus
                 ShellApp.Activate(Handle);
                 Activate();
             }
+            public void NudgeFrost() { if (frost != null) frost.Nudge(); }
+
 
             int Rise() { return (int)Math.Round((1 - open.Value) * 14 * scale); }
 
             void Step()
             {
                 var now = DateTime.UtcNow;
-                float dt = (float)Math.Min(0.05, (now - lastStep).TotalSeconds);
+                float dt = (float)Math.Min(0.05, Math.Max(0.001, (now - lastStep).TotalSeconds));
                 lastStep = now;
+                StepFrame(dt);
+            }
+
+            void OnFrame()
+            {
+                if (IsDisposed) return;
+                double t = clock.Elapsed.TotalSeconds;
+                float dt = (float)Math.Min(0.05, Math.Max(0.001, t - lastT));
+                lastT = t;
+                bool more = false;
+                try { more = StepFrame(dt); }
+                finally
+                {
+                    pacerActive = more;
+                    if (pacer != null) pacer.Done(more);
+                }
+            }
+
+            bool StepFrame(float dt)
+            {
+                var now = DateTime.UtcNow;
                 open.Step(dt);
                 bool moreSquish = StepSquish(dt);
                 bool moreFly = SheetFlyersMoving(now);
-                if (leaving && open.Value < 0.03f && !moreFly) { frames.Stop(); Finish(); return; }
+                if (leaving && open.Value < 0.03f && !moreFly)
+                {
+                    pacerActive = false;
+                    Finish();
+                    return false;
+                }
                 bool more = !leaving && (Animating(dt) || moreSquish || moreFly);
-                Location = new Point(Location.X, baseY + Rise());
                 Render();
-                if (open.Settled && !more) frames.Stop();
+                return !open.Settled || more || (leaving && open.Value >= 0.03f);
             }
 
             bool StepSquish(float dt)
@@ -239,7 +278,7 @@ namespace Tepi
                     Tune(sp, 520, 0.85f);
                     sp.Target = 1;
                     squish[id] = sp;
-                    frames.Start();
+                    Animate();
                 }
                 float s = 1 - depth * sp.Value;
                 if (Math.Abs(s - 1) < 0.0005f) return new RectangleF(0, 0, 1, 1);
@@ -308,7 +347,7 @@ namespace Tepi
                     }
                 }
                 sheetFlyUtc = DateTime.UtcNow;
-                frames.Start();
+                Animate();
             }
 
             void DrawSheetFlyers(DateTime now)
@@ -351,7 +390,8 @@ namespace Tepi
                 var old = plate;
                 plate = pl;
                 if (old != null) old.Dispose();
-                Render();
+                if (pacer != null && IsHandleCreated && !DockWindow.Dry) Animate();
+                else RequestRender();
             }
 
             void MakeCanvas(int w, int hh)
@@ -396,27 +436,57 @@ namespace Tepi
                 float fade = Ease.Clamp01(open.Value);
                 p.Alpha = fade;
                 g.ResetTransform();
-                g.Clear(Color.Transparent);
                 g.ScaleTransform(scale, scale);
                 var r = new RectangleF(0.5f, 0.5f, cw / scale - 1, ch / scale - 1);
+                bool gpu = dock.Glass && CompGlass.Available;
+                bool glass = !gpu && plate != null && dock.Glass;
                 using (var path = Ink.Round(r, 20))
                 {
-                    var st = g.Save();
-                    g.SetClip(path, CombineMode.Intersect);
-                    bool glass = plate != null && dock.Glass;
-                    if (glass)
+                    if (gpu)
+                    {
+                        g.Clear(Color.Transparent);
+                        g.FillPath(p.B(Ink.A(Ink.Veil, Math.Max(0.02f, 0.08f * fade))), path);
+                    }
+                    else if (glass)
                     {
                         var inner = g.Save();
                         g.ResetTransform();
-                        using (var ia = new ImageAttributes())
+                        bool oneToOne = plate.Text.Width == cw && plate.Text.Height == ch;
+                        g.InterpolationMode = oneToOne ? InterpolationMode.NearestNeighbor : InterpolationMode.Bilinear;
+                        g.PixelOffsetMode = PixelOffsetMode.Half;
+                        var dstRect = new Rectangle(plate.Rect.X - baseX, plate.Rect.Y - baseY, plate.Rect.Width, plate.Rect.Height);
+                        if (fade >= 0.995f)
                         {
-                            ia.SetColorMatrix(new ColorMatrix { Matrix33 = fade });
-                            var o = Location;
-                            g.DrawImage(plate.Text, new Rectangle(plate.Rect.X - o.X, plate.Rect.Y - o.Y + Rise(), plate.Rect.Width, plate.Rect.Height), 0, 0, plate.Text.Width, plate.Text.Height, GraphicsUnit.Pixel, ia);
+                            if (!oneToOne) g.Clear(Color.Transparent);
+                            g.CompositingMode = CompositingMode.SourceCopy;
+                            if (oneToOne)
+                                g.DrawImage(plate.Text, dstRect, 0, 0, plate.Text.Width, plate.Text.Height, GraphicsUnit.Pixel);
+                            else
+                                g.DrawImage(plate.Text, (RectangleF)dstRect, new RectangleF(0.5f, 0.5f, Math.Max(1, plate.Text.Width - 1), Math.Max(1, plate.Text.Height - 1)), GraphicsUnit.Pixel);
+                            g.CompositingMode = CompositingMode.SourceOver;
+                        }
+                        else
+                        {
+                            g.Clear(Color.Transparent);
+                            using (var ia = new ImageAttributes())
+                            {
+                                ia.SetColorMatrix(new ColorMatrix { Matrix33 = fade });
+                                if (oneToOne)
+                                    g.DrawImage(plate.Text, dstRect, 0, 0, plate.Text.Width, plate.Text.Height, GraphicsUnit.Pixel, ia);
+                                else
+                                    g.DrawImage(plate.Text, dstRect, 0.5f, 0.5f, Math.Max(1, plate.Text.Width - 1), Math.Max(1, plate.Text.Height - 1), GraphicsUnit.Pixel, ia);
+                            }
                         }
                         g.Restore(inner);
+                        g.FillRectangle(p.B(Ink.A(Ink.Veil, 0.34f)), 0, 0, cw / scale, ch / scale);
                     }
-                    g.FillPath(p.B(Ink.A(Ink.Veil, glass ? 0.34f : 0.95f)), path);
+                    else
+                    {
+                        g.Clear(Color.Transparent);
+                        g.FillPath(p.B(Ink.A(Ink.Veil, 0.95f)), path);
+                    }
+                    var st = g.Save();
+                    if (!glass) g.SetClip(path, CombineMode.Intersect);
                     using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 58), Color.FromArgb((int)(fade * (Ink.Light ? 80 : 22)), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
                     {
                         // No wrap: a tiled gradient leaves a bright seam
@@ -425,6 +495,19 @@ namespace Tepi
                     }
                     Backdrop(r);
                     g.Restore(st);
+                    if (glass)
+                    {
+                        var cs = g.Save();
+                        g.SetClip(path, CombineMode.Exclude);
+                        g.CompositingMode = CompositingMode.SourceCopy;
+                        float lw = cw / scale, lh = ch / scale, c = 34f;
+                        var tr = Brushes.Transparent;
+                        g.FillRectangle(tr, 0, 0, c, c);
+                        g.FillRectangle(tr, lw - c, 0, c, c);
+                        g.FillRectangle(tr, 0, lh - c, c, c);
+                        g.FillRectangle(tr, lw - c, lh - c, c, c);
+                        g.Restore(cs);
+                    }
                     g.DrawPath(p.P(Color.FromArgb(Ink.Light ? 70 : 40, p.T.Highlight), 1f), path);
                 }
                 tipText = null;
@@ -432,22 +515,43 @@ namespace Tepi
                 if (tipText != null) DrawTip();
                 DrawSheetFlyers(DateTime.UtcNow);
                 p.Alpha = 1;
+                Present();
+            }
+
+            void Present()
+            {
+                if (g == null || IsDisposed) return;
                 g.Flush(FlushIntention.Sync);
-                if (!IsHandleCreated) return;
-                using (var wg = CreateGraphics())
+                if (!IsHandleCreated || cw <= 0 || ch <= 0) return;
+                var dst = new Native.POINT(baseX, baseY + Rise());
+                var size = new Native.SIZE(cw, ch);
+                var src = new Native.POINT(0, 0);
+                var blend = new Native.BLENDFUNCTION { SourceConstantAlpha = 255, AlphaFormat = 1 };
+                Native.UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, memDC, ref src, 0, ref blend, Native.ULW_ALPHA);
+                SyncSheetBackdrop(dst.X, dst.Y);
+            }
+
+            CompGlass.CompBackdrop sheetBackdrop;
+            readonly CompGlass.PillSpec[] sheetPills = new CompGlass.PillSpec[1];
+
+            void SyncSheetBackdrop(int x, int y)
+            {
+                float fade = Ease.Clamp01(open.Value);
+                if (!dock.Glass || !CompGlass.Available || !Visible || fade <= 0.01f)
                 {
-                    IntPtr hdc = wg.GetHdc();
-                    BitBlt(hdc, 0, 0, cw, ch, memDC, 0, 0, 0x00CC0020);
-                    wg.ReleaseHdc(hdc);
+                    if (sheetBackdrop != null) sheetBackdrop.HideBackdrop();
+                    return;
                 }
+                if (sheetBackdrop == null) sheetBackdrop = new CompGlass.CompBackdrop();
+                bool liquid = isle != null && isle.LiquidOn;
+                var spec = CompGlass.Spec(liquid, true, scale, fade);
+                sheetPills[0] = new CompGlass.PillSpec(0.5f * scale, 0.5f * scale, cw - scale, ch - scale, 20f * scale);
+                sheetBackdrop.Sync(Handle, new Rectangle(x, y, cw, ch), true, spec, sheetPills, 1, null, null, scale, "");
             }
 
             protected override void OnPaint(PaintEventArgs e)
             {
-                if (g == null) return;
-                IntPtr hdc = e.Graphics.GetHdc();
-                BitBlt(hdc, 0, 0, cw, ch, memDC, 0, 0, 0x00CC0020);
-                e.Graphics.ReleaseHdc(hdc);
+                if (canvas != null) e.Graphics.DrawImageUnscaled(canvas, 0, 0);
             }
 
             // Darker footer shelf
@@ -489,7 +593,7 @@ namespace Tepi
                 hotId = null;
                 pressId = null;
                 HoverMoved(null);
-                if (squish.Count > 0) frames.Start();
+                if (squish.Count > 0) Animate();
                 Render();
             }
 
@@ -499,7 +603,7 @@ namespace Tepi
                 if (leaving) return;
                 pressId = HitAt(e.Location);
                 if (pressId != null && e.Button == MouseButtons.Left) Drag(pressId, Local(e.Location));
-                if (pressId != null || squish.Count > 0) frames.Start();
+                if (pressId != null || squish.Count > 0) Animate();
                 Render();
             }
 
@@ -509,7 +613,7 @@ namespace Tepi
                 if (leaving) return;
                 string id = HitAt(e.Location), was = pressId;
                 pressId = null;
-                if (squish.Count > 0) frames.Start();
+                if (squish.Count > 0) Animate();
                 if (id == null || id != was) { Render(); return; }
                 Clicked(id, e.Button);
                 if (!IsDisposed) Render();
@@ -557,7 +661,7 @@ namespace Tepi
 
             protected bool Down(string id) { return pressId == id && hotId == id; }
 
-            // Tepi's controls, in the island's look
+            // Deskmate's controls, in the island's look
             // More: the label opens a list
             protected void Toggle(float cx, float cy, float d, char glyph, bool on, bool available, string label, string id, string more = null)
             {

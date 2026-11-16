@@ -4,14 +4,14 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 11: MenuLook Submenu & Disabled Contrast" {
-    $menuLookType = Get-TepiType "MenuLook"
+    $menuLookType = Get-DeskmateType "MenuLook"
     $flags = [System.Reflection.BindingFlags]'NonPublic,Static,Public'
 
     BeforeEach {
-        Reset-TepiTheme -Light $true
+        Reset-DeskmateTheme -Light $true
     }
 
     It "Verifies MenuLook type exists and inherits from ToolStripProfessionalRenderer" {

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     // Default output volume with change callbacks
     partial class VolumeWatcher : IAudioEndpointVolumeCallback, IMMNotificationClient

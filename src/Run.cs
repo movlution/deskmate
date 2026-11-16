@@ -5,9 +5,9 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
-    // Long commands: Tepi.exe --run "npm run build"
+    // Long commands: Deskmate.exe --run "npm run build"
     partial class Island
     {
         class RunItem

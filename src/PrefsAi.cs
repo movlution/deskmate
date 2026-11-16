@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Settings › AI: text and speech services
     partial class Island
@@ -16,7 +16,7 @@ namespace Tepi
                 var all = new List<AiProvider>(Ai.Providers);
                 var names = all.ConvertAll(Ai.Label).ToArray();
                 cap(Lang.T("Teks"));
-                add(Row(Lang.T("Layanan teks"), Lang.T("Ringkasan rapat, Suruh Tepi, dan perbaiki teks terpilih"),
+                add(Row(Lang.T("Layanan teks"), Lang.T("Ringkasan rapat, Suruh Deskmate, dan perbaiki teks terpilih"),
                     Popup(names, all.IndexOf(text), i => { settings.Set("ai.text", all[i].Id); settings.Save(); Rebuild(); })));
                 ServiceRows(add, text, true);
 
@@ -29,7 +29,7 @@ namespace Tepi
                 string sttId = Ai.SttId;
                 var sp = Ai.Stt;
                 string sttNote = sttId == Ai.Offline ? Lang.T("Offline: rekaman tidak keluar dari laptop ini")
-                    : Lang.F("{0}: rekaman dikirim ke {0}, tidak disimpan Tepi", sp != null ? Ai.Label(sp) : "?");
+                    : Lang.F("{0}: rekaman dikirim ke {0}, tidak disimpan Deskmate", sp != null ? Ai.Label(sp) : "?");
                 add(Row(Lang.T("Mesin suara"), sttNote, Popup(stt.ToArray(), Math.Max(0, sttIds.IndexOf(sttId)), i =>
                 {
                     settings.Set("ai.stt", sttIds[i]);
@@ -44,6 +44,7 @@ namespace Tepi
                 OfflineRows(add, sttId != Ai.Offline);
 
                 cap(Lang.T("Privasi"));
+                add(Row(Lang.T("Suruh Deskmate"), Lang.T("Data Deskmate yang relevan dengan pertanyaan dapat dikirim ke layanan teks pilihanmu"), null));
                 add(Row(Lang.T("Yang dikirim"), Lang.T("Hanya teks dan rekaman yang kamu minta diproses, langsung ke layanan pilihanmu"), null));
             }
 
@@ -141,7 +142,7 @@ namespace Tepi
                 {
                     string v = f.Box.Text.Trim();
                     // Plain http only for this laptop
-                    if (v.Length > 0 && !v.StartsWith("https://") && !v.StartsWith("http://localhost") && !v.StartsWith("http://127.0.0.1")) { Say(row, Lang.T("Pakai https, atau http untuk localhost")); return; }
+                    if (v.Length > 0 && !Ai.ValidCustomUrl(v)) { Say(row, Lang.T("Pakai https, atau http untuk localhost")); return; }
                     if (v == settings.Get("ai.custom.url", "")) return;
                     settings.Set("ai.custom.url", v);
                     settings.Save();
@@ -157,7 +158,7 @@ namespace Tepi
             {
                 var f = new KitField(Ui, false, cue, 120);
                 f.Box.Text = settings.Get(key, "");
-                var row = Row(title, Lang.T("Kosong: pilihan Tepi"), f);
+                var row = Row(title, Lang.T("Kosong: pilihan Deskmate"), f);
                 row.Glyph = '\uE8F1';
                 Action save = delegate
                 {

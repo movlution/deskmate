@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Suggestions go to a Google Form
     static class Feedback
@@ -96,7 +96,7 @@ namespace Tepi
                 t.LostFocus += delegate { Invalidate(); };
                 t.TextChanged += delegate { send.Enabled = text.Text.Trim().Length >= 3; };
             }
-            system.AccessibleName = Lang.T("Sertakan versi Tepi dan Windows");
+            system.AccessibleName = Lang.T("Sertakan versi Deskmate dan Windows");
             systemLabel.UseMnemonic = note.UseMnemonic = false;
             systemLabel.AutoSize = false;
             note.AutoSize = false;
@@ -142,13 +142,13 @@ namespace Tepi
             Native.SetCue(contact.Handle, Lang.T("Kontak untuk dibalas (opsional): email atau Instagram"));
             system.Size = new Size(u(46), u(26));
             system.Location = new Point(m + inner - system.Width, (int)contactWell.Bottom + u(14));
-            systemLabel.Text = Lang.T("Sertakan versi Tepi dan Windows");
+            systemLabel.Text = Lang.T("Sertakan versi Deskmate dan Windows");
             systemLabel.Font = UiFont(12.5f);
             systemLabel.SetBounds(m + u(2), system.Top, inner - system.Width - u(12), system.Height);
             systemLabel.TextAlign = ContentAlignment.MiddleLeft;
             note.Font = UiFont(12f);
             note.SetBounds(m + u(2), system.Bottom + u(8), inner, u(36));
-            if (note.Text.Length == 0) note.Text = Lang.T("Dikirim ke Google Form pembuat Tepi. Tanpa nama, tanpa isi layar.");
+            if (note.Text.Length == 0) note.Text = Lang.T("Dikirim ke Google Form pembuat Deskmate. Tanpa nama, tanpa isi layar.");
             foreach (var l in new[] { systemLabel, note }) { l.BackColor = KitInk.Window; l.ForeColor = l == note ? KitInk.Sub : KitInk.Text; }
             foreach (var t in new TextBox[] { text, contact }) { t.BackColor = KitInk.Group; t.ForeColor = KitInk.Text; }
             int btnH = u(30), by = note.Bottom + u(12);

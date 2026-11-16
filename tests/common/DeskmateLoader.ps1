@@ -1,4 +1,4 @@
-# TepiLoader.ps1
+# DeskmateLoader.ps1
 # Assembly Reflection, Architecture Validation, and Offscreen Control Helpers
 # Zero external dependencies.
 
@@ -7,92 +7,103 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 
 # 1. Architecture Validation
-function Assert-TepiArchitecture {
+function Assert-DeskmateArchitecture {
     if ([IntPtr]::Size -ne 8) {
-        throw "Tepi E2E Test Runner requires 64-bit PowerShell ([IntPtr]::Size == 8). You are currently running in a 32-bit (x86) process. Please launch 64-bit PowerShell (e.g. C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe)."
+        throw "Deskmate E2E Test Runner requires 64-bit PowerShell ([IntPtr]::Size == 8). You are currently running in a 32-bit (x86) process. Please launch 64-bit PowerShell (e.g. C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe)."
     }
 }
 
 # Run architecture assertion immediately upon dot-sourcing
-Assert-TepiArchitecture
+Assert-DeskmateArchitecture
 
 # 2. Assembly Loading & Caching
-if ($null -eq $global:TepiAssembly) {
-    $global:TepiAssembly = $null
-    $global:TepiAssemblyPath = ""
+if ($null -eq $global:DeskmateAssembly) {
+    $global:DeskmateAssembly = $null
+    $global:DeskmateAssemblyPath = ""
 }
 
-function Find-TepiBinary {
+function Find-DeskmateBinary {
     param([string]$ExplicitPath = "")
 
-    if ($ExplicitPath -and (Test-Path $ExplicitPath)) {
-        return (Resolve-Path $ExplicitPath).Path
+    $requested = if ($ExplicitPath) { $ExplicitPath } else { $env:DESKMATE_TEST_BINARY }
+    if ($requested) {
+        if (-not (Test-Path -LiteralPath $requested -PathType Leaf)) {
+            throw "Test binary not found: $requested"
+        }
+        $resolved = (Resolve-Path -LiteralPath $requested).Path
+        if ([IO.Path]::GetExtension($resolved) -ine ".exe") {
+            throw "Test binary must be an .exe file: $resolved"
+        }
+        return $resolved
     }
 
+    $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
     $candidateLocations = @(
-        (Join-Path $PSScriptRoot "..\..\Tepi.exe"),
-        (Join-Path (Get-Location) "Tepi.exe"),
-        "d:\PROJECT\Other\tepi\Tepi.exe"
+        (Join-Path $projectRoot "Deskmate.exe"),
+        (Join-Path (Get-Location) "Deskmate.exe")
     )
 
     foreach ($loc in $candidateLocations) {
-        if (Test-Path $loc) {
-            return (Resolve-Path $loc).Path
+        if (Test-Path -LiteralPath $loc -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $loc).Path
         }
     }
 
     return $null
 }
 
-function Initialize-TepiLoader {
+function Initialize-DeskmateLoader {
     param(
         [string]$Path = "",
         [switch]$ForceReload
     )
 
-    if ($global:TepiAssembly -and (-not $ForceReload)) {
-        return $global:TepiAssembly
+    $binPath = Find-DeskmateBinary $Path
+    if (-not $binPath) {
+        throw "Deskmate.exe not found. Please run 'build.cmd' at the project root to compile Deskmate.exe before running tests."
     }
 
-    $binPath = Find-TepiBinary $Path
-    if (-not $binPath) {
-        throw "Tepi.exe not found. Please run 'build.cmd' at the project root to compile Tepi.exe before running tests."
+    if ($global:DeskmateAssembly -and (-not $ForceReload)) {
+        if ([IO.Path]::GetFullPath($global:DeskmateAssemblyPath) -ne [IO.Path]::GetFullPath($binPath)) {
+            throw "A different Deskmate assembly is already loaded. Run each binary in a fresh PowerShell process."
+        }
+        return $global:DeskmateAssembly
     }
 
     # Load assembly bytes or direct assembly via LoadFrom
-    $global:TepiAssemblyPath = $binPath
-    $global:TepiAssembly = [System.Reflection.Assembly]::LoadFrom($binPath)
-    return $global:TepiAssembly
+    $global:DeskmateAssemblyPath = $binPath
+    $global:DeskmateAssembly = [System.Reflection.Assembly]::LoadFrom($binPath)
+    return $global:DeskmateAssembly
 }
 
-# Auto-initialize loader if Tepi.exe exists
+# Auto-initialize loader if Deskmate.exe exists
 try {
-    [void](Initialize-TepiLoader)
+    [void](Initialize-DeskmateLoader)
 } catch {
     # If binary doesn't exist yet, defer until explicit initialization or rebuild
 }
 
 # 3. Reflection Helpers
 
-function Get-TepiType {
+function Get-DeskmateType {
     param([Parameter(Mandatory = $true)][string]$TypeName)
 
-    if (-not $global:TepiAssembly) {
-        [void](Initialize-TepiLoader)
+    if (-not $global:DeskmateAssembly) {
+        [void](Initialize-DeskmateLoader)
     }
 
     # Check exact name
-    $t = $global:TepiAssembly.GetType($TypeName)
+    $t = $global:DeskmateAssembly.GetType($TypeName)
     if ($t) { return $t }
 
-    # Check prefixed with Tepi.
-    $t = $global:TepiAssembly.GetType("Tepi.$TypeName")
+    # Check prefixed with Deskmate.
+    $t = $global:DeskmateAssembly.GetType("Deskmate.$TypeName")
     if ($t) { return $t }
 
     # Check case-insensitive / partial match among all loaded types
-    $all = $global:TepiAssembly.GetTypes()
+    $all = $global:DeskmateAssembly.GetTypes()
     foreach ($candidate in $all) {
-        if ($candidate.Name -ieq $TypeName -or $candidate.FullName -ieq $TypeName -or $candidate.FullName -ieq "Tepi.$TypeName") {
+        if ($candidate.Name -ieq $TypeName -or $candidate.FullName -ieq $TypeName -or $candidate.FullName -ieq "Deskmate.$TypeName") {
             return $candidate
         }
     }
@@ -107,16 +118,16 @@ function Get-TepiType {
     return $null
 }
 
-function Invoke-TepiStaticMethod {
+function Invoke-DeskmateStaticMethod {
     param(
         [Parameter(Mandatory = $true)][string]$TypeName,
         [Parameter(Mandatory = $true)][string]$MethodName,
         [object[]]$Parameters = @()
     )
 
-    $t = Get-TepiType $TypeName
+    $t = Get-DeskmateType $TypeName
     if (-not $t) {
-        throw "Invoke-TepiStaticMethod: Type [$TypeName] not found in Tepi assembly."
+        throw "Invoke-DeskmateStaticMethod: Type [$TypeName] not found in Deskmate assembly."
     }
 
     $flags = [System.Reflection.BindingFlags]'Public,NonPublic,Static'
@@ -137,75 +148,75 @@ function Invoke-TepiStaticMethod {
     }
 
     if (-not $m) {
-        throw "Invoke-TepiStaticMethod: Method [$MethodName] with $($Parameters.Length) parameters not found on type [$($t.FullName)]."
+        throw "Invoke-DeskmateStaticMethod: Method [$MethodName] with $($Parameters.Length) parameters not found on type [$($t.FullName)]."
     }
 
     return $m.Invoke($null, $Parameters)
 }
 
-function Get-TepiStaticField {
+function Get-DeskmateStaticField {
     param(
         [Parameter(Mandatory = $true)][string]$TypeName,
         [Parameter(Mandatory = $true)][string]$FieldName
     )
 
-    $t = Get-TepiType $TypeName
+    $t = Get-DeskmateType $TypeName
     if (-not $t) {
-        throw "Get-TepiStaticField: Type [$TypeName] not found in Tepi assembly."
+        throw "Get-DeskmateStaticField: Type [$TypeName] not found in Deskmate assembly."
     }
 
     $flags = [System.Reflection.BindingFlags]'Public,NonPublic,Static'
     $f = $t.GetField($FieldName, $flags)
     if (-not $f) {
-        throw "Get-TepiStaticField: Field [$FieldName] not found on type [$($t.FullName)]."
+        throw "Get-DeskmateStaticField: Field [$FieldName] not found on type [$($t.FullName)]."
     }
 
     return $f.GetValue($null)
 }
 
-function Set-TepiStaticField {
+function Set-DeskmateStaticField {
     param(
         [Parameter(Mandatory = $true)][string]$TypeName,
         [Parameter(Mandatory = $true)][string]$FieldName,
         $Value
     )
 
-    $t = Get-TepiType $TypeName
+    $t = Get-DeskmateType $TypeName
     if (-not $t) {
-        throw "Set-TepiStaticField: Type [$TypeName] not found in Tepi assembly."
+        throw "Set-DeskmateStaticField: Type [$TypeName] not found in Deskmate assembly."
     }
 
     $flags = [System.Reflection.BindingFlags]'Public,NonPublic,Static'
     $f = $t.GetField($FieldName, $flags)
     if (-not $f) {
-        throw "Set-TepiStaticField: Field [$FieldName] not found on type [$($t.FullName)]."
+        throw "Set-DeskmateStaticField: Field [$FieldName] not found on type [$($t.FullName)]."
     }
 
     $f.SetValue($null, $Value)
 }
 
-function Get-TepiStaticProperty {
+function Get-DeskmateStaticProperty {
     param(
         [Parameter(Mandatory = $true)][string]$TypeName,
         [Parameter(Mandatory = $true)][string]$PropertyName
     )
 
-    $t = Get-TepiType $TypeName
+    $t = Get-DeskmateType $TypeName
     if (-not $t) {
-        throw "Get-TepiStaticProperty: Type [$TypeName] not found in Tepi assembly."
+        throw "Get-DeskmateStaticProperty: Type [$TypeName] not found in Deskmate assembly."
     }
 
     $flags = [System.Reflection.BindingFlags]'Public,NonPublic,Static'
     $p = $t.GetProperty($PropertyName, $flags)
     if (-not $p) {
-        throw "Get-TepiStaticProperty: Property [$PropertyName] not found on type [$($t.FullName)]."
+        throw "Get-DeskmateStaticProperty: Property [$PropertyName] not found on type [$($t.FullName)]."
     }
 
     return $p.GetValue($null, $null)
 }
 
-# 4. WCAG Reference Calculator via Tepi.Island.Contrast
-function Get-TepiContrast {
+# 4. WCAG Reference Calculator via Deskmate.Island.Contrast
+function Get-DeskmateContrast {
     param(
         [Parameter(Mandatory = $true)]$ColorA,
         [Parameter(Mandatory = $true)]$ColorB
@@ -224,22 +235,22 @@ function Get-TepiContrast {
     $ca = & $toColor $ColorA
     $cb = & $toColor $ColorB
 
-    $res = Invoke-TepiStaticMethod "Island" "Contrast" @($ca, $cb)
+    $res = Invoke-DeskmateStaticMethod "Island" "Contrast" @($ca, $cb)
     return [Math]::Round([double]$res, 2)
 }
 
 # 5. Deterministic State Reset
-function Reset-TepiTheme {
+function Reset-DeskmateTheme {
     param([bool]$Light = $false)
 
     try {
-        $inkType = Get-TepiType "Ink"
+        $inkType = Get-DeskmateType "Ink"
         if ($inkType) {
-            Invoke-TepiStaticMethod "Ink" "Init" @()
-            Invoke-TepiStaticMethod "Ink" "SetPack" @($null)
-            Invoke-TepiStaticMethod "Ink" "SetAccent" @([string]$null)
-            Set-TepiStaticField "Ink" "VeilTint" $null
-            Invoke-TepiStaticMethod "Ink" "Apply" @($Light)
+            Invoke-DeskmateStaticMethod "Ink" "Init" @()
+            Invoke-DeskmateStaticMethod "Ink" "SetPack" @($null)
+            Invoke-DeskmateStaticMethod "Ink" "SetAccent" @([string]$null)
+            Set-DeskmateStaticField "Ink" "VeilTint" $null
+            Invoke-DeskmateStaticMethod "Ink" "Apply" @($Light)
         }
     }
     catch {
@@ -248,7 +259,7 @@ function Reset-TepiTheme {
 }
 
 # 6. Headless Offscreen Rendering Helper
-function Render-TepiControlToBitmap {
+function Render-DeskmateControlToBitmap {
     param(
         [Parameter(Mandatory = $true)]
         [System.Windows.Forms.Control]$Control,
@@ -263,15 +274,15 @@ function Render-TepiControlToBitmap {
     return $bmp
 }
 
-function New-TepiControl {
+function New-DeskmateControl {
     param(
         [Parameter(Mandatory = $true)][string]$TypeName,
         [hashtable]$Properties = @{}
     )
 
-    $t = Get-TepiType $TypeName
+    $t = Get-DeskmateType $TypeName
     if (-not $t) {
-        throw "New-TepiControl: Control type [$TypeName] not found in Tepi assembly."
+        throw "New-DeskmateControl: Control type [$TypeName] not found in Deskmate assembly."
     }
 
     $instance = [Activator]::CreateInstance($t)

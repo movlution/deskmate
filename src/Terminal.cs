@@ -5,7 +5,7 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
     // Window hosting an agent, found from its hook connection
     static class TerminalFinder
@@ -108,7 +108,7 @@ namespace Tepi
 
         delegate bool CtrlHandler(int type);
         [DllImport("kernel32.dll")] static extern bool SetConsoleCtrlHandler(CtrlHandler handler, bool add);
-        // Borrowed console's Ctrl+C must not kill Tepi
+        // Borrowed console's Ctrl+C must not kill Deskmate
         static readonly CtrlHandler ignoreCtrl = delegate (int type) { return type == 0 || type == 1; };
         static bool ctrlGuarded;
 

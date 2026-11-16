@@ -10,7 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Tepi
+namespace Deskmate
 {
     class SpeechSegment
     {
@@ -68,7 +68,7 @@ namespace Tepi
 
         static WebResult Multipart(string url, Dictionary<string, string> headers, List<KeyValuePair<string, string>> fields, byte[] wav, int timeoutMs)
         {
-            string boundary = "tepi" + Guid.NewGuid().ToString("N");
+            string boundary = "deskmate" + Guid.NewGuid().ToString("N");
             var body = new MemoryStream();
             Action<string> put = s => { var b = Encoding.UTF8.GetBytes(s); body.Write(b, 0, b.Length); };
             foreach (var f in fields) put("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + f.Key + "\"\r\n\r\n" + f.Value + "\r\n");
@@ -79,7 +79,7 @@ namespace Tepi
             var req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "POST";
             req.Timeout = req.ReadWriteTimeout = timeoutMs;
-            req.UserAgent = "Tepi/" + Island.AppVersion + " (+https://github.com/odlaver/tepi)";
+            req.UserAgent = "Deskmate/" + Island.AppVersion + " (+https://github.com/movlution/deskmate)";
             foreach (var h in headers) req.Headers[h.Key] = h.Value;
             req.ContentType = "multipart/form-data; boundary=" + boundary;
             try
@@ -195,7 +195,7 @@ namespace Tepi
                 var req = (HttpWebRequest)WebRequest.Create(url);
                 req.Timeout = 30000;
                 req.ReadWriteTimeout = 60000;
-                req.UserAgent = "Tepi/" + Island.AppVersion + " (+https://github.com/odlaver/tepi)";
+                req.UserAgent = "Deskmate/" + Island.AppVersion + " (+https://github.com/movlution/deskmate)";
                 using (var resp = (HttpWebResponse)req.GetResponse())
                 using (var input = resp.GetResponseStream())
                 using (var output = File.Create(part))
@@ -238,7 +238,7 @@ namespace Tepi
         {
             var res = new SpeechResult();
             if (!LocalReady(m)) { res.Error = Lang.T("Model offline belum diunduh"); return res; }
-            string tmp = Path.Combine(Path.GetTempPath(), "tepi-dikte-" + Guid.NewGuid().ToString("N") + ".wav");
+            string tmp = Path.Combine(Path.GetTempPath(), "deskmate-dikte-" + Guid.NewGuid().ToString("N") + ".wav");
             try
             {
                 File.WriteAllBytes(tmp, wav);

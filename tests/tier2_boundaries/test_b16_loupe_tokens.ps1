@@ -4,16 +4,16 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Tier 2 Boundary Suite: Feature 16 - ColorPicker Loupe & Pixel Boundaries" {
 
     BeforeEach {
-        Reset-TepiTheme -Light $false
+        Reset-DeskmateTheme -Light $false
     }
 
     It "Resolves PickerOverlay+Loupe type and creates instance offscreen" {
-        $loupeType = Get-TepiType "PickerOverlay+Loupe"
+        $loupeType = Get-DeskmateType "PickerOverlay+Loupe"
         Assert-NotNull $loupeType "PickerOverlay+Loupe type must be resolvable"
 
         $loupe = [Activator]::CreateInstance($loupeType)
@@ -25,7 +25,7 @@ Describe "Tier 2 Boundary Suite: Feature 16 - ColorPicker Loupe & Pixel Boundari
     }
 
     It "Renders Loupe offscreen when sampling pure black #000000 pixel" {
-        $loupeType = Get-TepiType "PickerOverlay+Loupe"
+        $loupeType = Get-DeskmateType "PickerOverlay+Loupe"
         $loupe = [Activator]::CreateInstance($loupeType)
 
         $sampleBmp = New-Object System.Drawing.Bitmap 11, 11
@@ -41,7 +41,7 @@ Describe "Tier 2 Boundary Suite: Feature 16 - ColorPicker Loupe & Pixel Boundari
         $p[3] = 8
         $showMethod.Invoke($loupe, $p)
 
-        $renderBmp = Render-TepiControlToBitmap $loupe $loupe.Width $loupe.Height
+        $renderBmp = Render-DeskmateControlToBitmap $loupe $loupe.Width $loupe.Height
         Assert-NotNull $renderBmp "Rendered loupe bitmap for pure black sample"
 
         $renderBmp.Dispose()
@@ -50,7 +50,7 @@ Describe "Tier 2 Boundary Suite: Feature 16 - ColorPicker Loupe & Pixel Boundari
     }
 
     It "Renders Loupe offscreen when sampling pure white #FFFFFF pixel" {
-        $loupeType = Get-TepiType "PickerOverlay+Loupe"
+        $loupeType = Get-DeskmateType "PickerOverlay+Loupe"
         $loupe = [Activator]::CreateInstance($loupeType)
 
         $sampleBmp = New-Object System.Drawing.Bitmap 11, 11
@@ -66,7 +66,7 @@ Describe "Tier 2 Boundary Suite: Feature 16 - ColorPicker Loupe & Pixel Boundari
         $p[3] = 8
         $showMethod.Invoke($loupe, $p)
 
-        $renderBmp = Render-TepiControlToBitmap $loupe $loupe.Width $loupe.Height
+        $renderBmp = Render-DeskmateControlToBitmap $loupe $loupe.Width $loupe.Height
         Assert-NotNull $renderBmp "Rendered loupe bitmap for pure white sample"
 
         $renderBmp.Dispose()
@@ -75,7 +75,7 @@ Describe "Tier 2 Boundary Suite: Feature 16 - ColorPicker Loupe & Pixel Boundari
     }
 
     It "Handles screen edge and extreme negative coordinate boundaries safely" {
-        $loupeType = Get-TepiType "PickerOverlay+Loupe"
+        $loupeType = Get-DeskmateType "PickerOverlay+Loupe"
         $loupe = [Activator]::CreateInstance($loupeType)
         $sampleBmp = New-Object System.Drawing.Bitmap 11, 11
         $showMethod = $loupeType.GetMethods() | Where-Object { $_.Name -eq 'Show' -and $_.GetParameters().Length -eq 4 } | Select-Object -First 1
@@ -110,7 +110,7 @@ Describe "Tier 2 Boundary Suite: Feature 16 - ColorPicker Loupe & Pixel Boundari
         )
 
         foreach ($tc in $testColors) {
-            $hex = Invoke-TepiStaticMethod "Island" "HexOf" @($tc.C)
+            $hex = Invoke-DeskmateStaticMethod "Island" "HexOf" @($tc.C)
             Assert-Equal $hex.ToUpperInvariant() $tc.Expected "HexOf for $($tc.C) must equal $($tc.Expected)"
         }
     }

@@ -4,7 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     // Mic or loopback to 16 kHz PCM
     sealed class Recorder : IDisposable

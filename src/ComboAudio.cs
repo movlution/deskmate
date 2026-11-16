@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     [ComImport, Guid("F294ACFC-3146-4483-A7BF-ADDCA7C260E2"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     interface IAudioRenderClient
@@ -267,7 +267,7 @@ namespace Tepi
                 var t = new Thread(delegate () { MixerLoop(stopEv); })
                 {
                     IsBackground = true,
-                    Name = "TepiComboAudio",
+                    Name = "DeskmateComboAudio",
                     Priority = ThreadPriority.Highest
                 };
                 t.SetApartmentState(ApartmentState.MTA);

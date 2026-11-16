@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     // Open-Meteo, for the prayer city
     partial class Island

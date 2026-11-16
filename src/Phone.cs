@@ -8,7 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
-namespace Tepi
+namespace Deskmate
 {
     // Phone link: opt-in LAN server, paired by a typed code
     class PhoneLink

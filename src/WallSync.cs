@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading;
 using Microsoft.Win32;
 
-namespace Tepi
+namespace Deskmate
 {
     // wall.sync: glass veil and accent follow the desktop wallpaper; blur stays
     partial class Island
@@ -144,7 +144,7 @@ namespace Tepi
             if (!veilChanged && !accentChanged) return;
             Ink.Epoch++;
             ResetFrost();
-            if (dockWin != null) dockWin.Changed();
+            RefreshDocks();
             if (prefs != null && !prefs.IsDisposed) prefs.Relayout();
             Kick();
         }

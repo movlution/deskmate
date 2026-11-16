@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $commonDir = Join-Path $PSScriptRoot "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
@@ -16,21 +16,21 @@ Write-Host "==========================================================" -Foregro
 Write-Host "  CHALLENGER 2: EMPIRICAL ADVERSARIAL STRESS HARNESS (M3)  " -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# Ensure Tepi.exe is loaded
-$binPath = Find-TepiBinary
+# Ensure Deskmate.exe is loaded
+$binPath = Find-DeskmateBinary
 if (-not $binPath) {
-    throw "Tepi.exe not found! Please build before running tests."
+    throw "Deskmate.exe not found! Please build before running tests."
 }
-Initialize-TepiLoader | Out-Null
+Initialize-DeskmateLoader | Out-Null
 
-$inkType = Get-TepiType "Ink"
-if (-not $inkType) { throw "Could not resolve Tepi.Ink type" }
+$inkType = Get-DeskmateType "Ink"
+if (-not $inkType) { throw "Could not resolve Deskmate.Ink type" }
 
 # Extract typography tokens via reflection
-$fontCaption = [System.Drawing.Font](Get-TepiStaticProperty "Ink" "Caption")
-$fontHeadline = [System.Drawing.Font](Get-TepiStaticProperty "Ink" "Headline")
-$fontCallout = [System.Drawing.Font](Get-TepiStaticProperty "Ink" "Callout")
-$fontBody = [System.Drawing.Font](Get-TepiStaticProperty "Ink" "Body")
+$fontCaption = [System.Drawing.Font](Get-DeskmateStaticProperty "Ink" "Caption")
+$fontHeadline = [System.Drawing.Font](Get-DeskmateStaticProperty "Ink" "Headline")
+$fontCallout = [System.Drawing.Font](Get-DeskmateStaticProperty "Ink" "Callout")
+$fontBody = [System.Drawing.Font](Get-DeskmateStaticProperty "Ink" "Body")
 
 Assert-NotNull $fontCaption "Ink.Caption must resolve"
 Assert-NotNull $fontHeadline "Ink.Headline must resolve"
@@ -146,7 +146,7 @@ Describe "1. Toast Notification Meta Text Collision Stress Harness" {
             @{ Name = "Case 1: 1 character app name ('X')"; App = "X"; Burst = 1; Width = 360.0; Title = "Notifikasi Baru" },
             @{ Name = "Case 2: 50 characters app name"; App = "Enterprise Unified Communications & Telephony Hub"; Burst = 1; Width = 360.0; Title = "Panggilan Masuk dari Direktur" },
             @{ Name = "Case 3: 200 characters app name"; App = ("EnterpriseSuperAppLongIdentifier" * 7).Substring(0, 200); Burst = 1; Width = 360.0; Title = "Pembaruan Keamanan Sistem" },
-            @{ Name = "Case 4: Massive burst count ('9999 pesan · WhatsApp')"; App = "WhatsApp"; Burst = 9999; Width = 360.0; Title = "Grup Koordinasi Proyek Tepi" },
+            @{ Name = "Case 4: Massive burst count ('9999 pesan · WhatsApp')"; App = "WhatsApp"; Burst = 9999; Width = 360.0; Title = "Grup Koordinasi Proyek Deskmate" },
             @{ Name = "Case 5A: Short narrow island width (w = 240px)"; App = "WhatsApp"; Burst = 9999; Width = 240.0; Title = "Pesan Penting" },
             @{ Name = "Case 5B: Standard island width (w = 360px)"; App = "WhatsApp"; Burst = 9999; Width = 360.0; Title = "Pesan Penting" }
         )
@@ -321,12 +321,12 @@ Describe "2. Parts.EmptyState Unification & Geometry Stress Harness" {
             @{ Source = "Panel.cs:317"; Icon = "IcoCalendar"; Title = "Tidak ada tugas aktif"; Detail = "Diperbarui tiap 15 menit" },
             @{ Source = "Panel.cs:398"; Icon = "IcoBell"; Title = "Notifikasi pesan dimatikan"; Detail = "Saklarnya ada di menu klik kanan" },
             @{ Source = "Panel.cs:403"; Icon = "IcoLock"; Title = "Akses notifikasi ditolak"; Detail = "Pengaturan Windows > Privasi > Notifikasi" },
-            @{ Source = "Panel.cs:414"; Icon = "IcoBell"; Title = "Pesan tidak bisa dibaca"; Detail = "Notifikasi Windows tidak menjawab. Tepi mencoba lagi otomatis." },
+            @{ Source = "Panel.cs:414"; Icon = "IcoBell"; Title = "Pesan tidak bisa dibaca"; Detail = "Notifikasi Windows tidak menjawab. Deskmate mencoba lagi otomatis." },
             @{ Source = "Panel.cs:417"; Icon = "IcoBell"; Title = "Belum ada pesan"; Detail = "WhatsApp, Telegram, Discord, Teams, email" },
             @{ Source = "Shelf.cs:248"; Icon = "Rack"; Title = "Rak mati"; Detail = "Berkas yang diseret ke island tidak ditahan" },
             @{ Source = "Shelf.cs:255"; Icon = "Rack"; Title = "Rak kosong"; Detail = "Seret berkas ke island, atau pilih dari folder" },
             @{ Source = "Shelf.cs:261"; Icon = "Rack"; Title = "Rak kosong"; Detail = "Seret berkas ke island, atau pilih dari folder" },
-            @{ Source = "Clips.cs:118"; Icon = "Clip"; Title = "Riwayat clipboard mati"; Detail = "Teks yang disalin hanya disimpan di memori dan hilang saat Tepi ditutup" },
+            @{ Source = "Clips.cs:118"; Icon = "Clip"; Title = "Riwayat clipboard mati"; Detail = "Teks yang disalin hanya disimpan di memori dan hilang saat Deskmate ditutup" },
             @{ Source = "Clips.cs:123"; Icon = "Clip"; Title = "Belum ada yang disalin"; Detail = "Teks yang kamu salin muncul di sini" },
             @{ Source = "ConvertPage.cs:112"; Icon = "Convert"; Title = "Ubah format mati"; Detail = "Berkas yang diseret ke island hanya bisa ditaruh di rak" },
             @{ Source = "Schedule.cs:93"; Icon = "IcoCalendar"; Title = "Jadwal gagal dimuat"; Detail = "Koneksi ke kalender Google terputus. Silakan coba beberapa saat lagi." },
@@ -508,10 +508,10 @@ Describe "2. Parts.EmptyState Unification & Geometry Stress Harness" {
 
 Describe "3. Design Token Audit & Radii Scale Invariants" {
 
-    It "Verifies Design Token constants RadiusShell=32, RadiusModule=20, RadiusControl=12 on Tepi.Ink" {
-        $radiusShell = [float](Get-TepiStaticField "Ink" "RadiusShell")
-        $radiusModule = [float](Get-TepiStaticField "Ink" "RadiusModule")
-        $radiusControl = [float](Get-TepiStaticField "Ink" "RadiusControl")
+    It "Verifies Design Token constants RadiusShell=32, RadiusModule=20, RadiusControl=12 on Deskmate.Ink" {
+        $radiusShell = [float](Get-DeskmateStaticField "Ink" "RadiusShell")
+        $radiusModule = [float](Get-DeskmateStaticField "Ink" "RadiusModule")
+        $radiusControl = [float](Get-DeskmateStaticField "Ink" "RadiusControl")
 
         Assert-Equal $radiusShell 32.0 "Ink.RadiusShell must be exactly 32.0px"
         Assert-Equal $radiusModule 20.0 "Ink.RadiusModule must be exactly 20.0px"
@@ -540,7 +540,7 @@ Describe "3. Design Token Audit & Radii Scale Invariants" {
     }
 
     It "Verifies ViewRadius mathematical oracle across all 24 View enum variants and size envelopes" {
-        $viewType = Get-TepiType "View"
+        $viewType = Get-DeskmateType "View"
         Assert-NotNull $viewType "View enum type must resolve"
 
         $viewNames = [Enum]::GetNames($viewType)

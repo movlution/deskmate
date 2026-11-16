@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     class KuliaTask
     {
@@ -30,7 +30,7 @@ namespace Tepi
 
     class ClassSlot
     {
-        public string Title = "", Room = "", Kind = "", Url = "";
+        public string Id = "", Title = "", Room = "", Kind = "", Url = "";
         public bool Online, Personal, Cancelled, Exam, AllDay;
         public string Source = "kulia";
         public DateTime Start, End;

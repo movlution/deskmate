@@ -8,13 +8,13 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
-    // One message in the Suruh Tepi chat
+    // One message in the Suruh Deskmate chat
     class ChatMsg
     {
-        // "me" or "tepi"
-        public string Who = "tepi";
+        // "me" or "deskmate"
+        public string Who = "deskmate";
         public string Text = "";
         public DateTime Utc = DateTime.UtcNow;
         public readonly List<ChatAct> Acts = new List<ChatAct>();
@@ -23,7 +23,7 @@ namespace Tepi
         public bool Mine { get { return Who == "me"; } }
     }
 
-    // Something Tepi did, shown as a chip
+    // Something Deskmate did, shown as a chip
     class ChatAct
     {
         public char Glyph;
@@ -33,7 +33,7 @@ namespace Tepi
         public bool Undone;
     }
 
-    // Suruh Tepi as a chat: kept on disk, shown in its own window
+    // Suruh Deskmate as a chat: kept on disk, shown in its own window
     partial class Island
     {
         const int ChatKeep = 200, ChatContext = 16;
@@ -82,7 +82,7 @@ namespace Tepi
                 {
                     DateTime utc;
                     if (!DateTime.TryParse(Json.Str(o, "utc"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out utc)) utc = DateTime.UtcNow;
-                    var m = new ChatMsg { Who = Json.Str(o, "who") == "me" ? "me" : "tepi", Text = Json.Str(o, "text"), Utc = utc.ToUniversalTime() };
+                    var m = new ChatMsg { Who = Json.Str(o, "who") == "me" ? "me" : "deskmate", Text = Json.Str(o, "text"), Utc = utc.ToUniversalTime() };
                     string fix = Json.Str(o, "fix");
                     if (fix.Length > 0) m.Fix = fix;
                     foreach (var a in Json.Arr(o, "acts"))
@@ -182,7 +182,7 @@ namespace Tepi
             return turns;
         }
 
-        // Tepi's turn for the AI: words, then what it did
+        // Deskmate's turn for the AI: words, then what it did
         static string Recap(ChatMsg m)
         {
             var sb = new StringBuilder(m.Text);
@@ -262,7 +262,7 @@ namespace Tepi
             return new Point(Math.Max(area.X, Math.Min(area.Right - size.Width, x)), Math.Max(area.Y, Math.Min(area.Bottom - size.Height, y)));
         }
 
-        // Tepi's face: a dark disc, two eyes
+        // Deskmate's face: a dark disc, two eyes
         static void DrawFace(Graphics g, RectangleF r, float look)
         {
             using (var b = new SolidBrush(Color.FromArgb(255, 18, 18, 20))) g.FillEllipse(b, r);
@@ -287,8 +287,8 @@ namespace Tepi
             return p;
         }
 
-        // Tepi's bubbles: a step off the window
-        static Color TepiFill { get { return Ink.Light ? KitInk.Hover : Ink.Mix(KitInk.Group, KitInk.Line, 0.4f); } }
+        // Deskmate's bubbles: a step off the window
+        static Color DeskmateFill { get { return Ink.Light ? KitInk.Hover : Ink.Mix(KitInk.Group, KitInk.Line, 0.4f); } }
 
         // Multi-line box with its own placeholder
         class ChatInput : KitText
@@ -359,7 +359,7 @@ namespace Tepi
             }
         }
 
-        // Suruh Tepi window: header, chat, text box
+        // Suruh Deskmate window: header, chat, text box
         class ChatWindow : KitWindow
         {
             const float HeadDip = 62;
@@ -378,7 +378,7 @@ namespace Tepi
             {
                 this.island = island;
                 list = new ChatList(island, this);
-                Text = Lang.T("Suruh Tepi");
+                Text = Lang.T("Suruh Deskmate");
                 StartPosition = FormStartPosition.Manual;
                 input.Text = island.chatDraft;
                 input.KeyDown += InputKey;
@@ -459,13 +459,13 @@ namespace Tepi
                 float s = Ui;
                 BackColor = KitInk.Window;
                 Native.DarkFrame(Handle, !Ink.Light);
-                Text = Lang.T("Suruh Tepi");
+                Text = Lang.T("Suruh Deskmate");
                 well.BackColor = KitInk.Group;
                 input.Font = Ink.Text(14f * s);
                 input.BackColor = KitInk.Group;
                 input.ForeColor = KitInk.Text;
-                input.Cue = Lang.T("Tanya atau suruh Tepi…");
-                input.AccessibleName = Lang.T("Suruh Tepi");
+                input.Cue = Lang.T("Tanya atau suruh Deskmate…");
+                input.AccessibleName = Lang.T("Suruh Deskmate");
                 send.Font = Ink.Icons(14f * s);
                 send.Text = Ink.Str(IcoSend);
                 send.AccessibleName = Lang.T("Kirim");
@@ -585,7 +585,7 @@ namespace Tepi
                 var face = FaceRect();
                 DrawFace(g, face, island.suruhBusy && !Anim.Reduced ? (float)Math.Sin(Phase * 0.45f) : 0);
                 float tx = face.Right + 10 * s, tw = Math.Max(10, fresh.Left - 10 * s - tx);
-                KitInk.Draw(g, "Tepi", Ink.Semi(14.5f * s), KitInk.Text, new RectangleF(tx, 12 * s, tw, 20 * s), ContentAlignment.MiddleLeft);
+                KitInk.Draw(g, "Deskmate", Ink.Semi(14.5f * s), KitInk.Text, new RectangleF(tx, 12 * s, tw, 20 * s), ContentAlignment.MiddleLeft);
                 KitInk.Draw(g, island.ChatStatus(), Ink.Text(12f * s), KitInk.Sub, new RectangleF(tx, 31 * s, tw, 18 * s), ContentAlignment.MiddleLeft);
                 using (var pen = new Pen(KitInk.Line, 1f)) g.DrawLine(pen, 0, head - 1, ClientSize.Width, head - 1);
             }
@@ -757,7 +757,7 @@ namespace Tepi
                 return x + bw;
             }
 
-            // Empty: a face, what Tepi can do, ideas to try
+            // Empty: a face, what Deskmate can do, ideas to try
             void LayoutEmpty()
             {
                 float s = Ui, w = Width, cx = w / 2;
@@ -767,7 +767,7 @@ namespace Tepi
                 y += 76 * s;
                 titleRect = new RectangleF(16 * s, y, w - 32 * s, 26 * s);
                 y += 32 * s;
-                emptyNote = ai ? Lang.T("Tanya apa saja, atau suruh pasang pengingat, timer, dan catatan.") : Lang.T("Tanpa layanan AI, Tepi paham timer, pengingat, catatan, dan hitungan.");
+                emptyNote = ai ? Lang.T("Tanya apa saja, atau suruh pasang pengingat, timer, dan catatan.") : Lang.T("Tanpa layanan AI, Deskmate paham timer, pengingat, catatan, dan hitungan.");
                 float nw = Math.Min(w - 48 * s, 340 * s);
                 var ns = TextRenderer.MeasureText(emptyNote, ChipFont, new Size((int)nw, int.MaxValue), Wrap | TextFormatFlags.HorizontalCenter);
                 noteRect = new RectangleF(cx - nw / 2, y, nw, ns.Height + 2);
@@ -918,7 +918,7 @@ namespace Tepi
             {
                 float s = Ui;
                 DrawFace(g, On(emptyFace), 0);
-                KitInk.Draw(g, Lang.T("Mau Tepi bantu apa?"), Ink.Semi(17f * s), KitInk.Text, On(titleRect), ContentAlignment.MiddleCenter);
+                KitInk.Draw(g, Lang.T("Mau Deskmate bantu apa?"), Ink.Semi(17f * s), KitInk.Text, On(titleRect), ContentAlignment.MiddleCenter);
                 TextRenderer.DrawText(g, emptyNote, ChipFont, Rectangle.Round(On(noteRect)), KitInk.Sub, Wrap | TextFormatFlags.HorizontalCenter);
             }
 
@@ -935,7 +935,7 @@ namespace Tepi
                     float r = Math.Min(17 * s, b.Height / 2), tail = 6 * s;
                     // The corner nearest the speaker stays sharp
                     using (var path = m.Mine ? Corners(b, r, r, tail, r) : Corners(b, tail, r, r, r))
-                    using (var br = new SolidBrush(m.Mine ? KitInk.Accent : TepiFill)) g.FillPath(br, path);
+                    using (var br = new SolidBrush(m.Mine ? KitInk.Accent : DeskmateFill)) g.FillPath(br, path);
                     float inset = m.Fix != null ? 22 * s : 0;
                     if (m.Fix != null) KitInk.Draw(g, Ink.Str(IcoFail), Ink.Icons(13f * s), KitInk.Sub, new RectangleF(b.X + 11 * s, b.Y, 20 * s, Math.Min(b.Height, 38 * s)), ContentAlignment.MiddleCenter);
                     var tr = new RectangleF(b.X + 14 * s + inset, b.Y + 9 * s, b.Width - 28 * s - inset + 2, b.Height - 18 * s + 2);
@@ -969,7 +969,7 @@ namespace Tepi
             void DrawTyping(Graphics g, RectangleF b)
             {
                 float s = Ui, r = Math.Min(17 * s, b.Height / 2);
-                var fill = TepiFill;
+                var fill = DeskmateFill;
                 using (var path = Corners(b, 6 * s, r, r, r)) using (var br = new SolidBrush(fill)) g.FillPath(br, path);
                 for (int k = 0; k < 3; k++)
                 {
@@ -1261,7 +1261,7 @@ namespace Tepi
                 var parts = new List<string>();
                 if (m.Text.Length > 0) parts.Add(m.Text);
                 foreach (var a in m.Acts) parts.Add(a.Undone ? a.Text + " (" + Lang.T("dibatalkan") + ")" : a.Text);
-                return (m.Mine ? Lang.T("Kamu") : "Tepi") + ": " + string.Join(". ", parts.ToArray());
+                return (m.Mine ? Lang.T("Kamu") : "Deskmate") + ": " + string.Join(". ", parts.ToArray());
             }
 
             int Child(int item)

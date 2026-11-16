@@ -1,20 +1,20 @@
 using System;
 using System.Collections.Generic;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
-        // Settings pages Tepi Start can find, by the words people type
+        // Settings pages Deskmate Start can find, by the words people type
         static class SettingsPages
         {
             const string SettingsApp = "windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel";
-            public const string TepiPrefs = "tepi:prefs";
+            public const string DeskmatePrefs = "deskmate:prefs";
 
             // Name, address, search words (Indonesian and English)
             static readonly string[][] Pages =
             {
-                new[] { "Pengaturan Tepi", TepiPrefs, "tepi island dock pengaturan tepi preferensi" },
+                new[] { "Pengaturan Deskmate", DeskmatePrefs, "deskmate island dock pengaturan deskmate preferensi" },
                 new[] { "Wi-Fi", "ms-settings:network-wifi", "wifi wi-fi jaringan network internet wlan nirkabel wireless" },
                 new[] { "Bluetooth dan perangkat", "ms-settings:bluetooth", "bluetooth perangkat devices headset earbuds tws mouse keyboard pairing sambung" },
                 new[] { "Layar", "ms-settings:display", "layar display monitor resolusi resolution kecerahan brightness skala scale hdr refresh" },
@@ -68,12 +68,12 @@ namespace Tepi
                     // Name first, then a word that starts with it, then anywhere
                     int rank = lower.StartsWith(q, StringComparison.Ordinal) ? 0 : words.Contains(" " + q) ? 1 : lower.Contains(q) || words.Contains(q) ? 2 : -1;
                     if (rank < 0) continue;
-                    bool own = page[1] == TepiPrefs;
+                    bool own = page[1] == DeskmatePrefs;
                     ranked.Add(new KeyValuePair<int, AppEntry>(rank, new AppEntry
                     {
                         Name = name,
                         Uri = page[1],
-                        Sub = own ? "Tepi" : Lang.T("Pengaturan Windows"),
+                        Sub = own ? "Deskmate" : Lang.T("Pengaturan Windows"),
                         Target = own ? System.Windows.Forms.Application.ExecutablePath : ShellApp.AppsFolderOf(SettingsApp),
                     }));
                 }

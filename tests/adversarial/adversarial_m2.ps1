@@ -8,14 +8,14 @@
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
 
-    $inkType = Get-TepiType "Ink"
-    $kitInkType = Get-TepiType "KitInk"
-    $kitWindowType = Get-TepiType "KitWindow"
-    $islandType = Get-TepiType "Island"
+    $inkType = Get-DeskmateType "Ink"
+    $kitInkType = Get-DeskmateType "KitInk"
+    $kitWindowType = Get-DeskmateType "KitWindow"
+    $islandType = Get-DeskmateType "Island"
 
     function Get-Contrast([System.Drawing.Color]$c1, [System.Drawing.Color]$c2) {
         $contrastMethod = $islandType.GetMethod("Contrast", [System.Reflection.BindingFlags]'Public,Static')
@@ -50,18 +50,18 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
 
     It "S1.02: Stress-tests Ink.Base.Negative contrast against KitInk.Window in Light and Dark modes" {
         # Dark mode
-        Reset-TepiTheme -Light $false
-        $baseDark = Get-TepiStaticField "Ink" "Base"
+        Reset-DeskmateTheme -Light $false
+        $baseDark = Get-DeskmateStaticField "Ink" "Base"
         $negDark = $baseDark.Negative
-        $winDark = Get-TepiStaticProperty "KitInk" "Window"
+        $winDark = Get-DeskmateStaticProperty "KitInk" "Window"
         $darkContrast = Get-Contrast $negDark $winDark
         Assert-True ($darkContrast -ge 4.5) "Dark mode Negative contrast against KitInk.Window must be >= 4.5:1 (Got: $darkContrast:1)"
 
         # Light mode
-        Reset-TepiTheme -Light $true
-        $baseLight = Get-TepiStaticField "Ink" "Base"
+        Reset-DeskmateTheme -Light $true
+        $baseLight = Get-DeskmateStaticField "Ink" "Base"
         $negLight = $baseLight.Negative
-        $winLight = Get-TepiStaticProperty "KitInk" "Window"
+        $winLight = Get-DeskmateStaticProperty "KitInk" "Window"
         $lightContrast = Get-Contrast $negLight $winLight
         Assert-True ($lightContrast -ge 4.5) "Light mode Negative contrast against KitInk.Window must be >= 4.5:1 (Got: $lightContrast:1)"
 
@@ -72,11 +72,11 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
     }
 
     It "S1.03: Verifies TaskEditor validation error states and warning ForeColor in both modes" {
-        $taskEditorType = Get-TepiType "TaskEditor"
+        $taskEditorType = Get-DeskmateType "TaskEditor"
         Assert-NotNull $taskEditorType "TaskEditor type must exist"
 
         foreach ($isLight in @($false, $true)) {
-            Reset-TepiTheme -Light $isLight
+            Reset-DeskmateTheme -Light $isLight
             $editor = [Activator]::CreateInstance($taskEditorType, @($null))
             Assert-NotNull $editor "TaskEditor instance must allocate"
 
@@ -91,7 +91,7 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
             $clickMethod.Invoke($saveBtn, @([System.EventArgs]::Empty))
 
             Assert-Equal "Judul wajib diisi" $warningLabel.Text "Empty task save must set error warning text"
-            $expectedNeg = (Get-TepiStaticField "Ink" "Base").Negative
+            $expectedNeg = (Get-DeskmateStaticField "Ink" "Base").Negative
             Assert-Equal $expectedNeg.ToArgb() $warningLabel.ForeColor.ToArgb() "Warning label ForeColor must match Ink.Base.Negative"
 
             # Call Relayout() and verify ForeColor does not regress
@@ -107,12 +107,12 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
 
     It "S1.04: Stress-tests Negative contrast on all container surfaces (Window, Group, Side, Hover, Line)" {
         foreach ($isLight in @($false, $true)) {
-            Reset-TepiTheme -Light $isLight
-            $neg = (Get-TepiStaticField "Ink" "Base").Negative
+            Reset-DeskmateTheme -Light $isLight
+            $neg = (Get-DeskmateStaticField "Ink" "Base").Negative
             $primarySurfaces = @{
-                "Window" = (Get-TepiStaticProperty "KitInk" "Window")
-                "Group"  = (Get-TepiStaticProperty "KitInk" "Group")
-                "Side"   = (Get-TepiStaticProperty "KitInk" "Side")
+                "Window" = (Get-DeskmateStaticProperty "KitInk" "Window")
+                "Group"  = (Get-DeskmateStaticProperty "KitInk" "Group")
+                "Side"   = (Get-DeskmateStaticProperty "KitInk" "Side")
             }
 
             foreach ($entry in $primarySurfaces.GetEnumerator()) {
@@ -121,12 +121,12 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
             }
 
             # Hover is a transient selection/hover background (measures 4.31:1 on Light mode, exceeding 4.0:1)
-            $hoverColor = Get-TepiStaticProperty "KitInk" "Hover"
+            $hoverColor = Get-DeskmateStaticProperty "KitInk" "Hover"
             $hoverCr = Get-WcagContrastRatio $neg $hoverColor
             Assert-True ($hoverCr -ge 4.0) "Negative token on Hover surface in Light=$isLight must be >= 4.0:1 (Got: ${hoverCr}:1)"
 
             # Line is a 1px border stroke (non-text element requiring >= 3.0:1)
-            $lineColor = Get-TepiStaticProperty "KitInk" "Line"
+            $lineColor = Get-DeskmateStaticProperty "KitInk" "Line"
             $lineCr = Get-WcagContrastRatio $neg $lineColor
             Assert-True ($lineCr -ge 3.0) "Negative token on border surface Line in Light=$isLight must be >= 3.0:1 (Got: $lineCr:1)"
         }
@@ -136,8 +136,8 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
     # SUITE 2: KuliaLogin Adversarial Modal, Async, Regex & DPI Scaling Stress
     # =========================================================================
     It "S2.01: Verifies KuliaLogin modal properties, AcceptButton, and Escape key handling" {
-        $loginType = Get-TepiType "KuliaLogin"
-        $clientType = Get-TepiType "KuliaClient"
+        $loginType = Get-DeskmateType "KuliaLogin"
+        $clientType = Get-DeskmateType "KuliaClient"
         $client = [Activator]::CreateInstance($clientType, @("https://test.kulia.live", "test_key"))
         $login = [Activator]::CreateInstance($loginType, @($client))
 
@@ -165,8 +165,8 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
     }
 
     It "S2.02: Tests KuliaLogin async lockout during Busy() and error recovery during Finish()" {
-        $loginType = Get-TepiType "KuliaLogin"
-        $clientType = Get-TepiType "KuliaClient"
+        $loginType = Get-DeskmateType "KuliaLogin"
+        $clientType = Get-DeskmateType "KuliaClient"
         $client = [Activator]::CreateInstance($clientType, @("https://test.kulia.live", "test_key"))
         $login = [Activator]::CreateInstance($loginType, @($client))
 
@@ -199,7 +199,7 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
         Assert-True $field.Enabled "Input field must be re-enabled after error"
         Assert-True $back.Enabled "Back button must be re-enabled after error"
         Assert-Equal "Gagal otentikasi" $status.Text "Status must show error message"
-        $expectedNeg = (Get-TepiStaticField "Ink" "Base").Negative
+        $expectedNeg = (Get-DeskmateStaticField "Ink" "Base").Negative
         Assert-Equal $expectedNeg.ToArgb() $status.ForeColor.ToArgb() "Error status ForeColor must be Ink.Base.Negative"
 
         $login.Dispose()
@@ -266,8 +266,8 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
     }
 
     It "S2.04: Stress-tests KuliaLogin Relayout() across 6 DPI scaling factors (1.0x to 3.0x)" {
-        $loginType = Get-TepiType "KuliaLogin"
-        $clientType = Get-TepiType "KuliaClient"
+        $loginType = Get-DeskmateType "KuliaLogin"
+        $clientType = Get-DeskmateType "KuliaClient"
         $client = [Activator]::CreateInstance($clientType, @("https://test.kulia.live", "test_key"))
         $login = [Activator]::CreateInstance($loginType, @($client))
         $h = $login.Handle
@@ -315,7 +315,7 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
     # SUITE 3: ColorPicker.Loupe Pathological Pixel Sampling & Reticle Contrast
     # =========================================================================
     It "S3.01: Tests Loupe coordinate handling at extreme screen edge and offscreen boundaries" {
-        $loupeType = Get-TepiType "PickerOverlay+Loupe"
+        $loupeType = Get-DeskmateType "PickerOverlay+Loupe"
         $loupe = [Activator]::CreateInstance($loupeType)
 
         $sampleBmp = New-Object System.Drawing.Bitmap 11, 11
@@ -383,7 +383,7 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
     # SUITE 4: Prefs Preset Accent Serialization, Roundtripping & Theme Toggling
     # =========================================================================
     It "S4.01: Verifies all 8 curated presets exist in Prefs.Accents and Prefs.AccentsLight" {
-        $prefsType = Get-TepiType "Island" # Prefs is partial class on Island
+        $prefsType = Get-DeskmateType "Island" # Prefs is partial class on Island
         Assert-NotNull $prefsType "Island/Prefs type must exist"
 
         $flags = [System.Reflection.BindingFlags]'NonPublic,Static'
@@ -420,11 +420,11 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
     }
 
     It "S4.02: Stress-tests KitPalette selection, hex mapping, keyboard navigation, and Graphite handling" {
-        $paletteType = Get-TepiType "KitPalette"
+        $paletteType = Get-DeskmateType "KitPalette"
         Assert-NotNull $paletteType "KitPalette type must exist"
 
         $palette = [Activator]::CreateInstance($paletteType)
-        $prefsType = Get-TepiType "Island"
+        $prefsType = Get-DeskmateType "Island"
         $flags = [System.Reflection.BindingFlags]'NonPublic,Static'
         $accents = $prefsType.GetField("Accents", $flags).GetValue($null)
         $accentsLight = $prefsType.GetField("AccentsLight", $flags).GetValue($null)
@@ -474,9 +474,9 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
     }
 
     It "S4.03: Stress-tests rapid theme toggling and KitWindow.BroadcastThemeChange across multiple dialogs" {
-        $taskEditorType = Get-TepiType "TaskEditor"
-        $loginType = Get-TepiType "KuliaLogin"
-        $clientType = Get-TepiType "KuliaClient"
+        $taskEditorType = Get-DeskmateType "TaskEditor"
+        $loginType = Get-DeskmateType "KuliaLogin"
+        $clientType = Get-DeskmateType "KuliaClient"
         $client = [Activator]::CreateInstance($clientType, @("https://test.kulia.live", "test_key"))
 
         # Create multiple active dialogs
@@ -505,13 +505,13 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
         # Rapidly toggle theme 50 times in a loop
         for ($iteration = 0; $iteration -lt 50; $iteration++) {
             $isLight = ($iteration % 2) -eq 0
-            Reset-TepiTheme -Light $isLight
+            Reset-DeskmateTheme -Light $isLight
             $broadcastMethod.Invoke($null, @())
         }
 
         # Verify surviving dialogs reflect current theme state
-        $expectedWinColor = Get-TepiStaticProperty "KitInk" "Window"
-        $expectedTextColor = Get-TepiStaticProperty "KitInk" "Text"
+        $expectedWinColor = Get-DeskmateStaticProperty "KitInk" "Window"
+        $expectedTextColor = Get-DeskmateStaticProperty "KitInk" "Text"
 
         Assert-Equal $expectedWinColor.ToArgb() $dialogs[0].BackColor.ToArgb() "TaskEditor BackColor must match KitInk.Window"
         Assert-Equal $expectedTextColor.ToArgb() $dialogs[0].ForeColor.ToArgb() "TaskEditor ForeColor must match KitInk.Text"

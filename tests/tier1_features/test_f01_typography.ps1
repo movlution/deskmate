@@ -4,17 +4,17 @@
 
 $commonDir = Join-Path $PSScriptRoot "..\common"
 . (Join-Path $commonDir "TestHarness.ps1")
-. (Join-Path $commonDir "TepiLoader.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
 
 Describe "Feature 1: Font Family Typo Corrections & Type Scale Resolution" {
     BeforeEach {
-        Invoke-TepiStaticMethod "Ink" "Init" @()
+        Invoke-DeskmateStaticMethod "Ink" "Init" @()
     }
 
     It "Resolves all 7 Typography scale roles into valid Font instances" {
         $roles = @("Hero", "Title1", "Title2", "Headline", "Body", "Callout", "Caption")
         foreach ($role in $roles) {
-            $font = Get-TepiStaticProperty "Ink" $role
+            $font = Get-DeskmateStaticProperty "Ink" $role
             Assert-NotNull $font "Typography role [$role] must return a non-null Font object"
             Assert-True ($font -is [System.Drawing.Font]) "[$role] must be an instance of System.Drawing.Font"
             Assert-True ($font.Size -gt 0) "[$role] font size must be greater than 0"
@@ -22,8 +22,8 @@ Describe "Feature 1: Font Family Typo Corrections & Type Scale Resolution" {
     }
 
     It "Verifies Display Semibold resolves to Segoe UI Variable Display family without fallback failure" {
-        $fDisplayIndex = Get-TepiStaticField "Ink" "FDisplay"
-        $families = Get-TepiStaticField "Ink" "families"
+        $fDisplayIndex = Get-DeskmateStaticField "Ink" "FDisplay"
+        $families = Get-DeskmateStaticField "Ink" "families"
         $displayFamily = $families[$fDisplayIndex]
 
         Assert-NotNull $displayFamily "Display family name must not be null"
@@ -33,8 +33,8 @@ Describe "Feature 1: Font Family Typo Corrections & Type Scale Resolution" {
     }
 
     It "Verifies Small Semibold resolves to Segoe UI Variable Small family without fallback failure" {
-        $fSmallSemiIndex = Get-TepiStaticField "Ink" "FSmallSemi"
-        $families = Get-TepiStaticField "Ink" "families"
+        $fSmallSemiIndex = Get-DeskmateStaticField "Ink" "FSmallSemi"
+        $families = Get-DeskmateStaticField "Ink" "families"
         $smallSemiFamily = $families[$fSmallSemiIndex]
 
         Assert-NotNull $smallSemiFamily "Small Semibold family name must not be null"
@@ -43,13 +43,13 @@ Describe "Feature 1: Font Family Typo Corrections & Type Scale Resolution" {
     }
 
     It "Verifies TypeScale font pixel sizes match documented values (Hero=40, Title1=22, Title2=17, Headline=14.5, Body=13.5, Callout=12.5, Caption=11)" {
-        $hero = Get-TepiStaticProperty "Ink" "Hero"
-        $title1 = Get-TepiStaticProperty "Ink" "Title1"
-        $title2 = Get-TepiStaticProperty "Ink" "Title2"
-        $headline = Get-TepiStaticProperty "Ink" "Headline"
-        $body = Get-TepiStaticProperty "Ink" "Body"
-        $callout = Get-TepiStaticProperty "Ink" "Callout"
-        $caption = Get-TepiStaticProperty "Ink" "Caption"
+        $hero = Get-DeskmateStaticProperty "Ink" "Hero"
+        $title1 = Get-DeskmateStaticProperty "Ink" "Title1"
+        $title2 = Get-DeskmateStaticProperty "Ink" "Title2"
+        $headline = Get-DeskmateStaticProperty "Ink" "Headline"
+        $body = Get-DeskmateStaticProperty "Ink" "Body"
+        $callout = Get-DeskmateStaticProperty "Ink" "Callout"
+        $caption = Get-DeskmateStaticProperty "Ink" "Caption"
 
         Assert-Equal $hero.Size 40 "Hero must be 40px"
         Assert-Equal $title1.Size 22 "Title1 must be 22px"
@@ -61,8 +61,8 @@ Describe "Feature 1: Font Family Typo Corrections & Type Scale Resolution" {
     }
 
     It "Verifies font instances can be created with Bold, Regular, and Semibold weights without throwing GDI+ exception" {
-        $fSmall = Get-TepiStaticField "Ink" "FSmall"
-        $families = Get-TepiStaticField "Ink" "families"
+        $fSmall = Get-DeskmateStaticField "Ink" "FSmall"
+        $families = Get-DeskmateStaticField "Ink" "families"
         $familyName = $families[$fSmall]
 
         $regular = New-Object System.Drawing.Font($familyName, 12, [System.Drawing.FontStyle]::Regular)

@@ -10,7 +10,7 @@ using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
 using Windows.Media.MediaProperties;
 
-namespace Tepi
+namespace Deskmate
 {
     // Webcam frames, mirrored, newest only
     class CameraMirror

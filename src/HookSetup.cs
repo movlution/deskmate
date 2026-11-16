@@ -5,9 +5,9 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 
-namespace Tepi
+namespace Deskmate
 {
-    // Tepi http hooks in every profile
+    // Deskmate http hooks in every profile
     static class HookSetup
     {
         static readonly string[] Events = { "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "Notification", "Stop", "StopFailure", "SessionEnd" };
@@ -91,14 +91,14 @@ namespace Tepi
                 {
                     { "type", "command" },
                     { "shell", "bash" },
-                    { "command", "curl -s -m 3 -H 'Expect:' -H 'X-Tepi-Token: " + token + "' -H 'Content-Type: application/json' --data-binary @- " + Url(port) + "; exit 0" },
+                    { "command", "curl -s -m 3 -H 'Expect:' -H 'X-Deskmate-Token: " + token + "' -H 'Content-Type: application/json' --data-binary @- " + Url(port) + "; exit 0" },
                     { "timeout", 5 },
                 };
             return new Dictionary<string, object>
             {
                 { "type", "http" },
                 { "url", Url(port) },
-                { "headers", new Dictionary<string, object> { { "X-Tepi-Token", token } } },
+                { "headers", new Dictionary<string, object> { { "X-Deskmate-Token", token } } },
                 { "timeout", ev == "PermissionRequest" ? 130 : 5 },
             };
         }
@@ -124,7 +124,7 @@ namespace Tepi
             return true;
         }
 
-        // Event groups minus Tepi's own
+        // Event groups minus Deskmate's own
         static List<object> Strip(Dictionary<string, object> hooks, string ev, int port)
         {
             var kept = new List<object>();
@@ -178,7 +178,7 @@ namespace Tepi
 
         internal static void Backup(string file)
         {
-            string bak = file + ".bak-tepi";
+            string bak = file + ".bak-deskmate";
             if (File.Exists(file) && !File.Exists(bak)) File.Copy(file, bak);
         }
 

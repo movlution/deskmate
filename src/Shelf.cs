@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     // Shelf file: path only, never contents
     class ShelfItem
@@ -208,9 +208,7 @@ namespace Tepi
             m.Items.Add(new ToolStripSeparator());
             m.Items.Add(Lang.T("Keluarkan dari rak"), null, delegate { Vanish(new[] { ShelfCellRect(item) }, false); RemoveFromShelf(item); });
             if (shelfPicked.Count > 1 && shelfPicked.Contains(item.Id)) m.Items.Add(Lang.F("Keluarkan {0} yang dipilih", shelfPicked.Count), null, delegate { RemovePicked(); });
-            StyleMenu(m);
-            m.Closed += delegate { BeginInvoke(new Action(m.Dispose)); };
-            m.Show(Control.MousePosition);
+            ShowIslandMenu(m);
         }
 
         // Page

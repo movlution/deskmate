@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Globalization;
 using System.Windows.Forms;
 
-namespace Tepi
+namespace Deskmate
 {
     partial class Island
     {
@@ -17,11 +17,11 @@ namespace Tepi
             DateTime? _selectedDay;
             public DateTime? selectedDay { get { return _selectedDay; } set { _selectedDay = value; } }
             public DateTime? SelectedDay { get { return _selectedDay; } set { _selectedDay = value; } }
-            float notifH;
+            float notifH, EventAreaH;
 
             const float Pad = 20, RowH = 58, Cell = 44, CellH = 38, Foot = 52, MaxRows = 4;
 
-            public CalendarSheet(Island isle, DockWindow dock) : base(isle, dock, "cal", "Tepi Calendar")
+            public CalendarSheet(Island isle, DockWindow dock) : base(isle, dock, "cal", "Deskmate Calendar")
             {
                 W = 360;
                 refresh.Tick += delegate { Render(); };
@@ -50,7 +50,8 @@ namespace Tepi
             {
                 rows = isle.NotifOn ? (int)Math.Min(MaxRows, Math.Max(1, isle.notifs.Count)) : 0;
                 notifH = isle.NotifOn ? 46 + (isle.notifs.Count == 0 ? 44 : rows * RowH) + 8 : 0;
-                H = notifH + 76 + 24 + 6 * CellH + 12 + Foot;
+                EventAreaH = ((isle.classes != null && isle.classes.Count > 0) || isle.GoogleCalendarConnected) ? 96f : 0f;
+                H = notifH + 76 + 24 + 6 * CellH + 12 + EventAreaH + Foot;
                 refresh.Start();
             }
 
@@ -62,7 +63,26 @@ namespace Tepi
             {
                 if (isle.NotifOn) DrawNotifs();
                 DrawMonth(notifH);
+                if (EventAreaH > 0) DrawDayEvents(notifH + 76 + 24 + 6 * CellH + 8);
                 DrawFoot();
+            }
+
+            internal List<ClassSlot> EventsForDay(DateTime day)
+            {
+                var list = new List<ClassSlot>();
+                if (isle.classes == null) return list;
+                DateTime d = day.Date;
+                DateTime next = d.AddDays(1);
+                for (int i = 0; i < isle.classes.Count; i++)
+                {
+                    var c = isle.classes[i];
+                    if (c == null) continue;
+                    bool match = c.AllDay
+                        ? (c.Start.Date <= d && c.End.Date > d)
+                        : (c.Start < next && (c.End > c.Start ? c.End > d : c.Start.Date == d));
+                    if (match) list.Add(c);
+                }
+                return list;
             }
 
             void DrawNotifs()
@@ -185,7 +205,66 @@ namespace Tepi
                         }
                         p.TextCenter(day.Day.ToString(CultureInfo.InvariantCulture), isToday ? Ink.Semi(12.5f) : Ink.Small(12.5f),
                                      isToday ? p.T.OnAccent : inMonth ? p.T.Text : p.T.Sub, cx, dcy);
+                        var dayEvs = EventsForDay(day);
+                        if (dayEvs.Count > 0)
+                        {
+                            bool hasHoliday = false;
+                            for (int k = 0; k < dayEvs.Count; k++)
+                                if (dayEvs[k].Source == "holiday" || dayEvs[k].Kind == "libur") { hasHoliday = true; break; }
+                            p.Circle(cx, dcy + 11.5f, 1.75f, isToday ? p.T.OnAccent : (hasHoliday ? p.T.Negative : p.T.Accent));
+                        }
                     }
+            }
+
+            void DrawDayEvents(float top)
+            {
+                g.DrawLine(p.P(p.T.Line, 1f), Pad, top, W - Pad, top);
+                DateTime target = selectedDay ?? DateTime.Today;
+                var dayEvents = EventsForDay(target);
+                string countText = dayEvents.Count > 0 ? Lang.F("{0} acara", dayEvents.Count) : Lang.T("Tidak ada acara");
+                string header = target.ToString("ddd, d MMM", Fmt.Id) + " · " + countText;
+                float addReserve = 0;
+                if (isle.GoogleCalendarConnected)
+                {
+                    string addLbl = Lang.T("+ Acara");
+                    float addW = p.Measure(addLbl, Ink.Semi(11.5f)) + 20;
+                    var addRect = new RectangleF(W - Pad - addW, top + 4, addW, 24);
+                    Hit(addRect, "addEvent");
+                    bool addDown = Down("addEvent");
+                    if (addDown) addRect.Offset(0, 0.75f);
+                    Color addFill = addDown ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.22f)
+                                            : hotId == "addEvent" ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f)
+                                            : p.T.Accent;
+                    p.FillRound(addRect, 12, addFill);
+                    p.TextCenter(addLbl, Ink.Semi(11.5f), p.T.OnAccent, addRect.X + addW / 2, addRect.Y + addRect.Height / 2);
+                    addReserve = addW + 8;
+                }
+                p.Text(header, Ink.Semi(12f), p.T.Sub, Pad + 4, top + 16, W - Pad * 2 - addReserve, StringAlignment.Near);
+                int maxShow = Math.Min(3, dayEvents.Count);
+                for (int i = 0; i < maxShow; i++)
+                {
+                    var c = dayEvents[i];
+                    var rowRect = new RectangleF(Pad - 4, top + 31 + i * 22, W - Pad * 2 + 8, 22);
+                    float cy = rowRect.Y + rowRect.Height / 2;
+                    string evId = "ev" + i;
+                    bool isGoogle = c.Source == "google" && !string.IsNullOrEmpty(c.Id);
+                    if (!string.IsNullOrEmpty(c.Url) || isGoogle)
+                    {
+                        Hit(rowRect, evId);
+                        bool evDown = Down(evId);
+                        if (!string.IsNullOrEmpty(c.Url) && (hotId == evId || evDown))
+                            p.FillRound(rowRect, 6, evDown ? p.T.FillPressed : p.T.FillHover);
+                    }
+                    bool isHoliday = c.Source == "holiday" || c.Kind == "libur";
+                    string timeStr = isHoliday ? Lang.T("Libur") : (c.AllDay ? Lang.T("Seharian") : Fmt.Hm(c.Start));
+                    Color timeColor = c.Cancelled ? p.T.Faint : (isHoliday ? p.T.Negative : p.T.Accent);
+                    p.Text(timeStr, Ink.Small(11f), timeColor, Pad + 4, cy, 52, StringAlignment.Near);
+                    string roomPart = !string.IsNullOrEmpty(c.Room) ? " · " + c.Room : "";
+                    string titleStr = (c.Title ?? "") + roomPart;
+                    Color titleColor = c.Cancelled ? p.T.Faint : p.T.Text;
+                    float titleX = Pad + 4 + 56;
+                    p.Text(titleStr, Ink.Small(11.5f), titleColor, titleX, cy, W - Pad - titleX, StringAlignment.Near);
+                }
             }
 
             void DrawFoot()
@@ -219,8 +298,63 @@ namespace Tepi
                 else month -= Math.Sign(delta);
             }
 
+            void ShowEventMenu(ClassSlot slot)
+            {
+                if (slot == null || string.IsNullOrEmpty(slot.Id)) return;
+                var m = new ContextMenuStrip();
+                m.Items.Add(new ToolStripMenuItem(slot.Title ?? "") { Enabled = false });
+                m.Items.Add(new ToolStripSeparator());
+                if (!string.IsNullOrEmpty(slot.Url))
+                {
+                    string evUrl = slot.Url;
+                    m.Items.Add(Lang.T("Buka tautan"), null, delegate
+                    {
+                        Done();
+                        Island.OpenUrl(evUrl);
+                    });
+                }
+                var editSlot = slot;
+                m.Items.Add(Lang.T("Edit acara…"), null, delegate
+                {
+                    Done();
+                    isle.BeginInvoke(new Action(delegate { isle.OpenEditGoogleEvent(editSlot); }));
+                });
+                string eventId = slot.Id;
+                string evTitle = slot.Title ?? "";
+                m.Items.Add(Lang.T("Hapus acara"), null, delegate
+                {
+                    isle.DeleteGoogleEventAsync(eventId, evTitle);
+                });
+                ShowMenu(m);
+            }
+
             protected override void Clicked(string id, MouseButtons button)
             {
+                if (id != null && id.Length > 2 && id[0] == 'e' && id[1] == 'v')
+                {
+                    int ev;
+                    if (int.TryParse(id.Substring(2), out ev))
+                    {
+                        var dayEvents = EventsForDay(selectedDay ?? DateTime.Today);
+                        if (ev >= 0 && ev < dayEvents.Count)
+                        {
+                            var slot = dayEvents[ev];
+                            bool isGoogle = slot.Source == "google" && !string.IsNullOrEmpty(slot.Id);
+                            if (button == MouseButtons.Right)
+                            {
+                                if (isGoogle) ShowEventMenu(slot);
+                                return;
+                            }
+                            if (button == MouseButtons.Left && !string.IsNullOrEmpty(slot.Url))
+                            {
+                                string evUrl = slot.Url;
+                                Done();
+                                Island.OpenUrl(evUrl);
+                            }
+                        }
+                    }
+                    return;
+                }
                 if (button != MouseButtons.Left) return;
                 var list = isle.notifs;
                 int n = IndexOf(id, 'n'), x = IndexOf(id, 'x');
@@ -245,6 +379,7 @@ namespace Tepi
                     case "today": month = 0; break;
                     case "quiet": isle.actQuiet(); break;
                     case "gear": Open("ms-settings:dateandtime", null); Done(); break;
+                    case "addEvent": { DateTime picked = selectedDay ?? DateTime.Today; Done(); isle.BeginInvoke(new Action(delegate { isle.OpenNewGoogleEvent(picked); })); break; }
                 }
             }
         }
