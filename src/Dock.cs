@@ -67,7 +67,11 @@ namespace Deskmate
                 dock.Shutdown();
                 dockWins.Remove(device);
             }
-            if (!settings.GetBool("dockbar.replace", false) && !DockWindow.Dry) Taskbar.Restore(settings);
+            if (!settings.GetBool("dockbar.replace", false))
+            {
+                Taskbar.Paused = false;
+                if (!DockWindow.Dry) Taskbar.Restore(settings);
+            }
             if (plan.Live.Count > 0) dockWatch.RescanIfStale(400);
 
             foreach (var device in plan.Live)
@@ -92,6 +96,7 @@ namespace Deskmate
 
         void CloseDocks()
         {
+            Taskbar.Paused = false;
             if (dockSwitchPoll != null) dockSwitchPoll.Stop();
             dockSwitchMonitor = IntPtr.Zero;
             WatchPins(false);
@@ -108,6 +113,16 @@ namespace Deskmate
             foreach (var b in dockIcons.Values) if (b != null) b.Dispose();
             dockIcons.Clear();
             if (!DockWindow.Dry) Taskbar.Restore(settings);
+        }
+
+        // Debug: hand the real taskbar back for a while without changing the saved
+        // "replace" choice or turning the dock off. Toggle again to resume.
+        void ToggleTaskbarPeek()
+        {
+            if (!DockBarOn || !settings.GetBool("dockbar.replace", false) || dockWins.Count == 0) return;
+            Taskbar.Paused = !Taskbar.Paused;
+            foreach (var dock in dockWins.Values) dock.Changed(dock == dockWin);
+            if (Taskbar.Paused && !DockWindow.Dry) Taskbar.Restore(settings);
         }
 
         void RefreshDocks()

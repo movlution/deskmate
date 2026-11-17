@@ -22,6 +22,7 @@ Describe "Multi-Display Dock & Subsystem Integration Suite" {
     $appSheetType = Get-DeskmateType "AppSheet"
     $trayIconType = Get-DeskmateType "TrayIcon"
     $settingsType = Get-DeskmateType "Settings"
+    $taskbarType = Get-DeskmateType "Taskbar"
     $nativeType = Get-DeskmateType "Native"
 
     function New-MockScreen {
@@ -545,6 +546,27 @@ Describe "Multi-Display Dock & Subsystem Integration Suite" {
                 $dwOwner.Shutdown()
             }
         }
+
+        It "6.3 Runtime taskbar pause suspends replacement without changing the saved setting" {
+            $isle = New-TestIsland
+            $settings = $islandType.GetField("settings", $flags).GetValue($isle)
+            $settings.Set("dockbar.replace", $true)
+            $sOwner = New-MockScreen "\\.\DISPLAY1" 0 0 1920 1080 1040 $true
+            $dw = [Activator]::CreateInstance($dwType, $flags, $null, @($isle, $sOwner, $true), $null)
+            $pausedField = $taskbarType.GetField("Paused", $flags)
+            $replacing = $dwType.GetProperty("Replacing", $flags)
+            try {
+                $h = $dw.Handle
+                Assert-True ([bool]$replacing.GetValue($dw)) "Saved replace setting must make the dock replace the taskbar"
+                $pausedField.SetValue($null, $true)
+                Assert-False ([bool]$replacing.GetValue($dw)) "Runtime pause must stop taskbar replacement"
+                Assert-True ($settings.GetBool("dockbar.replace", $false)) "Runtime pause must not alter the saved replace setting"
+            }
+            finally {
+                $pausedField.SetValue($null, $false)
+                $dw.Shutdown()
+            }
+        }
     }
 
     # =========================================================================
@@ -573,11 +595,15 @@ Describe "Multi-Display Dock & Subsystem Integration Suite" {
             Assert-Equal $dockWins.Count 3 "dockWins dictionary must contain 3 docks"
             Assert-NotNull ($islandType.GetField("dockWin", $flags).GetValue($isle)) "dockWin must not be null"
 
+            # A runtime pause must not survive the docks closing
+            $taskbarType.GetField("Paused", $flags).SetValue($null, $true)
+
             # Execute Island.CloseDocks
             $closeDocksMethod = $islandType.GetMethod("CloseDocks", $flags)
             $closeDocksMethod.Invoke($isle, $null)
 
             # Assert all docks disposed and dictionary cleared
+            Assert-False ([bool]$taskbarType.GetField("Paused", $flags).GetValue($null)) "CloseDocks must clear the runtime taskbar pause"
             Assert-Equal $dockWins.Count 0 "dockWins dictionary must be completely cleared"
             Assert-Null ($islandType.GetField("dockWin", $flags).GetValue($isle)) "dockWin reference must be null"
             Assert-True $dw1.IsDisposed "Owner dock must be disposed"

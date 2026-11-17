@@ -22,6 +22,10 @@ namespace Deskmate
         // taskbar drawn next to the dock.
         static readonly HashSet<IntPtr> owned = new HashSet<IntPtr>();
 
+        // Runtime-only debug pause: the dock keeps running but stops replacing the
+        // taskbar. The saved "dockbar.replace" choice is never touched.
+        public static bool Paused;
+
         static List<IntPtr> Bars()
         {
             var list = new List<IntPtr>();

@@ -334,7 +334,13 @@ namespace Deskmate
                 var combo = new ToolStripMenuItem(Lang.T("Combo Ketikan"), null, delegate { isle.ToggleCombo(); }) { Checked = isle.ComboOn };
                 m.Items.Add(combo);
                 m.Items.Add(Lang.T("Task Manager"), null, delegate { Open("taskmgr.exe"); });
-                if (Replacing) m.Items.Add(Lang.T("Ikon di pojok taskbar"), null, delegate { Open("ms-settings:taskbar"); });
+                if (S != null && S.GetBool("dockbar.replace", false))
+                {
+                    m.Items.Add(Lang.T("Ikon di pojok taskbar"), null, delegate { Open("ms-settings:taskbar"); });
+                    m.Items.Add(new ToolStripMenuItem(
+                        Lang.T(Taskbar.Paused ? "Sembunyikan taskbar Windows" : "Tampilkan taskbar Windows sementara"),
+                        null, delegate { isle.ToggleTaskbarPeek(); }) { Checked = Taskbar.Paused });
+                }
                 m.Items.Add(new ToolStripSeparator());
                 m.Items.Add(Lang.T("Tampilkan desktop"), null, delegate { ShowDesktop(); });
                 ShowMenu(m);

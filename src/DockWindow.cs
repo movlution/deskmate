@@ -68,8 +68,8 @@ namespace Deskmate
             // Pilot runs: no taskbar or tray changes, drawn off screen
             public static readonly bool Dry = Environment.GetEnvironmentVariable("DESKMATE_DOCK_DRY") == "1";
 
-            // Stands in for the Windows taskbar
-            bool Replacing { get { return S != null && S.GetBool("dockbar.replace", false); } }
+            // Stands in for the Windows taskbar; a debug pause leaves the dock running
+            bool Replacing { get { return S != null && S.GetBool("dockbar.replace", false) && !Taskbar.Paused; } }
             bool Full { get { return S != null && S.Get("dockbar.style", "float") == "full"; } }
 
             string HideMode

@@ -34,6 +34,8 @@ namespace Deskmate
             en.Add("{0} bekerja", "{0} working");
             en.Add("Ganti taskbar Windows", "Replace the Windows taskbar");
             en.Add("Taskbar Windows disembunyikan; Start, pencarian, dan jam pindah ke dock", "The Windows taskbar hides; Start, search, and the clock move to the dock");
+            en.Add("Tampilkan taskbar Windows sementara", "Show the Windows taskbar temporarily");
+            en.Add("Sembunyikan taskbar Windows", "Hide the Windows taskbar");
             en.Add("Selalu, selama menggantikan taskbar", "Always, while it replaces the taskbar");
             en.Add("Ringkasan pilihanmu", "Your Overview");
             en.Add("Pilih dan urutkan kartunya, termasuk cuaca, baterai, clipboard, dan sholat. Panel yang lebar memakai tiga kolom.", "Pick and order its cards, including weather, battery, clipboard, and prayer. Wide panels use three columns.");
