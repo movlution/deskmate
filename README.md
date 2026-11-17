@@ -180,6 +180,48 @@ Bluetooth dipecah menjadi:
 - `src/Bluetooth.cs` — baterai perangkat dan hook Bluetooth di `Island`.
 - `src/BluetoothScanner.cs` — model perangkat, watcher, pemindaian, pairing, dan koneksi.
 
+Pengaturan dipecah menjadi:
+
+- `src/Prefs.cs` — aksi preferensi di `Island`, tema, flag, pilihan, dan pratinjau layout.
+- `src/PrefsWindow.cs` — state, konstruktor, layout, page builder, dan `PageHeader`.
+- `src/PrefsPages.cs` — isi halaman pengaturan per kategori.
+- `src/PrefsLayout.cs` — baris update, tab, `TabGrip`, urutan kartu, dan kontrol tampilan.
+- `src/PrefsSideList.cs` — sidebar kategori dan aksesibilitasnya.
+- `src/PrefsThemePicker.cs` — pemilih kartu tema.
+- `src/PrefsCitySuggest.cs` — saran nama kota.
+
+Terjemahan dipecah menjadi:
+
+- `src/Lang.cs` — flag bahasa, pembangunan kamus, `T`, dan `F`.
+- `src/LangCore.cs` — teks UI inti.
+- `src/LangIntegrations.cs` — teks integrasi.
+- `src/Lang20.cs` — teks fitur 2.0.
+- `src/LangCardsAndPlacement.cs` — kartu ringkasan, letak, riwayat Bicara, dan prioritas notifikasi.
+- `src/LangDockAndSettings.cs` — dock dan judul bagian pengaturan.
+- `src/LangPictureAndReadability.cs` — editor gambar, keterbacaan, izin, dan rekaman.
+- `src/LangCombo.cs` — combo ketikan.
+- `src/LangWhatsNew.cs` — catatan rilis 2.7.x.
+
+Sumber data dipecah menjadi:
+
+- `src/Sources.cs` — model fetch, hasil sumber, dan `Source`.
+- `src/SourceHoliday.cs` — sumber hari libur nasional.
+- `src/SourceHub.cs` — sinkronisasi dan penggabungan sumber.
+- `src/SourceIcsFeed.cs` — sumber feed iCalendar.
+- `src/SourcesIsland.cs` — penggabungan sumber ke daftar UI `Island`.
+
+Google Workspace dipecah menjadi:
+
+- `src/GoogleWorkspace.cs` — helper HTTP dan klien Google Tasks.
+- `src/GoogleTasksSource.cs` — adaptor sumber tugas Google Tasks.
+- `src/GoogleDriveNotes.cs` — klien catatan Markdown di Google Drive.
+
+Token visual dan painter dipecah menjadi:
+
+- `src/Ink.cs` — `Tone` dan token desain `Ink`.
+- `src/Springs.cs` — preset spring.
+- `src/Painter.cs` — helper paint GDI+.
+
 Sisanya adalah partial `Island` per fitur (`Dock*`, `Prefs*`, `Work*`, `Notes*`, dan seterusnya).
 
 ## Tes
