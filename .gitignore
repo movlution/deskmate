@@ -4,6 +4,9 @@
 /Deskmate.exe.backup-*
 /Deskmate.previous-*.exe
 
+# Local release staging
+/release/
+
 # Update/self-heal residue
 /.deskmate-*.tmp.bak
 

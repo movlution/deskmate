@@ -8,6 +8,16 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.8.x
+            en.Add("Gambar di catatan tugas", "Images in task notes");
+            en.Add("Pilih Tambah gambar atau tempel screenshot dengan Ctrl+V. Gambar disimpan sebagai PNG, ikut tersinkron ke Google Drive privat, dan tetap bisa dibuka dari cache saat offline.", "Choose Add image or paste a screenshot with Ctrl+V. Images are stored as PNG, sync privately to Google Drive, and remain available from the offline cache.");
+            en.Add("Emoji di notifikasi", "Emoji in notifications");
+            en.Add("Judul dan isi notifikasi kini menampilkan emoji dengan benar, tetap rapi saat dipotong, dan tidak lagi merusak teks di sekitarnya.", "Notification titles and bodies now render emoji correctly, stay tidy when clipped, and no longer break the surrounding text.");
+            en.Add("Sakelar autostart kini memakai scheduled task, mengikuti status sebenarnya, dan tetap punya jalur cadangan untuk Windows yang membatasi scheduled task.", "The autostart switch now uses a scheduled task, follows the real state, and keeps a fallback for Windows builds that restrict scheduled tasks.");
+            en.Add("Keterbacaan dan kaca", "Readability and glass");
+            en.Add("Teks sekunder dan kontrol nonaktif lebih mudah dibaca, kontras chip tenggat diperkuat, dan target cahaya Liquid Glass di mode terang dikalibrasi ulang.", "Secondary text and disabled controls are easier to read, overdue chip contrast is stronger, and the Liquid Glass light-mode target is recalibrated.");
+            en.Add("Stabilitas", "Stability");
+            en.Add("Suite E2E Tier 1–4 kini mencakup 385 pemeriksaan, termasuk skenario nyata untuk onboarding, tema, kaca, tugas, notifikasi, dock, dan indikator mini.", "The Tier 1–4 E2E suite now covers 385 checks, including real scenarios for onboarding, themes, glass, tasks, notifications, the dock, and the mini indicator.");
             // What's new 2.7.x
             en.Add("Tugas dan catatan", "Tasks and notes");
             en.Add("Editor catatan baru dengan Markdown, tabel, checklist, blok kode, dan menu blok.", "A new note editor with Markdown, tables, checklists, code blocks, and a block menu.");

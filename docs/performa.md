@@ -4,7 +4,7 @@
 
 Ringan. Island tidak menggambar apa pun selama tidak ada yang bergerak; bagian kecil yang hidup (visualizer, lirik, spinner, timer) digambar ulang sendiri, tepat pada refresh layar. Diukur di laptop Intel Core i3-1115G4 pada 1 November 2026, bergantian dengan versi 2.1 memakai lagu dan lirik tiruan yang sama, 45 detik per putaran, median 3 putaran:
 
-> **Catatan 18 November 2026:** angka di halaman ini adalah benchmark historis terakhir (1–5 November 2026). Benchmark belum diulang untuk build 18 November 2026; perubahan terbaru berfokus pada kontras token, sanitasi teks notifikasi, target luminance kaca, dan test E2E. Jangan menganggap angka ini sebagai hasil pengukuran build terbaru tanpa menjalankan ulang protokol di bagian bawah.
+> **Catatan 18 November 2026:** angka di halaman ini adalah benchmark historis terakhir (1–5 November 2026). Benchmark belum diulang untuk build 2.8.0; perubahan terbaru berfokus pada kontras token, sanitasi teks notifikasi, target luminance kaca, dan test E2E. Jangan menganggap angka ini sebagai hasil pengukuran build terbaru tanpa menjalankan ulang protokol di bagian bawah.
 
 | Kondisi | 2.1 | 2.4 |
 |---|---|---|

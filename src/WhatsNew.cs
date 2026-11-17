@@ -20,6 +20,18 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.8.0",
+                Items = new[]
+                {
+                    new[] { "Gambar di catatan tugas", "Pilih Tambah gambar atau tempel screenshot dengan Ctrl+V. Gambar disimpan sebagai PNG, ikut tersinkron ke Google Drive privat, dan tetap bisa dibuka dari cache saat offline.", "\uE8B9" },
+                    new[] { "Emoji di notifikasi", "Judul dan isi notifikasi kini menampilkan emoji dengan benar, tetap rapi saat dipotong, dan tidak lagi merusak teks di sekitarnya.", "\uE8BD" },
+                    new[] { "Mulai bersama Windows", "Sakelar autostart kini memakai scheduled task, mengikuti status sebenarnya, dan tetap punya jalur cadangan untuk Windows yang membatasi scheduled task.", "\uE7E8" },
+                    new[] { "Keterbacaan dan kaca", "Teks sekunder dan kontrol nonaktif lebih mudah dibaca, kontras chip tenggat diperkuat, dan target cahaya Liquid Glass di mode terang dikalibrasi ulang.", "\uE790" },
+                    new[] { "Stabilitas", "Suite E2E Tier 1–4 kini mencakup 385 pemeriksaan, termasuk skenario nyata untuk onboarding, tema, kaca, tugas, notifikasi, dock, dan indikator mini.", "\uE74C" },
+                },
+            },
+            new Note
+            {
                 Version = "2.7.2",
                 Items = new[]
                 {

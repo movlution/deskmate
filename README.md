@@ -26,7 +26,7 @@ Butuh Windows 10/11 64-bit dan .NET Framework 4.8. Jalankan `build.cmd` untuk me
 ## Struktur
 
 - `src/` — kode aplikasi WinForms/WPF interop dengan UI owner-drawn.
-- `tests/` — harness E2E PowerShell, suite tier 1–2, dan pemeriksaan ad-hoc.
+- `tests/` — harness E2E PowerShell, suite tier 1–4, dan pemeriksaan ad-hoc.
 - `docs/` — panduan fitur, pengaturan, integrasi, dan privasi.
 - `build.cmd` — kompilasi dengan `csc` bawaan Windows.
 - `TEST_INFRA.md` — spesifikasi harness pengujian.
@@ -200,7 +200,7 @@ Terjemahan dipecah menjadi:
 - `src/LangDockAndSettings.cs` — dock dan judul bagian pengaturan.
 - `src/LangPictureAndReadability.cs` — editor gambar, keterbacaan, izin, dan rekaman.
 - `src/LangCombo.cs` — combo ketikan.
-- `src/LangWhatsNew.cs` — catatan rilis 2.7.x.
+- `src/LangWhatsNew.cs` — catatan rilis terbaru.
 
 Sumber data dipecah menjadi:
 
