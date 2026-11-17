@@ -447,8 +447,8 @@ namespace Deskmate
                 float cy = row.Y + row.Height / 2;
                 DrawAppBadge(item, new RectangleF(row.X + 8, cy - 16, 32, 32));
                 float tx = row.X + 50;
-                p.Text(NotifTitle(item), Ink.Callout, p.T.Text, tx, cy - 9, row.Right - tx - 80, StringAlignment.Near);
-                p.Text(NotifBody(item), Ink.Caption, p.T.Sub, tx, cy + 9, row.Right - tx - 44, StringAlignment.Near);
+                p.NotifText(NotifTitle(item), Ink.Callout, p.T.Text, tx, cy - 9, row.Right - tx - 80, StringAlignment.Near);
+                p.NotifText(NotifBody(item), Ink.Caption, p.T.Sub, tx, cy + 9, row.Right - tx - 44, StringAlignment.Near);
                 var x = new RectangleF(row.Right - 36, cy - 14, 28, 28);
                 if (hover)
                 {

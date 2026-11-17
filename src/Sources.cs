@@ -33,6 +33,11 @@ namespace Deskmate
 
         public static FetchResult Send(string method, string url, Dictionary<string, string> headers, string body, int maxBytes, int timeoutMs)
         {
+            return SendBytes(method, url, headers, body == null ? null : Encoding.UTF8.GetBytes(body), maxBytes, timeoutMs);
+        }
+
+        internal static FetchResult SendBytes(string method, string url, Dictionary<string, string> headers, byte[] body, int maxBytes, int timeoutMs)
+        {
             var res = new FetchResult();
             Uri uri;
             if (!Uri.TryCreate(url, UriKind.Absolute, out uri) || uri.Scheme != Uri.UriSchemeHttps) { res.Insecure = true; return res; }
@@ -58,7 +63,7 @@ namespace Deskmate
                         }
                     if (body != null)
                     {
-                        var bytes = Encoding.UTF8.GetBytes(body);
+                        var bytes = body;
                         if (req.ContentType == null) req.ContentType = "application/json";
                         req.ContentLength = bytes.Length;
                         using (var s = req.GetRequestStream()) s.Write(bytes, 0, bytes.Length);

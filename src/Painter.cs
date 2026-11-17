@@ -191,6 +191,110 @@ namespace Deskmate
             G.DrawString(s, f, B(c), box, line);
         }
 
+        // Notification-only font fallback; the general UI text renderer stays unchanged.
+        internal static bool NotifEmoji(string s, int i)
+        {
+            int c = char.IsSurrogatePair(s, i) ? char.ConvertToUtf32(s, i) : s[i];
+            return (c >= 0x1F000 && c <= 0x1FAFF) || (c >= 0x2600 && c <= 0x27BF) ||
+                   (c >= 0x2300 && c <= 0x23FF) || (c >= 0x2B00 && c <= 0x2BFF) ||
+                   c == 0x00A9 || c == 0x00AE || c == 0x203C || c == 0x2049 ||
+                   c == 0x2122 || c == 0x2139 || c == 0x3030 || c == 0x303D ||
+                   c == 0x3297 || c == 0x3299 ||
+                   (i + 1 < s.Length && (s[i + 1] == '\uFE0F' || s[i + 1] == '\u20E3'));
+        }
+
+        internal static int NotifElementLength(string s, int start)
+        {
+            int end = start + System.Globalization.StringInfo.GetNextTextElement(s, start).Length;
+            int first = char.IsSurrogatePair(s, start) ? char.ConvertToUtf32(s, start) : s[start];
+            while (end < s.Length)
+            {
+                int c = char.IsSurrogatePair(s, end) ? char.ConvertToUtf32(s, end) : s[end];
+                if (c == 0x200D && end + 1 < s.Length)
+                {
+                    end++;
+                    end += System.Globalization.StringInfo.GetNextTextElement(s, end).Length;
+                }
+                else if (c == 0xFE0F || c == 0xFE0E || c == 0x20E3 ||
+                         (c >= 0x1F3FB && c <= 0x1F3FF) || (c >= 0xE0020 && c <= 0xE007F))
+                    end += c > 0xFFFF ? 2 : 1;
+                else if (first >= 0x1F1E6 && first <= 0x1F1FF && end == start + 2 &&
+                         c >= 0x1F1E6 && c <= 0x1F1FF)
+                    end += 2;
+                else break;
+            }
+            return end - start;
+        }
+
+        public void NotifText(string s, Font f, Color c, float x, float cy, float maxWidth, StringAlignment align)
+        {
+            if (string.IsNullOrEmpty(s) || maxWidth < 4) return;
+            bool hasEmoji = false;
+            for (int i = 0; i < s.Length; i += NotifElementLength(s, i))
+                if (NotifEmoji(s, i)) { hasEmoji = true; break; }
+            if (!hasEmoji) { Text(s, f, c, x, cy, maxWidth, align); return; }
+
+            using (var emoji = new Font("Segoe UI Emoji", f.Size, FontStyle.Regular, f.Unit))
+            using (var fmt = (StringFormat)line.Clone())
+            {
+                fmt.Alignment = StringAlignment.Near;
+                fmt.Trimming = StringTrimming.None;
+                var runs = new List<string>();
+                var faces = new List<Font>();
+                for (int i = 0; i < s.Length;)
+                {
+                    int len = NotifElementLength(s, i);
+                    Font face = NotifEmoji(s, i) ? emoji : f;
+                    string part = s.Substring(i, len);
+                    int last = runs.Count - 1;
+                    if (last >= 0 && ReferenceEquals(faces[last], face)) runs[last] += part;
+                    else { runs.Add(part); faces.Add(face); }
+                    i += len;
+                }
+                var widths = new List<float>();
+                float total = 0;
+                for (int i = 0; i < runs.Count; i++)
+                {
+                    float width = G.MeasureString(runs[i], faces[i], PointF.Empty, fmt).Width;
+                    widths.Add(width); total += width;
+                }
+                float dots = G.MeasureString("\u2026", f, PointF.Empty, fmt).Width;
+                bool trim = total > maxWidth;
+                // ponytail: bounded notification lines; trim by whole emoji, not UTF-16 code units.
+                while (trim && runs.Count > 0 && total + dots > maxWidth)
+                {
+                    int last = runs.Count - 1, cut = 0;
+                    for (int i = 0; i < runs[last].Length; i += NotifElementLength(runs[last], i)) cut = i;
+                    total -= widths[last];
+                    runs[last] = runs[last].Substring(0, cut);
+                    if (cut == 0) { runs.RemoveAt(last); faces.RemoveAt(last); widths.RemoveAt(last); }
+                    else
+                    {
+                        widths[last] = G.MeasureString(runs[last], faces[last], PointF.Empty, fmt).Width;
+                        total += widths[last];
+                    }
+                }
+                if (trim && dots <= maxWidth) { runs.Add("\u2026"); faces.Add(f); widths.Add(dots); total += dots; }
+                float left = align == StringAlignment.Near ? x : align == StringAlignment.Far ? x - total : x - total / 2;
+                var clip = LineBox(f, x, cy, maxWidth, align);
+                var state = G.Save();
+                try
+                {
+                    G.IntersectClip(clip);
+                    for (int i = 0; i < runs.Count; i++)
+                    {
+                        var box = LineBox(faces[i], left, cy, Math.Max(widths[i] + 4, maxWidth), StringAlignment.Near);
+                        if (Shadow && c.R > 128 && c.A > 60)
+                            G.DrawString(runs[i], faces[i], B(Color.FromArgb((int)(90 * c.A / 255f), 0, 0, 0)),
+                                new RectangleF(box.X, box.Y + 1, box.Width, box.Height), fmt);
+                        G.DrawString(runs[i], faces[i], B(c), box, fmt);
+                        left += widths[i];
+                    }
+                }
+                finally { G.Restore(state); }
+            }
+        }
+
         // Same line with any brush, like Split
         public void Text(string s, Font f, Brush b, float x, float cy, float maxWidth, StringAlignment align)
         {

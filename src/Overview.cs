@@ -486,8 +486,8 @@ namespace Deskmate
                 p.TextRight(more, mf, p.T.Sub, right, cy);
                 right -= p.Measure(more, mf) + 8;
             }
-            p.Text(NotifTitle(latest), Ink.Semi(12.5f), p.T.Text, tx, cy, right - tx, StringAlignment.Near);
-            p.Text(NotifBody(latest), Ink.Small(11.5f), p.T.Sub, r.X + 16, r.Y + 75, r.Width - 30, StringAlignment.Near);
+            p.NotifText(NotifTitle(latest), Ink.Semi(12.5f), p.T.Text, tx, cy, right - tx, StringAlignment.Near);
+            p.NotifText(NotifBody(latest), Ink.Small(11.5f), p.T.Sub, r.X + 16, r.Y + 75, r.Width - 30, StringAlignment.Near);
         }
 
         void DrawTimerCard(RectangleF r, DateTime now)

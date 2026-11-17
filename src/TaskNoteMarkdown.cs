@@ -13,7 +13,7 @@ namespace Deskmate
     {
         internal const string Code = "```", Divider = "---";
         internal static readonly FontFamily Mono = new FontFamily("Consolas");
-        static readonly Regex Inline = new Regex(@"(`[^\x60]+\x60|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*|__[^_]+__|(?<!\w)_[^_]+_(?!\w)|\[[^\]]+\]\([^)]+\))");
+        static readonly Regex Inline = new Regex(@"(!\[[^\]\r\n]*\]\(deskmate-image:[a-f0-9]{64}\)|`[^\x60]+\x60|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*|__[^_]+__|(?<!\w)_[^_]+_(?!\w)|\[[^\]]+\]\([^)]+\))");
         static readonly Regex TableSeparator = new Regex(@"^:?-{3,}:?$");
         static readonly Regex Rule = new Regex(@"^([-*_])(?:[ \t]*\1){2,}[ \t]*$");
 
@@ -119,7 +119,8 @@ namespace Deskmate
             {
                 if (match.Index > offset) paragraph.Inlines.Add(new Run(value.Substring(offset, match.Index - offset)));
                 string token = match.Value;
-                if (token[0] == '[')
+                if (token.StartsWith("![", StringComparison.Ordinal)) paragraph.Inlines.Add(TaskNoteImages.Inline(token));
+                else if (token[0] == '[')
                 {
                     int end = token.IndexOf(']');
                     // Keep the destination as document data. The editing surface never navigates.
@@ -278,6 +279,12 @@ namespace Deskmate
                     continue;
                 }
                 flush();
+                var image = inline as InlineUIContainer;
+                if (image != null && image.Tag is string && TaskNoteImages.References.IsMatch((string)image.Tag))
+                {
+                    result.Append((string)image.Tag);
+                    continue;
+                }
                 var span = inline as Span;
                 if (span != null)
                 {

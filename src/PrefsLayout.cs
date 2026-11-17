@@ -285,7 +285,16 @@ namespace Deskmate
             {
                 var s = new KitSwitch { Size = new Size((int)(46 * Ui), (int)(26 * Ui)) };
                 try { s.Checked = AutoStart.Enabled; } catch (Exception) { }
-                s.CheckedChanged += delegate { if (building) return; try { AutoStart.Enabled = s.Checked; } catch (Exception ex) { Log.Write("autostart: " + ex.Message); } };
+                bool syncing = false;
+                s.CheckedChanged += delegate
+                {
+                    if (building || syncing || Settings.TestMode) return;
+                    try { AutoStart.Enabled = s.Checked; } catch (Exception ex) { Log.Write("autostart: " + ex.Message); }
+                    // Reflect the real state so a failed change never leaves the switch lying.
+                    bool actual;
+                    try { actual = AutoStart.Enabled; } catch (Exception) { return; }
+                    if (actual != s.Checked) { syncing = true; s.Checked = actual; syncing = false; }
+                };
                 return s;
             }
 

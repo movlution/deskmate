@@ -169,6 +169,11 @@ namespace Deskmate
             en.Add("Ekstrak", "Extract");
             en.Add("Campuran", "Mixed");
             en.Add("Gambar", "Image");
+            en.Add("Tambah gambar", "Add image");
+            en.Add("Gambar belum tersedia — sinkronkan Google Drive", "Image unavailable — sync Google Drive");
+            en.Add("Gambar tidak valid atau melebihi 4 MB / 16 megapiksel", "Invalid image or exceeds 4 MB / 16 megapixels");
+            en.Add("Gagal menyinkronkan gambar Google Drive", "Could not sync Google Drive images");
+            en.Add("Deskripsi Google Tasks melebihi 8192 karakter", "Google Tasks description exceeds 8192 characters");
             en.Add("Dokumen", "Document");
             en.Add("Presentasi", "Presentation");
             en.Add("PDF dikunci kata sandi", "PDF is password protected");

@@ -125,8 +125,8 @@ namespace Deskmate
                         p.TextCenter(name.Substring(0, 1).ToUpperInvariant(), Ink.Semi(13f), p.T.Text, logo.X + 16, cy);
                     }
                     float tx = row.X + 52;
-                    p.Text(isle.NotifTitle(item), Ink.Semi(12.5f), p.T.Text, tx, cy - 9, row.Right - tx - 74, StringAlignment.Near);
-                    p.Text(isle.NotifBody(item), Ink.Text(11.5f), p.T.Sub, tx, cy + 9, row.Right - tx - 40, StringAlignment.Near);
+                    p.NotifText(isle.NotifTitle(item), Ink.Semi(12.5f), p.T.Text, tx, cy - 9, row.Right - tx - 74, StringAlignment.Near);
+                    p.NotifText(isle.NotifBody(item), Ink.Text(11.5f), p.T.Sub, tx, cy + 9, row.Right - tx - 40, StringAlignment.Near);
                     var x = new RectangleF(row.Right - 36, cy - 14, 28, 28);
                     if (hover)
                     {

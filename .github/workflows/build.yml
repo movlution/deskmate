@@ -23,6 +23,9 @@ jobs:
       - name: Smoke test
         shell: powershell
         run: .\tests\run_e2e.ps1 -TestFile .\tests\smoke_test.ps1
+      - name: Feature regression checks
+        shell: powershell
+        run: .\tests\run_feature_checks.ps1
       - name: SHA-256
         shell: pwsh
         run: (Get-FileHash Deskmate.exe -Algorithm SHA256).Hash

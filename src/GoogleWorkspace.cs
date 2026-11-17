@@ -444,6 +444,17 @@ namespace Deskmate
                 });
                 foreach (var t in todo)
                 {
+                    string imageError;
+                    if ((t.Notes ?? "").Length > 8192)
+                    {
+                        if (FirstErr == null) FirstErr = Lang.T("Deskripsi Google Tasks melebihi 8192 karakter");
+                        continue;
+                    }
+                    if (!TaskNoteImages.Sync(ref Vault, t.Notes, true, out imageError))
+                    {
+                        if (FirstErr == null) FirstErr = imageError;
+                        continue; // Keep Dirty: never publish a task before its images are available.
+                    }
                     int r = string.IsNullOrEmpty(t.GoogleTaskId) ? Create(t, pushed) : Update(t, pushed);
                     if (r < 0) return false;
                 }
@@ -526,6 +537,9 @@ namespace Deskmate
                     string rListName = nameById.ContainsKey(rListId) ? nameById[rListId] : "Tasks";
                     string rTitle = Json.Str(item, "title");
                     string rNotes = Json.Str(item, "notes");
+                    string imageError;
+                    if (!TaskNoteImages.Sync(ref Vault, rNotes, false, out imageError) && FirstErr == null)
+                        FirstErr = imageError; // Preserve Markdown even when an image is unavailable; retry next sync.
                     bool rDone = Json.Str(item, "status") == "completed";
                     DateTime? rDue = ParseDueLocal(Json.Str(item, "due"));
                     DateTime rUpdated = ParseUtc(Json.Str(item, "updated"));

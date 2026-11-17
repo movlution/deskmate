@@ -7,7 +7,7 @@
 **Milestone**: TM1 — Test Infrastructure & Harness Foundation  
 **Status**: ACTIVE (Tier 1–2 implemented; Tier 3–4 planned)
 
-> **Coverage note (17 Nov 2026):** Tier 1–2 contain the active suites; Tier 3–4 directories are empty placeholders. Treat the per-feature allocations below as targets, not as current coverage.
+> **Coverage note (17 Nov 2026):** Tier 1–2 contain the active suites; Tier 3–4 directories are empty placeholders. Treat the per-feature allocations below as targets, not as current coverage. Passive source-level checks for task-note images and notification emoji live in `tests/run_feature_checks.ps1`.
 
 ---
 

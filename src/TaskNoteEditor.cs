@@ -294,6 +294,9 @@ namespace Deskmate
             var addTable = new System.Windows.Controls.Button();
             SetupButton(addTable, "Tambah tabel", ShowTablePicker);
             SetupButton(manageTable, "Atur tabel ▾", ShowTableMenu);
+            var addImage = new System.Windows.Controls.Button();
+            SetupButton(addImage, "Tambah gambar", ChooseImage);
+            tableTools.Children.Add(addImage);
             tableTools.Children.Add(addTable);
             tableTools.Children.Add(manageTable);
             tableTools.Children.Add(tableHint);
@@ -568,9 +571,46 @@ namespace Deskmate
             UpdateTableTools();
         }
 
+        void ChooseImage()
+        {
+            using (var dialog = new OpenFileDialog { Filter = "Images (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp", Title = Lang.T("Tambah gambar") })
+            {
+                if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+                try
+                {
+                    if (new System.IO.FileInfo(dialog.FileName).Length > TaskNoteImages.MaxBytes)
+                        throw new System.IO.InvalidDataException("Image must be at most 4 MB.");
+                    InsertImage(TaskNoteImages.Decode(System.IO.File.ReadAllBytes(dialog.FileName)));
+                }
+                catch (Exception) { tableHint.Text = Lang.T("Gambar tidak valid atau melebihi 4 MB / 16 megapiksel"); }
+            }
+        }
+
+        internal void InsertImage(System.Windows.Media.Imaging.BitmapSource source)
+        {
+            string token = TaskNoteImages.Import(source);
+            FocusEditor();
+            editor.BeginChange();
+            try
+            {
+                editor.Selection.Text = "";
+                var position = editor.CaretPosition.GetInsertionPosition(Documents.LogicalDirection.Forward);
+                if (position.Paragraph == null) position = position.InsertParagraphBreak();
+                var image = TaskNoteImages.Inline(token, position);
+                editor.CaretPosition = image.ElementEnd.GetInsertionPosition(Documents.LogicalDirection.Forward);
+            }
+            finally { editor.EndChange(); }
+        }
+
         void Paste(object sender, Wpf.DataObjectPastingEventArgs e)
         {
             e.CancelCommand();
+            if (e.DataObject.GetDataPresent(Wpf.DataFormats.Bitmap))
+            {
+                try { InsertImage(e.DataObject.GetData(Wpf.DataFormats.Bitmap) as System.Windows.Media.Imaging.BitmapSource); }
+                catch (Exception) { tableHint.Text = Lang.T("Gambar tidak valid atau melebihi 4 MB / 16 megapiksel"); }
+                return;
+            }
             string value = e.DataObject.GetData(Wpf.DataFormats.UnicodeText) as string;
             if (string.IsNullOrEmpty(value)) return;
             var paragraph = editor.CaretPosition.Paragraph;

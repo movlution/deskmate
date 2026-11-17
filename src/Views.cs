@@ -761,8 +761,8 @@ namespace Deskmate
             string meta = notifBurst > 1 ? notifBurst + Lang.T(" pesan · ") + item.AppName : item.AppName;
             float mw = Math.Min(w * 0.35f, p.Measure(meta, Ink.Caption));
             p.Text(meta, Ink.Caption, p.T.Sub, w - 22, cy - 10, mw, StringAlignment.Far);
-            p.Text(NotifTitle(item), Ink.Headline, p.T.Text, 66, cy - 10, Math.Max(40, w - 66 - 22 - mw - 12), StringAlignment.Near);
-            p.Text(NotifBody(item), Ink.Callout, p.T.Sub, 66, cy + 10, w - 66 - 22, StringAlignment.Near);
+            p.NotifText(NotifTitle(item), Ink.Headline, p.T.Text, 66, cy - 10, Math.Max(40, w - 66 - 22 - mw - 12), StringAlignment.Near);
+            p.NotifText(NotifBody(item), Ink.Callout, p.T.Sub, 66, cy + 10, w - 66 - 22, StringAlignment.Near);
             AddHit(new RectangleF(0, 0, w, h), "notifOpen", delegate { OpenNotifApp(item); }, null, NotifAppMenuAction(item));
         }
 

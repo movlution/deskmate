@@ -229,8 +229,9 @@ Sisanya adalah partial `Island` per fitur (`Dock*`, `Prefs*`, `Work*`, `Notes*`,
 ```powershell
 .\build.cmd
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run_e2e.ps1 -TestFile .\tests\smoke_test.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run_feature_checks.ps1
 ```
 
-Suite tier 1–2 dijalankan dengan `.\tests\run_e2e.ps1 -Tier 1` atau `-Tier 2`. Beberapa suite membuka jendela dan berinteraksi dengan desktop, jadi jalankan di sesi desktop. Tier 3–4 masih berupa placeholder.
+Suite tier 1–2 dijalankan dengan `.\tests\run_e2e.ps1 -Tier 1` atau `-Tier 2`. Beberapa suite membuka jendela dan berinteraksi dengan desktop, jadi jalankan di sesi desktop. Tier 3–4 masih berupa placeholder. `run_feature_checks.ps1` menjalankan regression check pasif untuk gambar catatan tugas dan emoji notifikasi di proses STA terisolasi.
 
 Lisensi [MIT](LICENSE). Dibuat oleh [R. Revaldo Vabiansyah](https://github.com/odlaver).
