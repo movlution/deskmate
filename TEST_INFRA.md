@@ -5,9 +5,9 @@
 **Target Platform**: Windows 10/11 x64, .NET Framework 4.8  
 **Author**: Test Infrastructure Architect & Test Writer  
 **Milestone**: TM1 — Test Infrastructure & Harness Foundation  
-**Status**: ACTIVE (Tier 1–2 implemented; Tier 3–4 planned)
+**Status**: ACTIVE (Tier 1–4 implemented)
 
-> **Coverage note (17 Nov 2026):** Tier 1–2 contain the active suites; Tier 3–4 directories are empty placeholders. Treat the per-feature allocations below as targets, not as current coverage. Passive source-level checks for task-note images and notification emoji live in `tests/run_feature_checks.ps1`.
+> **Coverage note (18 Nov 2026):** Tier 1–4 now contain the active suites. Tier 3 has 26 pairwise interactions across `test_x01`–`test_x06`; Tier 4 has 13 real-world scenarios (S01–S13) in `tests/tier4_scenarios/` with 18 tests. The per-feature allocations below remain coverage targets. A verified run on 18 Nov 2026 passed smoke 19/19, Tier 1 228/228, Tier 2 112/112, Tier 3 26/26, and Tier 4 18/18 (384/384 tier tests). Passive feature checks for task-note images and notification emoji live in `tests/run_feature_checks.ps1`.
 
 ---
 
