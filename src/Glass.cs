@@ -446,8 +446,9 @@ namespace Deskmate
             float lt = Luma(bg);
             // Tint colour decides the ink
             light = lt > 0.2f;
-            // Contrast: light text L<=0.09, dark L>=0.62
-            float limit = light ? 0.62f : 0.09f, aMin = light ? 0.3f : 0.26f, aMax = 0.9f;
+            // Contrast: light text L<=0.09, dark L>=0.62. Keep a small headroom so
+            // the sRGB round-trip cannot land a hair below the documented floor.
+            float limit = light ? 0.63f : 0.09f, aMin = light ? 0.3f : 0.26f, aMax = 0.9f;
             // Copy; raw capture stays the signature
             var src = (byte[])raw.Clone();
             int stride = w * 4;

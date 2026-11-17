@@ -23,9 +23,10 @@ namespace Deskmate
         // Selected segment, lifted above its track
         public static Color Raised { get { return Ink.Light ? Color.White : O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.3f)); } }
         public static Color Text { get { return O(Ink.Base.Text); } }
-        public static Color Sub { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.62f)); } }
-        // 0.65 in light mode guarantees >= 4.5:1 across Window, Side, Group, Hover, and Line
-        public static Color Faint { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.65f : 0.57f)); } }
+        // Light Sub sits above Faint (0.65) so secondary text keeps hierarchy and >= 4.5:1 on Line
+        public static Color Sub { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.67f : 0.62f)); } }
+        // 0.65 light / 0.59 dark guarantee >= 4.5:1 across Window, Side, Group, Hover, and Line
+        public static Color Faint { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.65f : 0.59f)); } }
         // Disabled chrome (switch knob, slider fill): dimmer than tertiary text so
         // raising Faint for readability does not make disabled controls look enabled
         public static Color Disabled { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.30f)); } }

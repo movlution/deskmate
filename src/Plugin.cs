@@ -11,14 +11,19 @@ namespace Deskmate
 
         static string CleanText(string s, int max)
         {
-            var sb = new StringBuilder();
-            foreach (char ch in Fmt.StripHidden(s))
+            if (string.IsNullOrEmpty(s) || max <= 0) return "";
+            // OneLine strips bidi/control noise and keeps whole emoji sequences; only cut after that.
+            string text = Fmt.OneLine(s, int.MaxValue);
+            if (text.Length <= max) return text;
+            int end = 0;
+            var elements = System.Globalization.StringInfo.GetTextElementEnumerator(text);
+            while (elements.MoveNext())
             {
-                if (char.IsControl(ch)) { if (sb.Length > 0 && sb[sb.Length - 1] != ' ') sb.Append(' '); continue; }
-                sb.Append(ch);
-                if (sb.Length >= max) break;
+                int next = elements.ElementIndex + elements.GetTextElement().Length;
+                if (next > max) break;
+                end = next;
             }
-            return sb.ToString().Trim();
+            return text.Substring(0, end).TrimEnd();
         }
 
         void OnPlugin(HookEvent ev)
