@@ -30,22 +30,30 @@ namespace Deskmate
             Native.SetForegroundWindow(noteBox.Handle);
         }
 
-        void SaveNote(string text, string to)
+        bool SaveNote(string text, string to)
         {
             settings.Set("note.to", to);
             settings.Save();
             text = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
-            if (text.Length == 0) return;
+            if (text.Length == 0) return true;
             if (to == "rak")
             {
+                if (DriveNotesLoading)
+                {
+                    ShowInfo(IcoShelf, Lang.T("Memuat…"), "", true);
+                    return false;
+                }
                 try
                 {
-                    File.AppendAllText(NotesPath, "- " + DateTime.Now.ToString("yyyy-MM-dd HH.mm") + "  " + text + Environment.NewLine);
+                    if (workWin != null && !workWin.IsDisposed && !workWin.FlushQuickNoteDraft()) return false;
+                    NoteFiles.AppendQuick("- " + DateTime.Now.ToString("yyyy-MM-dd HH.mm") + "  " + text + Environment.NewLine);
+                    ScheduleDriveNotesUpload();
+                    if (workWin != null && !workWin.IsDisposed) workWin.RefreshQuickNote();
                     if (settings.GetBool("shelf", true)) AddToShelf(new[] { NotesPath });
                     ShowInfo(IcoShelf, Lang.T("Disimpan ke catatan"), Preview(text, 40), true);
+                    return true;
                 }
-                catch (Exception ex) { Log.Write("note: " + ex.Message); ShowInfo(IcoShelf, Lang.T("Catatan gagal disimpan"), "", true); }
-                return;
+                catch (Exception ex) { Log.Write("note: " + ex.Message); ShowInfo(IcoShelf, Lang.T("Catatan gagal disimpan"), "", true); return false; }
             }
             string name = to == "notion" ? "Notion" : "Todoist";
             sources.Create(to, text, err =>
@@ -53,6 +61,7 @@ namespace Deskmate
                 if (err == null) ShowInfo(Ink.IcoCalendar, Lang.F("Tugas baru di {0}", name), Preview(text, 40), true);
                 else ShowInfo(Ink.IcoCalendar, err, "", true);
             });
+            return true;
         }
 
         class NoteBox : KitWindow
@@ -61,9 +70,9 @@ namespace Deskmate
             readonly KitSegmented seg = new KitSegmented();
             readonly KitButton save = new KitButton { Primary = true };
             readonly List<string> targets;
-            readonly Action<string, string> done;
+            readonly Func<string, string, bool> done;
 
-            public NoteBox(List<string> targets, string last, Action<string, string> done)
+            public NoteBox(List<string> targets, string last, Func<string, string, bool> done)
             {
                 this.targets = targets;
                 this.done = done;
@@ -149,8 +158,7 @@ namespace Deskmate
             {
                 string text = box.Text;
                 string to = targets[Math.Max(0, Math.Min(targets.Count - 1, seg.Selected))];
-                Close();
-                done(text, to);
+                if (done(text, to) && !IsDisposed) Close();
             }
         }
     }

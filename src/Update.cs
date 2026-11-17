@@ -49,14 +49,18 @@ namespace Deskmate
             return ownDigest;
         }
 
-        void InstallUpdate()
+        void InstallUpdate(Form owner)
         {
             if (updating) return;
             if (newAsset == null || newDigest == null) { if (newUrl != null) OpenUrl(newUrl); return; }
+            string url = newAsset, digest = newDigest, version = newVersion, releaseUrl = newUrl;
+            if (!KitAsk.Confirm(owner,
+                Lang.F("Unduh dan pasang Deskmate {0} sekarang? Deskmate akan dibuka ulang setelah pemasangan.", version),
+                "Pasang", "Nanti", Lang.T("Perbarui Deskmate"))) return;
+
             updating = true;
             if (UpdateChanged != null) UpdateChanged();
-            ShowInfo(Ink.IcoRefresh, Lang.F("Mengunduh Deskmate {0}", newVersion), "", true);
-            string url = newAsset, digest = newDigest, version = newVersion;
+            ShowInfo(Ink.IcoRefresh, Lang.F("Mengunduh Deskmate {0}", version), "", true);
             ThreadPool.QueueUserWorkItem(delegate
             {
                 string error = null;
@@ -77,7 +81,7 @@ namespace Deskmate
                     if (error == Restart) { ShowInfo(Ink.IcoRefresh, Lang.F("Deskmate {0} terpasang", version), Lang.T("buka ulang Deskmate"), true); return; }
                     Log.Write("update failed: " + error);
                     ShowInfo(Ink.IcoRefresh, Lang.T("Pembaruan gagal"), Lang.T("halaman rilis dibuka"), true);
-                    if (newUrl != null) OpenUrl(newUrl);
+                    if (releaseUrl != null) OpenUrl(releaseUrl);
                 });
             });
         }

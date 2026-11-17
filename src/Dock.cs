@@ -15,6 +15,7 @@ namespace Deskmate
         internal readonly AppWatch dockWatch = new AppWatch();
         internal readonly Dictionary<string, Bitmap> dockIcons = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
         readonly System.Windows.Forms.Timer dockLeave = new System.Windows.Forms.Timer { Interval = 3500 };
+        readonly System.Windows.Forms.Timer dockSwitchPoll = new System.Windows.Forms.Timer { Interval = 60 };
         FileSystemWatcher pinWatch;
         readonly System.Windows.Forms.Timer pinSync = new System.Windows.Forms.Timer { Interval = 600 };
 
@@ -86,10 +87,13 @@ namespace Deskmate
                 else dock.Changed(global);
             }
             dockWins.TryGetValue(plan.Owner, out dockWin);
+            dockSwitchPoll.Enabled = dockWins.Count != 0 && !DockWindow.Dry;
         }
 
         void CloseDocks()
         {
+            if (dockSwitchPoll != null) dockSwitchPoll.Stop();
+            dockSwitchMonitor = IntPtr.Zero;
             WatchPins(false);
             if (dockWins.Count == 0)
             {
@@ -117,6 +121,42 @@ namespace Deskmate
         }
 
         // Something on screen moved: dock glass and apps look again
+        const uint DockSwitchStart = 0x0014, DockSwitchEnd = 0x0015;
+        IntPtr dockSwitchMonitor;
+
+        // Some switcher sessions don't deliver SWITCHSTART while the chord is held.
+        void PollDockSwitch()
+        {
+            const int alt = 0x12, tab = 0x09, control = 0x11, down = 0x8000;
+            bool altDown = (GetAsyncKeyState(alt) & down) != 0;
+            if (dockSwitchMonitor != IntPtr.Zero)
+            {
+                if (altDown) return;
+                UpdateDockSwitch(false, Native.GetForegroundWindow());
+            }
+            else
+            {
+                if (!altDown || (GetAsyncKeyState(tab) & down) == 0 || (GetAsyncKeyState(control) & down) != 0) return;
+                UpdateDockSwitch(true, Native.GetForegroundWindow());
+            }
+            NudgeDock();
+        }
+
+        void UpdateDockSwitch(bool switching, IntPtr hwnd)
+        {
+            if (switching)
+            {
+                if (dockSwitchMonitor != IntPtr.Zero) return;
+                IntPtr foreground = Native.GetForegroundWindow();
+                dockSwitchMonitor = Native.MonitorFromWindow(foreground != IntPtr.Zero ? foreground : hwnd, 1);
+                return;
+            }
+            dockSwitchMonitor = IntPtr.Zero;
+            if (hwnd == IntPtr.Zero) hwnd = Native.GetForegroundWindow();
+            IntPtr monitor = Native.MonitorFromWindow(hwnd, 1);
+            foreach (var dock in dockWins.Values) dock.RevealAfterSwitch(monitor);
+        }
+
         void NudgeDock() { foreach (var dock in dockWins.Values) dock.Nudge(); }
 
         // Dock click opens the island on a tab; closes if never visited

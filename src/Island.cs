@@ -52,6 +52,8 @@ namespace Deskmate
         float prompterHalf = BaseHalf, canvasHalf = BaseHalf;
         float WantHalf { get { return PrompterOn ? Math.Max(BaseHalf, prompterHalf) : BaseHalf; } }
         const int AppBarMsg = Native.WM_APP + 0x31;
+        const int MotionFrameMsg = Native.WM_APP + 0x33;
+        DockPacer motionPacer;
         static readonly Guid PowerSourceGuid = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
         static readonly Guid BatteryGuid = new Guid("A7AD8041-B45A-4CAE-87A3-EECBB468A9E1");
 
@@ -80,7 +82,7 @@ namespace Deskmate
         bool canvasTall;
         const float CompactH = 100;
         bool windowShown = true, fullscreen;
-        IntPtr winHook, powerSrc, powerPct;
+        IntPtr winHook, switchHook, powerSrc, powerPct;
         Native.WinEventProc winProc;
         RectangleF shell, bubbleRect;
         float originX, originY;
@@ -98,6 +100,7 @@ namespace Deskmate
         readonly WinTimer hoverTimer = new WinTimer { Interval = 330 }, leaveTimer = new WinTimer { Interval = 420 }, fsTimer = new WinTimer { Interval = 350 };
         readonly WinTimer hoverWatch = new WinTimer { Interval = 50 };
         bool openedByHover;
+        Point? messagesCardClick;
         Toast toast;
         NotifyIcon tray;
         ContextMenuStrip menu;
@@ -147,7 +150,7 @@ namespace Deskmate
             {
                 leaveTimer.Stop();
                 if (IsDisposed || Disposing) return;
-                if (islandMenu != null || WifiPassOpen()) return;
+                if (messagesCardClick.HasValue || islandMenu != null || WifiPassOpen()) return;
                 if (!pointerInside && expanded)
                 {
                     // The panel can grow underneath a stationary pointer after the bubble disappears.
@@ -167,6 +170,7 @@ namespace Deskmate
             spriteTimer.Tick += delegate { if (IsDisposed || Disposing) { spriteTimer.Stop(); return; } SpriteTick(); };
             trimTimer.Tick += delegate { trimTimer.Stop(); if (IsDisposed || Disposing) return; TrimAtRest(); };
             dockLeave.Tick += delegate { DockLeaveTick(); };
+            dockSwitchPoll.Tick += delegate { PollDockSwitch(); };
         }
 
         protected override CreateParams CreateParams
@@ -187,11 +191,19 @@ namespace Deskmate
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
+            motionPacer = new DockPacer(Handle, MotionFrameMsg, 0);
+            if (animating) ScheduleMotionFrame();
             UpdateMonitor();
             var abd = new Native.APPBARDATA { cbSize = Marshal.SizeOf(typeof(Native.APPBARDATA)), hWnd = Handle, uCallbackMessage = AppBarMsg };
             Native.SHAppBarMessage(0, ref abd);
-            winProc = delegate { fsTimer.Stop(); fsTimer.Start(); NudgeFrost(); NudgeDock(); };
+            winProc = delegate(IntPtr hook, uint evt, IntPtr hwnd, int obj, int child, uint thread, uint time)
+            {
+                if (evt == 3) RefreshComboPause();
+                if (evt == DockSwitchStart || evt == DockSwitchEnd) UpdateDockSwitch(evt == DockSwitchStart, hwnd);
+                fsTimer.Stop(); fsTimer.Start(); NudgeFrost(); NudgeDock();
+            };
             winHook = Native.SetWinEventHook(3, 3, IntPtr.Zero, winProc, 0, 0, 0);
+            switchHook = Native.SetWinEventHook(DockSwitchStart, DockSwitchEnd, IntPtr.Zero, winProc, 0, 0, 0);
             // Windows moving behind the glass
             moveHook = Native.SetWinEventHook(0x0B, 0x0B, IntPtr.Zero, winProc, 0, 0, 0);
             minHook = Native.SetWinEventHook(0x16, 0x17, IntPtr.Zero, winProc, 0, 0, 0);
@@ -326,6 +338,7 @@ namespace Deskmate
 
         void StopTimers()
         {
+            StopMotionPacer();
             foreach (var t in new[] { clockTimer, toastTimer, hoverTimer, hoverWatch, leaveTimer, fsTimer, ambientTimer, deferTimer, warmTimer, warmTabsTimer, trimTimer, dockLeave, pinSync, downloadTimer, clipRetry, holdTimer, dictCap, miniTimer, tabHover, spriteTimer, wallDebounce, locksTimer, screenTextWait, shotFind })
                 if (t != null) { t.Stop(); t.Dispose(); }
             warmTimer = warmTabsTimer = null;
@@ -348,7 +361,7 @@ namespace Deskmate
             StopWallSync();
             var abd = new Native.APPBARDATA { cbSize = Marshal.SizeOf(typeof(Native.APPBARDATA)), hWnd = Handle };
             Native.SHAppBarMessage(1, ref abd);
-            foreach (var hook in new[] { winHook, moveHook, minHook })
+            foreach (var hook in new[] { winHook, switchHook, moveHook, minHook })
                 if (hook != IntPtr.Zero) Native.UnhookWinEvent(hook);
             foreach (var reg in new[] { powerSrc, powerPct, powerDisplay })
                 if (reg != IntPtr.Zero) Native.UnregisterPowerSettingNotification(reg);
@@ -387,6 +400,9 @@ namespace Deskmate
         {
             switch (m.Msg)
             {
+                case MotionFrameMsg:
+                    MotionFrame();
+                    return;
                 case Native.WM_MOUSEACTIVATE:
                     m.Result = (IntPtr)Native.MA_NOACTIVATE;
                     return;
@@ -724,7 +740,7 @@ namespace Deskmate
             {
                 if (!ambientTimer.Enabled) lastT = clock.Elapsed.TotalSeconds;
                 animating = true;
-                ScheduleFrame(MotionFrameMs);
+                ScheduleMotionFrame();
             }
         }
 
@@ -768,6 +784,33 @@ namespace Deskmate
         static readonly bool fpsLog = Environment.GetEnvironmentVariable("DESKMATE_FPS") == "1";
         int fpsFrames, gcSeen;
         double fpsStart, renderMs, worstMs;
+        int motionIntervals;
+        double lastMotionPresent, motionIntervalMs, worstMotionIntervalMs;
+
+        void CountMotionPresent()
+        {
+            if (!fpsLog || !animating) return;
+            double now = clock.Elapsed.TotalMilliseconds;
+            if (lastMotionPresent > 0)
+            {
+                double interval = now - lastMotionPresent;
+                motionIntervals++;
+                motionIntervalMs += interval;
+                worstMotionIntervalMs = Math.Max(worstMotionIntervalMs, interval);
+            }
+            lastMotionPresent = now;
+        }
+
+        void LogMotionPresent()
+        {
+            if (!fpsLog) return;
+            if (motionIntervals > 0)
+                Log.Write("notch motion " + current + ": " + motionIntervals + " present intervals, mean " +
+                          (motionIntervalMs / motionIntervals).ToString("0.00") + "ms worst " +
+                          worstMotionIntervalMs.ToString("0.00") + "ms");
+            motionIntervals = 0;
+            lastMotionPresent = motionIntervalMs = worstMotionIntervalMs = 0;
+        }
 
         void CountFrame(double t, double ms)
         {
@@ -813,7 +856,35 @@ namespace Deskmate
             ambientTimer.Start();
         }
 
-        // Render one frame per tick so input can run between frames.
+        void ScheduleMotionFrame()
+        {
+            if (motionPacer == null) { ScheduleFrame(MotionFrameMs); return; }
+            ambientTimer.Stop();
+            motionPacer.Want();
+        }
+
+        void StopMotionPacer()
+        {
+            if (motionPacer == null) return;
+            motionPacer.Stop();
+            motionPacer = null;
+        }
+
+        protected override void OnHandleDestroyed(EventArgs e)
+        {
+            StopMotionPacer();
+            base.OnHandleDestroyed(e);
+        }
+
+        void MotionFrame()
+        {
+            var pacer = motionPacer;
+            if (pacer == null) return;
+            try { if (animating) AmbientTick(); }
+            finally { pacer.Done(pacer == motionPacer && animating && !IsDisposed && !Disposing); }
+        }
+
+        // Ambient work uses the timer. Motion frames are posted by the compositor pacer.
         void AmbientTick()
         {
             if (IsDisposed || Disposing) { ambientTimer.Stop(); return; }
@@ -823,11 +894,15 @@ namespace Deskmate
             if (inMotion)
             {
                 lastMotionUtc = DateTime.UtcNow;
-                ScheduleFrame(MotionFrameMs);
+                ScheduleMotionFrame();
             }
             else if (mode == Stopped) ambientTimer.Stop();
             else ScheduleFrame(AmbientWait(wholeLive));
-            if (wasAnimating && !animating) RestTimer();
+            if (wasAnimating && !animating)
+            {
+                LogMotionPresent();
+                RestTimer();
+            }
         }
 
         // Live content paces; battery saver slows
@@ -873,7 +948,7 @@ namespace Deskmate
             if (!windowShown)
             {
                 Native.ShowWindow(Handle, Native.SW_SHOWNOACTIVATE);
-                Native.SetWindowPos(Handle, Native.HWND_TOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+                RaiseIsland();
                 windowShown = true;
                 NudgeFrost();
             }
@@ -1054,7 +1129,8 @@ namespace Deskmate
             var size = new Native.SIZE(pxW, pxH);
             var src = new Native.POINT(0, 0);
             var blend = new Native.BLENDFUNCTION { SourceConstantAlpha = (byte)(255 * Ease.Clamp01(opacity.Value)), AlphaFormat = 1 };
-            Native.UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, memDC, ref src, 0, ref blend, Native.ULW_ALPHA);
+            if (Native.UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, memDC, ref src, 0, ref blend, Native.ULW_ALPHA))
+                CountMotionPresent();
             SyncIslandBackdrop(frameLeft, frameTop, pxW, pxH, R, gpuBridge);
             lastPresentTick = Environment.TickCount;
             presented.Set();
@@ -1558,6 +1634,27 @@ namespace Deskmate
         void WatchHover()
         {
             if (compactHoverExitPending && !HoldCompactHoverAtEdge(CursorInIsland())) PointerLeave();
+            if (messagesCardClick.HasValue)
+            {
+                if (!expanded || page != PageMessages)
+                    messagesCardClick = null;
+                else
+                {
+                    if (!sw.Settled || !sh.Settled ||
+                        (!Anim.Reduced && (DateTime.UtcNow - pageSwitchUtc).TotalSeconds < PageTransitionSeconds)) return;
+                    var pt = CursorInIsland();
+                    bool inside = InShape(pt) || (openedByHover && OverHoverTarget(pt));
+                    // A resize can move the panel away from a stationary cursor.
+                    if (!inside && Cursor.Position == messagesCardClick.Value) return;
+                    messagesCardClick = null;
+                    if (inside)
+                    {
+                        pointerInside = true;
+                        leaveTimer.Stop();
+                    }
+                    else PointerLeave();
+                }
+            }
             if (expanded)
             {
                 if (!openedByHover || islandMenu != null || WifiPassOpen() || dragId != null || draggingOut || prompterSizing != 0) return;
@@ -1622,6 +1719,7 @@ namespace Deskmate
         void Expand(int pg)
         {
             if (!CanExpand()) return;
+            messagesCardClick = null;
             toast = null;
             toastTimer.Stop();
             // A detached compact bubble would otherwise bridge into the growing panel.
@@ -1686,7 +1784,7 @@ namespace Deskmate
             pointerInside = false;
             shellDown = false;
             leaveTimer.Stop();
-            if (islandMenu == null) leaveTimer.Start();
+            if (!messagesCardClick.HasValue && islandMenu == null) leaveTimer.Start();
             hoverId = null;
             Kick();
             PrompterHover(mouse, false);
@@ -1980,10 +2078,19 @@ namespace Deskmate
 
         // System
 
+        void RaiseIsland()
+        {
+            // A foreground change can trigger this while a context menu is open.
+            // Raising the layered Island then puts its content over the menu.
+            if (islandMenu != null) return;
+            Native.SetWindowPos(Handle, Native.HWND_TOPMOST, 0, 0, 0, 0,
+                Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+        }
+
         void CheckFullscreen()
         {
             bool fs = Native.IsFullscreenOn(monitorHandle) || ExceptHidden();
-            if (!fs && windowShown) Native.SetWindowPos(Handle, Native.HWND_TOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+            if (!fs && windowShown) RaiseIsland();
             if (fs == fullscreen) return;
             fullscreen = fs;
             if (fs) expanded = false;
@@ -1993,6 +2100,7 @@ namespace Deskmate
         void ClockTick()
         {
             if (IsDisposed || Disposing) { clockTimer.Stop(); return; }
+            RefreshComboPause();
             var nowUtc = DateTime.UtcNow;
             string hm = Fmt.Clock(DateTime.Now);
             bool minute = hm != clockRoller.Value;
@@ -2071,7 +2179,7 @@ namespace Deskmate
             {
                 try { Process.Start("explorer.exe", "\"" + Settings.Dir + "\""); } catch (Exception ex) { Log.Write("open dir: " + ex.Message); }
             });
-            var updateItem = new ToolStripMenuItem(Lang.T("Perbarui"), null, delegate { InstallUpdate(); }) { Visible = false };
+            var updateItem = new ToolStripMenuItem(Lang.T("Perbarui"), null, delegate { BeginInvoke(new Action(() => InstallUpdate(this))); }) { Visible = false };
             var hideItem = new ToolStripMenuItem(Lang.T("Sembunyikan island"), null, delegate { ToggleHidden(); }) { ShortcutKeyDisplayString = HotkeyText(HideHotkey) };
             var keysItem = new ToolStripMenuItem(Lang.T("Navigasi keyboard"), null, delegate { EnterKeyboard(); }) { ShortcutKeyDisplayString = HotkeyText(KeysHotkey) };
             trayComboItem = new ToolStripMenuItem(Lang.T("Combo Ketikan"), null, delegate { ToggleCombo(); }) { Checked = ComboOn };

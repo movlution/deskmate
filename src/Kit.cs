@@ -244,7 +244,7 @@ namespace Deskmate
 
         void Pick(int i)
         {
-            if (i < 0 || i >= Items.Length || i == selected) return;
+            if (!Enabled || i < 0 || i >= Items.Length || i == selected) return;
             Selected = i;
             var h = Changed;
             if (h != null) h(i);
@@ -253,16 +253,25 @@ namespace Deskmate
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+            if (!Enabled || e.Button != MouseButtons.Left) return;
+            Focus();
             for (int i = 0; i < Items.Length; i++) if (Cell(i).Contains(e.Location)) { Pick(i); return; }
         }
 
-        protected override bool IsInputKey(Keys key) { return key == Keys.Left || key == Keys.Right || base.IsInputKey(key); }
+        protected override bool IsInputKey(Keys key) { return key == Keys.Left || key == Keys.Right || key == Keys.Home || key == Keys.End || base.IsInputKey(key); }
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
             base.OnKeyDown(e);
+            if (!Enabled || e.Modifiers != Keys.None) return;
             if (e.KeyCode == Keys.Left) Pick(selected - 1);
             else if (e.KeyCode == Keys.Right) Pick(selected + 1);
+            else if (e.KeyCode == Keys.Home) Pick(0);
+            else if (e.KeyCode == Keys.End) Pick(Items.Length - 1);
+            else return;
+            KitInk.ByMouse = false;
+            e.Handled = e.SuppressKeyPress = true;
+            Invalidate();
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -277,8 +286,8 @@ namespace Deskmate
             for (int i = 0; i < Items.Length; i++)
             {
                 var c = Cell(i);
-                if (i == selected) Fill(g, c, c.Height / 2, KitInk.Raised);
-                KitInk.Draw(g, Items[i], i == selected ? fs : f, i == selected ? KitInk.Text : KitInk.Sub, c, ContentAlignment.MiddleCenter);
+                if (i == selected) Fill(g, c, c.Height / 2, Enabled ? KitInk.Raised : KitInk.Group);
+                KitInk.Draw(g, Items[i], i == selected ? fs : f, !Enabled ? KitInk.Faint : i == selected ? KitInk.Text : KitInk.Sub, c, ContentAlignment.MiddleCenter);
             }
             f.Dispose();
             fs.Dispose();
@@ -293,7 +302,7 @@ namespace Deskmate
             public Access(KitSegmented owner) : base(owner) { this.owner = owner; }
             public override AccessibleRole Role { get { return AccessibleRole.PageTabList; } }
             public override int GetChildCount() { return owner.Items.Length; }
-            public override AccessibleObject GetChild(int i) { return new Item(owner, i); }
+            public override AccessibleObject GetChild(int i) { return i >= 0 && i < owner.Items.Length ? new Item(owner, i) : null; }
             public override AccessibleObject GetSelected() { return GetChild(owner.selected); }
             public override AccessibleObject GetFocused() { return owner.Focused ? GetChild(owner.selected) : null; }
         }
@@ -308,7 +317,7 @@ namespace Deskmate
             public override AccessibleObject Parent { get { return owner.AccessibilityObject; } }
             public override AccessibleStates State
             {
-                get { return AccessibleStates.Selectable | AccessibleStates.Focusable | (index == owner.selected ? AccessibleStates.Selected | AccessibleStates.Checked : 0); }
+                get { return AccessibleStates.Selectable | AccessibleStates.Focusable | (!owner.Enabled ? AccessibleStates.Unavailable : 0) | (owner.Focused && index == owner.selected ? AccessibleStates.Focused : 0) | (index == owner.selected ? AccessibleStates.Selected | AccessibleStates.Checked : 0); }
             }
             public override Rectangle Bounds { get { return owner.RectangleToScreen(Rectangle.Round(owner.Cell(index))); } }
             public override string DefaultAction { get { return Lang.T("Pilih"); } }

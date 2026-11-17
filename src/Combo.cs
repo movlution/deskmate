@@ -112,6 +112,9 @@ namespace Deskmate
         float sprintDoneLeft;
         int sprintChars;
         int sprintFinalWpm;
+        volatile bool comboPaused;
+        IntPtr comboForeground;
+        int comboForegroundChecked;
 
         static readonly string[] ComboBadgeOrder =
         {
@@ -212,11 +215,41 @@ namespace Deskmate
 
         public bool ComboShowing
         {
-            get { return (ComboOn && (comboActive || comboFinishLeft > 0.01f || comboBrokenLeft > 0.01f)) || sprintActive || sprintDoneLeft > 0.01f; }
+            get { return !comboPaused && ((ComboOn && (comboActive || comboFinishLeft > 0.01f || comboBrokenLeft > 0.01f)) || sprintActive || sprintDoneLeft > 0.01f); }
         }
         void StartCombo()
         {
             EnsureComboStatsLoaded();
+            RefreshComboPause(true);
+            SyncComboHook();
+        }
+
+        void RefreshComboPause(bool immediate = false)
+        {
+            if (!IsHandleCreated || IsDisposed || Disposing) return;
+            if (!ComboOn && !sprintActive && !comboPaused) return;
+            IntPtr foreground = Native.GetForegroundWindow();
+            int now = Environment.TickCount;
+            if (!immediate && foreground == comboForeground && (uint)(now - comboForegroundChecked) < 150) return;
+            comboForeground = foreground;
+            comboForegroundChecked = now;
+
+            int state;
+            bool paused = (Native.SHQueryUserNotificationState(out state) == 0 && state == 3)
+                || Native.IsFullscreenWindow(foreground, Native.MonitorFromWindow(foreground, 2));
+            var rule = paused ? null : FrontRule();
+            ApplyComboPause(paused || (rule != null && rule.Mode == ExceptCombo));
+        }
+
+        void ApplyComboPause(bool paused)
+        {
+            if (paused == comboPaused) return;
+            comboPaused = paused;
+            if (paused)
+            {
+                sprintDoneLeft = 0;
+                ClearComboAudioVoices();
+            }
             SyncComboHook();
         }
 
@@ -230,7 +263,7 @@ namespace Deskmate
 
         public void SyncComboHook()
         {
-            if (ComboOn || sprintActive)
+            if (!comboPaused && (ComboOn || sprintActive))
             {
                 if (comboHook == IntPtr.Zero && !IsDisposed)
                 {
@@ -508,6 +541,7 @@ namespace Deskmate
             sprintChars = 0;
             sprintFinalWpm = 0;
             expanded = false;
+            RefreshComboPause(true);
             SyncComboHook();
             Kick();
         }
@@ -527,6 +561,7 @@ namespace Deskmate
             bool next = !ComboOn;
             settings.Set("keys.combo", next ? "1" : "0");
             settings.Save();
+            RefreshComboPause(true);
             SyncComboHook();
             if (prefs != null && !prefs.IsDisposed) prefs.Relayout();
             var t = ShowToast(View.Info, 2.8, 2, false, true);
@@ -541,7 +576,7 @@ namespace Deskmate
 
         IntPtr ComboHookCallback(int code, IntPtr msg, IntPtr info)
         {
-            if (code >= 0 && (ComboOn || sprintActive))
+            if (code >= 0 && !comboPaused && (ComboOn || sprintActive))
             {
                 try
                 {
@@ -638,7 +673,8 @@ namespace Deskmate
 
         public bool RegisterComboKeystroke(int vk)
         {
-            if (!ComboOn && !sprintActive) return false;
+            RefreshComboPause();
+            if (comboPaused || (!ComboOn && !sprintActive)) return false;
             if (vk < 0 || vk >= 256) return false;
             if (comboKeyDown[vk]) return false;
             comboKeyDown[vk] = true;
@@ -654,7 +690,8 @@ namespace Deskmate
 
         void OnComboKeystroke(int vk)
         {
-            if ((!ComboOn && !sprintActive) || dormant || hiddenByUser || keyboardMode) return;
+            RefreshComboPause();
+            if (comboPaused || (!ComboOn && !sprintActive) || dormant || hiddenByUser || keyboardMode) return;
             EnsureComboStatsLoaded();
             double now = clock.Elapsed.TotalSeconds;
             double dtSinceLast = now - comboLastHitSec;
@@ -1201,6 +1238,7 @@ namespace Deskmate
 
         void StepCombo(float dt)
         {
+            if (comboPaused) return;
             comboPop.Step(dt);
             comboRing.Step(dt);
             comboShake.Step(dt);
@@ -1355,6 +1393,7 @@ namespace Deskmate
 
         bool ComboAnimating()
         {
+            if (comboPaused) return false;
             return comboActive || comboFinishLeft > 0.01f || comboBrokenLeft > 0.01f || comboSparks.Count > 0 || comboConfetti.Count > 0 || comboShards.Count > 0 || comboCallouts.Count > 0 || comboGoldFlash > 0.01f || comboShieldCrack > 0.01f || comboEnterSmash > 0.01f || sprintActive || sprintDoneLeft > 0.01f || !comboPop.Settled;
         }
 

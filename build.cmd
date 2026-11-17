@@ -18,6 +18,8 @@ if not "%~2"=="" set EXTRA="%~2"
   /r:"%WMD%\Windows.UI.winmd" /r:"%WMD%\Windows.ApplicationModel.winmd" /r:"%WMD%\Windows.Devices.winmd" /r:"%WMD%\Windows.Graphics.winmd" /r:"%WMD%\Windows.Data.winmd" /r:"%WMD%\Windows.Globalization.winmd" ^
   /r:"%FW%\System.Runtime.dll" /r:"%FW%\System.Runtime.InteropServices.WindowsRuntime.dll" /r:"%FW%\System.Runtime.WindowsRuntime.dll" ^
   /r:System.Numerics.dll /r:"%FW%\System.Numerics.Vectors.dll" ^
+  /r:"%FW%\System.Xaml.dll" /r:"%FW%\WPF\WindowsBase.dll" /r:"%FW%\WPF\PresentationCore.dll" ^
+  /r:"%FW%\WPF\PresentationFramework.dll" /r:"%FW%\WPF\WindowsFormsIntegration.dll" ^
   "%ROOT%src\*.cs" %EXTRA%
 if errorlevel 1 (
   echo Build gagal.

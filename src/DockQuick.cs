@@ -53,7 +53,11 @@ namespace Deskmate
             string btStatusCode = "", btStatus;
             int firstBt;
 
-            const float Pad = 20, ToggleD = 48, Foot = 56, RowH = 50, ListTop = 56;
+            const float Pad = 20, Foot = 56, RowH = 50, ListTop = 56;
+            const float TileTop = 20, TilePitch = 82, TileDiameter = 48;
+            const float ViewHeight = 2 * TilePitch, MaxTileScroll = 2 * TilePitch;
+            const float GridBottom = TileTop + ViewHeight + 12;
+            float tileScroll, scrollGrab;
 
             public QuickSheet(Island isle, DockWindow dock) : base(isle, dock, "quick", "Deskmate Quick")
             {
@@ -76,7 +80,10 @@ namespace Deskmate
 
             protected override void Opening(Rectangle mon, int barTop)
             {
-                H = 196 + 48 + 40 + (HasBright ? 56 : 0) + Foot + 12;
+                H = GridBottom + 48 + 40 + (HasBright ? 56 : 0) + Foot + 12;
+                float availableHeight = (barTop - mon.Top) / scale - 40;
+                if (availableHeight < H && barTop > mon.Top)
+                    scale = (barTop - mon.Top) / (H + 40);
                 isle.volume.RefreshDevices();
                 refresh.Start();
             }
@@ -95,20 +102,9 @@ namespace Deskmate
             {
                 if (wifiView) { DrawWifi(); return; }
                 if (btView) { DrawBluetooth(); return; }
-                var radios = isle.radios;
-                var net = isle.net.Current;
-                float c0 = W / 6, c1 = W / 2, c2 = W * 5 / 6, y0 = 50, y1 = 132;
-                // Joined but not online says so, not just the name
-                string wifi = net.Wifi && net.Any && net.Captive ? Lang.T("Perlu login") : net.Wifi && net.Any && !net.Online ? Lang.T("Tanpa internet")
-                            : net.Wifi && net.Name.Length > 0 ? net.Name : Lang.T("Wi-Fi");
-                Toggle(c0, y0, ToggleD, Ink.IcoWifi, radios.WifiOn, radios.HasWifi, Clip(wifi), "wifi", "wifiList");
-                Toggle(c1, y0, ToggleD, Ink.IcoBluetooth, radios.BluetoothOn, radios.HasBluetooth, Lang.T("Bluetooth"), "bt", "btMore");
-                Toggle(c2, y0, ToggleD, Ink.IcoQuiet, isle.QuietSwitch, true, Lang.T("Senyap"), "quiet");
-                Toggle(c0, y1, ToggleD, IcoDarkMode, isle.winDark, true, Lang.T("Gelap"), "dark");
-                Toggle(c1, y1, ToggleD, IcoAwake, isle.AwakeOn, true, isle.AwakeLabel(), "awake", "awakeMore");
-                Toggle(c2, y1, ToggleD, isle.micMuted ? IcoMicOff : Ink.IcoMic, isle.micPresent && !isle.micMuted, isle.micPresent, Lang.T("Mikrofon"), "mic");
+                DrawTileGrid();
 
-                float y = 196;
+                float y = GridBottom;
                 volRect = new RectangleF(Pad, y, W - Pad * 2, 48);
                 char volGlyph = isle.muted ? Ink.IcoMute : isle.vol < 0.01f ? Ink.IcoVol0 : isle.vol < 0.34f ? Ink.IcoVol1 : isle.vol < 0.67f ? Ink.IcoVol2 : Ink.IcoVol3;
                 Slider(volRect, "vol", isle.muted ? 0 : isle.vol, volGlyph, Lang.T("Suara"), Ink.Percent((int)Math.Round(isle.vol * 100)), "mute");
@@ -121,6 +117,68 @@ namespace Deskmate
                     Slider(brightRect, "bright", isle.brightLevel / 100f, Ink.IcoSun, Lang.T("Layar"), Ink.Percent(isle.brightLevel), null);
                 }
                 DrawFoot();
+            }
+
+            void DrawTileGrid()
+            {
+                var viewport = new RectangleF(0, TileTop, W, ViewHeight);
+                var clip = g.Save();
+                g.IntersectClip(viewport);
+                DrawControlTiles();
+                DrawMoreTiles();
+                g.Restore(clip);
+
+                var rail = new RectangleF(W - 15, TileTop, 13, ViewHeight);
+                Hit(rail, "tileScroll");
+                bool hover = hotId == "tileScroll" || pressId == "tileScroll";
+                if (hover) p.FillRound(new RectangleF(W - 10, TileTop, 4, ViewHeight), 2, p.T.FillHover);
+                p.FillRound(new RectangleF(W - 10, ScrollThumbTop, 4, ViewHeight / 2), 2, hover ? p.T.Sub : p.T.Faint);
+            }
+
+            float ScrollThumbTop { get { return TileTop + ViewHeight / 2 * tileScroll / MaxTileScroll; } }
+
+            void ScrollTiles(float offset) { tileScroll = Math.Max(0, Math.Min(MaxTileScroll, offset)); }
+
+            void DrawControlTiles()
+            {
+                var radios = isle.radios;
+                var net = isle.net.Current;
+                string wifi = net.Wifi && net.Any && net.Captive ? Lang.T("Perlu login") : net.Wifi && net.Any && !net.Online ? Lang.T("Tanpa internet")
+                            : net.Wifi && net.Name.Length > 0 ? net.Name : Lang.T("Wi-Fi");
+                Tile(0, Ink.IcoWifi, radios.WifiOn, radios.HasWifi, Clip(wifi), "wifi", "wifiList");
+                Tile(1, Ink.IcoBluetooth, radios.BluetoothOn, radios.HasBluetooth, Lang.T("Bluetooth"), "bt", "btMore");
+                Tile(2, Ink.IcoQuiet, isle.QuietSwitch, true, Lang.T("Senyap"), "quiet");
+                Tile(3, IcoDarkMode, isle.winDark, true, Lang.T("Gelap"), "dark");
+                Tile(4, IcoAwake, isle.AwakeOn, true, isle.AwakeLabel(), "awake", "awakeMore");
+                Tile(5, isle.micMuted ? IcoMicOff : Ink.IcoMic, isle.micPresent && !isle.micMuted, isle.micPresent, Lang.T("Mikrofon"), "mic");
+            }
+
+            void DrawMoreTiles()
+            {
+                Tile(6, '\uE703', false, true, "Cast", "cast");
+                Tile(7, '\uEBC6', false, true, Lang.T("Proyeksi"), "project");
+                Tile(8, Ink.IcoVol3, false, true, Lang.T("Keluaran audio"), "output");
+                Tile(9, Ink.IcoSun, false, true, Lang.T("Lampu malam"), "nightLight");
+                Tile(10, '\uEBB9', false, true, Lang.T("Hemat daya"), "batterySaver");
+                Tile(11, '\uE704', false, true, Lang.T("Hotspot seluler"), "hotspot");
+            }
+
+            void Tile(int index, char glyph, bool on, bool available, string label, string id, string more = null)
+            {
+                float x = (index % 3 + 0.5f) * W / 3;
+                float rowTop = TileTop + index / 3 * TilePitch - tileScroll;
+                if (rowTop + TilePitch <= TileTop || rowTop >= TileTop + ViewHeight) return;
+                float y = rowTop + 6 + TileDiameter / 2;
+                int firstHit = hits.Count;
+                Toggle(x, y, TileDiameter, glyph, on, available, label, id, more);
+                var viewport = new RectangleF(0, TileTop, W, ViewHeight);
+                for (int i = hits.Count - 1; i >= firstHit; i--)
+                {
+                    var hit = hits[i];
+                    var visible = RectangleF.Intersect(hit.Key, viewport);
+                    if (visible.Height <= 0) hits.RemoveAt(i);
+                    else hits[i] = new KeyValuePair<RectangleF, string>(visible, hit.Value);
+                }
             }
 
             static string Clip(string s) { return s.Length > 12 ? s.Substring(0, 11) + "…" : s; }
@@ -518,9 +576,38 @@ namespace Deskmate
             protected override bool Drag(string id, PointF at)
             {
                 if (wifiView || btView) return false;
+                if (id == "tileScroll")
+                {
+                    ScrollTiles((at.Y - TileTop - scrollGrab) * MaxTileScroll / (ViewHeight / 2));
+                    return true;
+                }
                 if (id == "vol") { isle.setVol(SliderValue(volRect, at)); return true; }
                 if (id == "bright" && HasBright) { isle.setBright(SliderValue(brightRect, at)); return true; }
                 return false;
+            }
+
+            protected override void OnMouseDown(MouseEventArgs e)
+            {
+                if (!Leaving && !wifiView && !btView && e.Button == MouseButtons.Left && HitAt(e.Location) == "tileScroll")
+                {
+                    float grab = Local(e.Location).Y - ScrollThumbTop;
+                    scrollGrab = grab >= 0 && grab <= ViewHeight / 2 ? grab : ViewHeight / 4;
+                }
+                base.OnMouseDown(e);
+            }
+
+            protected override void OnMouseWheel(MouseEventArgs e)
+            {
+                if (Leaving) return;
+                if (wifiView || btView || Local(e.Location).Y >= GridBottom)
+                {
+                    base.OnMouseWheel(e);
+                    return;
+                }
+                pressId = null;
+                ScrollTiles(tileScroll - e.Delta * TilePitch / SystemInformation.MouseWheelScrollDelta);
+                hotId = null;
+                Render();
             }
 
             protected override void Wheel(string id, int delta)
@@ -540,7 +627,7 @@ namespace Deskmate
                 {
                     if (id == "wifi") OpenWifi();
                     else if (id == "bt") OpenBluetooth();
-                    else if (id == "vol" || id == "device") SettingsMenu(Lang.T("Pengaturan suara"), "ms-settings:sound");
+                    else if (id == "vol" || id == "device" || id == "output") SettingsMenu(Lang.T("Pengaturan suara"), "ms-settings:sound");
                     return;
                 }
                 if (button != MouseButtons.Left) return;
@@ -555,7 +642,13 @@ namespace Deskmate
                     case "awake": isle.actAwake(); break;
                     case "awakeMore": ShowMenu(isle.AwakeItems()); break;
                     case "mic": isle.actMic(); break;
+                    case "cast": Done(); Taskbar.Win((byte)Keys.K); break;
+                    case "project": Done(); Taskbar.Win((byte)Keys.P); break;
+                    case "nightLight": Open("ms-settings:nightlight", null); Done(); break;
+                    case "batterySaver": Open(isle.hasBattery ? "ms-settings:batterysaver" : "ms-settings:powersleep", null); Done(); break;
+                    case "hotspot": Open("ms-settings:network-mobilehotspot", null); Done(); break;
                     case "mute": isle.actMute(); break;
+                    case "output":
                     case "device": DeviceMenu(); break;
                     case "gear": Open("ms-settings:", null); Done(); break;
                     case "deskmate": Done(); isle.OpenPrefs("dock"); break;
@@ -688,6 +781,12 @@ namespace Deskmate
                     else if (key == Keys.Escape) { wifiView = false; Render(); return true; }
                 }
                 if (btView && key == Keys.Escape) { btView = false; btScanner.StopScan(); btStatus = null; Render(); return true; }
+                if (!wifiView && !btView && (key == Keys.PageUp || key == Keys.PageDown))
+                {
+                    ScrollTiles(tileScroll + (key == Keys.PageUp ? -ViewHeight : ViewHeight));
+                    Render();
+                    return true;
+                }
                 return base.ProcessCmdKey(ref msg, key);
             }
 

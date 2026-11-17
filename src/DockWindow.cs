@@ -52,11 +52,12 @@ namespace Deskmate
             int tickN;
             // Dock slides in on open and for auto-hide
             readonly Spring reveal = new Spring(0, 1, 1, 0.001f), hover = new Spring(0, 1, 1, 0.002f), workDot = new Spring(0, 1, 1, 0.003f);
-            bool wantShown = true;
+            bool wantShown = true, focusReveal;
 
             [DllImport("user32.dll")] static extern bool RegisterShellHookWindow(IntPtr h);
             [DllImport("user32.dll")] static extern bool DeregisterShellHookWindow(IntPtr h);
             [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+            [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
             [DllImport("kernel32.dll")] static extern IntPtr VirtualQuery(IntPtr address, out MemInfo info, IntPtr size);
 
             [StructLayout(LayoutKind.Sequential)]
@@ -497,6 +498,7 @@ namespace Deskmate
                 if (closing || !IsHandleCreated) return;
                 IntPtr h = isle.WorkHwnd;
                 if (h != IntPtr.Zero) watch.Track(h);
+                UpdateVisibility();
                 if (!isle.WorkOpen && card != null && card.Kind == DockCard.WindowsKind && card.App != null && card.App.Key == "sys:work") CloseCard();
                 Refresh(false);
                 workDot.Target = WorkDotTarget();
@@ -618,7 +620,9 @@ namespace Deskmate
             {
                 if (frost != null) frost.Nudge();
                 if (sheet != null && !sheet.IsDisposed) sheet.NudgeFrost();
-                if (HideMode == "smart") SmartHide();
+                if (closing || !IsHandleCreated) return;
+                UpdateVisibility();
+                if (shown && HideMode == "smart") SmartHide();
                 // Focus moved elsewhere: the tray grid has done its job
                 if (TrayExpanded && (DateTime.UtcNow - trayOpenUtc).TotalMilliseconds > 250)
                 {
@@ -629,13 +633,18 @@ namespace Deskmate
                 }
             }
 
-            void Tick()
+            void UpdateVisibility()
             {
-                if (closing) return;
-                tickN++;
-                // Fullscreen or locked: out of the way
-                // Fullscreen, lock, or user hide affects this dock's own display.
-                bool want = !Native.IsFullscreenOn(monitorHandle) && !(globalOwner && isle.ExceptHidden()) && !isle.dormant && !isle.hiddenByUser;
+                var work = isle.WorkOpen ? isle.WorkHwnd : IntPtr.Zero;
+                var foreground = GetForegroundWindow();
+                bool workspaceActive = work != IntPtr.Zero && foreground != IntPtr.Zero
+                    && (foreground == work || GetAncestor(foreground, 3) == work)
+                    && Native.MonitorFromWindow(work, 2) == monitorHandle;
+                bool hold = workspaceActive || (isle.dockSwitchMonitor != IntPtr.Zero && isle.dockSwitchMonitor == monitorHandle);
+                bool wasHeld = focusReveal;
+                bool wasShown = shown;
+                focusReveal = hold;
+                bool want = (hold || !Native.IsFullscreenOn(monitorHandle)) && !(globalOwner && isle.ExceptHidden()) && !isle.dormant && !isle.hiddenByUser;
                 if (want != shown)
                 {
                     shown = want;
@@ -643,6 +652,35 @@ namespace Deskmate
                     if (want) { drawnSig = ""; Render(); }
                     else { CloseCard(); if (dockBackdrop != null) dockBackdrop.HideBackdrop(); }
                 }
+                if (!shown) return;
+                if (hold && (!wantShown || !wasHeld || !wasShown))
+                {
+                    if (!Dry && isle.dockSwitchMonitor == monitorHandle && monitorHandle != IntPtr.Zero)
+                        Native.SetWindowPos(Handle, Native.HWND_TOPMOST, 0, 0, 0, 0,
+                            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+                    Reveal(true);
+                }
+                else if (!hold && wasHeld && HideMode != "never")
+                {
+                    hideLater.Stop();
+                    hideLater.Start();
+                }
+            }
+
+            internal void RevealAfterSwitch(IntPtr monitor)
+            {
+                if (closing || !IsHandleCreated || monitorHandle != monitor || HideMode == "never") return;
+                UpdateVisibility();
+                if (!shown || focusReveal) return;
+                Reveal(true);
+                hideLater.Start();
+            }
+
+            void Tick()
+            {
+                if (closing) return;
+                tickN++;
+                UpdateVisibility();
                 if (!shown) return;
                 if (HideMode == "auto" && StayOnDesktop && !wantShown && DesktopFront()) Reveal(true);
                 // Any dock stands in for the bar on its screen; Rehide only touches owned ones
@@ -735,7 +773,7 @@ namespace Deskmate
 
             void AutoHide()
             {
-                if (HideMode == "never" || inside || card != null || sheet != null || keyMode || dragging) return;
+                if (focusReveal || HideMode == "never" || inside || card != null || sheet != null || keyMode || dragging) return;
                 if (HideMode == "auto" && StayOnDesktop && DesktopFront()) return;
                 if (HideMode == "smart" && !Covered()) return;
                 Reveal(false);
@@ -743,7 +781,7 @@ namespace Deskmate
 
             void SmartHide()
             {
-                if (inside || card != null) return;
+                if (focusReveal || inside || card != null) return;
                 bool covered = Covered();
                 if (covered && wantShown) { hideLater.Stop(); hideLater.Start(); }
                 else if (!covered && !wantShown) Reveal(true);

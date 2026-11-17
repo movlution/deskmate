@@ -308,14 +308,16 @@ namespace Deskmate
 
             readonly IntPtr hwnd;
             readonly int msg;
+            readonly double minimumFrameMs;
             readonly AutoResetEvent wake = new AutoResetEvent(false);
             volatile bool run = true, want;
             int posted;
 
-            public DockPacer(IntPtr hwnd, int msg)
+            public DockPacer(IntPtr hwnd, int msg, double minimumFrameMs = 12)
             {
                 this.hwnd = hwnd;
                 this.msg = msg;
+                this.minimumFrameMs = minimumFrameMs;
                 new Thread(Loop) { IsBackground = true, Name = "dock frames" }.Start();
             }
 
@@ -348,8 +350,9 @@ namespace Deskmate
                 {
                     if (!want) { wake.WaitOne(); continue; }
                     if (Native.DwmFlush() != 0) Thread.Sleep(15);
+                    if (!run || !want) continue;
                     double now = sw.Elapsed.TotalMilliseconds;
-                    if (now - last < 12) continue;
+                    if (now - last < minimumFrameMs) continue;
                     if (Interlocked.CompareExchange(ref posted, 1, 0) != 0) continue;
                     last = now;
                     if (!PostMessage(hwnd, msg, IntPtr.Zero, IntPtr.Zero)) Interlocked.Exchange(ref posted, 0);

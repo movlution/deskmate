@@ -170,7 +170,7 @@ Describe "Tier 1 Feature Suite: Feature 34 - Catatan Tab Redesign" {
         $editorBox = $wwType.GetField("editor", $flags).GetValue($ww)
         Assert-NotNull $titleBox "WorkWindow must have noteTitleBox"
         Assert-NotNull $editorBox "WorkWindow must have editor"
-        Assert-True ($editorBox.HideIdleScroll) "Editor must hide idle scrollbar until overflow"
+        Assert-True ($editorBox -is [System.Windows.Forms.RichTextBox]) "Editor must display Markdown formatting inline"
         $hTabs = $ww.Handle
         $tabsCtrl = $wwType.GetField("tabs", $flags).GetValue($ww)
         Assert-Equal 2 $tabsCtrl.Items.Length "WorkWindow tabs must have Tugas and Catatan"
@@ -211,6 +211,45 @@ Describe "Tier 1 Feature Suite: Feature 34 - Catatan Tab Redesign" {
 
         $disk = [System.IO.File]::ReadAllText($mdPath)
         Assert-Equal "# Judul Baru`r`n`r`nIsi yang diperbarui" $disk "Saved markdown must serialize # title + blank line + body"
+
+        $continueList = $wwType.GetMethod("ContinueMarkdownList", $flags)
+        foreach ($sample in @(
+            @("  9. Riset", "  9. Riset`r`n  10. "),
+            @("* Riset", "* Riset`r`n* "),
+            @("- [x] Riset", "- [x] Riset`r`n- [ ] "),
+            @("1. Riset`r`n2. ", "1. Riset`r`n")
+        )) {
+            $editorBox.Text = $sample[0]
+            $editorBox.SelectionStart = $editorBox.Text.Length
+            $key = New-Object System.Windows.Forms.KeyEventArgs ([System.Windows.Forms.Keys]::Enter)
+            [void]$continueList.Invoke($ww, @($editorBox, $key.PSObject.BaseObject))
+            Assert-True $key.SuppressKeyPress "List Enter must replace the standard newline"
+            Assert-Equal ($sample[1] -replace "`r", "") $editorBox.Text "Editor must continue or finish the Markdown list"
+        }
+        [void]$saveCurrent.Invoke($ww, @($false))
+
+        $applyBlock = $editorBox.GetType().GetMethod("ApplyBlock", $flags)
+        $refreshFormatting = $editorBox.GetType().GetMethod("RefreshFormatting", $flags)
+        $editorBox.Text = "/"
+        $editorBox.SelectionStart = 1
+        [void]$applyBlock.Invoke($editorBox, @("## ", $true))
+        $editorBox.SelectedText = "Riset"
+        [void]$refreshFormatting.Invoke($editorBox, $null)
+        $editorBox.Select(3, 5)
+        Assert-True ($editorBox.SelectionFont.Bold) "Heading must render bold"
+        Assert-True ($editorBox.SelectionFont.Size -gt $editorBox.Font.Size) "Heading must render larger than body text"
+        Assert-Equal "## Riset" $editorBox.Text "Formatting must preserve Markdown"
+        $editorBox.Undo()
+        Assert-Equal "## " $editorBox.Text "Undo must restore the text edit before styling"
+        $editorBox.Text = "Riset"
+        $editorBox.SelectAll()
+        $toggleInline = $editorBox.GetType().GetMethod("ToggleInline", $flags)
+        [void]$toggleInline.Invoke($editorBox, @("**"))
+        Assert-Equal "**Riset**" $editorBox.Text "Bold shortcut must preserve portable Markdown"
+        Assert-Equal "Riset" $editorBox.SelectedText "Bold shortcut must keep the text selected"
+        [void]$toggleInline.Invoke($editorBox, @("**"))
+        Assert-Equal "Riset" $editorBox.Text "Second bold shortcut must remove the wrapping markers"
+        [void]$saveCurrent.Invoke($ww, @($false))
 
         # QuickPath ReadOnly check
         [void]$showNote.Invoke($ww, @($quickPath))
@@ -284,6 +323,58 @@ public static class DeskmateTestWin32 {
     public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 }
 "@
+    }
+
+    It "Notes slash palette filters blocks and applies the selected block to the active line" {
+        $dir = Assert-Isolated
+        Reset-Dir $dir
+        $notesDir = $noteFilesType.GetProperty("Dir", $flags).GetValue($null, $null)
+        $note = Join-Path $notesDir "blocks.md"
+        [void]$noteFilesType.GetMethod("Write", $flags).Invoke($null, @([string]$note, "# Riset`r`n`r`nPertanyaan`r`n"))
+        $isl = New-TestIsland
+        $docks = $islandType.GetField("dockWins", $flags)
+        $docks.SetValue($isl, [Activator]::CreateInstance($docks.FieldType))
+        $ww = [Activator]::CreateInstance($wwType, @($isl))
+        try {
+            $ww.Show()
+            $ww.SelectTab(1)
+            [Windows.Forms.Application]::DoEvents()
+            $editor = $wwType.GetField("editor", $flags).GetValue($ww)
+            [void]$editor.Focus()
+            $editor.SelectionStart = $editor.Text.Length
+            [void][DeskmateTestWin32]::SendMessage($editor.Handle, 0x0102, [IntPtr][int][char]'/', [IntPtr]1)
+            [Windows.Forms.Application]::DoEvents()
+
+            $menu = $wwType.GetField("blockMenu", $flags).GetValue($ww)
+            Assert-NotNull $menu "Typing slash on an empty line must open the block palette"
+            Assert-True $menu.Visible "The block palette must be visible"
+            $menuType = $menu.GetType()
+            $query = $menuType.GetField("query", $flags).GetValue($menu)
+            $results = $menuType.GetField("results", $flags).GetValue($menu)
+            $query.Text = "number"
+            Assert-Equal 1 $results.Items.Count "Searching must filter to the numbered list"
+            $enter = New-Object Windows.Forms.KeyEventArgs ([Windows.Forms.Keys]::Enter)
+            [void]$menuType.GetMethod("OnQueryKey", $flags).Invoke($menu, @($query, $enter.PSObject.BaseObject))
+            [Windows.Forms.Application]::DoEvents()
+            Assert-Equal "Pertanyaan`n1. " $editor.Text "Enter must replace the slash with the selected Markdown block"
+            Assert-True $editor.Focused "Focus must return to the note editor after choosing a block"
+
+            [void][DeskmateTestWin32]::SendMessage($editor.Handle, 0x0102, [IntPtr][int][char]'/', [IntPtr]1)
+            [Windows.Forms.Application]::DoEvents()
+            $menu = $wwType.GetField("blockMenu", $flags).GetValue($ww)
+            Assert-NotNull $menu "Slash must reopen the palette after an empty list marker"
+            $query = $menuType.GetField("query", $flags).GetValue($menu)
+            $query.Text = "quote"
+            [void]$menuType.GetMethod("OnQueryKey", $flags).Invoke($menu, @($query, $enter.PSObject.BaseObject))
+            [Windows.Forms.Application]::DoEvents()
+            Assert-Equal "Pertanyaan`n> " $editor.Text "Reopening must replace the previous block and the slash"
+
+            $editor.SelectedText = "Isi"
+            [void][DeskmateTestWin32]::SendMessage($editor.Handle, 0x0102, [IntPtr][int][char]'/', [IntPtr]1)
+            Assert-True ($null -eq $wwType.GetField("blockMenu", $flags).GetValue($ww)) "Slash inside text must stay literal"
+            Assert-Equal "Pertanyaan`n> Isi/" $editor.Text "Slash in ordinary content must be preserved"
+        }
+        finally { $ww.Dispose() }
     }
 
     It "Maximized WorkWindow switches Notes and Tasks with independent native editor painting" {
@@ -506,15 +597,15 @@ public static class DeskmateTestWin32 {
 
         $blockedPath = Join-Path $f34Tmp "blocked-resurrect.md"
         [void]$nfType.InvokeMember("AddDeletedKey", [System.Reflection.BindingFlags]"InvokeMethod,Public,NonPublic,Static", $null, $null, @("blocked-resurrect.md"))
-        $args = [object[]]@([string]$blockedPath, [string]"# Should Not Exist", [string]"", [string]"blocked-resurrect.md", $false)
-        $wrote = [bool]$nfType.InvokeMember("WriteIfNotDeleted", [System.Reflection.BindingFlags]"InvokeMethod,Public,NonPublic,Static", $null, $null, $args)
-        Assert-False $wrote "WriteIfNotDeleted must return false for tombstoned key"
-        Assert-True ([bool]$args[4]) "WriteIfNotDeleted must set skipped=true"
-        Assert-False (Test-Path -LiteralPath $blockedPath) "WriteIfNotDeleted must not recreate tombstoned file"
+        $args = [object[]]@([string]$blockedPath, [string]"# Should Not Exist", [string]"", [string]"blocked-resurrect.md", $false, [DateTime]::MinValue, [DateTime]::UtcNow, $false)
+        $wrote = [bool]$nfType.InvokeMember("WriteFromDrive", [System.Reflection.BindingFlags]"InvokeMethod,Public,NonPublic,Static", $null, $null, $args)
+        Assert-False $wrote "WriteFromDrive must return false for tombstoned key"
+        Assert-True ([bool]$args[7]) "WriteFromDrive must set skipped=true"
+        Assert-False (Test-Path -LiteralPath $blockedPath) "WriteFromDrive must not recreate tombstoned file"
         [void]$nfType.InvokeMember("SaveDeletedDrive", [System.Reflection.BindingFlags]"InvokeMethod,Public,NonPublic,Static", $null, $null, @(,$origDel))
     }
 
-    It "11. GoogleDriveNotesClient.Sync deletes by key tombstone and blocks in-flight alt=media resurrection" {
+    It "11. Drive loads first, then uploads local edits and deletes without pulling" {
         $dir = Assert-Isolated
         Reset-Dir $dir
 
@@ -524,8 +615,8 @@ public static class DeskmateTestWin32 {
         $fetchResultType = Get-DeskmateType "FetchResult"
         $transportField = $httpType.GetField("Transport", $flags)
         $funcType = [System.Func``4].MakeGenericType([string], [string], [string], $fetchResultType)
-        $syncMethod = $driveType.GetMethods($flags) | Where-Object { $_.Name -eq "Sync" -and $_.GetParameters().Length -eq 8 } | Select-Object -First 1
-        Assert-NotNull $syncMethod "GoogleDriveNotesClient.Sync 8-arg overload must exist"
+        $syncMethod = $driveType.GetMethod("Transfer", $flags)
+        $versions = [Activator]::CreateInstance([System.Collections.Generic.Dictionary[string,datetime]])
 
         $notesDir = [string]$noteFilesType.GetProperty("Dir", $flags).GetValue($null, $null)
         $quickPath = [string]$noteFilesType.GetProperty("QuickPath", $flags).GetValue($null, $null)
@@ -580,6 +671,17 @@ public static class DeskmateTestWin32 {
                         $json = "# Should Not Resurrect"
                     }
                 }
+                elseif ($method -eq "GET" -and $url -like "*/files?q=*") {
+                    $json = '{"files":[{"id":"drv-edit","name":"edit.md","modifiedTime":"2026-11-14T10:00:00Z","appProperties":{"deskmateKey":"edit.md"}}]}'
+                }
+                elseif ($method -eq "GET" -and $url -like "*/files/drv-edit?alt=media*") {
+                    $json = "# Loaded from Drive"
+                }
+                elseif ($method -eq "PATCH" -and $url -like "*/drv-edit?*") {
+                    if ($body -notlike "*# Local edit*") { throw "Local edit missing from upload" }
+                    $json = '{"id":"drv-edit"}'
+                }
+
                 $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
                 $fr.Status = 200
                 $fr.Data = $bytes
@@ -592,9 +694,9 @@ public static class DeskmateTestWin32 {
 
             # Part A: Key tombstone triggers remote DELETE and prevents re-download
             $pendingDeletes.Add("key:deleted-before-id.md")
-            $syncArgsA = [object[]]@([string]$notesDir, [string]$quickPath, $meta, $pins, $pendingDeletes, $completedDeletes, $false, $null)
+            $syncArgsA = [object[]]@([string]$notesDir, [string]$quickPath, $meta, $pins, $pendingDeletes, $completedDeletes, $false, $versions, $false, $null)
             $okA = [bool]$syncMethod.Invoke($null, $syncArgsA)
-            Assert-True $okA "Part A Sync must succeed (err=$($syncArgsA[7]))"
+            Assert-True $okA "Part A Sync must succeed (err=$($syncArgsA[9]))"
             Assert-True (@($script:f34Calls | Where-Object { $_ -like "DELETE */files/drv-99" }).Count -ge 1) "Part A must issue DELETE for drv-99"
             Assert-True ($completedDeletes.Contains("key:deleted-before-id.md")) "Part A completedDeletes must contain key:deleted-before-id.md"
             Assert-Equal 0 (@($script:f34Calls | Where-Object { $_ -like "*alt=media*" }).Count) "Part A must not issue alt=media GET"
@@ -610,14 +712,33 @@ public static class DeskmateTestWin32 {
             $pendingDeletes.Clear()
             $completedDeletes.Clear()
 
-            $syncArgsB = [object[]]@([string]$notesDir, [string]$quickPath, $meta, $pins, $pendingDeletes, $completedDeletes, $false, $null)
+            $syncArgsB = [object[]]@([string]$notesDir, [string]$quickPath, $meta, $pins, $pendingDeletes, $completedDeletes, $true, $versions, $false, $null)
             $okB = [bool]$syncMethod.Invoke($null, $syncArgsB)
-            Assert-True $okB "Part B Sync must succeed (err=$($syncArgsB[7]))"
+            Assert-True $okB "Part B Sync must succeed (err=$($syncArgsB[9]))"
             Assert-True (@($script:f34Calls | Where-Object { $_ -like "GET */files/drv-race?alt=media*" }).Count -ge 1) "Part B must have attempted alt=media GET for drv-race"
             Assert-False (Test-Path -LiteralPath (Join-Path $notesDir "race-note.md")) "Part B race-note.md must not exist on disk"
             Assert-False ($meta.ContainsKey("race-note.md")) "Part B meta must not contain race-note.md"
             $stillDeleted = [bool]$noteFilesType.InvokeMember("IsDeletedRemote", [System.Reflection.BindingFlags]"InvokeMethod,Public,NonPublic,Static", $null, $null, @("", "race-note.md"))
             Assert-True $stillDeleted "Part B IsDeletedRemote must remain true for race-note.md"
+
+            $script:f34Phase = "C"
+            $script:f34Calls.Clear()
+            $editPath = Join-Path $notesDir "edit.md"
+            $syncArgsC = [object[]]@([string]$notesDir, [string]$quickPath, $meta, $pins, $pendingDeletes, $completedDeletes, $true, $versions, $false, $null)
+            Assert-True ([bool]$syncMethod.Invoke($null, $syncArgsC)) "Initial load should succeed"
+            Assert-Equal "# Loaded from Drive" ([System.IO.File]::ReadAllText($editPath)) "Initial load should populate local Markdown"
+            Assert-Equal 0 (@($script:f34Calls | Where-Object { $_ -match '^(PATCH|POST|DELETE) ' }).Count) "Initial load must not upload or delete notes"
+            [System.IO.File]::WriteAllText($editPath, "# Local edit")
+            [System.IO.File]::SetLastWriteTimeUtc($editPath, [DateTime]::Parse("2026-11-14T10:00:00.1000000Z").ToUniversalTime())
+            $script:f34Calls.Clear()
+            $syncArgsC[6] = $false
+            Assert-True ([bool]$syncMethod.Invoke($null, $syncArgsC)) "Upload should succeed"
+            Assert-Equal 1 (@($script:f34Calls | Where-Object { $_ -like "PATCH */drv-edit?*" }).Count) "Upload must propagate edits within the same second"
+            Assert-Equal 0 (@($script:f34Calls | Where-Object { $_ -like "*alt=media*" }).Count) "Upload must not download notes"
+            Assert-Equal "# Local edit" ([System.IO.File]::ReadAllText($editPath)) "Upload must leave local note content intact"
+            $script:f34Calls.Clear()
+            Assert-True ([bool]$syncMethod.Invoke($null, $syncArgsC)) "Repeated upload check should succeed"
+            Assert-Equal 0 (@($script:f34Calls | Where-Object { $_ -like "PATCH */drv-edit?*" }).Count) "The same edit must not upload twice"
         } finally {
             $transportField.SetValue($null, $null)
             $vaultType.GetMethod("Forget", $flags).Invoke($null, $null) | Out-Null

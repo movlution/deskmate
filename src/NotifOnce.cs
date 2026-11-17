@@ -191,7 +191,7 @@ namespace Deskmate
         // Decides the pop; the list still updates
         bool ShouldPop(NotifItem n)
         {
-            if (IsSummary(n)) return false;
+            if (NotifAppSilenced(n) || IsSummary(n)) return false;
             if (BannerMode == "deskmate") return true;
             return !WindowsBanner(n.AppId);
         }

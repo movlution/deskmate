@@ -51,6 +51,8 @@ namespace Deskmate
             var steps = new[]
             {
                 new TourStep { Title = Lang.T("Ini Deskmate"), Body = Lang.T("Island di tepi atas ini membesar saat ada yang terjadi: lagu diputar, pesan masuk, agent minta izin, unduhan berjalan, atau flashdisk dicolok. Saat tidak dipakai, ia bisa menyusut jadi garis kecil bermata yang tembus klik.") },
+                new TourStep { Title = Lang.T("Dock dan taskbar"), Body = Lang.T("Buka Pengaturan › Dock & Taskbar untuk menyalakan dock, memilih ukuran ikon, dan mengatur kapan dock disembunyikan. Opsi Ganti taskbar Windows tersedia terpisah; pilih sesuai cara kerjamu.") },
+                new TourStep { Title = Lang.T("Tugas dan catatan"), Body = Lang.T("Klik kanan island, lalu pilih Tugas dan catatan untuk membuka ruang kerja. Kelompokkan tugas dalam daftar dan simpan catatan di tab Catatan. Keduanya juga tersedia dari menu dock.") },
                 new TourStep
                 {
                     Title = Lang.T("Buka panel"),
@@ -101,6 +103,7 @@ namespace Deskmate
             readonly KitButton next = new KitButton(), back = new KitButton(), skip = new KitButton();
             readonly System.Windows.Forms.Timer watch = new System.Windows.Forms.Timer { Interval = 200 };
             readonly System.Windows.Forms.Timer glide = new System.Windows.Forms.Timer { Interval = 15 };
+            readonly Icon brandIcon = KitWindow.LoadAppIcon(new Size(256, 256));
             int at;
             DateTime doneSince = DateTime.MinValue;
             Point target;
@@ -148,7 +151,12 @@ namespace Deskmate
                     else if ((DateTime.UtcNow - doneSince).TotalSeconds > 1.2) Go(at + 1);
                 };
                 glide.Tick += delegate { Step(); };
-                FormClosed += delegate { watch.Stop(); watch.Dispose(); glide.Stop(); glide.Dispose(); };
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing) { watch.Dispose(); glide.Dispose(); brandIcon.Dispose(); }
+                base.Dispose(disposing);
             }
 
             // Frameless popup with the system shadow
@@ -202,7 +210,13 @@ namespace Deskmate
                 var p = Location;
                 int dx = target.X - p.X, dy = target.Y - p.Y;
                 if (Math.Abs(dx) <= 1 && Math.Abs(dy) <= 1) { Location = target; glide.Stop(); return; }
-                Location = new Point(p.X + (int)Math.Round(dx * 0.22), p.Y + (int)Math.Round(dy * 0.22));
+                // Always advance at least one pixel; rounding used to stall 2px away forever.
+                Location = new Point(p.X + GlideDelta(dx), p.Y + GlideDelta(dy));
+            }
+
+            static int GlideDelta(int delta)
+            {
+                return delta == 0 ? 0 : Math.Sign(delta) * Math.Max(1, (int)Math.Round(Math.Abs(delta) * 0.22));
             }
 
             protected override bool ProcessCmdKey(ref Message msg, Keys keys)
@@ -242,14 +256,15 @@ namespace Deskmate
                 title.Text = step.Title;
                 title.Font = UiFont(20f);
                 title.ForeColor = KitInk.Text;
+                title.MaximumSize = new Size(at == 0 ? inner - u(68) : inner, 0);
                 body.Text = step.Body;
                 body.Font = UiFont(13f);
                 body.ForeColor = KitInk.Sub;
                 body.MaximumSize = new Size(inner, 0);
                 foreach (var l in new[] { count, title, body }) l.BackColor = KitInk.Window;
                 count.Location = new Point(pad, u(22));
-                title.Location = new Point(pad - u(2), count.Bottom + u(6));
-                body.Location = new Point(pad, title.Bottom + u(6));
+                title.Location = new Point(pad + (at == 0 ? u(68) : 0), count.Bottom + u(18));
+                body.Location = new Point(pad, Math.Max(title.Bottom, at == 0 ? title.Top + u(52) : title.Bottom) + u(14));
                 // Doable steps say so instead of Lanjut
                 bool doable = step.Done != null;
                 next.Text = at == steps.Length - 1 ? Lang.T("Selesai") : doable ? Lang.T("Lewati langkah") : Lang.T("Lanjut");
@@ -258,7 +273,7 @@ namespace Deskmate
                 back.Visible = at > 0;
                 skip.Text = Lang.T("Tutup tur");
                 skip.Visible = at < steps.Length - 1;
-                int btnH = u(30), by = body.Bottom + u(20);
+                int btnH = u(36), by = body.Bottom + u(24);
                 foreach (var b in new[] { next, back, skip })
                 {
                     b.Font = UiFont(12.5f);
@@ -268,7 +283,13 @@ namespace Deskmate
                 next.Left = w - u(16) - next.Width;
                 back.Left = next.Left - u(8) - back.Width;
                 skip.Left = u(16);
-                ClientSize = new Size(w, by + btnH + u(16));
+                // Long translations must not collide with Back/Next.
+                if (skip.Visible && back.Visible && skip.Right + u(12) > back.Left)
+                {
+                    next.Top += btnH + u(8);
+                    back.Top = next.Top;
+                }
+                ClientSize = new Size(w, next.Bottom + u(20));
                 isle.PlaceTour();
                 Invalidate(true);
             }
@@ -279,6 +300,10 @@ namespace Deskmate
                 var g = e.Graphics;
                 KitInk.Smooth(g);
                 float s = Ui;
+                if (at == 0)
+                {
+                    g.DrawIcon(brandIcon, new Rectangle((int)(24 * s), title.Top, (int)(52 * s), (int)(52 * s)));
+                }
                 // Grabber: the card can be dragged
                 using (var path = Ink.Round(new RectangleF(ClientSize.Width / 2f - 18 * s, 8 * s, 36 * s, 4 * s), 2 * s))
                 using (var b = new SolidBrush(KitInk.Line)) g.FillPath(b, path);

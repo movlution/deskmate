@@ -26,7 +26,7 @@ namespace Deskmate
             "pray", "pray.city", "pray.before", "drink", "drink.every", "drink.goal", "eyes", "stretch", "stretch.every", "theme.pack",
             "theme.voice", "weather", "clock.24", "look.custom", "look.bg", "look.text", "look.accent", "wall.sync", "sound.agent", "phone.notifs", "phone.otp",
             "sound.drink", "sound.eyes", "sound.stretch", "sound.pray", "sound.pray.before", "ibadah.count",
-            "notif.banner", "share.mode", "idle.left", "idle.right", "tidy", "tidy.layout", "tidy.nudge", "ai.text", "ai.stt", "calendar.holidays",
+            "notif.banner", NotifAppRulesKey, "share.mode", "idle.left", "idle.right", "tidy", "tidy.layout", "tidy.nudge", "ai.text", "ai.stt", "calendar.holidays",
         };
 
         // Kept on reset: identity, links, internal state

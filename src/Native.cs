@@ -178,7 +178,11 @@ namespace Deskmate
             int quns;
             if (SHQueryUserNotificationState(out quns) == 0 && (quns == 3 || quns == 4)) return true;
 
-            IntPtr hwnd = GetForegroundWindow();
+            return IsFullscreenWindow(GetForegroundWindow(), monitor);
+        }
+
+        public static bool IsFullscreenWindow(IntPtr hwnd, IntPtr monitor)
+        {
             if (hwnd == IntPtr.Zero) return false;
             var cls = new StringBuilder(256);
             GetClassName(hwnd, cls, 256);

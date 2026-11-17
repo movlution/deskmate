@@ -250,7 +250,7 @@ namespace Deskmate
         bool ComboAudioAllowed(bool test)
         {
             if (test) return true;
-            return ComboSoundOn && !Quiet && !fullscreen && !PrompterOn;
+            return ComboSoundOn && !comboPaused && !Quiet && !fullscreen && !PrompterOn;
         }
 
         void EnsureMixerStarted()
@@ -339,7 +339,7 @@ namespace Deskmate
         bool ShouldKeepStreamAlive(bool anyVoiceActive)
         {
             if (anyVoiceActive) return true;
-            if (ComboOn && ComboSoundOn && !Quiet && !fullscreen && !PrompterOn) return true;
+            if (ComboOn && ComboSoundOn && !comboPaused && !Quiet && !fullscreen && !PrompterOn) return true;
             int lastTick;
             lock (voiceLock) { lastTick = mixerLastVoiceTick; }
             return (uint)(Environment.TickCount - lastTick) < (uint)MixerIdleShutdownMs;

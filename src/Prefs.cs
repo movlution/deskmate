@@ -277,7 +277,7 @@ namespace Deskmate
                 { "ai", "Layanan AI untuk dikte, ringkasan, dan Suruh Deskmate" },
                 { "agents", "Claude Code, Codex, dan agen coding lainnya" },
                 { "dikte", "Bicara, lalu teksnya ditempel; teleprompter dan rapat" },
-                { "messages", "Notifikasi pesan, mode berbagi layar, VIP, dan Senyap" },
+                { "messages", "Notifikasi pesan, aturan aplikasi, mode berbagi layar, VIP, dan Senyap" },
                 { "files", "Lirik musik, visualizer, rak berkas, clipboard, screenshot, dan Downloads" },
                 { "combo", "Combo, suara mekanikal/arcade, Fever Mode, penalti, XP, dan Sprint 30 detik" },
                 { "system", "HUD keyboard, baterai, flashdisk, dan aktivitas sistem" },
@@ -385,6 +385,24 @@ namespace Deskmate
             {
                 base.OnShown(e);
                 BeginInvoke(new Action(delegate { island.OfferWhatsNew(this); }));
+            }
+
+            string selectedNotifAppId, selectedNotifAppName;
+
+            public void ShowNotifApp(string id, string name)
+            {
+                selectedNotifAppId = id;
+                selectedNotifAppName = name;
+                Go("messages");
+                content.AutoScrollPosition = Point.Empty;
+            }
+
+            public void RefreshNotifApps()
+            {
+                if (section != "messages" && section != "search") return;
+                var at = content.AutoScrollPosition;
+                Fill();
+                content.AutoScrollPosition = new Point(-at.X, -at.Y);
             }
 
             public void Go(string id)
@@ -1356,13 +1374,13 @@ namespace Deskmate
                         foreach (var rule in rules)
                         {
                             var r = rule;
-                            var modes = new[] { Lang.T("Sembunyikan island"), Lang.T("Tanpa notifikasi"), Lang.T("Hapus dari daftar") };
-                            var appRow = Row(r.Name, r.Exe, Popup(modes, r.Mode == ExceptQuiet ? 1 : 0, i =>
+                            var modes = new[] { Lang.T("Sembunyikan island"), Lang.T("Tanpa notifikasi"), Lang.T("Jeda gamifikasi"), Lang.T("Hapus dari daftar") };
+                            var appRow = Row(r.Name, r.Exe, Popup(modes, r.Mode == ExceptCombo ? 2 : r.Mode == ExceptQuiet ? 1 : 0, i =>
                             {
-                                if (i == 2) rules.Remove(r);
-                                else r.Mode = i == 1 ? ExceptQuiet : ExceptHide;
+                                if (i == 3) rules.Remove(r);
+                                else r.Mode = i == 2 ? ExceptCombo : i == 1 ? ExceptQuiet : ExceptHide;
                                 island.SaveExceptRules(rules);
-                                if (i == 2) BeginInvoke(new Action(Relayout));
+                                if (i == 3) BeginInvoke(new Action(Relayout));
                             }));
                             appRow.Glyph = '\uE71D';
                             add(appRow);
@@ -1387,7 +1405,7 @@ namespace Deskmate
                             m.Closed += delegate { BeginInvoke(new Action(m.Dispose)); };
                             m.Show(pick, new Point(0, pick.Height));
                         });
-                        add(Row(Lang.T("Tambah aplikasi"), Lang.T("Island menyingkir atau diam saat aplikasinya di depan"), pick));
+                        add(Row(Lang.T("Tambah aplikasi"), Lang.T("Atur perilaku Island saat aplikasi di depan"), pick));
                         cap(Lang.T("Saat Diam"));
                         add(Row(Lang.T("Mata"), null, Switch("island.eyes", true, on => { island.SetFlag("island.eyes", on); BeginInvoke(new Action(Relayout)); })));
                         // Only means something while eyes show
@@ -1496,6 +1514,23 @@ namespace Deskmate
                         add(Row(Lang.T("Visualizer"), null, Switch("visualizer", true, null)));
                         break;
                     case "messages":
+                        cap(Lang.T("Aturan notifikasi aplikasi"));
+                        var notifApps = island.NotifApps(selectedNotifAppId, selectedNotifAppName);
+                        if (notifApps.Count == 0)
+                            add(Row(Lang.T("Belum ada aplikasi"), Lang.T("Klik kanan pesan di Island untuk mengatur aplikasi pengirim."), null));
+                        foreach (var app in notifApps)
+                        {
+                            KitButton ruleButton = null;
+                            ruleButton = Button(Lang.T("Atur"), false, delegate
+                            {
+                                var popup = island.BuildNotifAppMenu(app.Key, app.Value, delegate { BeginInvoke(new Action(RefreshNotifApps)); }, false);
+                                MenuLook.Apply(popup);
+                                popup.Closed += delegate { BeginInvoke(new Action(popup.Dispose)); };
+                                popup.Show(ruleButton, new Point(0, ruleButton.Height));
+                            });
+                            add(Row(app.Value, island.NotifAppRuleStatus(app.Key), ruleButton));
+                        }
+                        cap(Lang.T("Pengaturan umum"));
                         add(Row(Lang.T("Notifikasi pesan"), null, Switch("notif", true, on => { island.SetFlag("notif", on); Relayout(); })));
                         var body = Switch("notif.content", true, null);
                         body.Enabled = settings.GetBool("notif", true);
@@ -1833,7 +1868,7 @@ namespace Deskmate
                 };
                 b = Button(Lang.T("Cek pembaruan"), false, delegate
                 {
-                    if (island.newVersion != null) island.InstallUpdate();
+                    if (island.newVersion != null) island.InstallUpdate(this);
                     else island.CheckUpdate(true);
                 });
                 row = Row(Lang.T("Pembaruan"), island.UpdateText(), b);

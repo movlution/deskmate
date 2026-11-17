@@ -16,7 +16,7 @@ namespace Deskmate
             public string Exe, Mode, Name;
         }
 
-        public const string ExceptHide = "hide", ExceptQuiet = "quiet";
+        public const string ExceptHide = "hide", ExceptQuiet = "quiet", ExceptCombo = "combo";
 
         [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
         [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
@@ -107,7 +107,7 @@ namespace Deskmate
                 list.Add(new ExceptRule
                 {
                     Exe = p[0].Trim().ToLowerInvariant(),
-                    Mode = p.Length > 1 && p[1] == ExceptQuiet ? ExceptQuiet : ExceptHide,
+                    Mode = p.Length > 1 && (p[1] == ExceptQuiet || p[1] == ExceptCombo) ? p[1] : ExceptHide,
                     Name = p.Length > 2 && p[2].Trim().Length > 0 ? p[2].Trim() : p[0].Trim(),
                 });
             }
@@ -121,6 +121,7 @@ namespace Deskmate
             settings.Set("island.except", string.Join(",", parts.ToArray()));
             settings.Save();
             exceptSeen = new IntPtr(-1);
+            RefreshComboPause(true);
             CheckFullscreen();
         }
 

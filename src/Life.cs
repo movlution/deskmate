@@ -85,7 +85,7 @@ namespace Deskmate
         }
 
         // Daily release check; never downloads anything
-        public const string AppVersion = "2.7.0";
+        public const string AppVersion = "2.7.2";
         string newVersion, newUrl;
         bool newRebuild, checking, checkFailed;
         DateTime checkedUtc;
@@ -342,12 +342,12 @@ namespace Deskmate
         {
             notifAccess = access;
             if (list == null || !NotifOn) { Kick(); return; }
-            var visible = list.FindAll(n => n.Chat);
+            var visible = list.FindAll(n => n.Chat && !NotifAppHidden(n));
             // Toasts Windows doesn't keep stay here
             var live = new HashSet<uint>();
             foreach (var n in visible) live.Add(n.Id);
             foreach (var n in notifs)
-                if (!live.Contains(n.Id) && (n.Held || !NotifSource.Kept(n.AppId)))
+                if (!live.Contains(n.Id) && !NotifAppHidden(n) && (n.Held || !NotifSource.Kept(n.AppId)))
                 {
                     n.Held = true;
                     visible.Add(n);

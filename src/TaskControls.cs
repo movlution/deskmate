@@ -475,47 +475,15 @@ namespace Deskmate
     // Borderless entry that hands the wheel to the task list and supports clean placeholders
     sealed class TaskAddBox : KitText
     {
-        const int GWL_STYLE = -16, WS_VSCROLL = 0x00200000, SB_VERT = 1;
-        [DllImport("user32.dll")] static extern bool ShowScrollBar(IntPtr hWnd, int wBar, bool bShow);
         public IWheelTarget Wheel;
         public string Placeholder = "";
-        public bool HideIdleScroll;
         int lastLen;
-
-        public void SyncScroll()
-        {
-            if (!HideIdleScroll || !Multiline || ScrollBars != ScrollBars.Vertical || !IsHandleCreated) return;
-            bool overflow = false;
-            if (TextLength > 0 && ClientSize.Height > 0)
-            {
-                int lineH = Math.Max(14, Font != null ? Font.Height : 18);
-                int topY = GetPositionFromCharIndex(0).Y;
-                int lastY = GetPositionFromCharIndex(TextLength - 1).Y + lineH;
-                if (Text.EndsWith("\n", StringComparison.Ordinal)) lastY += lineH;
-                overflow = topY < 0 || lastY > ClientSize.Height;
-            }
-            bool shown = (Native.GetWindowLong(Handle, GWL_STYLE) & WS_VSCROLL) != 0;
-            if (overflow != shown) ShowScrollBar(Handle, SB_VERT, overflow);
-        }
-
-        protected override void OnHandleCreated(EventArgs e)
-        {
-            base.OnHandleCreated(e);
-            SyncScroll();
-        }
-
-        protected override void OnSizeChanged(EventArgs e)
-        {
-            base.OnSizeChanged(e);
-            SyncScroll();
-        }
 
         protected override void OnTextChanged(EventArgs e)
         {
             base.OnTextChanged(e);
             if ((lastLen == 0) != (TextLength == 0)) Invalidate();
             lastLen = TextLength;
-            SyncScroll();
         }
 
         protected override void WndProc(ref Message m)
