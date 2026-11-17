@@ -145,4 +145,60 @@ Describe "Tier 4 Scenario: S12 Dock Badge And Flyout" {
             $painter.Dispose()
         }
     }
+
+    It "draws the dock rim from the active Highlight token with theme-sensitive alpha" {
+        $dockType = Get-DeskmateType "DockWindow"
+        $painterType = Get-DeskmateType "Painter"
+        $toneType = Get-DeskmateType "Tone"
+        $dock = [Activator]::CreateInstance($dockType, $flags, $null, @($null), $null)
+        $painter = [Activator]::CreateInstance($painterType, $true)
+        try {
+            foreach ($light in @($false, $true)) {
+                Reset-DeskmateTheme -Light $light
+                $tone = $toneType.GetMethod($(if ($light) { "Paper" } else { "Dark" }), $flags).Invoke($null, @())
+                $tone.Highlight = if ($light) { [System.Drawing.Color]::FromArgb(255, 40, 220, 80) } else { [System.Drawing.Color]::FromArgb(255, 230, 50, 60) }
+                $bmp = New-Object System.Drawing.Bitmap 160, 80
+                $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+                try {
+                    $path.AddRectangle((New-Object System.Drawing.RectangleF 10, 10, 140, 50))
+                    $g = [System.Drawing.Graphics]::FromImage($bmp)
+                    try {
+                        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+                        $painterType.GetField("G", $flags).SetValue($painter, $g)
+                        $dockType.GetField("g", $flags).SetValue($dock, $g)
+                        $dockType.GetField("p", $flags).SetValue($dock, $painter)
+                        $painterType.GetField("T", $flags).SetValue($painter, $tone)
+                        $painterType.GetField("Alpha", $flags).SetValue($painter, [single]1)
+                        [void]$dockType.GetMethod("RimLight", $flags).Invoke($dock, @([System.Drawing.RectangleF](New-Object System.Drawing.RectangleF 10, 10, 140, 50), [System.Drawing.Drawing2D.GraphicsPath]$path))
+                    }
+                    finally { $g.Dispose() }
+
+                    $maxA = 0; $peak = [System.Drawing.Color]::Black
+                    for ($y = 0; $y -lt $bmp.Height; $y++) {
+                        for ($x = 0; $x -lt $bmp.Width; $x++) {
+                            $c = $bmp.GetPixel($x, $y)
+                            if ($c.A -gt $maxA) { $maxA = $c.A; $peak = $c }
+                        }
+                    }
+                    Assert-True ($maxA -gt 20) "RimLight must draw a visible line in light=$light"
+                    if ($light) {
+                        Assert-True ($peak.G -gt $peak.R -and $peak.G -gt $peak.B) "Light rim must carry the green Highlight channel"
+                        Assert-True ($maxA -ge 130) "Light rim alpha $maxA must use the 150 strength"
+                    }
+                    else {
+                        Assert-True ($peak.R -gt $peak.G -and $peak.R -gt $peak.B) "Dark rim must carry the red Highlight channel (peak=$($peak.R),$($peak.G),$($peak.B), alpha=$maxA)"
+                        Assert-True ($maxA -le 110) "Dark rim alpha $maxA must use the 92 strength"
+                    }
+                }
+                finally {
+                    $path.Dispose()
+                    $bmp.Dispose()
+                }
+            }
+        }
+        finally {
+            $painter.Dispose()
+            $dock.Dispose()
+        }
+    }
 }
