@@ -5,7 +5,9 @@
 **Target Platform**: Windows 10/11 x64, .NET Framework 4.8  
 **Author**: Test Infrastructure Architect & Test Writer  
 **Milestone**: TM1 — Test Infrastructure & Harness Foundation  
-**Status**: ACTIVE  
+**Status**: ACTIVE (Tier 1–2 implemented; Tier 3–4 planned)
+
+> **Coverage note (17 Nov 2026):** Tier 1–2 contain the active suites; Tier 3–4 directories are empty placeholders. Treat the per-feature allocations below as targets, not as current coverage.
 
 ---
 

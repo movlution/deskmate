@@ -9,7 +9,6 @@ namespace Deskmate
     {
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string name);
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
-        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out int pid);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int RegisterWindowMessage(string name);
         [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, int flags, IntPtr extra);
 
@@ -49,7 +48,7 @@ namespace Deskmate
             for (IntPtr h = FindWindowEx(IntPtr.Zero, IntPtr.Zero, "Shell_TrayWnd", null); h != IntPtr.Zero; h = FindWindowEx(IntPtr.Zero, h, "Shell_TrayWnd", null))
             {
                 int pid;
-                GetWindowThreadProcessId(h, out pid);
+                Native.GetWindowThreadProcessId(h, out pid);
                 if (pid != System.Diagnostics.Process.GetCurrentProcess().Id) return h;
             }
             return IntPtr.Zero;
@@ -112,7 +111,7 @@ namespace Deskmate
         {
             if (hook != IntPtr.Zero) return;
             int pid;
-            GetWindowThreadProcessId(main, out pid);
+            Native.GetWindowThreadProcessId(main, out pid);
             var bars = Mine();
             onShow = delegate (IntPtr h, uint evt, IntPtr hwnd, int obj, int child, uint thread, uint time)
             {

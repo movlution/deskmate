@@ -240,7 +240,9 @@ Describe "Multi-Display Dock & Subsystem Integration Suite" {
                 $isDry = [bool]$dwType.GetField("Dry", $flags).GetValue($null)
                 $expectedOriginX = if ($isDry) { 1920 - 40000 } else { 1920 }
                 Assert-Equal $origin.X $expectedOriginX "Secondary dock WindowOrigin.X must be 1920 (or offset by Dry)"
-                Assert-Equal $dw.Bounds.X $expectedOriginX "Secondary dock Bounds.X must match WindowOrigin.X"
+                # Win32 clamps native window positions to the signed 16-bit coordinate range.
+                $expectedBoundsX = [Math]::Max([int]-32768, [Math]::Min([int]32767, [int]$expectedOriginX))
+                Assert-Equal $dw.Bounds.X $expectedBoundsX "Secondary dock Bounds.X must match WindowOrigin.X after Win32 clamping"
             }
             finally {
                 $dw.Shutdown()
@@ -265,7 +267,9 @@ Describe "Multi-Display Dock & Subsystem Integration Suite" {
                 $isDry = [bool]$dwType.GetField("Dry", $flags).GetValue($null)
                 $expectedOriginX = if ($isDry) { -1920 - 40000 } else { -1920 }
                 Assert-Equal $origin.X $expectedOriginX "Negative dock WindowOrigin.X must be -1920 (or offset by Dry)"
-                Assert-Equal $dw.Bounds.X $expectedOriginX "Negative dock Bounds.X must match WindowOrigin.X"
+                # Win32 clamps native window positions to the signed 16-bit coordinate range.
+                $expectedBoundsX = [Math]::Max([int]-32768, [Math]::Min([int]32767, [int]$expectedOriginX))
+                Assert-Equal $dw.Bounds.X $expectedBoundsX "Negative dock Bounds.X must match WindowOrigin.X after Win32 clamping"
             }
             finally {
                 $dw.Shutdown()

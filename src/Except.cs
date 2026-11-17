@@ -21,7 +21,6 @@ namespace Deskmate
         [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
         [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int flags, StringBuilder name, ref int size);
-        [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")] static extern uint WindowPid(IntPtr hwnd, out uint pid);
         delegate bool ChildProc(IntPtr hwnd, IntPtr lParam);
         [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, ChildProc proc, IntPtr lParam);
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
@@ -41,7 +40,7 @@ namespace Deskmate
             exceptFront = null;
             if (fg == IntPtr.Zero || settings.Get("island.except", "").Length == 0) return null;
             uint pid;
-            WindowPid(fg, out pid);
+            Native.GetWindowThreadProcessId(fg, out pid);
             if (pid == ownPid) return null;
             string exe = ExeOf(pid);
             if (exe == FrameHost) exe = HostedExe(fg, pid);
@@ -83,7 +82,7 @@ namespace Deskmate
             EnumChildWindows(frame, (h, l) =>
             {
                 uint p;
-                WindowPid(h, out p);
+                Native.GetWindowThreadProcessId(h, out p);
                 if (p == hostPid) return true;
                 found = ExeOf(p);
                 return false;

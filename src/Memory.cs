@@ -16,11 +16,13 @@ namespace Deskmate
 
         [DllImport("psapi.dll")] static extern bool GetProcessMemoryInfo(IntPtr process, ref MemCounters c, uint size);
 
-        const double LeakMb = 150;
+        const double LeakMb = 90;
+        const int LeakTrimCooldownSec = 300;
         // Quiet this long after motion, then trim
         const int RestMs = 3000;
         readonly WinTimer trimTimer = new WinTimer { Interval = RestMs };
         DateTime leakCheckUtc;
+        DateTime lastLeakTrimUtc;
         bool trimWanted;
 
         // Private bytes, what the process really holds
@@ -39,8 +41,10 @@ namespace Deskmate
             double mb = PrivateMb();
             if (mb > LeakMb)
             {
-                Log.Write("memory " + mb.ToString("0") + " MB private, collecting");
-                Trim();
+                if ((DateTime.UtcNow - lastLeakTrimUtc).TotalSeconds < LeakTrimCooldownSec) return;
+                lastLeakTrimUtc = DateTime.UtcNow;
+                Log.Write("memory " + mb.ToString("0") + " MB private, trim scheduled");
+                TrimSoon();
                 return;
             }
             // Pages crept back while idle: trim again

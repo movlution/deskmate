@@ -14,7 +14,7 @@ namespace Deskmate
         }
 
         // Offline checks replace the network with this (method, url, body) -> response
-        internal static Func<string, string, string, FetchResult> Transport;
+        internal static Func<string, string, string, FetchResult> Transport { get; set; }
 
         public static FetchResult SendJson(string method, string url, string accessToken, string jsonBody, string contentType)
         {

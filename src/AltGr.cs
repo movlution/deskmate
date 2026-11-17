@@ -20,7 +20,7 @@ namespace Deskmate
             // Right Alt held: AltGr, not a shortcut
             if ((GetAsyncKeyState(0xA5) & 0x8000) == 0) return false;
             uint pid;
-            var hkl = GetKeyboardLayout(WindowPid(GetForegroundWindow(), out pid));
+            var hkl = GetKeyboardLayout(Native.GetWindowThreadProcessId(GetForegroundWindow(), out pid));
             string ch = AltGrChar(vk, (mods & ModShift) != 0, hkl);
             if (ch == null) return false;
             var keys = new INPUT[ch.Length * 2];

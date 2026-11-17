@@ -56,7 +56,6 @@ namespace Deskmate
         [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, int cmd);
         [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr h);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
-        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out int pid);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string name);
         [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int value, int size);
         [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
@@ -180,7 +179,7 @@ namespace Deskmate
         int PidOf(IntPtr h)
         {
             int pid;
-            GetWindowThreadProcessId(h, out pid);
+            Native.GetWindowThreadProcessId(h, out pid);
             return pid;
         }
 

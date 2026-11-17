@@ -1,3 +1,16 @@
+# Build output
 *.pdb
 /Deskmate*.exe
+/Deskmate.exe.backup-*
+/Deskmate.previous-*.exe
+
+# Update/self-heal residue
 /.deskmate-*.tmp.bak
+
+# IDE / local settings
+.vs/
+*.user
+*.suo
+
+# AI agent scratch (keep local, do not commit)
+/.agents/

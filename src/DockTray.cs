@@ -65,7 +65,6 @@ namespace Deskmate
         [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
         [DllImport("user32.dll")] static extern IntPtr SetTimer(IntPtr h, IntPtr id, int ms, IntPtr proc);
         [DllImport("user32.dll")] static extern bool KillTimer(IntPtr h, IntPtr id);
-        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out int pid);
         [DllImport("user32.dll")] static extern IntPtr CopyIcon(IntPtr icon);
         [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int pid);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterWindowMessage(string name);
@@ -377,7 +376,7 @@ namespace Deskmate
                         {
                             if (owner == IntPtr.Zero || !IsWindow(owner)) return false;
                             ic = new TrayIcon { Hwnd = owner, Uid = uid };
-                            GetWindowThreadProcessId(owner, out ic.Pid);
+                            Native.GetWindowThreadProcessId(owner, out ic.Pid);
                             ic.Exe = ShellApp.ProcessPath(ic.Pid);
                             icons.Add(ic);
                         }

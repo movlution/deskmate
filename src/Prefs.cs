@@ -646,43 +646,13 @@ namespace Deskmate
                 return base.ProcessCmdKey(ref msg, keys);
             }
 
-            // Page head; a breadcrumb's first part leads back
+            // Page head
             class PageHeader : KitControl
             {
                 public char Glyph;
-                public string Title = "", Note = "", Crumb;
-                public event Action Back;
-                RectangleF parentAt;
-                bool overParent;
+                public string Title = "", Note = "";
 
                 public PageHeader() { TabStop = false; }
-
-                // Focusable only when there is a way back
-                protected override void OnCreateControl() { base.OnCreateControl(); TabStop = Crumb != null; }
-
-                protected override void OnMouseMove(MouseEventArgs e)
-                {
-                    base.OnMouseMove(e);
-                    bool over = Crumb != null && parentAt.Contains(e.Location);
-                    if (over == overParent) return;
-                    overParent = over;
-                    Cursor = over ? Cursors.Hand : Cursors.Default;
-                    Invalidate();
-                }
-
-                protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); overParent = false; Invalidate(); }
-                protected override void OnMouseUp(MouseEventArgs e) { base.OnMouseUp(e); if (e.Button == MouseButtons.Left && overParent) Fire(); }
-                protected override bool IsInputKey(Keys k) { return k == Keys.Enter || k == Keys.Space || base.IsInputKey(k); }
-
-                protected override void OnKeyDown(KeyEventArgs e)
-                {
-                    base.OnKeyDown(e);
-                    if (Crumb == null || (e.KeyCode != Keys.Enter && e.KeyCode != Keys.Space)) return;
-                    e.Handled = true;
-                    Fire();
-                }
-
-                void Fire() { var h = Back; if (h != null) h(); }
 
                 protected override void OnPaint(PaintEventArgs e)
                 {
@@ -699,18 +669,6 @@ namespace Deskmate
                     {
                         float x = 68 * s;
                         var line = new RectangleF(x, 2 * s, Width - x, 32 * s);
-                        if (Crumb != null)
-                        {
-                            // Category in grey, then the page in full ink
-                            int pw = TextRenderer.MeasureText(g, Crumb, tf, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
-                            parentAt = new RectangleF(x - 6 * s, line.Y, pw + 10 * s, line.Height);
-                            if (overParent) Fill(g, parentAt, 8 * s, KitInk.Hover);
-                            KitInk.Draw(g, Crumb, tf, overParent ? KitInk.Text : KitInk.Sub, new RectangleF(x - 2 * s, line.Y, pw + 4 * s, line.Height), ContentAlignment.MiddleLeft);
-                            x += pw + 6 * s;
-                            using (var icons = new Font(Ink.IconFamily, 14f * s, GraphicsUnit.Pixel)) KitInk.Draw(g, "\uE76C", icons, KitInk.Sub, new RectangleF(x, line.Y, 20 * s, line.Height), ContentAlignment.MiddleCenter);
-                            x += 26 * s;
-                            Ring(g, parentAt, 8 * s);
-                        }
                         KitInk.Draw(g, Title, tf, KitInk.Text, new RectangleF(x - 2 * s, line.Y, Width - x, line.Height), ContentAlignment.MiddleLeft);
                     }
                     using (var nf = new Font(Ink.MenuFamily, 13f * s, GraphicsUnit.Pixel)) KitInk.Draw(g, Note, nf, KitInk.Sub, new RectangleF(68 * s, 34 * s, Width - 68 * s, 22 * s), ContentAlignment.MiddleLeft);

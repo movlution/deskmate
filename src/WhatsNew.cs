@@ -20,6 +20,34 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.7.2",
+                Items = new[]
+                {
+                    new[] { "Tugas dan catatan", "Editor catatan baru dengan Markdown, tabel, checklist, blok kode, dan menu blok.", "\uE73A" },
+                    new[] { "Google Workspace", "Tugas tersinkron dua arah dengan Google Tasks, dan catatan Markdown tersimpan di folder Deskmate Catatan pada Google Drive.", "\uE8F1" },
+                    new[] { "Dock", "Pindai dan sambungkan Wi-Fi serta Bluetooth langsung dari dock, dengan interaksi dan pratinjau yang lebih rapi.", "\uE90E" },
+                    new[] { "Aturan notifikasi aplikasi", "Atur tiap aplikasi: ikuti pengaturan umum, tampilkan di Pesan saja, sembunyikan, atau jeda banner 1 atau 8 jam.", "\uE8BD" },
+                    new[] { "Tampilan kaca", "Resep Liquid Glass kini seragam di island, dock, dan panel, dan sisa klip dari tampilan sebelumnya tidak lagi tertinggal.", "\uE790" },
+                    new[] { "Deskmate", "Ikon, nama, dan aset visual baru; aplikasi Windows ini kini sepenuhnya memakai identitas Deskmate.", "\uE737" },
+                    new[] { "Tur", "Dua langkah baru untuk dock dan ruang kerja, tombol lebih besar, dan kontrol yang lebih ramah pembaca layar.", "\uE7C1" },
+                },
+            },
+            new Note
+            {
+                Version = "2.7.0",
+                Items = new[]
+                {
+                    new[] { "Combo Ketikan", "Combo, suara mekanikal/arcade, Fever Mode, penalti, XP, dan Sprint 30 detik", "\uE7FC" },
+                    new[] { "3 Prioritas Hari Ini", "Checklist 3 target utama hari ini di Ringkasan", "\uE73A" },
+                    new[] { "Fokus & Progres", "Menit fokus, streak harian, dan grafik 7 hari", "\uE916" },
+                    new[] { "Google Calendar", "Masuk lewat browser untuk sinkron & kelola acara", "\uE787" },
+                    new[] { "Hari libur nasional (Indonesia)", "Menampilkan tanggal merah & cuti bersama Indonesia di kalender", "\uE787" },
+                    new[] { "Dock di semua layar", "Setiap monitor punya dock sendiri, lengkap dengan pratinjau jendela dan widget.", "\uE90E" },
+                    new[] { "Edit gambar", "Coret, potong, putar, balik, dan samarkan gambar sebelum dibagikan.", "\uE8B9" },
+                },
+            },
+            new Note
+            {
                 Version = "2.6.1",
                 Items = new[]
                 {

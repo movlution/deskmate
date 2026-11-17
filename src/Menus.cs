@@ -175,7 +175,7 @@ namespace Deskmate
     sealed class MenuItemMeta
     {
         public char Glyph;
-        public bool Danger;
+        public bool Danger = false;
         public bool Header;
     }
 

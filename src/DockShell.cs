@@ -469,14 +469,12 @@ namespace Deskmate
         [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
         [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int pid);
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
-        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
         [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
         [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
         [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
         [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
         [DllImport("user32.dll")] static extern bool EndTask(IntPtr h, bool shutdown, bool force);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string name);
-        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out int pid);
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         struct SHELLEXECUTEINFO
@@ -506,7 +504,7 @@ namespace Deskmate
             if (IsIconic(h)) ShowWindowAsync(h, 9);
             if (SetForegroundWindow(h)) return;
             // Foreground lock: join the front window's input for a moment
-            uint mine = GetCurrentThreadId(), theirs = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
+            uint mine = GetCurrentThreadId(), theirs = Native.GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
             bool joined = theirs != 0 && theirs != mine && AttachThreadInput(mine, theirs, true);
             BringWindowToTop(h);
             bool ok = SetForegroundWindow(h);
@@ -519,14 +517,14 @@ namespace Deskmate
         public static bool OutOfReach(IntPtr h)
         {
             if (!IsIconic(h)) return false;
-            uint pid = GetWindowThreadProcessId(h, IntPtr.Zero);
+            uint pid = Native.GetWindowThreadProcessId(h, IntPtr.Zero);
             return pid != 0 && Elevated((int)pid) && !Elevated(GetCurrentProcessId());
         }
 
         // The app owns a window we cannot move: starting it again raises that same window
         public static void Relaunch(IntPtr h)
         {
-            uint pid = GetWindowThreadProcessId(h, IntPtr.Zero);
+            uint pid = Native.GetWindowThreadProcessId(h, IntPtr.Zero);
             string exe = ProcessPath((int)pid);
             if (exe.Length == 0) return;
             try
@@ -599,14 +597,14 @@ namespace Deskmate
                 DockWin w = windows[i];
                 if (w == null) continue;
                 int pid = 0;
-                if (w.H != IntPtr.Zero) GetWindowThreadProcessId(w.H, out pid);
+                if (w.H != IntPtr.Zero) Native.GetWindowThreadProcessId(w.H, out pid);
                 if (pid == 0) pid = w.Pid;
 
                 if (w.Exe != null && w.Exe.EndsWith("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase))
                 {
                     IntPtr core = w.H != IntPtr.Zero ? FindWindowEx(w.H, IntPtr.Zero, "Windows.UI.Core.CoreWindow", null) : IntPtr.Zero;
                     int corePid = 0;
-                    if (core != IntPtr.Zero) GetWindowThreadProcessId(core, out corePid);
+                    if (core != IntPtr.Zero) Native.GetWindowThreadProcessId(core, out corePid);
                     if (corePid > 0 && corePid != pid && corePid != selfPid)
                     {
                         List<IntPtr> list;
