@@ -7,7 +7,7 @@
 **Milestone**: TM1 — Test Infrastructure & Harness Foundation  
 **Status**: ACTIVE (Tier 1–4 implemented)
 
-> **Coverage note (18 Nov 2026):** Tier 1–4 now contain the active suites. Tier 3 has 26 pairwise interactions across `test_x01`–`test_x06`; Tier 4 has 13 real-world scenarios (S01–S13) in `tests/tier4_scenarios/` with 19 tests. Feature 21 also covers Discord Electron toast activation arguments, and the multi-display dock suite covers the runtime taskbar pause. The per-feature allocations below remain coverage targets. A verified run on 18 Nov 2026 passed smoke 19/19, Tier 1 233/233, Tier 2 112/112, Tier 3 26/26, and Tier 4 19/19 (390/390 tier tests). Passive feature checks for task-note images and notification emoji live in `tests/run_feature_checks.ps1`.
+> **Coverage note (18 Nov 2026):** Tier 1–4 now contain the active suites. Tier 3 has 26 pairwise interactions across `test_x01`–`test_x06`; Tier 4 has 13 real-world scenarios (S01–S13) in `tests/tier4_scenarios/` with 19 tests. Feature 21 also covers Discord Electron toast activation arguments, and the multi-display dock suite covers the timed taskbar peek. The per-feature allocations below remain coverage targets. A verified run on 18 Nov 2026 passed smoke 19/19, Tier 1 233/233, Tier 2 112/112, Tier 3 26/26, and Tier 4 19/19 (390/390 tier tests). Passive feature checks for task-note images and notification emoji live in `tests/run_feature_checks.ps1`.
 
 ---
 

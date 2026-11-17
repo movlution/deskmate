@@ -337,9 +337,9 @@ namespace Deskmate
                 if (S != null && S.GetBool("dockbar.replace", false))
                 {
                     m.Items.Add(Lang.T("Ikon di pojok taskbar"), null, delegate { Open("ms-settings:taskbar"); });
-                    m.Items.Add(new ToolStripMenuItem(
-                        Lang.T(Taskbar.Paused ? "Sembunyikan taskbar Windows" : "Tampilkan taskbar Windows sementara"),
-                        null, delegate { isle.ToggleTaskbarPeek(); }) { Checked = Taskbar.Paused });
+                    m.Items.Add(isle.TaskbarPeekMenuItem());
+                    if (Taskbar.Paused)
+                        m.Items.Add(Lang.T("Sembunyikan taskbar Windows"), null, delegate { isle.EndTaskbarPeek(); });
                 }
                 m.Items.Add(new ToolStripSeparator());
                 m.Items.Add(Lang.T("Tampilkan desktop"), null, delegate { ShowDesktop(); });

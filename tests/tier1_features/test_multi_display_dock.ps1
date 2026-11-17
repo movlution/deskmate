@@ -547,23 +547,48 @@ Describe "Multi-Display Dock & Subsystem Integration Suite" {
             }
         }
 
-        It "6.3 Runtime taskbar pause suspends replacement without changing the saved setting" {
+        It "6.3 Timed taskbar peek suspends replacement, expires, and keeps the saved setting" {
             $isle = New-TestIsland
             $settings = $islandType.GetField("settings", $flags).GetValue($isle)
+            $settings.Set("dockbar.on", $true)
             $settings.Set("dockbar.replace", $true)
             $sOwner = New-MockScreen "\\.\DISPLAY1" 0 0 1920 1080 1040 $true
             $dw = [Activator]::CreateInstance($dwType, $flags, $null, @($isle, $sOwner, $true), $null)
             $pausedField = $taskbarType.GetField("Paused", $flags)
             $replacing = $dwType.GetProperty("Replacing", $flags)
+            $timer = $islandType.GetField("taskbarPeekTimer", $flags).GetValue($isle)
+            $dockWins = $islandType.GetField("dockWins", $flags).GetValue($isle)
+            $peek = $islandType.GetMethod("PeekTaskbar", $flags)
+            $end = $islandType.GetMethod("EndTaskbarPeek", $flags)
+            $dockWins.Add($sOwner.DeviceName, $dw)
+            $islandType.GetField("dockWin", $flags).SetValue($isle, $dw)
             try {
                 $h = $dw.Handle
                 Assert-True ([bool]$replacing.GetValue($dw)) "Saved replace setting must make the dock replace the taskbar"
-                $pausedField.SetValue($null, $true)
-                Assert-False ([bool]$replacing.GetValue($dw)) "Runtime pause must stop taskbar replacement"
-                Assert-True ($settings.GetBool("dockbar.replace", $false)) "Runtime pause must not alter the saved replace setting"
+
+                $peekMenu = $islandType.GetMethod("TaskbarPeekMenuItem", $flags).Invoke($isle, $null)
+                try { Assert-Equal $peekMenu.DropDownItems.Count 4 "Taskbar peek menu must offer four durations" }
+                finally { $peekMenu.Dispose() }
+
+                [void]$peek.Invoke($isle, @([int]5))
+                Assert-True ([bool]$pausedField.GetValue($null)) "Timed peek must pause taskbar replacement"
+                Assert-True $timer.Enabled "Timed peek must start its countdown"
+                Assert-Equal $timer.Interval 5000 "Five-second peek must use a 5000 ms timer"
+                Assert-False ([bool]$replacing.GetValue($dw)) "Timed peek must stop taskbar replacement"
+                Assert-True ($settings.GetBool("dockbar.replace", $false)) "Timed peek must not alter the saved replace setting"
+
+                [void]$peek.Invoke($isle, @([int]10))
+                Assert-Equal $timer.Interval 10000 "Choosing a duration again must restart the countdown"
+
+                [void]$end.Invoke($isle, $null)
+                Assert-False ([bool]$pausedField.GetValue($null)) "Ending the peek must resume taskbar replacement"
+                Assert-False $timer.Enabled "Ending the peek must stop the countdown"
+                Assert-True ([bool]$replacing.GetValue($dw)) "Replacement must be active again after the peek ends"
             }
             finally {
+                $timer.Stop()
                 $pausedField.SetValue($null, $false)
+                [void]$dockWins.Remove($sOwner.DeviceName)
                 $dw.Shutdown()
             }
         }
@@ -595,15 +620,19 @@ Describe "Multi-Display Dock & Subsystem Integration Suite" {
             Assert-Equal $dockWins.Count 3 "dockWins dictionary must contain 3 docks"
             Assert-NotNull ($islandType.GetField("dockWin", $flags).GetValue($isle)) "dockWin must not be null"
 
-            # A runtime pause must not survive the docks closing
+            # A runtime peek must not survive the docks closing
+            $peekTimer = $islandType.GetField("taskbarPeekTimer", $flags).GetValue($isle)
             $taskbarType.GetField("Paused", $flags).SetValue($null, $true)
+            $peekTimer.Interval = 5000
+            $peekTimer.Start()
 
             # Execute Island.CloseDocks
             $closeDocksMethod = $islandType.GetMethod("CloseDocks", $flags)
             $closeDocksMethod.Invoke($isle, $null)
 
             # Assert all docks disposed and dictionary cleared
-            Assert-False ([bool]$taskbarType.GetField("Paused", $flags).GetValue($null)) "CloseDocks must clear the runtime taskbar pause"
+            Assert-False ([bool]$taskbarType.GetField("Paused", $flags).GetValue($null)) "CloseDocks must clear the runtime taskbar peek"
+            Assert-False $peekTimer.Enabled "CloseDocks must stop the peek countdown"
             Assert-Equal $dockWins.Count 0 "dockWins dictionary must be completely cleared"
             Assert-Null ($islandType.GetField("dockWin", $flags).GetValue($isle)) "dockWin reference must be null"
             Assert-True $dw1.IsDisposed "Owner dock must be disposed"

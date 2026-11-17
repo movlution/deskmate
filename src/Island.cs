@@ -124,6 +124,7 @@ namespace Deskmate
             Ink.Apply(ThemeLight());
             Ink.SetAccent(settings.Get("accent", ""));
             clockTimer.Tick += delegate { ClockTick(); };
+            taskbarPeekTimer.Tick += delegate { EndTaskbarPeek(); };
             toastTimer.Tick += delegate
             {
                 toastTimer.Stop();

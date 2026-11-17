@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Windows.Forms;
 
 namespace Deskmate
 {
@@ -16,6 +17,7 @@ namespace Deskmate
         internal readonly Dictionary<string, Bitmap> dockIcons = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
         readonly System.Windows.Forms.Timer dockLeave = new System.Windows.Forms.Timer { Interval = 3500 };
         readonly System.Windows.Forms.Timer dockSwitchPoll = new System.Windows.Forms.Timer { Interval = 60 };
+        readonly System.Windows.Forms.Timer taskbarPeekTimer = new System.Windows.Forms.Timer();
         FileSystemWatcher pinWatch;
         readonly System.Windows.Forms.Timer pinSync = new System.Windows.Forms.Timer { Interval = 600 };
 
@@ -69,6 +71,7 @@ namespace Deskmate
             }
             if (!settings.GetBool("dockbar.replace", false))
             {
+                taskbarPeekTimer.Stop();
                 Taskbar.Paused = false;
                 if (!DockWindow.Dry) Taskbar.Restore(settings);
             }
@@ -96,6 +99,7 @@ namespace Deskmate
 
         void CloseDocks()
         {
+            taskbarPeekTimer.Stop();
             Taskbar.Paused = false;
             if (dockSwitchPoll != null) dockSwitchPoll.Stop();
             dockSwitchMonitor = IntPtr.Zero;
@@ -115,14 +119,41 @@ namespace Deskmate
             if (!DockWindow.Dry) Taskbar.Restore(settings);
         }
 
-        // Debug: hand the real taskbar back for a while without changing the saved
-        // "replace" choice or turning the dock off. Toggle again to resume.
-        void ToggleTaskbarPeek()
+        // Debug: hand the real taskbar back for a chosen number of seconds. The
+        // saved "replace" choice and the dock itself stay untouched.
+        void PeekTaskbar(int seconds)
         {
             if (!DockBarOn || !settings.GetBool("dockbar.replace", false) || dockWins.Count == 0) return;
-            Taskbar.Paused = !Taskbar.Paused;
+            bool first = !Taskbar.Paused;
+            Taskbar.Paused = true;
+            if (first)
+            {
+                foreach (var dock in dockWins.Values) dock.Changed(dock == dockWin);
+                if (!DockWindow.Dry) Taskbar.Restore(settings);
+            }
+            taskbarPeekTimer.Stop();
+            taskbarPeekTimer.Interval = Math.Max(1, seconds) * 1000;
+            taskbarPeekTimer.Start();
+        }
+
+        // Timer elapsed or "Sembunyikan taskbar Windows" picked
+        void EndTaskbarPeek()
+        {
+            taskbarPeekTimer.Stop();
+            if (!Taskbar.Paused) return;
+            Taskbar.Paused = false;
             foreach (var dock in dockWins.Values) dock.Changed(dock == dockWin);
-            if (Taskbar.Paused && !DockWindow.Dry) Taskbar.Restore(settings);
+        }
+
+        ToolStripMenuItem TaskbarPeekMenuItem()
+        {
+            var item = new ToolStripMenuItem(Lang.T("Tampilkan taskbar Windows"));
+            foreach (int seconds in new[] { 5, 10, 30, 60 })
+            {
+                int value = seconds;
+                item.DropDownItems.Add(Lang.F("{0} detik", value), null, delegate { PeekTaskbar(value); });
+            }
+            return item;
         }
 
         void RefreshDocks()

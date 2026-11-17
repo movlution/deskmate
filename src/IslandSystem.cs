@@ -228,7 +228,8 @@ namespace Deskmate
             });
             var updateItem = new ToolStripMenuItem(Lang.T("Perbarui"), null, delegate { BeginInvoke(new Action(() => InstallUpdate(this))); }) { Visible = false };
             var hideItem = new ToolStripMenuItem(Lang.T("Sembunyikan island"), null, delegate { ToggleHidden(); }) { ShortcutKeyDisplayString = HotkeyText(HideHotkey) };
-            var taskbarItem = new ToolStripMenuItem(Lang.T("Tampilkan taskbar Windows sementara"), null, delegate { ToggleTaskbarPeek(); });
+            var taskbarItem = TaskbarPeekMenuItem();
+            var taskbarHideItem = new ToolStripMenuItem(Lang.T("Sembunyikan taskbar Windows"), null, delegate { EndTaskbarPeek(); });
             var keysItem = new ToolStripMenuItem(Lang.T("Navigasi keyboard"), null, delegate { EnterKeyboard(); }) { ShortcutKeyDisplayString = HotkeyText(KeysHotkey) };
             trayComboItem = new ToolStripMenuItem(Lang.T("Combo Ketikan"), null, delegate { ToggleCombo(); }) { Checked = ComboOn };
             var miniItem = new ToolStripMenuItem(Lang.T("Mini"), null, delegate { ToggleMini(); }) { ShortcutKeyDisplayString = HotkeyText(MiniHotkey) };
@@ -243,7 +244,7 @@ namespace Deskmate
             var screenTextItem = new ToolStripMenuItem(Lang.T("Salin teks dari layar"), null, delegate { BeginInvoke(new Action(ReadScreenText)); });
             var exit = new ToolStripMenuItem(Lang.T("Keluar"), null, delegate { Close(); });
             var prefsItem = new ToolStripMenuItem(Lang.T("Pengaturan…"), null, delegate { OpenPrefs(); });
-            menu.Items.AddRange(new ToolStripItem[] { title, new ToolStripSeparator(), updateItem, miniItem, hideItem, taskbarItem, keysItem, trayComboItem, focusItem, workItem, noteItem, suruhItem, rapatItem, mirrorItem, pickerItem, screenTextItem, prompterItem, hookItem, kuliaItem, new ToolStripSeparator(), prefsItem, dataItem, exit });
+            menu.Items.AddRange(new ToolStripItem[] { title, new ToolStripSeparator(), updateItem, miniItem, hideItem, taskbarItem, taskbarHideItem, keysItem, trayComboItem, focusItem, workItem, noteItem, suruhItem, rapatItem, mirrorItem, pickerItem, screenTextItem, prompterItem, hookItem, kuliaItem, new ToolStripSeparator(), prefsItem, dataItem, exit });
             menu.Opening += delegate
             {
                 // Style submenus after they're rebuilt
@@ -264,8 +265,7 @@ namespace Deskmate
                 hideItem.Checked = hiddenByUser;
                 miniItem.Checked = MiniWanted();
                 taskbarItem.Visible = DockBarOn && settings.GetBool("dockbar.replace", false);
-                taskbarItem.Text = Taskbar.Paused ? Lang.T("Sembunyikan taskbar Windows") : Lang.T("Tampilkan taskbar Windows sementara");
-                taskbarItem.Checked = Taskbar.Paused;
+                taskbarHideItem.Visible = taskbarItem.Visible && Taskbar.Paused;
                 trayComboItem.Checked = ComboOn;
                 prompterItem.Checked = PrompterOn;
                 // Running script: controls live here

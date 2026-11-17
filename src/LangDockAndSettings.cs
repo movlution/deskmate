@@ -34,7 +34,7 @@ namespace Deskmate
             en.Add("{0} bekerja", "{0} working");
             en.Add("Ganti taskbar Windows", "Replace the Windows taskbar");
             en.Add("Taskbar Windows disembunyikan; Start, pencarian, dan jam pindah ke dock", "The Windows taskbar hides; Start, search, and the clock move to the dock");
-            en.Add("Tampilkan taskbar Windows sementara", "Show the Windows taskbar temporarily");
+            en.Add("Tampilkan taskbar Windows", "Show the Windows taskbar");
             en.Add("Sembunyikan taskbar Windows", "Hide the Windows taskbar");
             en.Add("Selalu, selama menggantikan taskbar", "Always, while it replaces the taskbar");
             en.Add("Ringkasan pilihanmu", "Your Overview");
