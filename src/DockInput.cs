@@ -116,7 +116,7 @@ namespace Deskmate
             void SetHover(string id)
             {
                 hoverId = id;
-                bool label = id != null && (id.StartsWith("app:", StringComparison.Ordinal) || id.StartsWith("sys:", StringComparison.Ordinal) || id.StartsWith("tray:", StringComparison.Ordinal));
+                bool label = id != null && (id.StartsWith("app:", StringComparison.Ordinal) || id.StartsWith("sys:", StringComparison.Ordinal) || id.StartsWith("tray:", StringComparison.Ordinal) || id.StartsWith("w_", StringComparison.Ordinal) || id == "clock" || id == "status" || id == "chev" || id == "desk");
                 var app = PreviewAppById(id);
                 bool previewing = card != null && card.Kind == DockCard.WindowsKind && app != null && card.App == app;
                 labelShow.Target = label && !previewing ? 1 : 0;

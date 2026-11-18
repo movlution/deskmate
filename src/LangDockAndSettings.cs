@@ -17,7 +17,8 @@ namespace Deskmate
             en.Add("Widget", "Widgets");
             en.Add("Kuota AI dan agen", "AI quota and agents");
             en.Add("Jam dan tanggal; klik membuka Ringkasan", "Time and date; a click opens Overview");
-            en.Add("Sampul, judul, dan tombol putar", "Cover, title, and a play button");
+            en.Add("Sampul dan tombol putar; judul saat disorot", "Cover and play button; title on hover");
+            en.Add("Ikon dan suhu; detail saat disorot", "Icon and temperature; details on hover");
             en.Add("Pemakaian tertinggi dan agen yang bekerja", "Highest usage and working agents");
             en.Add("Butuh kota di Pengaturan › Sistem", "Needs a city in Settings › System");
             en.Add("Hanya di laptop", "Laptops only");

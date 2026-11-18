@@ -28,7 +28,7 @@ Bagian di samping dikelompokkan: **Umum**, **Tampilan**, **Dynamic Island**, **D
 
 ### Dock
 
-- **Dock**: bar aplikasi dan widget di tepi bawah setiap layar, mati sampai dinyalakan. Setiap dock mengikuti layar, ukuran, kecerahan, area kerja, layar penuh, dan sembunyi otomatisnya sendiri. Ganti taskbar Windows (Start, tray, Quick Settings, dan jam pindah ke dock di layar island; taskbar kembali saat dimatikan), bentuk (mengambang atau selebar layar), ukuran ikon, perbesar saat disorot, sembunyikan dock (selalu tampil, otomatis, atau saat tertutup jendela), tetap tampil di desktop kosong, tampil di rekaman layar, sisakan ruang, pratinjau jendela, angka notifikasi, tombol cari dan semua jendela, tombol Windows membuka Deskmate Start, widget (jam, musik, kuota AI dan agen, timer, cuaca, baterai, CPU dan RAM), dan aplikasi tersemat. Saat menggantikan taskbar, **Tampilkan taskbar Windows** di menu island atau klik kanan dock menawarkan durasi 5, 10, 30, atau 60 detik; taskbar asli kembali selama durasi itu lalu dock menggantikannya lagi. Pilihan **Ganti taskbar Windows** tidak berubah, dan **Sembunyikan taskbar Windows** tersedia untuk mengakhiri lebih cepat.
+- **Dock**: bar aplikasi dan widget di tepi bawah setiap layar, mati sampai dinyalakan. Setiap dock mengikuti layar, ukuran, kecerahan, area kerja, layar penuh, dan sembunyi otomatisnya sendiri. Ganti taskbar Windows (Start, tray, Quick Settings, dan jam pindah ke dock di layar island; taskbar kembali saat dimatikan), bentuk (mengambang atau selebar layar), ukuran ikon, perbesar saat disorot, sembunyikan dock (selalu tampil, otomatis, atau saat tertutup jendela), tetap tampil di desktop kosong, tampil di rekaman layar, sisakan ruang, pratinjau jendela, angka notifikasi, tombol cari dan semua jendela, tombol Windows membuka Deskmate Start, widget (jam, musik, kuota AI dan agen, timer, cuaca, baterai, CPU dan RAM), dan aplikasi tersemat. Dock mengambang memakai ikon aplikasi tanpa kotak dengan sudut membulat dan titik kecil untuk aplikasi yang berjalan; label nama muncul saat disorot. Widget dipadatkan menjadi ikon dan detailnya muncul di label, sedangkan jam di kanan hanya menampilkan waktu dengan tanggal lengkap saat disorot. Saat menggantikan taskbar, **Tampilkan taskbar Windows** di menu island atau klik kanan dock menawarkan durasi 5, 10, 30, atau 60 detik; taskbar asli kembali selama durasi itu lalu dock menggantikannya lagi. Pilihan **Ganti taskbar Windows** tidak berubah, dan **Sembunyikan taskbar Windows** tersedia untuk mengakhiri lebih cepat.
 
 ### Tugas dan catatan
 
@@ -91,7 +91,7 @@ Semua kunci di `%APPDATA%\Deskmate\settings.ini` (ubah saat Deskmate tidak berja
 | `dockbar.reserve` | `1` | Jendela yang dimaksimalkan berhenti di atas dock |
 | `dockbar.magnify` | `1` | Ikon dock membesar saat disentuh kursor |
 | `dockbar.mag` | `150` | Besar ikon saat disorot, persen; `100` sama dengan mati |
-| `dockbar.style` | `float` | `float`: tiga kapsul mengambang; `full`: satu bar selebar layar |
+| `dockbar.style` | `float` | `float`: kapsul mengambang dengan ikon tanpa kotak; `full`: satu bar selebar layar |
 | `dockbar.size` | `m` | Ukuran ikon dock: `s`, `m`, `l` |
 | `dockbar.hide` | `never` | `never`; `auto`: muncul saat kursor menyentuh tepi bawah; `smart`: menyingkir saat jendela menutupinya |
 | `dockbar.previews` | `1` | Pratinjau jendela saat kursor di atas aplikasi yang terbuka |

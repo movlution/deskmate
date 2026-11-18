@@ -16,7 +16,6 @@ namespace Deskmate
             {
                 public string Id = "";
                 public DockApp App;
-                public bool Sep;
                 public RectangleF Icon, Hit;
                 public float Grow = 1, Show = 1;
             }
@@ -42,17 +41,18 @@ namespace Deskmate
 
             // Share of the magnify setting that still applies when icons swell without moving neighbours
             const float InPlaceK = 0.6f;
-            const float PadTop = 7, PadBottom = 9, GapX = 8, PadX = 12, Side = 8, SegGap = 21, Hop = 18, HopSecs = 0.42f;
+            const float PadTop = 6, PadBottom = 7, GapX = 8, PadX = 12, Side = 8, SegGap = 18, Hop = 18, HopSecs = 0.42f;
             float BarH { get { return IconRest + PadTop + PadBottom; } }
-            // Every tile and hover plate shares this size and centre line
-            const float GlyphK = 0.62f;
+            // App icons are free-floating like the macOS Dock: no permanent tile,
+            // and the artwork fills most of the slot instead of sitting in a box.
+            const float GlyphK = 0.94f;
             float PlateH { get { return IconRest * 0.86f; } }
             float PlateR { get { return PlateH * 0.3f; } }
             float PlateCy(RectangleF pill) { return pill.Y + PadTop + IconRest / 2; }
             float Edge { get { return Full ? 0 : 6; } }
             // Room above the bar: magnified icons, their names, a bounce
             float Lift { get { return IconRest * (Mag - 1) + Hop + 40; } }
-            float Radius { get { return Full ? 0 : Math.Min(BarH / 2, 18f); } }
+            float Radius { get { return Full ? 0 : Math.Min(BarH * 0.42f, 21f); } }
 
             readonly List<Slot> slots = new List<Slot>();
             readonly Dictionary<string, Spring> sysGrow = new Dictionary<string, Spring>();
@@ -206,7 +206,10 @@ namespace Deskmate
                 return sysPress.TryGetValue(id, out s) ? Ease.Clamp01(s.Value) : 0f;
             }
 
-            // Centre content: Start when replacing, then the apps
+            // Centre content: Start when replacing, then the apps. The system
+            // buttons sit in the same run as the apps, like Finder and the
+            // other icons in the macOS Dock; only the widget and tray groups
+            // get a divider.
             void CenterSlots()
             {
                 slots.Clear();
@@ -214,19 +217,12 @@ namespace Deskmate
                 {
                     slots.Add(new Slot { Id = "start" });
                     if (S.GetBool("dockbar.taskview", false)) slots.Add(new Slot { Id = "taskview" });
-                    if (apps.Count > 0) slots.Add(new Slot { Id = "sep", Sep = true });
                 }
-                if (S.GetBool("dockbar.work", true))
-                {
-                    slots.Add(new Slot { Id = "work" });
-                    if (!Replacing && apps.Count > 0) slots.Add(new Slot { Id = "worksep", Sep = true });
-                }
+                if (S.GetBool("dockbar.work", true)) slots.Add(new Slot { Id = "work" });
                 foreach (var a in apps) slots.Add(new Slot { Id = "app:" + a.Key, App = a, Show = Ease.Clamp01(a.Show.Value) });
                 // The dragged app leaves a gap that follows the pointer
                 if (dragApp != null) InsertDragGap();
             }
-
-            float SlotW(Slot s) { return s.Sep ? 13 * fit : iconSize; }
 
             // Where every piece of the dock sits this frame: one capsule, centred,
             // widgets | Start and apps | tray and clock
@@ -271,14 +267,11 @@ namespace Deskmate
                 float x = originRest;
                 foreach (var s in slots)
                 {
-                    float w = SlotW(s) * s.Show;
-                    if (!s.Sep)
-                    {
-                        float d = mouseX - (x + w / 2);
-                        float target = wave ? 1 + (mag - 1) * (float)Math.Exp(-(d * d) / (2 * sigma * sigma)) : 1;
-                        var spring = s.App != null ? s.App.Grow : s.Id == "gap" ? null : SysSpring(s.Id);
-                        if (spring != null) { spring.Target = target; s.Grow = Math.Max(0.92f, spring.Value); }
-                    }
+                    float w = iconSize * s.Show;
+                    float d = mouseX - (x + w / 2);
+                    float target = wave ? 1 + (mag - 1) * (float)Math.Exp(-(d * d) / (2 * sigma * sigma)) : 1;
+                    var spring = s.App != null ? s.App.Grow : s.Id == "gap" ? null : SysSpring(s.Id);
+                    if (spring != null) { spring.Target = target; s.Grow = Math.Max(0.92f, spring.Value); }
                     x += w + gap * s.Show;
                 }
                 float grownW = restW, originGrown = originRest;
@@ -287,10 +280,9 @@ namespace Deskmate
                 foreach (var s in slots)
                 {
                     // Slot at rest; the icon grows from its bottom centre
-                    float w = SlotW(s) * s.Show, gw = w * s.Grow;
+                    float w = iconSize * s.Show, gw = w * s.Grow;
                     float lift = s.App != null ? HopLift(s.App) : 0;
                     s.Icon = new RectangleF(x + (w - gw) / 2, floor - gw - lift, gw, gw);
-                    if (s.Sep) s.Icon = new RectangleF(x, barTop + 12, w, BarH - 24);
                     s.Hit = new RectangleF(x - gap / 2, Math.Min(s.Icon.Y, barTop), w + gap, barBottom - Math.Min(s.Icon.Y, barTop));
                     x += (w + gap) * s.Show;
                 }
@@ -306,7 +298,7 @@ namespace Deskmate
             float RestWidth()
             {
                 float w = 0, gap = GapX * fit;
-                foreach (var s in slots) w += (SlotW(s) + gap) * s.Show;
+                foreach (var s in slots) w += (iconSize + gap) * s.Show;
                 if (slots.Count > 0) w -= gap * slots[slots.Count - 1].Show;
                 return w;
             }
@@ -518,13 +510,13 @@ namespace Deskmate
             {
                 if (!Replacing) return 0;
                 float w = 0;
-                foreach (var ic in InlineTray()) w += 26;
-                if (OverflowTray().Count > 0) w += 24;
+                foreach (var ic in InlineTray()) w += 24;
+                if (OverflowTray().Count > 0) w += 22;
                 w += StatusWidth() + 4 + ClockWidth() + 10;
                 return w;
             }
 
-            float StatusWidth() { return isle.hasBattery ? 84 : 56; }
+            float StatusWidth() { return isle.hasBattery ? 72 : 44; }
 
             string clockFor = "";
             float clockW;
@@ -535,8 +527,8 @@ namespace Deskmate
                 string key = Fmt.Clock(now) + now.Date.Ticks;
                 if (key == clockFor) return clockW;
                 clockFor = key;
-                float a = p.Measure(Fmt.Clock(now), Ink.Semi(12.5f)), b = p.Measure(now.ToString("d MMM yyyy", Fmt.Id), Ink.Small(11f));
-                return clockW = Math.Max(a, b) + 18;
+                float a = p.Measure(Fmt.Clock(now), Ink.Semi(12.5f));
+                return clockW = Math.Max(48, a + 16);
             }
 
             List<string> LeftWidgets()
@@ -553,19 +545,23 @@ namespace Deskmate
                 return list;
             }
 
+            // Widgets are dock items, not mini taskbar panels: each one is one
+            // icon-sized slot. Media is just the album art with a play badge;
+            // weather is the glyph and the temperature. Details live in the
+            // hover label, so the dock stays quiet at rest.
             static float WidgetW(string id)
             {
                 switch (id)
                 {
-                    case "clock": return 86;
-                    case "media": return 196;
-                    case "ai": return 108;
-                    case "timer": return 98;
-                    case "weather": return 92;
-                    case "system": return 106;
-                    case "battery": return 112;
+                    case "clock": return 78;
+                    case "media": return 48;
+                    case "ai": return 64;
+                    case "timer": return 72;
+                    case "weather": return 62;
+                    case "system": return 90;
+                    case "battery": return 72;
                 }
-                return 80;
+                return 60;
             }
 
             // Windows' own speaker, network and power icons: the status cluster shows those

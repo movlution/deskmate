@@ -54,7 +54,7 @@ namespace Deskmate
                     // Text on the bar needs the guarded glass; icons alone get the vivid one
                     bool text = !leftPill.IsEmpty || !rightPill.IsEmpty;
                     if (Full) DrawBar(new RectangleF(-1, barTop, cw / scale + 2, BarH + Edge + 2), 0, true);
-                    else DrawBar(centerPill, Radius, text);
+                    else { DropShadow(centerPill, Radius); DrawBar(centerPill, Radius, text); }
                     Dividers();
                     DrawSpan(leftPill, true);
                     DrawSpan(rightPill, false);
@@ -126,6 +126,26 @@ namespace Deskmate
                 float h = EdgeHitH;
                 g.FillRectangle(p.B(Color.FromArgb(1, 0, 0, 0)), 0, ch / scale - h, cw / scale, h);
                 Hit(new RectangleF(0, ch / scale - h, cw / scale, h), "sensor", null, null);
+            }
+
+            // A quiet contact shadow makes the floating dock read as a capsule
+            // above the desktop. It stays outside the bar path so it cannot
+            // darken the live glass or the wallpaper tint inside.
+            void DropShadow(RectangleF r, float radius)
+            {
+                if (r.IsEmpty || radius <= 0 || Full) return;
+                var st = g.Save();
+                using (var cut = Ink.Round(r, radius))
+                {
+                    g.SetClip(cut, CombineMode.Exclude);
+                    for (int i = 3; i >= 1; i--)
+                    {
+                        float grow = i * 2.4f;
+                        var rr = RectangleF.Inflate(r, grow, grow);
+                        p.FillRound(rr, radius + grow, Ink.A(Color.Black, (Ink.Light ? 0.055f : 0.035f) * (4 - i)));
+                    }
+                }
+                g.Restore(st);
             }
 
             void DrawBar(RectangleF r, float radius, bool text)
@@ -265,12 +285,6 @@ namespace Deskmate
                 foreach (var s in slots)
                 {
                     if (s.Show < 0.01f || s.Id == "gap") continue;
-                    if (s.Sep)
-                    {
-                        float cx = s.Icon.X + s.Icon.Width / 2;
-                        g.DrawLine(p.P(Ink.A(p.T.Line, s.Show * 1.6f), 1f), cx, s.Icon.Top, cx, s.Icon.Bottom);
-                        continue;
-                    }
                     if (s.App == null) DrawSys(s);
                     else DrawApp(s);
                 }
@@ -293,10 +307,6 @@ namespace Deskmate
                 Hit(s.Hit, id, act, menu);
                 hot |= keyMode && keySel == id;
                 bool startOpen = s.Id == "start" && sheet != null && sheet.Kind == "start";
-                var plateRect = OnBar(s.Icon, 0, press);
-                Color baseFill = startOpen ? Ink.Mix(p.T.FillHover, Ink.A(p.T.Accent, 0.32f), 0.4f) : hot ? p.T.FillHover : p.T.Fill;
-                Color tileFill = press > 0.001f ? Ink.Mix(baseFill, p.T.FillPressed, press) : baseFill;
-                p.FillRound(plateRect, Math.Min(plateRect.Width, plateRect.Height) * 0.3f, tileFill);
                 if (keyMode && keySel == id) FocusRing(s.Icon);
                 if (s.Id == "start" && !Anim.Reduced && startPulseUtc > DateTime.MinValue)
                 {
@@ -309,19 +319,22 @@ namespace Deskmate
                         p.StrokeRound(halo, halo.Width * 0.30f, Ink.A(p.T.Text, 0.28f * (1 - pu)), 1.8f * (1 - pu * 0.5f));
                     }
                 }
-                float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2, u = r.Width / 42f;
+                float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2, u = r.Width / 34f;
                 bool active = (s.Id == "work" && isle.WorkOpen && GetForegroundWindow() == isle.WorkHwnd) || startOpen;
                 Color ink = hot || active ? p.T.Text : Ink.Mix(p.T.Sub, p.T.Text, 0.55f);
                 switch (s.Id)
                 {
                     case "start":
-                        float q = 6.6f * u, gap = 1.7f * u;
-                        for (int i = 0; i < 4; i++)
-                            p.FillRound(new RectangleF(cx - q - gap / 2 + (i % 2) * (q + gap), cy - q - gap / 2 + (i / 2) * (q + gap), q, q), 1.4f * u, ink);
+                        // Launchpad-style grid, not the Windows flag: nine small
+                        // tiles read as "all apps" without carrying a square plate.
+                        float q = 5.8f * u, gap = 1.7f * u, span = q * 3 + gap * 2;
+                        for (int i = 0; i < 9; i++)
+                            p.FillRound(new RectangleF(cx - span / 2 + (i % 3) * (q + gap), cy - span / 2 + (i / 3) * (q + gap), q, q), 1.5f * u, ink);
+                        if (startOpen) Indicator(1f, false, s.Icon);
                         break;
-                    case "taskview": p.Icon('\uE7C4', 16 * u, ink, cx, cy); break;
+                    case "taskview": p.Icon('\uE7C4', 18f * u, ink, cx, cy); break;
                     case "work":
-                        p.Icon('\uE73A', 21 * u, ink, cx, cy);
+                        p.Icon('\uE73A', 22f * u, ink, cx, cy);
                         Indicator(workDot.Value, false, s.Icon);
                         break;
                 }
@@ -334,11 +347,13 @@ namespace Deskmate
                 var app = a;
                 Hit(s.Hit, s.Id, delegate { OpenApp(app, false); }, delegate { AppMenu(app); });
                 bool focus = keyMode && keySel == s.Id;
-                bool hot = hoverId == s.Id && dragApp == null, down = pressId == s.Id && dragApp == null;
+                bool down = pressId == s.Id && dragApp == null;
                 var now = DateTime.UtcNow;
-                Plate(OnBar(s.Icon, HopLift(a, now), down), hot, down, s.Show);
                 if (focus) FocusRing(s.Icon);
-                var r = Glyph(down ? Inset(s.Icon, s.Icon.Width * 0.05f) : s.Icon);
+                var slot = down ? Inset(s.Icon, s.Icon.Width * 0.05f) : s.Icon;
+                float hop = HopLift(a, now);
+                if (hop > 0) slot = new RectangleF(slot.X, slot.Y - hop, slot.Width, slot.Height);
+                var r = Glyph(slot);
                 float sx, sy;
                 HopScale(a, now, out sx, out sy);
                 float rw = r.Width * sx, rh = r.Height * sy;
@@ -378,19 +393,6 @@ namespace Deskmate
                 p.Alpha = Ease.Clamp01(alpha);
                 p.FillRound(plate, Math.Min(plate.Width, plate.Height) * 0.3f, down ? p.T.FillPressed : hot ? p.T.FillHover : p.T.Fill);
                 p.Alpha = 1;
-            }
-
-            // Icon may rise; plate stays put
-            RectangleF OnBar(RectangleF slot, float lift, bool down)
-            {
-                return OnBar(slot, lift, down ? 1f : 0f);
-            }
-
-            RectangleF OnBar(RectangleF slot, float lift, float press)
-            {
-                var plate = Inset(new RectangleF(slot.X, slot.Y + lift, slot.Width, slot.Height), slot.Width * (0.07f + 0.03f * press));
-                float top = Math.Max(plate.Y, barTop + 4);
-                return RectangleF.FromLTRB(plate.Left, Math.Min(top, plate.Bottom - 8), plate.Right, plate.Bottom);
             }
 
             // Keyboard focus: a ring the eye finds at once
@@ -439,7 +441,8 @@ namespace Deskmate
                     var dst = new Rectangle((int)Math.Round(r.X * scale) - offX, (int)Math.Round(r.Y * scale) - offY, Math.Max(1, (int)Math.Round(r.Width * scale)), Math.Max(1, (int)Math.Round(r.Height * scale)));
                     var st = g.Save();
                     g.ResetTransform();
-                    g.DrawImage(ic, dst, 0, 0, ic.Width, ic.Height, GraphicsUnit.Pixel, ia);
+                    var rounded = RestIcon(a.Key, ic) ?? ic;
+                    g.DrawImage(rounded, dst, 0, 0, rounded.Width, rounded.Height, GraphicsUnit.Pixel, ia);
                     g.Restore(st);
                 }
             }
@@ -460,6 +463,8 @@ namespace Deskmate
                 {
                     bg.InterpolationMode = InterpolationMode.HighQualityBicubic;
                     bg.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    using (var mask = Ink.Round(new RectangleF(0, 0, px, px), px * 0.22f))
+                        bg.SetClip(mask, CombineMode.Intersect);
                     bg.DrawImage(src, new Rectangle(0, 0, px, px));
                 }
                 restIcons[key] = bmp;
@@ -486,6 +491,8 @@ namespace Deskmate
                 {
                     bg.InterpolationMode = InterpolationMode.HighQualityBicubic;
                     bg.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    using (var mask = Ink.Round(new RectangleF(0, 0, px, px), px * 0.22f))
+                        bg.SetClip(mask, CombineMode.Intersect);
                     bg.DrawImage(src, new Rectangle(0, 0, px, px));
                 }
                 bigIcons[key] = bmp;
