@@ -92,7 +92,7 @@ namespace Deskmate
             var r = Rectangle.Intersect(bar, new Rectangle(0, 0, image.Width, image.Height));
             if (r.Width < 4 || r.Height < 4) return;
             float rad = Math.Max(0f, Math.Min(radius, Math.Min(r.Width, r.Height) / 2f));
-            float band = Math.Max(3f, Math.Min(16f, Math.Min(r.Width, r.Height) * 0.20f));
+            float band = Math.Max(4f, Math.Min(14f, Math.Min(r.Width, r.Height) * 0.18f));
             float cx = r.X + r.Width / 2f, cy = r.Y + r.Height / 2f;
             float hw = r.Width / 2f - rad, hh = r.Height / 2f - rad;
             BitmapData data = null;
@@ -112,7 +112,9 @@ namespace Deskmate
                         float dy = Math.Abs(y + 0.5f - cy) - hh;
                         float mx = Math.Max(dx, 0f), my = Math.Max(dy, 0f);
                         float d = (float)Math.Sqrt(mx * mx + my * my) + Math.Min(Math.Max(dx, dy), 0f) - rad;
-                        float a = d >= 0f ? 0f : d <= -band ? 1f : -d / band;
+                        // Smoothstep keeps the opaque core from ending in a visible band
+                        float t = d <= -band ? 1f : d >= 0f ? 0f : -d / band;
+                        float a = t * t * (3f - 2f * t);
                         int i = x * 4;
                         if (a <= 0f)
                         {

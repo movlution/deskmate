@@ -130,14 +130,19 @@ namespace Deskmate
                         gpuBarText |= text;
                     }
                     var img = glass ? (text ? plate.Text : plate.Image) : null;
+                    // Wallpaper tint is a flat colour, not a live scene: magnifying
+                    // it only adds seams near the rim. Keep the tint smooth.
+                    bool tinted = glass && isle != null && isle.WallGlassOn;
                     if (glass) Backdrop(img, r, 1f);
-                    if (glass && (isle.LiquidOn || isle.ClearOn) && radius > 0) Lens(img, r, radius);
+                    if (glass && !tinted && (isle.LiquidOn || isle.ClearOn) && radius > 0) Lens(img, r, radius);
                     // Solid until glass arrives; over glass only a light veil (alpha >= 10 keeps hit-testing active)
                     float veilA = (gpu || glass) ? (isle != null && isle.ClearOn ? 0.02f : isle != null && isle.LiquidOn ? 0.05f : 0.08f) : 0.9f;
                     g.FillPath(p.B(Ink.A(Ink.Veil, veilA)), path);
                     Sheen(r);
                     g.Restore(st);
-                    RimLight(r, path);
+                    // The tinted dock has a feathered edge; a crisp rim would draw
+                    // a second, harder outline over it.
+                    if (!tinted) RimLight(r, path);
                     Rim(r, radius);
                 }
             }
