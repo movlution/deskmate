@@ -777,6 +777,9 @@ namespace Deskmate
             void AutoHide()
             {
                 if (focusReveal || HideMode == "never" || inside || card != null || sheet != null || keyMode || dragging) return;
+                // The edge belongs to the dock even where the floating bar leaves
+                // a transparent gap. Do not retract under a pointer resting there.
+                if (PointerOnEdge()) return;
                 if (HideMode == "auto" && StayOnDesktop && DesktopFront()) return;
                 if (HideMode == "smart" && !Covered()) return;
                 Reveal(false);

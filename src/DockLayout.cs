@@ -72,6 +72,25 @@ namespace Deskmate
 
             Point WindowOrigin() { return new Point(mon.Left - (Dry ? 40000 : 0), area.Bottom - ch); }
 
+            // The floating bar leaves a transparent gap above the screen edge. That
+            // gap is still part of the dock's hover target: a pointer resting on the
+            // edge must keep the bar up instead of falling through to the desktop.
+            float EdgeHitH { get { return Math.Max(2f / Math.Max(0.01f, scale), Edge); } }
+
+            static bool InEdgeBand(Rectangle monitor, float scale, float edge, Point p)
+            {
+                if (monitor.IsEmpty || scale <= 0) return false;
+                if (p.X < monitor.Left || p.X >= monitor.Right) return false;
+                float bandDip = Math.Max(2f / scale, edge);
+                int band = (int)Math.Ceiling(bandDip * scale);
+                return p.Y >= monitor.Bottom - band && p.Y < monitor.Bottom;
+            }
+
+            bool PointerOnEdge()
+            {
+                return HideMode != "never" && InEdgeBand(mon, scale, Edge, System.Windows.Forms.Cursor.Position);
+            }
+
             void Place()
             {
                 if (closing) return;

@@ -46,7 +46,8 @@ namespace Deskmate
                 g.ResetClip();
                 g.ScaleTransform(scale, scale);
                 Compose();
-                if (reveal.Value < 0.02f && reveal.Target == 0) DrawSensor();
+                bool atEdge = reveal.Value < 0.02f && reveal.Target == 0;
+                if (atEdge) DrawSensor();
                 else
                 {
                     Hit(centerPill, "pill", null, null);
@@ -60,6 +61,10 @@ namespace Deskmate
                     DrawCenter();
                     DrawTop();
                 }
+                // Keep the transparent strip below a floating bar in the hover target.
+                // Otherwise the bar rises, the pointer is no longer over an opaque
+                // pixel, and auto-hide pulls it down while the pointer has not moved.
+                if (!atEdge && HideMode != "never") DrawEdgeHit();
                 Present();
             }
 
@@ -110,6 +115,15 @@ namespace Deskmate
             void DrawSensor()
             {
                 float h = 2 / scale;
+                g.FillRectangle(p.B(Color.FromArgb(1, 0, 0, 0)), 0, ch / scale - h, cw / scale, h);
+                Hit(new RectangleF(0, ch / scale - h, cw / scale, h), "sensor", null, null);
+            }
+
+            // Shown: the gap under the bar points at the desktop, but it is still
+            // dock. A 1-alpha strip keeps it hit-testable without being visible.
+            void DrawEdgeHit()
+            {
+                float h = EdgeHitH;
                 g.FillRectangle(p.B(Color.FromArgb(1, 0, 0, 0)), 0, ch / scale - h, cw / scale, h);
                 Hit(new RectangleF(0, ch / scale - h, cw / scale, h), "sensor", null, null);
             }
