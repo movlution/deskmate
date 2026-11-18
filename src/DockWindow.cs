@@ -227,9 +227,9 @@ namespace Deskmate
 
             bool Reserving { get { return HideMode == "never" && (Replacing || S.GetBool("dockbar.reserve", true)); } }
 
-            // Glass reads the screen behind, so it cannot also appear in captures
+            // Live glass reads the screen behind; wallpaper-only glass does not
             public bool Glass { get { return isle != null && isle.GlassOn && !S.GetBool("dockbar.capture", false); } }
-            bool GpuGlass { get { return Glass && CompGlass.Available; } }
+            bool GpuGlass { get { return Glass && CompGlass.Available && !(isle != null && isle.WallGlassOn); } }
             CompGlass.CompBackdrop dockBackdrop;
 
             // Settings or global-owner changes. Peer docks hide the bar on their own
@@ -239,7 +239,8 @@ namespace Deskmate
                 SetGlobalOwner(owner);
                 if (!IsHandleCreated || closing || !UpdateMonitor()) return;
                 bool needFrost = Glass && !GpuGlass;
-                Native.SetWindowDisplayAffinity(Handle, needFrost ? Native.WDA_EXCLUDEFROMCAPTURE : 0);
+                bool liveFrost = needFrost && !(isle != null && isle.WallGlassOn);
+                Native.SetWindowDisplayAffinity(Handle, liveFrost ? Native.WDA_EXCLUDEFROMCAPTURE : 0);
                 if (!GpuGlass && dockBackdrop != null) dockBackdrop.HideBackdrop();
                 // Every dock that stands in for the taskbar hides that screen's bar,
                 // otherwise the secondary screen shows Explorer's bar and ours together
@@ -258,6 +259,8 @@ namespace Deskmate
                 Place();
                 drawnSig = "";
                 Render();
+                if (card != null && !card.IsDisposed) card.GlassChanged();
+                if (sheet != null && !sheet.IsDisposed) sheet.GlassChanged();
             }
 
             public void SetGlobalOwner(bool owner)

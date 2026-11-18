@@ -88,7 +88,7 @@ namespace Deskmate
             {
                 base.OnHandleCreated(e);
                 pacer = new DockPacer(Handle, FrameMsg);
-                if (dock.Glass && !CompGlass.Available) Native.SetWindowDisplayAffinity(Handle, Native.WDA_EXCLUDEFROMCAPTURE);
+                if (dock.Glass && !CompGlass.Available && !(isle != null && isle.WallGlassOn)) Native.SetWindowDisplayAffinity(Handle, Native.WDA_EXCLUDEFROMCAPTURE);
             }
 
             protected override void WndProc(ref Message m)
@@ -182,7 +182,7 @@ namespace Deskmate
                 baseY = Math.Min(barTop, anchor.Top) - (int)(10 * scale) - ph;
                 MakeCanvas(pw, ph);
                 Bounds = new Rectangle(baseX, baseY + Rise(), pw, ph);
-                if (dock.Glass && !CompGlass.Available)
+                if (dock.Glass && (!CompGlass.Available || (isle != null && isle.WallGlassOn)))
                 {
                     frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
                     frost.Start();
@@ -202,6 +202,33 @@ namespace Deskmate
                 Activate();
             }
             public void NudgeFrost() { if (frost != null) frost.Nudge(); }
+
+            // wall.sync or the GPU path changed while the sheet was open
+            public void GlassChanged()
+            {
+                if (IsDisposed || !Visible || cw <= 0 || ch <= 0) return;
+                bool software = dock.Glass && (!CompGlass.Available || (isle != null && isle.WallGlassOn));
+                bool live = software && !(isle != null && isle.WallGlassOn);
+                if (Handle != IntPtr.Zero)
+                    Native.SetWindowDisplayAffinity(Handle, live ? Native.WDA_EXCLUDEFROMCAPTURE : 0);
+                if (software)
+                {
+                    if (frost == null)
+                    {
+                        frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
+                        frost.Start();
+                    }
+                    frost.Request(new Rectangle(baseX, baseY, cw, ch), Ink.Veil, Ink.Light, isle != null && isle.LiquidOn, false, isle != null && isle.ClearOn);
+                }
+                else if (frost != null)
+                {
+                    frost.Stop();
+                    frost = null;
+                    if (plate != null) { plate.Dispose(); plate = null; }
+                }
+                if (sheetBackdrop != null) sheetBackdrop.HideBackdrop();
+                Render();
+            }
 
 
             int Rise() { return (int)Math.Round((1 - open.Value) * 14 * scale); }
@@ -438,7 +465,7 @@ namespace Deskmate
                 g.ResetTransform();
                 g.ScaleTransform(scale, scale);
                 var r = new RectangleF(0.5f, 0.5f, cw / scale - 1, ch / scale - 1);
-                bool gpu = dock.Glass && CompGlass.Available;
+                bool gpu = dock.Glass && CompGlass.Available && !(isle != null && isle.WallGlassOn);
                 bool glass = !gpu && plate != null && dock.Glass;
                 using (var path = Ink.Round(r, 20))
                 {
@@ -538,7 +565,7 @@ namespace Deskmate
             void SyncSheetBackdrop(int x, int y)
             {
                 float fade = Ease.Clamp01(open.Value);
-                if (!dock.Glass || !CompGlass.Available || !Visible || fade <= 0.01f)
+                if (!dock.Glass || !CompGlass.Available || (isle != null && isle.WallGlassOn) || !Visible || fade <= 0.01f)
                 {
                     if (sheetBackdrop != null) sheetBackdrop.HideBackdrop();
                     return;

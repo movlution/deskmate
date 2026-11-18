@@ -9,7 +9,7 @@ using Microsoft.Win32;
 
 namespace Deskmate
 {
-    // wall.sync: glass veil and accent follow the desktop wallpaper; blur stays
+    // wall.sync: glass and accent follow the desktop wallpaper; blur stays
     partial class Island
     {
         [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SystemParametersInfoW")]
@@ -17,13 +17,15 @@ namespace Deskmate
 
         readonly System.Windows.Forms.Timer wallDebounce = new System.Windows.Forms.Timer { Interval = 800 };
         bool wallHooked;
-        int wallBusy;
+        int wallBusy, wallGlassGen;
         // Dominant wallpaper hue, as read; null for greys
         Color? wallPick;
         // Accent we set ourselves, so it can be given back
         string wallAccent;
 
         bool WallSyncOn { get { return settings.GetBool("wall.sync", false) && !CustomOn; } }
+        // Software glass samples the wallpaper still, never the window behind it
+        bool WallGlassOn { get { return WallSyncOn && WallBackdrop.Ready; } }
 
         void StartWallSync()
         {
@@ -52,7 +54,12 @@ namespace Deskmate
         // Switch flipped in settings
         void WallToggle(bool on)
         {
-            if (on) WallRead(); else WallApply();
+            if (on) WallRead();
+            else
+            {
+                WallBackdrop.Clear();
+                WallApply();
+            }
         }
 
         // Decode off the UI thread; a big wallpaper takes a moment
@@ -65,6 +72,8 @@ namespace Deskmate
                 Color? pick = null;
                 try { pick = WallPickNow(); }
                 catch (Exception ex) { Log.Write("wall sync: " + ex.Message); }
+                try { WallBackdrop.Reload(); }
+                catch (Exception ex) { Log.Write("wall sync backdrop: " + ex.Message); }
                 Post(delegate
                 {
                     Interlocked.Exchange(ref wallBusy, 0);
@@ -118,6 +127,12 @@ namespace Deskmate
         // Applies what was read; safe to call on any look change
         void WallApply()
         {
+            bool wasWall = WallGlassOn;
+            WallBackdrop.SetActive(WallSyncOn);
+            int glassVer = WallBackdrop.Version;
+            bool glassMoved = wallGlassGen != glassVer;
+            wallGlassGen = glassVer;
+
             bool live = WallSyncOn && wallPick.HasValue;
             Color? veil = live ? (Color?)WallVeil(wallPick.Value, Ink.Light) : null;
             bool veilChanged = Ink.VeilTint != veil;
@@ -141,9 +156,11 @@ namespace Deskmate
                 AlbumAccent();
             }
 
-            if (!veilChanged && !accentChanged) return;
+            bool glassChanged = wasWall != WallGlassOn || (glassMoved && WallGlassOn);
+            if (!veilChanged && !accentChanged && !glassChanged) return;
             Ink.Epoch++;
             ResetFrost();
+            if (glassChanged) ApplyGlass();
             RefreshDocks();
             if (prefs != null && !prefs.IsDisposed) prefs.Relayout();
             Kick();

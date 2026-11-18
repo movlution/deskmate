@@ -15,7 +15,7 @@ Bagian di samping dikelompokkan: **Umum**, **Tampilan**, **Dynamic Island**, **D
 
 ### Tampilan
 
-- **Tema dan warna**: tema (gelap, terang, atau otomatis mengikuti mode aplikasi Windows), material (Bening, Liquid, Frost, Hitam), aksen (termasuk dari sampul album: warna paling mencolok di sampul lagu yang diputar, diterangkan atau digelapkan sampai terbaca di island), sinkronkan warna wallpaper (kaca notch, dock, dan kartunya diberi nuansa warna dominan wallpaper yang gelap atau pucat mengikuti tema, blur tetap; aksen ikut wallpaper selama belum memilih aksen), dan warna sendiri (pilih latar, teks, dan aksen dari preset, ambil dari layar, atau warna bebas; warna lain diturunkan dari ketiganya seperti di pembuat paket, kontras teks ditampilkan, dan hasilnya bisa disimpan jadi paket tema). **Bening** memakai blur kuat dan lapisan tipis, sehingga warna di belakang kaca tetap terlihat dan berubah mengikuti wallpaper atau jendela di belakangnya.
+- **Tema dan warna**: tema (gelap, terang, atau otomatis mengikuti mode aplikasi Windows), material (Bening, Liquid, Frost, Hitam), aksen (termasuk dari sampul album: warna paling mencolok di sampul lagu yang diputar, diterangkan atau digelapkan sampai terbaca di island), sinkronkan warna wallpaper (kaca notch, dock, dan kartunya memakai wallpaper sebagai satu-satunya sumber warna, bukan jendela yang sedang terbuka di belakangnya; blur tetap; aksen ikut wallpaper selama belum memilih aksen), dan warna sendiri (pilih latar, teks, dan aksen dari preset, ambil dari layar, atau warna bebas; warna lain diturunkan dari ketiganya seperti di pembuat paket, kontras teks ditampilkan, dan hasilnya bisa disimpan jadi paket tema). **Bening** memakai blur kuat dan lapisan tipis, sehingga warna di belakang kaca tetap terlihat; saat **Sinkronkan wallpaper** aktif, warna itu selalu berasal dari wallpaper.
 - **Paket tema**: paket, suara sapaan paket, folder paket, dan pembuat paket.
 
 ### Dynamic Island
@@ -76,7 +76,7 @@ Semua kunci di `%APPDATA%\Deskmate\settings.ini` (ubah saat Deskmate tidak berja
 | `sound.agent` | `0` | Suara saat agen minta izin atau selesai, dan saat `--run` selesai |
 | `update.check` | `1` | Cek versi baru sekali sehari |
 | `accent` | kosong | Warna aksen, misalnya `#4C8DFF`; kosong untuk monokrom; `album` mengambil warna dari sampul lagu yang diputar |
-| `wall.sync` | `0` | Kaca notch dan dock memakai nuansa warna wallpaper, aksen ikut jika `accent` kosong; mati saat warna sendiri dipakai |
+| `wall.sync` | `0` | Kaca notch, dock, dan kartu memakai wallpaper sebagai satu-satunya sumber warna, tidak ikut jendela di belakangnya; aksen ikut jika `accent` kosong; mati saat warna sendiri dipakai |
 | `monitor` | kosong | Monitor tempat island tampil; kosong untuk monitor utama. Nilai perangkat Windows yang sah disimpan otomatis; layar yang sementara dicabut memakai monitor utama sampai tersambung kembali. Dock tampil di semua monitor yang tersambung. |
 | `focus.break` | `5` | Menit istirahat setelah fokus |
 | `dock` | `1` | Menempel di tepi layar; `0` untuk mengambang |

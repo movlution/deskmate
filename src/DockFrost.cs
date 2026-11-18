@@ -329,6 +329,7 @@ namespace Deskmate
                         }
                         return;
                     }
+                    if (WallBackdrop.Draw(tg, r, tiny.Size)) return;
                     IntPtr hdc = tg.GetHdc(), screen = Native.GetDC(IntPtr.Zero);
                     Native.SetStretchBltMode(hdc, fast ? 3 : 4);
                     if (!fast) Native.SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);

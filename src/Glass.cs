@@ -115,7 +115,7 @@ namespace Deskmate
         bool GlassOn { get { return MaterialName != "solid" && !ShowInCapture; } }
         bool LiquidOn { get { return GlassOn && MaterialName == "liquid"; } }
         bool ClearOn { get { return GlassOn && MaterialName == "clear"; } }
-        bool GpuGlassOn { get { return GlassOn && CompGlass.Available; } }
+        bool GpuGlassOn { get { return GlassOn && CompGlass.Available && !WallGlassOn; } }
 
         // Island centre; shift is percent of free half-width
         volatile int shiftPct;
@@ -137,9 +137,10 @@ namespace Deskmate
 
         void ApplyGlass()
         {
-            bool on = GlassOn, gpu = on && CompGlass.Available, needFrost = on && !gpu;
-            bool hide = needFrost || PrompterOn || Sharing;
-            // Software frost and scripts stay out of captures; GPU HostBackdrop composes safely
+            bool on = GlassOn, gpu = on && CompGlass.Available && !WallGlassOn, needFrost = on && !gpu;
+            // Wallpaper-backed frost reads nothing live, so it can stay capturable
+            bool hide = (needFrost && !WallGlassOn) || PrompterOn || Sharing;
+            // Live software frost stays out of captures; wallpaper frost and GPU HostBackdrop read no live screen
             if (hide != excluded)
             {
                 if (Native.SetWindowDisplayAffinity(Handle, hide ? Native.WDA_EXCLUDEFROMCAPTURE : 0)) excluded = hide;
@@ -288,12 +289,15 @@ namespace Deskmate
                     long c0 = Native.ThreadCpu();
                     using (var tg = Graphics.FromImage(tiny))
                     {
-                        IntPtr hdc = tg.GetHdc(), screen = Native.GetDC(IntPtr.Zero);
-                        Native.SetStretchBltMode(hdc, 4);
-                        Native.SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
-                        Native.StretchBlt(hdc, 0, 0, tw, th, screen, job.Left, job.Top, w, h, 0x00CC0020);
-                        Native.ReleaseDC(IntPtr.Zero, screen);
-                        tg.ReleaseHdc(hdc);
+                        if (!WallBackdrop.Draw(tg, new Rectangle(job.Left, job.Top, w, h), new Size(tw, th)))
+                        {
+                            IntPtr hdc = tg.GetHdc(), screen = Native.GetDC(IntPtr.Zero);
+                            Native.SetStretchBltMode(hdc, 4);
+                            Native.SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
+                            Native.StretchBlt(hdc, 0, 0, tw, th, screen, job.Left, job.Top, w, h, 0x00CC0020);
+                            Native.ReleaseDC(IntPtr.Zero, screen);
+                            tg.ReleaseHdc(hdc);
+                        }
                     }
                     var data = tiny.LockBits(new Rectangle(0, 0, tw, th), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
                     int len = data.Stride * th;
