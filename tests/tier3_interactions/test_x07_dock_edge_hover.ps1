@@ -70,7 +70,7 @@ Describe "Tier 3: Dock edge hover" {
         }
     }
 
-    It "4. rises quickly, lands smoothly, and retracts without a bounce" {
+    It "4. moves the whole shape on one calm, synchronized spring" {
         $animType = Get-DeskmateType "Anim"
         $reducedField = $animType.GetField("Reduced", $flags)
         $paceField = $animType.GetField("Pace", $flags)
@@ -85,26 +85,36 @@ Describe "Tier 3: Dock edge hover" {
             $bounceField.SetValue($null, [single]1)
 
             $reveal = $dockType.GetField("reveal", $flags).GetValue($dock)
+            $ready = $dockType.GetProperty("RevealReady", $flags)
             [void]$dockType.GetMethod("Reveal", $flags).Invoke($dock, @($true))
             $reveal.Value = 0
             $reveal.Velocity = 0
             $reveal.Target = 1
 
+            Assert-False ([bool]$ready.GetValue($dock)) "Pointer effects must wait while the shape is still moving"
+
             $firstFrame = 0.0
             $rise90 = -1.0
             $peak = 0.0
+            $maxStep = 0.0
+            $previous = 0.0
             for ($i = 1; $i -le 60; $i++) {
                 $reveal.Step([single](1.0 / 60.0))
                 $v = [double]$reveal.Value
+                $step = [Math]::Abs($v - $previous)
+                if ($step -gt $maxStep) { $maxStep = $step }
+                $previous = $v
                 if ($i -eq 1) { $firstFrame = $v }
                 if ($v -gt $peak) { $peak = $v }
                 if ($rise90 -lt 0 -and $v -ge 0.90) { $rise90 = $i / 60.0 }
             }
 
-            Assert-True ($firstFrame -ge 0.12) "The first frame must move at least 12% of the rise (got $([Math]::Round($firstFrame * 100, 1))%)"
-            Assert-True ($rise90 -gt 0 -and $rise90 -le 0.12) "The dock must reach 90% of its rise within 120 ms (got $([Math]::Round($rise90 * 1000)) ms)"
-            Assert-True ($peak -le 1.01) "The rise must not visibly bounce past rest (peak $([Math]::Round($peak * 100, 1))%)"
+            Assert-True ($firstFrame -ge 0.05 -and $firstFrame -le 0.09) "The rise must start without a lurch (first frame $([Math]::Round($firstFrame * 100, 1))%)"
+            Assert-True ($rise90 -ge 0.15 -and $rise90 -le 0.20) "The whole shape must reach 90% calmly in 150-200 ms (got $([Math]::Round($rise90 * 1000)) ms)"
+            Assert-True ($maxStep -le 0.16) "No single frame may jump more than 16% of the rise (peak step $([Math]::Round($maxStep * 100, 1))%)"
+            Assert-True ($peak -le 1.005) "The rise must not visibly bounce past rest (peak $([Math]::Round($peak * 100, 1))%)"
             Assert-True ([Math]::Abs([double]$reveal.Value - 1.0) -le 0.002) "The rise must settle cleanly at rest"
+            Assert-True ([bool]$ready.GetValue($dock)) "Pointer effects may begin only after the shape has arrived"
 
             [void]$dockType.GetMethod("Reveal", $flags).Invoke($dock, @($false))
             $reveal.Value = 1
@@ -120,9 +130,9 @@ Describe "Tier 3: Dock edge hover" {
                 if ($v -lt $floor) { $floor = $v }
             }
 
-            Assert-True ($hide90 -gt 0 -and $hide90 -le 0.32) "The dock must retract calmly within 320 ms (got $([Math]::Round($hide90 * 1000)) ms)"
+            Assert-True ($hide90 -ge 0.15 -and $hide90 -le 0.20) "The retract must use the same calm cadence (got $([Math]::Round($hide90 * 1000)) ms)"
             Assert-True ($floor -ge -0.002) "The retract must not dip below its resting edge"
-            Assert-True ($rise90 -lt $hide90 * 0.70) "The rise must be clearly quicker than the retract"
+            Assert-True ([Math]::Abs($rise90 - $hide90) -le 0.03) "Rise and retract must feel like one shape"
         }
         finally {
             $reducedField.SetValue($null, $oldReduced)

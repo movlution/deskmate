@@ -238,7 +238,7 @@ namespace Deskmate
             // Top edge catches the light near the pointer
             void Rim(RectangleF r, float radius)
             {
-                if (hover.Value < 0.01f || mouseX < r.Left || mouseX > r.Right) return;
+                if (!RevealReady || hover.Value < 0.01f || mouseX < r.Left || mouseX > r.Right) return;
                 float span = Math.Max(60, r.Height * 1.5f);
                 float a = Math.Max(r.Left + radius * 0.7f, mouseX - span), b = Math.Min(r.Right - radius * 0.7f, mouseX + span);
                 if (b - a < 2) return;

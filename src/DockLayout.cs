@@ -267,7 +267,7 @@ namespace Deskmate
                 // Magnification targets from rest positions: no feedback loop
                 // Icons swell in place: slots, spacing and capsule never move, so a fast sweep cannot shake the row
                 float mag = 1 + (Mag - 1) * InPlaceK, sigma = (iconSize + GapX * fit) * 0.7f;
-                bool wave = inside && mouseY >= barTop - iconSize * (mag - 1) - 8 && dragApp == null;
+                bool wave = inside && RevealReady && mouseY >= barTop - iconSize * (mag - 1) - 8 && dragApp == null;
                 float x = originRest;
                 foreach (var s in slots)
                 {

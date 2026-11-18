@@ -52,11 +52,12 @@ namespace Deskmate
             int tickN;
             // Dock slides in on open and for auto-hide
             readonly Spring reveal = new Spring(0, 1, 1, 0.001f), hover = new Spring(0, 1, 1, 0.002f), workDot = new Spring(0, 1, 1, 0.003f);
-            // Rising: a quick, decisive lift that settles without a visible bounce.
-            // Hiding stays calmer so the bar leaves instead of snapping away.
-            const float RevealUpK = 1600f, RevealUpDamping = 0.94f;
-            const float RevealDownK = 620f, RevealDownDamping = 1f;
+            // One shape, one motion: the whole bar rises and leaves on the same
+            // calm, critically damped spring. Pointer effects wait for arrival.
+            const float RevealK = 520f, RevealDamping = 1f;
             bool wantShown = true, focusReveal;
+            // Pointer effects belong to the arrived shape, not to the moving one.
+            bool RevealReady { get { return reveal.Value > 0.985f; } }
 
             [DllImport("user32.dll")] static extern bool RegisterShellHookWindow(IntPtr h);
             [DllImport("user32.dll")] static extern bool DeregisterShellHookWindow(IntPtr h);
@@ -106,7 +107,7 @@ namespace Deskmate
                 AllowDrop = true;
                 Text = "Deskmate Dock";
                 Bounds = new Rectangle(-32000, -32000, 1, 1);
-                Tune(reveal, RevealUpK, RevealUpDamping);
+                Tune(reveal, RevealK, RevealDamping);
                 Tune(hover, 260, 0.9f);
                 Tune(workDot, 340, 0.78f);
                 tick.Tick += delegate { Tick(); };
@@ -749,7 +750,7 @@ namespace Deskmate
                 if (on) hideLater.Stop();
                 revealLater.Stop();
                 wantShown = on;
-                Tune(reveal, on ? RevealUpK : RevealDownK, on ? RevealUpDamping : RevealDownDamping);
+                Tune(reveal, RevealK, RevealDamping);
                 reveal.Target = on ? 1 : 0;
                 Animate();
             }
