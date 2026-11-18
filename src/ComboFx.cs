@@ -29,7 +29,7 @@ namespace Deskmate
                     Spin = ((float)comboRng.NextDouble() - 0.5f) * 14f,
                     Life = 0f,
                     MaxLife = 0.7f + (float)comboRng.NextDouble() * 0.35f,
-                    Color = (i % 3 == 0) ? Color.FromArgb(255, 255, 90, 95) : c
+                    Color = (i % 3 == 0) ? Ink.FxCoral : c
                 });
             }
         }
@@ -48,7 +48,7 @@ namespace Deskmate
                     ? (w * 0.5f + ((float)comboRng.NextDouble() - 0.5f) * 18f)
                     : (burst ? (w * 0.35f + (float)comboRng.NextDouble() * (w * 0.3f)) : (54f + (float)comboRng.NextDouble() * 44f));
                 float oy = h * 0.5f + ((float)comboRng.NextDouble() - 0.5f) * (side ? 28f : 16f);
-                Color c = (i % 3 == 0) ? Color.FromArgb(255, 255, 245, 200) : baseCol;
+                Color c = (i % 3 == 0) ? Ink.FxCream : baseCol;
                 comboSparks.Add(new ComboSpark
                 {
                     X = ox,
@@ -66,24 +66,15 @@ namespace Deskmate
             }
         }
 
-        static readonly Color[] ComboConfettiPalette =
-        {
-            Color.FromArgb(255, 50, 173, 230),  // cyan
-            Color.FromArgb(255, 48, 209, 88),   // arcade green
-            Color.FromArgb(255, 255, 214, 10),  // electric gold
-            Color.FromArgb(255, 255, 159, 10),  // blaze orange
-            Color.FromArgb(255, 255, 55, 95),   // crimson pink
-            Color.FromArgb(255, 175, 82, 222),  // violet
-            Color.FromArgb(255, 255, 248, 220)  // warm white
-        };
+        // Softened celebration palette from Ink.FxConfetti: joyful, never neon
+        static readonly Color[] ComboConfettiPalette = Ink.FxConfetti;
 
         static readonly Color[] ComboConfettiGoldPalette =
         {
-            Color.FromArgb(255, 255, 214, 10),  // electric gold
-            Color.FromArgb(255, 255, 248, 220), // warm white
-            Color.FromArgb(255, 255, 185, 40),  // rich gold
-            Color.FromArgb(255, 255, 159, 10),  // blaze orange
-            Color.FromArgb(255, 255, 235, 130)  // soft gold
+            Ink.FxGold, Ink.FxCream,
+            Ink.Mix(Ink.FxGold, Color.White, 0.28f),
+            Ink.FxApricot,
+            Ink.Mix(Ink.FxGold, Color.White, 0.45f)
         };
 
         void SpawnComboConfetti(int count, float ox, float oy, float spreadX, bool goldTheme, bool tierBoost)
@@ -230,30 +221,21 @@ namespace Deskmate
             switch (tier)
             {
                 case 6: return ComboRainbow(animSec * 1.8);
-                case 5: return Color.FromArgb(255, 255, 55, 95);   // Hyper Crimson/Pink
-                case 4: return Color.FromArgb(255, 255, 159, 10);  // Blaze Orange
-                case 3: return Color.FromArgb(255, 255, 214, 10);  // Electric Gold
-                case 2: return Color.FromArgb(255, 48, 209, 88);   // Arcade Green
-                default: return Color.FromArgb(255, 50, 173, 230); // Electric Cyan
+                case 5: return Ink.FxRose;
+                case 4: return Ink.FxApricot;
+                case 3: return Ink.FxGold;
+                case 2: return Ink.FxMint;
+                default: return Ink.FxSky;
             }
         }
 
+        // A calm rainbow: a smooth walk around Ink.FxConfetti, no pure-saturation neon
         static Color ComboRainbow(double t)
         {
-            double h = (t - Math.Floor(t)) * 6.0;
-            int seg = (int)h;
-            double f = h - seg;
-            int q = (int)Math.Round(255 * (1.0 - f * 0.75));
-            int u = (int)Math.Round(255 * (0.25 + f * 0.75));
-            switch (seg % 6)
-            {
-                case 0: return Color.FromArgb(255, 255, u, 70);
-                case 1: return Color.FromArgb(255, q, 255, 70);
-                case 2: return Color.FromArgb(255, 70, 255, u);
-                case 3: return Color.FromArgb(255, 70, q, 255);
-                case 4: return Color.FromArgb(255, u, 70, 255);
-                default: return Color.FromArgb(255, 255, 70, q);
-            }
+            Color[] pal = Ink.FxConfetti;
+            double p = (t - Math.Floor(t)) * (pal.Length - 1);
+            int i = (int)p;
+            return Ink.Mix(pal[i], pal[(i + 1) % pal.Length], (float)(p - i));
         }
 
         float ComboDrainFraction()
@@ -465,7 +447,7 @@ namespace Deskmate
             }
             int shown = comboActive ? comboCount : comboLastRun;
             int tier = ComboTierFor(shown);
-            Color tc = comboBrokenLeft > 0.01f ? Color.FromArgb(255, 255, 70, 85) : ComboTierColor(tier, clock.Elapsed.TotalSeconds);
+            Color tc = comboBrokenLeft > 0.01f ? p.T.Negative : ComboTierColor(tier, clock.Elapsed.TotalSeconds);
             Color tcInk = p.T.IsDark ? tc : EnforceContrast(tc, p.T.Bg, 3.5);
             float pop = Math.Max(0f, comboPop.Value);
             float shakeX = Anim.Reduced ? 0f : comboShake.Value;
@@ -500,7 +482,7 @@ namespace Deskmate
                 float rw2 = Math.Max(16f, 56f + rt2 * (w - 40f));
                 float rh2 = Math.Max(10f, 26f + rt2 * (h - 18f));
                 var rr2 = new RectangleF(48f - rw2 * 0.25f, cy - rh2 / 2f, rw2, rh2);
-                p.StrokeRound(rr2, rh2 / 2f, Ink.A(Color.FromArgb(255, 255, 200, 70), (1f - rt2) * 0.65f), 2.2f);
+                p.StrokeRound(rr2, rh2 / 2f, Ink.A(Ink.FxGold, (1f - rt2) * 0.65f), 2.2f);
             }
             if (!Anim.Reduced && comboShards.Count > 0)
             {
@@ -565,14 +547,14 @@ namespace Deskmate
                 }
             }
             if (comboGoldFlash > 0.01f)
-                p.FillRound(numPill, pillH / 2f, Ink.A(Color.FromArgb(255, 255, 214, 10), comboGoldFlash * 0.35f));
+                p.FillRound(numPill, pillH / 2f, Ink.A(Ink.FxGold, comboGoldFlash * 0.35f));
             if (comboShieldCrack > 0.01f)
-                p.FillRound(numPill, pillH / 2f, Ink.A(Color.FromArgb(255, 255, 80, 90), comboShieldCrack * 0.35f));
+                p.FillRound(numPill, pillH / 2f, Ink.A(p.T.Negative, comboShieldCrack * 0.35f));
             if (ComboPenaltyMode == "shield" && comboActive)
             {
                 for (int s = 0; s < 2; s++)
                 {
-                    Color sc = s < comboShields ? Color.FromArgb(255, 90, 220, 255) : Ink.A(p.T.Text, 0.16f);
+                    Color sc = s < comboShields ? Ink.FxSky : Ink.A(p.T.Text, 0.16f);
                     p.Circle(numPill.Right - 6f - s * 7f, numPill.Y + 5f, 2.2f, sc);
                 }
             }
@@ -587,7 +569,7 @@ namespace Deskmate
             float badgeW = p.Measure(rankText, rankFont) + 14f;
             var badgeRect = new RectangleF(midX, 7.5f, badgeW, 16.5f);
             p.FillRound(badgeRect, 8.2f, tc);
-            Color onBadge = Contrast(tc, Color.Black) >= Contrast(tc, Color.White) ? Color.FromArgb(255, 16, 18, 22) : Color.White;
+            Color onBadge = Ink.On(tc);
             p.TextCenter(rankText, rankFont, onBadge, badgeRect.X + badgeRect.Width / 2f, badgeRect.Y + badgeRect.Height / 2f);
 
             // Secondary flame/streak tag next to the rank badge
@@ -611,7 +593,7 @@ namespace Deskmate
                 : comboActive
                     ? ComboRankSubtitle(tier) + " · " + comboWpm + " WPM"
                     : (ComboRpgOn ? Lang.F("Lv.{0} · {1} (+{2} XP)", ComboLevel, ComboLevelTitle, comboLastRunXp) : Lang.F("Selesai! · Puncak {0} WPM", Math.Max(comboWpm, comboPeakWpm)));
-            p.Text(subText, Ink.Small(11f), comboBrokenLeft > 0.01f ? Color.FromArgb(255, 255, 90, 95) : p.T.Sub, midX, h - 14.5f, availMid, StringAlignment.Near);
+            p.Text(subText, Ink.Small(11f), comboBrokenLeft > 0.01f ? p.T.Negative : p.T.Sub, midX, h - 14.5f, availMid, StringAlignment.Near);
 
             // 6. Floating Callouts ("NICE!", "FAST!", "CRIT!")
             if (!Anim.Reduced && comboCallouts.Count > 0)
@@ -643,7 +625,7 @@ namespace Deskmate
                 float xpBarX = 16f, xpBarW = Math.Max(8f, w - 32f), xpBarY = h - 4.2f;
                 p.FillRound(new RectangleF(xpBarX, xpBarY, xpBarW, 2.4f), 1.2f, Ink.A(p.T.Text, 0.12f));
                 float xpFill = Math.Max(4f, xpBarW * Ease.Clamp01(ComboLevelProgress));
-                p.FillRound(new RectangleF(xpBarX, xpBarY, xpFill, 2.4f), 1.2f, Color.FromArgb(255, 255, 214, 10));
+                p.FillRound(new RectangleF(xpBarX, xpBarY, xpFill, 2.4f), 1.2f, Ink.FxGold);
             }
             else if (frac > 0.005f)
             {
@@ -658,7 +640,7 @@ namespace Deskmate
 
         void DrawTypingSprint(float w, float h)
         {
-            Color sc = Color.FromArgb(255, 50, 173, 230);
+            Color sc = Ink.FxSky;
             Color scInk = p.T.IsDark ? sc : EnforceContrast(sc, p.T.Bg, 3.5);
             float cy = h / 2f - 1f;
             if (sprintActive)
@@ -672,8 +654,8 @@ namespace Deskmate
                 p.Text(Lang.T("SPRINT 30s"), Ink.Semi(9.5f), scInk, 94f, 14f, 120f, StringAlignment.Near);
                 p.Text(liveWpm + " WPM · " + sprintChars + " " + Lang.T("huruf"), Ink.Small(11f), p.T.Sub, 94f, h - 15f, 165f, StringAlignment.Near);
                 var stopRect = new RectangleF(w - 58f, cy - 12f, 46f, 24f);
-                p.FillRound(stopRect, 12f, Ink.A(Color.FromArgb(255, 255, 80, 90), 0.18f));
-                p.StrokeRound(stopRect, 12f, Ink.A(Color.FromArgb(255, 255, 80, 90), 0.55f), 1f);
+                p.FillRound(stopRect, 12f, Ink.A(p.T.Negative, 0.18f));
+                p.StrokeRound(stopRect, 12f, Ink.A(p.T.Negative, 0.55f), 1f);
                 p.TextCenter(Lang.T("Stop"), Ink.Semi(9.5f), p.T.Text, stopRect.X + stopRect.Width / 2f, stopRect.Y + stopRect.Height / 2f);
                 AddHit(stopRect, "comboSprintStop", StopTypingSprint);
                 float frac = Ease.Clamp01(sprintLeft / 30f);
@@ -694,8 +676,8 @@ namespace Deskmate
             if (sprintActive || sprintDoneLeft > 0.01f)
             {
                 float scx = w / 2f;
-                p.Circle(scx, 18f, 11f, Ink.A(Color.FromArgb(255, 50, 173, 230), 0.24f));
-                p.Icon('\uE916', 11f, Color.FromArgb(255, 50, 173, 230), scx, 18f);
+                p.Circle(scx, 18f, 11f, Ink.A(Ink.FxSky, 0.24f));
+                p.Icon('\uE916', 11f, Ink.FxSky, scx, 18f);
                 p.TextCenter(sprintActive ? sprintLeft.ToString("0.0") + "s" : (sprintFinalWpm + ""), Ink.Semi(11f), p.T.Text, scx, 42f);
                 p.TextCenter(sprintActive ? "SPRINT" : "WPM", Ink.Semi(7.5f), p.T.Sub, scx, 58f);
                 if (sprintActive)
@@ -703,14 +685,14 @@ namespace Deskmate
                     AddHit(new RectangleF(0, 0, w, h), "comboSprintStop", StopTypingSprint);
                     float barW = Math.Max(6f, w - 12f);
                     p.FillRound(new RectangleF(6f, h - 8f, barW, 3f), 1.5f, Ink.A(p.T.Text, 0.14f));
-                    p.FillRound(new RectangleF(6f, h - 8f, Math.Max(3f, barW * Ease.Clamp01(sprintLeft / 30f)), 3f), 1.5f, Color.FromArgb(255, 50, 173, 230));
+                    p.FillRound(new RectangleF(6f, h - 8f, Math.Max(3f, barW * Ease.Clamp01(sprintLeft / 30f)), 3f), 1.5f, Ink.FxSky);
                 }
                 DrawComboConfetti();
                 return;
             }
             int shown = comboActive ? comboCount : comboLastRun;
             int tier = ComboTierFor(shown);
-            Color tc = comboBrokenLeft > 0.01f ? Color.FromArgb(255, 255, 70, 85) : ComboTierColor(tier, clock.Elapsed.TotalSeconds);
+            Color tc = comboBrokenLeft > 0.01f ? p.T.Negative : ComboTierColor(tier, clock.Elapsed.TotalSeconds);
             Color tcInk = p.T.IsDark ? tc : EnforceContrast(tc, p.T.Bg, 3.5);
             if (ComboFeverActive)
             {

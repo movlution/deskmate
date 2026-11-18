@@ -15,14 +15,14 @@ namespace Deskmate
         public static bool ByMouse;
 
         static Color O(Color c) { return Color.FromArgb(255, c.R, c.G, c.B); }
-        // Windows 11 surfaces: canvas, navigation, cards, separators, hover.
+        // Calm surfaces from the tinted tones: canvas, navigation, cards, separators, hover.
         public static Color Window { get { return O(Ink.Base.Bg); } }
         public static Color Side { get { return O(Ink.Mix(Ink.Base.Bg, Color.Black, Ink.Light ? 0.035f : 0.055f)); } }
         public static Color Group { get { return O(Ink.Light ? Ink.Mix(Ink.Base.Bg, Color.White, 0.85f) : Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.07f)); } }
         public static Color Line { get { return O(Ink.Light ? Ink.Mix(Ink.Base.Bg, Color.Black, 0.10f) : Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.12f)); } }
         public static Color Hover { get { return O(Ink.Light ? Ink.Mix(Ink.Base.Bg, Color.Black, 0.06f) : Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.09f)); } }
         // Selected segment, lifted above its track
-        public static Color Raised { get { return Ink.Light ? Color.White : O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.16f)); } }
+        public static Color Raised { get { return Ink.Light ? Color.White : O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.22f)); } }
         public static Color Text { get { return O(Ink.Base.Text); } }
         // Light Sub sits above Faint so secondary text keeps hierarchy and >= 4.5:1 on Line
         public static Color Sub { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.74f : 0.72f)); } }
@@ -31,9 +31,63 @@ namespace Deskmate
         // Disabled chrome (switch knob, slider fill): dimmer than tertiary text so
         // raising Faint for readability does not make disabled controls look enabled
         public static Color Disabled { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.30f)); } }
-        // Monochrome accent: switches use text colour
+        // Grafit accent: switches and primary buttons use text colour
         public static Color Accent { get { return O(Ink.Base.Accent); } }
         public static Color OnAccent { get { return O(Ink.Base.OnAccent); } }
+        // Keyboard focus: the accent where it reads on the canvas (>= 3:1), else primary ink
+        public static Color Focus { get { var a = Accent; return Island.Contrast(a, Window) >= 3 ? a : Text; } }
+        // Thumbs and knobs: paper white on light, ivory on night
+        public static Color Knob { get { return Ink.Light ? Color.White : Text; } }
+        // Canvas mixed toward primary ink: control fills that step evenly in both themes
+        public static Color Tint(float k) { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, k)); }
+        // A colour pushed away from the ink drawn on it, so hover and press only gain contrast
+        public static Color Deepen(Color fill, Color ink, float k) { return Ink.Mix(fill, ink.GetBrightness() < 0.5f ? Color.White : Color.Black, k); }
+
+        // One brush, pen and path per UI thread: Kit paints allocate nothing
+        [ThreadStatic] static SolidBrush brush;
+        [ThreadStatic] static Pen pen;
+        [ThreadStatic] static GraphicsPath shape;
+
+        public static SolidBrush BrushOf(Color c)
+        {
+            if (brush == null) brush = new SolidBrush(c); else brush.Color = c;
+            return brush;
+        }
+
+        public static Pen PenOf(Color c, float width)
+        {
+            if (pen == null) pen = new Pen(c, width) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            else { pen.Color = c; pen.Width = width; }
+            return pen;
+        }
+
+        public static GraphicsPath Shape(RectangleF r, float radius)
+        {
+            if (shape == null) shape = new GraphicsPath(); else shape.Reset();
+            Ink.AddRound(shape, r, radius);
+            return shape;
+        }
+
+        public static void FillRound(Graphics g, RectangleF r, float radius, Color c) { g.FillPath(BrushOf(c), Shape(r, radius)); }
+        public static void StrokeRound(Graphics g, RectangleF r, float radius, Color c, float width) { g.DrawPath(PenOf(c, width), Shape(r, radius)); }
+
+        // Elevation 1: contact shadow plus a short falloff below, never a halo
+        public static void Lift(Graphics g, RectangleF r, float radius, float s)
+        {
+            var ink = Ink.Light ? Color.FromArgb(255, 0x2A, 0x20, 0x38) : Color.Black;
+            int a = Ink.Light ? 26 : 90;
+            FillRound(g, new RectangleF(r.X - 0.5f * s, r.Y + 1.5f * s, r.Width + s, r.Height + 0.5f * s), radius + 0.5f * s, Color.FromArgb(a / 2, ink));
+            FillRound(g, new RectangleF(r.X, r.Y + 0.75f * s, r.Width, r.Height), radius, Color.FromArgb(a, ink));
+        }
+
+        // Keyboard focus: 2px ring in Focus with a hairline of the surface inside it,
+        // so the ring reads against the canvas and against whatever fill it hugs
+        public static void FocusRing(Graphics g, RectangleF ring, float radius, Color surface, float s)
+        {
+            float inset = 1.5f * s;
+            StrokeRound(g, RectangleF.Inflate(ring, -inset, -inset), Math.Max(0, radius - inset), surface, 1.25f * s);
+            StrokeRound(g, ring, radius, Focus, 2f * s);
+        }
 
         // First opaque colour behind a control
         public static Color Under(Control c)
@@ -70,7 +124,7 @@ namespace Deskmate
                 var n = Ink.IconNudge(s[0], f.Size);
                 float half = g.PixelOffsetMode == PixelOffsetMode.HighQuality || g.PixelOffsetMode == PixelOffsetMode.Half ? 0.5f : 0;
                 float cx = r.X + r.Width / 2 + n.X + half, cy = r.Y + r.Height / 2 + n.Y + half;
-                using (var b = new SolidBrush(c)) g.DrawString(s, f, b, new RectangleF(cx - f.Size, cy - f.Size, f.Size * 2, f.Size * 2), glyphFormat);
+                g.DrawString(s, f, KitInk.BrushOf(c), new RectangleF(cx - f.Size, cy - f.Size, f.Size * 2, f.Size * 2), glyphFormat);
                 return;
             }
             var flags = TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
@@ -143,13 +197,13 @@ namespace Deskmate
         protected override void OnKeyUp(KeyEventArgs e) { if (KitInk.ByMouse) { KitInk.ByMouse = false; Invalidate(); } base.OnKeyUp(e); }
         protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
 
-        // Focus ring only for keyboard use
+        // Focus ring only for keyboard use, kept clear of the fill by a hairline of the surface
         protected void Ring(Graphics g, RectangleF r, float radius)
         {
             if (!Focused || !ShowFocusCues || KitInk.ByMouse) return;
-            var ring = Inside(RectangleF.Inflate(r, 2, 2), Width, Height);
-            using (var path = Ink.Round(ring, Math.Min(radius + 2, ring.Height / 2)))
-            using (var pen = new Pen(KitInk.Text, 2f)) g.DrawPath(pen, path);
+            float s = Ui, grow = 2.5f * s;
+            var ring = Inside(RectangleF.Inflate(r, grow, grow), Width, Height);
+            KitInk.FocusRing(g, ring, Math.Min(radius + grow, ring.Height / 2), KitInk.Under(this), s);
         }
 
         // Rings stay whole inside the control
@@ -159,11 +213,7 @@ namespace Deskmate
             return RectangleF.FromLTRB(x0, y0, Math.Max(x0 + 1, x1), Math.Max(y0 + 1, y1));
         }
 
-        protected void Fill(Graphics g, RectangleF r, float radius, Color c)
-        {
-            using (var path = Ink.Round(r, radius))
-            using (var b = new SolidBrush(c)) g.FillPath(b, path);
-        }
+        protected void Fill(Graphics g, RectangleF r, float radius, Color c) { KitInk.FillRound(g, r, radius, c); }
     }
 
     // iOS switch over CheckBox for readers
@@ -199,50 +249,86 @@ namespace Deskmate
         {
             var g = e.Graphics;
             KitInk.Smooth(g);
-            g.Clear(KitInk.Under(this));
+            var under = KitInk.Under(this);
+            g.Clear(under);
             float s = Height / 24f;
             var track = new RectangleF(1, (Height - 22 * s) / 2, 40 * s, 22 * s);
-            Color trackBg = Enabled ? Ink.Mix(KitInk.Line, KitInk.Accent, knob) : KitInk.Line;
-            if (hovered && Enabled) trackBg = Ink.Mix(trackBg, KitInk.Text, 0.06f);
-            using (var path = Ink.Round(track, 11 * s))
-            using (var b = new SolidBrush(trackBg)) g.FillPath(b, path);
+            bool live = Enabled;
+            // Off: quiet tinted track; on: accent. Disabled keeps a trace of the state.
+            Color trackBg = live ? Ink.Mix(KitInk.Line, KitInk.Accent, knob) : Ink.Mix(KitInk.Line, KitInk.Accent, 0.3f * knob);
+            if (hovered && live) trackBg = knob > 0.5f ? KitInk.Deepen(trackBg, KitInk.OnAccent, 0.08f) : Ink.Mix(trackBg, KitInk.Text, 0.07f);
+            KitInk.FillRound(g, track, track.Height / 2, trackBg);
 
-            float r = (hovered && Enabled ? 9.5f : 9f) * s;
+            float r = (hovered && live ? 8.5f : 8f) * s;
             float cx = track.X + 11 * s + knob * 18 * s, cy = track.Y + 11 * s;
-            Color knobColor = Enabled ? Ink.Mix(KitInk.Text, KitInk.OnAccent, knob) : KitInk.Disabled;
-            if (hovered && Enabled && knob == 0) knobColor = Ink.Mix(knobColor, KitInk.Window, 0.08f);
-            using (var b = new SolidBrush(knobColor)) g.FillEllipse(b, cx - r, cy - r, r * 2, r * 2);
+            var dot = new RectangleF(cx - r, cy - r, r * 2, r * 2);
+            Color knobColor = live ? Ink.Mix(hovered ? Ink.Mix(KitInk.Sub, KitInk.Text, 0.35f) : KitInk.Sub, KitInk.OnAccent, knob) : KitInk.Disabled;
+            if (live) KitInk.Lift(g, dot, r, s * 0.6f);
+            KitInk.FillRound(g, dot, r, knobColor);
 
             if (Focused && ShowFocusCues && !KitInk.ByMouse)
             {
-                var ring = KitControl.Inside(RectangleF.Inflate(track, 2, 2), Width, Height);
-                using (var path = Ink.Round(ring, ring.Height / 2))
-                using (var pen = new Pen(KitInk.Text, 1.6f)) g.DrawPath(pen, path);
+                var ring = KitControl.Inside(RectangleF.Inflate(track, 2.5f * s, 2.5f * s), Width, Height);
+                KitInk.FocusRing(g, ring, ring.Height / 2, under, Math.Max(1f, s));
             }
         }
 
         protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
     }
 
-    // Pill choices; arrows move between
+    // Soft segmented choices; the thumb glides, arrows move between
     class KitSegmented : KitControl
     {
         public string[] Items = new string[0];
-        int selected;
+        int selected, hot = -1;
+        // Thumb position in segments, gliding toward the pick; -1 until first paint
+        float glide = -1;
+        readonly Timer anim = new Timer { Interval = 15 };
         public event Action<int> Changed;
+
+        public KitSegmented()
+        {
+            anim.Tick += delegate
+            {
+                glide += (selected - glide) * (Anim.Reduced ? 1f : 0.3f);
+                if (Math.Abs(selected - glide) < 0.01f) { glide = selected; anim.Stop(); }
+                Invalidate();
+            };
+        }
 
         public int Selected
         {
             get { return selected; }
-            set { if (value == selected) return; selected = value; Invalidate(); AccessibilityNotifyClients(AccessibleEvents.Selection, selected); }
+            set
+            {
+                if (value == selected) return;
+                selected = value;
+                if (IsHandleCreated && glide >= 0) anim.Start(); else glide = -1;
+                Invalidate();
+                AccessibilityNotifyClients(AccessibleEvents.Selection, selected);
+            }
         }
 
         RectangleF Cell(int i)
         {
-            // Active pill fills its segment fully
             float w = (Width - 1f) / Math.Max(1, Items.Length);
             return new RectangleF(i * w, 0, w, Height - 1);
         }
+
+        int HitCell(Point pt)
+        {
+            for (int i = 0; i < Items.Length; i++) if (Cell(i).Contains(pt)) return i;
+            return -1;
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            int at = HitCell(e.Location);
+            if (at != hot) { hot = at; Invalidate(); }
+        }
+
+        protected override void OnMouseLeave(EventArgs e) { hot = -1; base.OnMouseLeave(e); }
 
         void Pick(int i)
         {
@@ -257,7 +343,8 @@ namespace Deskmate
             base.OnMouseUp(e);
             if (!Enabled || e.Button != MouseButtons.Left) return;
             Focus();
-            for (int i = 0; i < Items.Length; i++) if (Cell(i).Contains(e.Location)) { Pick(i); return; }
+            int at = HitCell(e.Location);
+            if (at >= 0) Pick(at);
         }
 
         protected override bool IsInputKey(Keys key) { return key == Keys.Left || key == Keys.Right || key == Keys.Home || key == Keys.End || base.IsInputKey(key); }
@@ -281,20 +368,24 @@ namespace Deskmate
             var g = e.Graphics;
             KitInk.Smooth(g);
             g.Clear(KitInk.Under(this));
-            var box = new RectangleF(0, 0, Width - 1, Height - 1);
-            Fill(g, box, Height / 2f, KitInk.Line);
-            var f = new Font(Ink.MenuFamily, 12.5f * Ui, FontStyle.Regular, GraphicsUnit.Pixel);
-            var fs = new Font(Ink.MenuFamily, 12.5f * Ui, FontStyle.Regular, GraphicsUnit.Pixel);
-            for (int i = 0; i < Items.Length; i++)
+            float s = Ui, radius = Ink.RadiusControl * s, inset = 3 * s;
+            var box = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
+            Fill(g, box, radius, KitInk.Line);
+            if (glide < 0) glide = selected;
+            if (selected >= 0 && selected < Items.Length)
             {
-                var c = Cell(i);
-                if (i == selected) Fill(g, c, c.Height / 2, Enabled ? KitInk.Raised : KitInk.Group);
-                KitInk.Draw(g, Items[i], i == selected ? fs : f, !Enabled ? KitInk.Faint : i == selected ? KitInk.Text : KitInk.Sub, c, ContentAlignment.MiddleCenter);
+                float w = (Width - 1f) / Items.Length;
+                var thumb = new RectangleF(glide * w + inset, inset, w - 2 * inset, Height - 1 - 2 * inset);
+                if (Enabled) KitInk.Lift(g, thumb, radius - inset, s);
+                Fill(g, thumb, radius - inset, Enabled ? KitInk.Raised : KitInk.Group);
             }
-            f.Dispose();
-            fs.Dispose();
-            Ring(g, box, Height / 2f);
+            Font f = Ink.Text(12.5f * s), fs = Ink.Semi(12.5f * s);
+            for (int i = 0; i < Items.Length; i++)
+                KitInk.Draw(g, Items[i], i == selected ? fs : f, !Enabled ? KitInk.Faint : i == selected || i == hot ? KitInk.Text : KitInk.Sub, Cell(i), ContentAlignment.MiddleCenter);
+            Ring(g, box, radius);
         }
+
+        protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
 
         protected override AccessibleObject CreateAccessibilityInstance() { return new Access(this); }
 

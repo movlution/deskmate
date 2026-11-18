@@ -8,7 +8,7 @@ Untuk warna saja, tidak perlu paket: **Pengaturan > Tampilan > Warna sendiri**. 
 
 | Berkas | Isi |
 |---|---|
-| `theme.ini` | Warna dalam `#RRGGBB` atau `#AARRGGBB`. Kunci untuk island: `bg`, `text`, `sub`, `faint`, `fill`, `fillHover`, `line`, `accent`, `onAccent`, `progress`, serta `positive` dan `negative` untuk baris diff. Awali dengan `card.` untuk kartu terang seperti kartu izin, misalnya `card.bg`. |
+| `theme.ini` | Warna dalam `#RRGGBB` atau `#AARRGGBB`. Kunci untuk island: `bg`, `text`, `sub`, `faint`, `fill`, `fillHover`, `line`, `accent`, `onAccent`, `progress`, serta `positive` dan `negative` untuk baris diff, dan `warning` untuk peringatan. Awali dengan `card.` untuk kartu terang seperti kartu izin, misalnya `card.bg`. |
 | `emblem*.png` | Gambar persegi (`emblem.png`, `emblem01.png`, dan seterusnya), dipotong bulat dan ditampilkan di samping jam dan di sapaan. Kalau ada lebih dari satu, Deskmate memilih acak saat dibuka dan setiap panel dibuka. Opsional. |
 | `corner*.png` | Maskot berlatar transparan yang duduk di pojok kanan bawah panel, sebagian di luar panel. Kalau ada lebih dari satu, dipilih acak setiap panel dibuka. Opsional. |
 | `knob.png` | Pegangan bar progres musik dan teleprompter. Ujung kanan gambar menunjuk posisi saat ini, jadi pakai gambar melebar berlatar transparan. Opsional. |

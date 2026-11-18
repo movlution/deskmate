@@ -80,7 +80,7 @@ namespace Deskmate
                     bool pHot = Hover(actId), pDown = Pressed(actId);
                     Color pFill = n.Connected
                         ? (pDown ? p.T.FillPressed : pHot ? p.T.FillHover : p.T.Fill)
-                        : (pDown ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.2f) : pHot ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent);
+                        : (pDown ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.2f) : pHot ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent);
                     Color pInk = n.Connected ? (pHot ? p.T.Text : p.T.Sub) : p.T.OnAccent;
                     p.FillRound(pill, 13, pFill);
                     p.TextCenter(actLabel, Ink.SmallSemi(11.5f), pInk, pill.X + pill.Width / 2, cy);

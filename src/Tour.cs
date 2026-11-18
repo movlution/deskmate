@@ -314,7 +314,7 @@ namespace Deskmate
                     float wDot = i == at ? 14 * s : r * 2;
                     x -= wDot;
                     using (var path = Ink.Round(new RectangleF(x, y - r, wDot, r * 2), r))
-                    using (var b = new SolidBrush(i == at ? KitInk.Text : i < at ? KitInk.Sub : KitInk.Line)) g.FillPath(b, path);
+                    g.FillPath(KitInk.BrushOf(i == at ? KitInk.Accent : i < at ? KitInk.Sub : KitInk.Line), path);
                     x -= gap;
                 }
             }

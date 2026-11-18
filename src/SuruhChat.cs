@@ -265,12 +265,12 @@ namespace Deskmate
         // Deskmate's face: a dark disc, two eyes
         static void DrawFace(Graphics g, RectangleF r, float look)
         {
-            using (var b = new SolidBrush(Color.FromArgb(255, 18, 18, 20))) g.FillEllipse(b, r);
+            using (var b = new SolidBrush(Tone.Night)) g.FillEllipse(b, r);
             // Rim keeps it apart from a dark window
             using (var pen = new Pen(KitInk.Line, 1f)) g.DrawEllipse(pen, r);
             float d = r.Width, ew = d * 0.15f, eh = d * 0.27f, gap = d * 0.2f;
             float cx = r.X + d / 2 + look * d * 0.08f, cy = r.Y + d / 2;
-            using (var b = new SolidBrush(Color.White))
+            using (var b = new SolidBrush(Tone.Ivory))
                 foreach (float x in new[] { cx - gap / 2 - ew, cx + gap / 2 })
                     using (var path = Ink.Round(new RectangleF(x, cy - eh / 2, ew, eh), ew / 2)) g.FillPath(b, path);
         }

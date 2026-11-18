@@ -151,8 +151,8 @@ namespace Deskmate
                     }
                     else if (Active)
                     {
-                        bg = isPressed ? Ink.Mix(KitInk.Accent, KitInk.OnAccent, 0.22f)
-                                       : isHovered ? Ink.Mix(KitInk.Accent, KitInk.OnAccent, 0.1f)
+                        bg = isPressed ? KitInk.Deepen(KitInk.Accent, KitInk.OnAccent, 0.22f)
+                                       : isHovered ? KitInk.Deepen(KitInk.Accent, KitInk.OnAccent, 0.1f)
                                        : KitInk.Accent;
                         fg = KitInk.OnAccent;
                     }

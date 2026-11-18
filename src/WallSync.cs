@@ -184,9 +184,9 @@ namespace Deskmate
             bool veilChanged = Ink.VeilTint != veil;
             Ink.VeilTint = veil;
 
-            // Accent follows the wallpaper only while none is chosen
-            string own = settings.Get("accent", "");
-            string want = live && own.Length == 0 ? WallAccentHex(wallPick.Value) : null;
+            // Accent follows the wallpaper only while none is chosen; unset falls back to the brand default
+            string own = settings.Get("accent", null);
+            string want = live && string.IsNullOrEmpty(own) ? WallAccentHex(wallPick.Value) : null;
             bool accentChanged = false;
             if (want != null)
             {
@@ -196,7 +196,7 @@ namespace Deskmate
             {
                 accentChanged = true;
                 wallAccent = null;
-                Ink.SetAccent(own);
+                Ink.SetAccent(own ?? Ink.DefaultAccent);
                 albumAccentFor = null;
                 albumTinted = false;
                 AlbumAccent();
@@ -219,11 +219,11 @@ namespace Deskmate
             return FromHsl(pick.GetHue(), s, light ? 0.92 : 0.15);
         }
 
-        // Vivid version of the hue, lifted to 3:1 on the island
+        // Dusty version of the hue, in step with the calm presets, lifted to 3:1 on the island
         static string WallAccentHex(Color pick)
         {
             bool light = Ink.Light;
-            var c = FromHsl(pick.GetHue(), Math.Max(pick.GetSaturation(), 0.55), light ? 0.38 : 0.68);
+            var c = FromHsl(pick.GetHue(), Math.Max(0.28, Math.Min(pick.GetSaturation(), 0.5)), light ? 0.4 : 0.74);
             var bg = Ink.Base.Bg;
             var toward = Luminance(bg) < 0.5 ? Color.White : Color.Black;
             for (int i = 0; i < 12 && Contrast(c, bg) < 3; i++) c = MixRound(c, toward, 0.15);

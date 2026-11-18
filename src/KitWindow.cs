@@ -281,11 +281,11 @@ namespace Deskmate
             int right = w - (int)(20 * s) - (int)(96 * s);
             if (two)
             {
-                no.SetBounds(right, rowY, (int)(96 * s), (int)(34 * s));
-                yes.SetBounds(right - (int)(108 * s), rowY, (int)(96 * s), (int)(34 * s));
+                no.SetBounds(right, rowY, (int)(96 * s), (int)(36 * s));
+                yes.SetBounds(right - (int)(108 * s), rowY, (int)(96 * s), (int)(36 * s));
             }
-            ok.SetBounds(right, rowY, (int)(96 * s), (int)(34 * s));
-            ClientSize = new Size(w, rowY + (int)(34 * s) + (int)(20 * s));
+            ok.SetBounds(right, rowY, (int)(96 * s), (int)(36 * s));
+            ClientSize = new Size(w, rowY + (int)(36 * s) + (int)(20 * s));
             ActiveControl = two ? (Control)yes : ok;
         }
 

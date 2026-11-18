@@ -280,7 +280,7 @@ namespace Deskmate
                     LiveRect(new RectangleF(rx - 11, cy - 11, 22, 22), 15, pulseActs[slot]);
                     slot++;
                 }
-                else Ring(rx, cy, 6.5f, w.Stale ? 0 : w.Pct / 100f, p.T.Accent, 2f);
+                else Ring(rx, cy, 6.5f, w.Stale ? 0 : w.Pct / 100f, w.Stale ? p.T.Accent : w.Pct >= 95 ? p.T.Negative : hot ? p.T.Warning : p.T.Accent, 2f);
                 float tx = x + 20;
                 p.Text(w.Label, lf, hot ? p.T.Text : p.T.Sub, tx, cy, 200, StringAlignment.Near);
                 tx += p.Measure(w.Label, lf) + 5;

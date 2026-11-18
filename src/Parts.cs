@@ -169,7 +169,7 @@ namespace Deskmate
             bool hover = available && Hover(id), down = available && Pressed(id);
             var circle = new RectangleF(cx - r, cy - r, d, d);
             float s = Squish(id, circle, 0.92f);
-            Color fill = on ? (down ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.22f) : hover ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent)
+            Color fill = on ? (down ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.22f) : hover ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent)
                             : down ? p.T.FillPressed : hover ? p.T.FillHover : p.T.Fill;
             // Accent stays solid with a subtle outer halo; off gets module light
             if (on)
@@ -208,7 +208,7 @@ namespace Deskmate
             Color ink;
             if (kind == PillKind.Primary)
             {
-                Color fill = !enabled ? p.T.Quaternary : down ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.2f) : hover ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent;
+                Color fill = !enabled ? p.T.Quaternary : down ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.2f) : hover ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent;
                 p.FillRound(r, radius, fill);
                 ink = enabled ? p.T.OnAccent : p.T.Faint;
             }
@@ -408,8 +408,7 @@ namespace Deskmate
             float block = 48 + 16 + 20 + 24 + (button ? 18 + 32 : 0);
             float top = area.Y + Math.Max(8, (area.Height - block) / 2), cx = area.X + area.Width / 2;
             var circle = new RectangleF(cx - 24, top, 48, 48);
-            p.Module(circle, 24, p.T.Fill);
-            p.Icon(icon, 20f, p.T.Sub, cx, top + 24);
+            EmptyTile(circle, icon);
             p.TextCenter(title, Ink.Headline, p.T.Text, cx, top + 48 + 16 + 10);
             if (!string.IsNullOrEmpty(line))
             {
@@ -421,6 +420,13 @@ namespace Deskmate
             Pill(new RectangleF(cx - bw / 2, top + block - 32, bw, 32), id, action, kind, act);
         }
 
+        // Soft accent squircle carrying the empty state's icon
+        void EmptyTile(RectangleF tile, char icon)
+        {
+            p.FillRound(tile, Ink.RadiusCard, Ink.A(p.T.Accent, p.T.IsDark ? 0.18f : 0.12f));
+            p.Icon(icon, 20f, p.T.Accent, tile.X + tile.Width / 2, tile.Y + tile.Height / 2);
+        }
+
         // Empty state with dual action buttons
         void EmptyState(RectangleF area, char icon, string title, string line,
             string action1, string id1, Action act1, PillKind kind1,
@@ -429,8 +435,7 @@ namespace Deskmate
             float block = 48 + 16 + 20 + 24 + 18 + 32;
             float top = area.Y + Math.Max(8, (area.Height - block) / 2), cx = area.X + area.Width / 2;
             var circle = new RectangleF(cx - 24, top, 48, 48);
-            p.Module(circle, 24, p.T.Fill);
-            p.Icon(icon, 20f, p.T.Sub, cx, top + 24);
+            EmptyTile(circle, icon);
             p.TextCenter(title, Ink.Headline, p.T.Text, cx, top + 48 + 16 + 10);
             if (!string.IsNullOrEmpty(line))
             {

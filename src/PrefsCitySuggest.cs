@@ -151,29 +151,22 @@ namespace Deskmate
             // path, so stroking the full rectangle would clip half the width and render
             // a smeared grey edge instead of a crisp line
             var card = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-            using (var path = Ink.Round(card, 10 * ui))
+            var path = KitInk.Shape(card, Ink.RadiusControl * ui);
+            g.FillPath(KitInk.BrushOf(KitInk.Window), path);
+            // Rows are clipped to the card, so a hover band cannot square off the corners
+            var old = g.Clip;
+            g.SetClip(path);
+            var f = Ink.Text(12.5f * ui);
+            for (int i = 0; i < items.Length; i++)
             {
-                using (var b = new SolidBrush(KitInk.Window)) g.FillPath(b, path);
-                // Rows are clipped to the card, so a hover band cannot square off the corners
-                var old = g.Clip;
-                g.SetClip(path);
-                using (var f = new Font(Ink.MenuFamily, 12.5f * ui, GraphicsUnit.Pixel))
-                {
-                    for (int i = 0; i < items.Length; i++)
-                    {
-                        var r = RowRect(i);
-                        if (i == hot)
-                            using (var hb = new SolidBrush(KitInk.Hover))
-                            using (var hp = Ink.Round(r, 7 * ui))
-                                g.FillPath(hb, hp);
-                        // Centred by the shared text helper, which also ellipsizes a long label
-                        KitInk.Draw(g, items[i], f, KitInk.Text,
-                            new RectangleF(r.X + 10 * ui, r.Y, r.Width - 20 * ui, r.Height), ContentAlignment.MiddleLeft);
-                    }
-                }
-                g.Clip = old;
-                using (var pen = new Pen(KitInk.Line, 1f)) g.DrawPath(pen, path);
+                var r = RowRect(i);
+                if (i == hot) KitInk.FillRound(g, r, 7 * ui, KitInk.Hover);
+                // Centred by the shared text helper, which also ellipsizes a long label
+                KitInk.Draw(g, items[i], f, KitInk.Text, new RectangleF(r.X + 10 * ui, r.Y, r.Width - 20 * ui, r.Height), ContentAlignment.MiddleLeft);
             }
+            g.Clip = old;
+            old.Dispose();
+            KitInk.StrokeRound(g, card, Ink.RadiusControl * ui, KitInk.Line, 1f);
         }
 
         int RowAt(Point p)

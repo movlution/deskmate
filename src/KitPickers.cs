@@ -118,59 +118,50 @@ namespace Deskmate
         {
             var g = e.Graphics;
             KitInk.Smooth(g);
-            g.Clear(KitInk.Under(this));
+            var under = KitInk.Under(this);
+            g.Clear(under);
             var table = Ink.Light && PresetsLight != null && PresetsLight.Length == Presets.Length ? PresetsLight : Presets;
-            float r = 8.5f * Ui;
+            float s = Ui, r = 8.5f * s;
+            bool live = Enabled;
 
             for (int i = 0; i < Presets.Length; i++)
             {
                 var pt = Center(i);
                 Color dotColor;
                 string hex = table[i][1];
-                if (string.IsNullOrEmpty(hex))
-                {
-                    dotColor = Ink.Light ? Color.FromArgb(255, 142, 142, 147) : Color.FromArgb(255, 160, 160, 165);
-                }
+                // Grafit: the graphite between canvas and ink
+                if (string.IsNullOrEmpty(hex)) dotColor = Ink.Mix(under, KitInk.Text, 0.6f);
                 else
                 {
                     try { dotColor = ColorTranslator.FromHtml(hex); }
-                    catch { dotColor = KitInk.Text; }
+                    catch (Exception) { dotColor = KitInk.Text; }
+                }
+                if (!live) dotColor = Ink.Mix(dotColor, under, 0.55f);
+
+                if (i == selected || (i == hovered && live))
+                {
+                    float ringR = r + 3.5f * s;
+                    g.DrawEllipse(KitInk.PenOf(i == selected ? dotColor : Color.FromArgb(110, dotColor), (i == selected ? 2f : 1.5f) * s), pt.X - ringR, pt.Y - ringR, ringR * 2, ringR * 2);
                 }
 
+                g.FillEllipse(KitInk.BrushOf(dotColor), pt.X - r, pt.Y - r, r * 2, r * 2);
                 if (i == selected)
                 {
-                    float ringR = r + 3.2f * Ui;
-                    using (var pen = new Pen(dotColor, 2f * Ui))
-                        g.DrawEllipse(pen, pt.X - ringR, pt.Y - ringR, ringR * 2, ringR * 2);
-                }
-                else if (i == hovered)
-                {
-                    float ringR = r + 3f * Ui;
-                    using (var pen = new Pen(Color.FromArgb(90, dotColor), 1.5f * Ui))
-                        g.DrawEllipse(pen, pt.X - ringR, pt.Y - ringR, ringR * 2, ringR * 2);
-                }
-
-                using (var b = new SolidBrush(dotColor))
-                    g.FillEllipse(b, pt.X - r, pt.Y - r, r * 2, r * 2);
-                if (i == selected)
-                {
-                    // A check makes the selection unmistakable without relying on
-                    // colour alone, and keeps the swatch premium at small sizes.
-                    Color check = dotColor.GetBrightness() > 0.62f ? Color.FromArgb(235, 20, 22, 27) : Color.White;
-                    using (var pen = new Pen(check, 1.9f * Ui) { StartCap = LineCap.Round, EndCap = LineCap.Round })
-                    {
-                        float x = pt.X - 2.8f * Ui, y = pt.Y + 0.2f * Ui;
-                        g.DrawLine(pen, x, y, x + 1.5f * Ui, y + 1.6f * Ui);
-                        g.DrawLine(pen, x + 1.5f * Ui, y + 1.6f * Ui, x + 4.1f * Ui, y - 1.8f * Ui);
-                    }
+                    // A check keeps the selection readable without relying on colour alone
+                    Color check = Ink.On(dotColor);
+                    var pen = KitInk.PenOf(check, 1.9f * s);
+                    float x = pt.X - 2.8f * s, y = pt.Y + 0.2f * s;
+                    g.DrawLine(pen, x, y, x + 1.5f * s, y + 1.6f * s);
+                    g.DrawLine(pen, x + 1.5f * s, y + 1.6f * s, x + 4.1f * s, y - 1.8f * s);
                 }
             }
 
-            if (Focused && ShowFocusCues && !KitInk.ByMouse)
+            // Focus rides on the swatch the arrows move
+            if (Focused && ShowFocusCues && !KitInk.ByMouse && Presets.Length > 0)
             {
-                var ring = KitControl.Inside(new RectangleF(0, 0, Width, Height), Width, Height);
-                using (var path = Ink.Round(ring, 8 * Ui))
-                using (var pen = new Pen(KitInk.Text, 1.5f)) g.DrawPath(pen, path);
+                var pt = Center(Math.Max(0, selected));
+                float ringR = r + 5.5f * s;
+                KitInk.FocusRing(g, new RectangleF(pt.X - ringR, pt.Y - ringR, ringR * 2, ringR * 2), ringR, under, s);
             }
         }
     }
@@ -198,7 +189,7 @@ namespace Deskmate
 
         float LabelW { get { return ShowValue ? 84 * Ui : 0; } }
 
-        RectangleF Track { get { float s = Ui, l = LabelW; return new RectangleF(l + 10 * s, Height / 2f - 3 * s, Width - l - 20 * s, 6 * s); } }
+        RectangleF Track { get { float s = Ui, l = LabelW; return new RectangleF(l + 10 * s, Height / 2f - 2 * s, Width - l - 20 * s, 4 * s); } }
 
         int At(int x) { var t = Track; return Minimum + (int)Math.Round((Maximum - Minimum) * Ease.Clamp01((x - t.X) / Math.Max(1, t.Width))); }
 
@@ -225,15 +216,21 @@ namespace Deskmate
             float s = Ui, f = (float)(Value - Minimum) / Math.Max(1, Maximum - Minimum);
             var t = Track;
             Fill(g, t, t.Height / 2, KitInk.Line);
-            Fill(g, new RectangleF(t.X, t.Y, Math.Max(t.Height, t.Width * f), t.Height), t.Height / 2, Enabled ? KitInk.Text : KitInk.Disabled);
+            Fill(g, new RectangleF(t.X, t.Y, Math.Max(t.Height, t.Width * f), t.Height), t.Height / 2, Enabled ? KitInk.Accent : KitInk.Disabled);
             float r = ((dragging || Hovered) && Enabled ? 9 : 8) * s, cx = t.X + t.Width * f, cy = t.Y + t.Height / 2;
-            using (var b = new SolidBrush(Enabled ? KitInk.Text : KitInk.Disabled)) g.FillEllipse(b, cx - r, cy - r, r * 2, r * 2);
-            using (var pen = new Pen(Enabled ? KitInk.Line : KitInk.Disabled, 1f)) g.DrawEllipse(pen, cx - r, cy - r, r * 2, r * 2);
+            var knob = new RectangleF(cx - r, cy - r, r * 2, r * 2);
+            if (Enabled)
+            {
+                KitInk.Lift(g, knob, r, s);
+                KitInk.FillRound(g, knob, r, KitInk.Knob);
+                // Paper knob needs an edge on the ivory canvas
+                if (Ink.Light) KitInk.StrokeRound(g, RectangleF.Inflate(knob, -0.5f, -0.5f), r - 0.5f, KitInk.Line, 1f);
+            }
+            else KitInk.FillRound(g, knob, r, KitInk.Disabled);
             if (ShowValue)
-                using (var f2 = new Font(Ink.MenuFamily, 12f * s, GraphicsUnit.Pixel))
-                    TextRenderer.DrawText(g, Format(Value), f2, new Rectangle(0, 0, (int)LabelW, Height), Enabled ? KitInk.Sub : KitInk.Faint,
-                        TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
-            Ring(g, new RectangleF(1, 1, Width - 3, Height - 3), Height / 2f);
+                TextRenderer.DrawText(g, Format(Value), Ink.Text(12f * s), new Rectangle(0, 0, (int)LabelW, Height), Enabled ? KitInk.Sub : KitInk.Faint,
+                    TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+            Ring(g, new RectangleF(1, 1, Width - 3, Height - 3), Ink.RadiusControl * s);
         }
 
         protected override AccessibleObject CreateAccessibilityInstance() { return new Access(this); }

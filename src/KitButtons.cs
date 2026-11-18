@@ -8,11 +8,11 @@ using System.Windows.Forms;
 
 namespace Deskmate
 {
-    // Pill-drawn real Button for focus, readers
+    // Soft squircle drawn over a real Button for focus, readers
     class KitButton : Button
     {
         public bool Primary;
-        bool hovered, pressed;
+        protected bool hovered, pressed;
 
         public KitButton()
         {
@@ -44,61 +44,68 @@ namespace Deskmate
             Invalidate();
         }
 
+        // Window scale, else derived from a 32px control height
+        protected float UiScale
+        {
+            get
+            {
+                var kw = FindForm() as KitWindow;
+                float s = kw != null ? kw.Ui : (Height > 0 ? Height / 32f : 1f);
+                return s > 0 ? s : 1f;
+            }
+        }
+
+        protected bool RingOn { get { return Focused && ShowFocusCues && !KitInk.ByMouse; } }
+
+        // Focused body shrinks so the ring sits outside it, clear of the fill
+        protected RectangleF Body(float s)
+        {
+            return RingOn ? new RectangleF(3.5f * s, 3.5f * s, Width - 7 * s, Height - 7 * s) : new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
+        }
+
+        protected static float Radius(RectangleF r, float s) { return Math.Min(r.Height / 2f, Ink.RadiusControl * s); }
+
+        protected void DrawRing(Graphics g, RectangleF body, float s)
+        {
+            if (!RingOn) return;
+            float grow = 2.5f * s;
+            KitInk.FocusRing(g, RectangleF.Inflate(body, grow, grow), Radius(body, s) + grow, KitInk.Under(this), s);
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
             KitInk.Smooth(g);
             g.Clear(KitInk.Under(this));
-            bool ringOn = Focused && ShowFocusCues && !KitInk.ByMouse;
-            var kw = FindForm() as KitWindow;
-            float s = kw != null ? kw.Ui : (Height > 0 ? Height / 32f : 1f);
-            if (s <= 0) s = 1f;
-
-            // Focused pill shrinks so its ring fits
-            var r = ringOn ? new RectangleF(3.5f * s, 3.5f * s, Width - 7 * s, Height - 7 * s) : new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-            Color bg;
-            if (!Enabled)
-            {
-                bg = KitInk.Line;
-            }
+            float s = UiScale;
+            var r = Body(s);
+            Color bg, fg;
+            if (!Enabled) { bg = KitInk.Line; fg = KitInk.Faint; }
             else if (Primary)
             {
-                bg = pressed ? (Ink.Light ? Color.FromArgb(255, 0, 0, 0) : Ink.Mix(KitInk.Text, KitInk.Window, 0.30f))
-                             : (hovered ? Ink.Mix(KitInk.Text, KitInk.Window, 0.15f) : KitInk.Text);
+                // Hover and press move away from the label ink: contrast only grows
+                bg = KitInk.Deepen(KitInk.Accent, KitInk.OnAccent, pressed ? 0.2f : hovered ? 0.1f : 0f);
+                fg = KitInk.OnAccent;
             }
             else
             {
-                bg = pressed ? (Ink.Light ? Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.20f) : Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.25f))
-                             : (hovered ? KitInk.Hover : KitInk.Line);
+                bg = pressed ? KitInk.Tint(0.22f) : hovered ? KitInk.Tint(0.17f) : KitInk.Line;
+                fg = KitInk.Text;
             }
 
             if (pressed && Enabled) r.Offset(0, 0.75f * s);
-
-            using (var path = Ink.Round(r, r.Height / 2f))
-            using (var b = new SolidBrush(bg)) g.FillPath(b, path);
-
-            KitInk.Draw(g, Text, Font, !Enabled ? KitInk.Faint : Primary ? KitInk.Window : KitInk.Text, r, ContentAlignment.MiddleCenter);
-            if (ringOn)
-            {
-                var ring = new RectangleF(1, 1, Width - 2.5f, Height - 2.5f);
-                Color ringColor = KitInk.Accent;
-                if (Island.Contrast(ringColor, bg) < 3.0 || (Primary && (ringColor == KitInk.Text || ringColor == bg)))
-                    ringColor = Ink.Light ? Color.FromArgb(255, 22, 104, 232) : Color.FromArgb(255, 59, 130, 246);
-                using (var path = Ink.Round(ring, ring.Height / 2f))
-                using (var pen = new Pen(ringColor, 1.8f)) g.DrawPath(pen, path);
-            }
+            KitInk.FillRound(g, r, Radius(r, s), bg);
+            KitInk.Draw(g, Text, Font, fg, r, ContentAlignment.MiddleCenter);
+            DrawRing(g, r, s);
         }
     }
 
-    // Check row: pill with a drawn tick, so no native CheckBox box leaks in
+    // Check row: soft body with a drawn box, so no native CheckBox box leaks in
     class KitCheck : KitButton
     {
-        bool on, hovered;
+        bool on;
 
         public event EventHandler CheckedChanged;
-
-        protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); hovered = true; Invalidate(); }
-        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hovered = false; Invalidate(); }
 
         public bool Checked { get { return on; } set { if (on == value) return; on = value; var h = CheckedChanged; if (h != null) h(this, EventArgs.Empty); Invalidate(); } }
 
@@ -109,24 +116,22 @@ namespace Deskmate
             var g = e.Graphics;
             KitInk.Smooth(g);
             g.Clear(KitInk.Under(this));
-            bool ringOn = Focused && ShowFocusCues && !KitInk.ByMouse;
-            var r = ringOn ? new RectangleF(3.5f, 3.5f, Width - 7, Height - 7) : new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-            using (var path = Ink.Round(r, r.Height / 2f))
-            using (var b = new SolidBrush(hovered ? KitInk.Hover : KitInk.Line)) g.FillPath(b, path);
-            float box = Math.Min(16f, r.Height - 8f), cy = r.Y + r.Height / 2f, cx = r.X + 7f + box / 2f;
+            float s = UiScale;
+            var r = Body(s);
+            bool live = Enabled;
+            KitInk.FillRound(g, r, Radius(r, s), live && pressed ? KitInk.Tint(0.22f) : live && hovered ? KitInk.Tint(0.17f) : KitInk.Line);
+            float box = Math.Min(16f * s, r.Height - 8f * s), cy = r.Y + r.Height / 2f, cx = r.X + 9f * s + box / 2f;
             var tick = new RectangleF(cx - box / 2, cy - box / 2, box, box);
-            using (var pen = new Pen(on ? KitInk.Text : KitInk.Faint, 1.4f))
-                using (var path = Ink.Round(tick, 4)) g.DrawPath(pen, path);
+            float corner = 5f * s;
             if (on)
-                using (var pen = new Pen(KitInk.Text, 1.8f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
-                    g.DrawLines(pen, new[] { new PointF(cx - box * 0.3f, cy), new PointF(cx - box * 0.06f, cy + box * 0.22f), new PointF(cx + box * 0.32f, cy - box * 0.22f) });
-            KitInk.Draw(g, Text, Font, KitInk.Text, new RectangleF(r.X + 7f + box + 8f, r.Y, r.Width - box - 22f, r.Height), ContentAlignment.MiddleLeft);
-            if (ringOn)
             {
-                var ring = new RectangleF(1, 1, Width - 2.5f, Height - 2.5f);
-                using (var path = Ink.Round(ring, ring.Height / 2f))
-                using (var pen = new Pen(KitInk.Text, 1.6f)) g.DrawPath(pen, path);
+                KitInk.FillRound(g, tick, corner, live ? KitInk.Accent : KitInk.Disabled);
+                var pen = KitInk.PenOf(live ? KitInk.OnAccent : KitInk.Line, 1.8f * s);
+                g.DrawLines(pen, new[] { new PointF(cx - box * 0.26f, cy + box * 0.01f), new PointF(cx - box * 0.06f, cy + box * 0.2f), new PointF(cx + box * 0.27f, cy - box * 0.19f) });
             }
+            else KitInk.StrokeRound(g, RectangleF.Inflate(tick, -0.75f * s, -0.75f * s), corner, live ? KitInk.Sub : KitInk.Disabled, 1.5f * s);
+            KitInk.Draw(g, Text, Font, live ? KitInk.Text : KitInk.Faint, new RectangleF(tick.Right + 8f * s, r.Y, r.Right - tick.Right - 14f * s, r.Height), ContentAlignment.MiddleLeft);
+            DrawRing(g, r, s);
         }
     }
 
@@ -167,7 +172,7 @@ namespace Deskmate
         }
     }
 
-    // Rounded group of rows with hairline separators
+    // Soft card of rows with hairline separators; elevation by tone step, no border or shadow
     class KitGroup : Panel
     {
         public KitGroup()
@@ -183,16 +188,15 @@ namespace Deskmate
             g.Clear(Parent != null ? Parent.BackColor : KitInk.Window);
             var w = FindForm() as KitWindow;
             float s = w != null ? w.Ui : 1;
-            using (var path = Ink.Round(new RectangleF(0, 0, Width - 1, Height - 1), 12 * s))
-            using (var b = new SolidBrush(KitInk.Group)) g.FillPath(b, path);
-            using (var pen = new Pen(KitInk.Line, 1f))
-                for (int i = 1; i < Controls.Count; i++)
-                {
-                    int y = Controls[i].Top;
-                    var row = Controls[i] as KitRow;
-                    float from = row != null && row.Glyph != '\0' ? (56 + row.Lead) * s : 16 * s;
-                    g.DrawLine(pen, from, y, Width - 16 * s, y);
-                }
+            KitInk.FillRound(g, new RectangleF(0, 0, Width - 1, Height - 1), Ink.RadiusCard * s, KitInk.Group);
+            var pen = KitInk.PenOf(KitInk.Line, 1f);
+            for (int i = 1; i < Controls.Count; i++)
+            {
+                int y = Controls[i].Top;
+                var row = Controls[i] as KitRow;
+                float from = row != null && row.Glyph != '\0' ? (56 + row.Lead) * s : 16 * s;
+                g.DrawLine(pen, from, y, Width - 16 * s, y);
+            }
         }
     }
 
@@ -229,17 +233,15 @@ namespace Deskmate
             if (Glyph != '\0') DrawGlyph(g, s);
             // Hairline between grip and icon
             if (Divider)
-                using (var pen = new Pen(Ink.Mix(KitInk.Line, KitInk.Sub, 0.45f), Math.Max(1f, s)))
-                    g.DrawLine(pen, (Lead - 2) * s, Height * 0.3f, (Lead - 2) * s, Height * 0.7f);
-            using (var f = new Font(Ink.MenuFamily, 13.5f * s, GraphicsUnit.Pixel))
-            using (var d = new Font(Ink.MenuFamily, 12f * s, GraphicsUnit.Pixel))
-            {
-                bool two = Detail.Length > 0;
-                var tr = new RectangleF(x, two ? 7 * s : 0, right - x, two ? 22 * s : Height);
-                KitInk.Draw(g, Title, f, Enabled ? KitInk.Text : KitInk.Faint, tr, ContentAlignment.MiddleLeft);
-                if (Suffix.Length > 0) DrawSuffix(g, f, tr, s);
-                if (two) KitInk.Draw(g, Detail, d, KitInk.Sub, new RectangleF(x, 28 * s, right - x, 20 * s), ContentAlignment.MiddleLeft);
-            }
+                g.DrawLine(KitInk.PenOf(Ink.Mix(KitInk.Line, KitInk.Sub, 0.45f), Math.Max(1f, s)), (Lead - 2) * s, Height * 0.3f, (Lead - 2) * s, Height * 0.7f);
+            Font f = Ink.Text(13.5f * s), d = Ink.Text(12f * s);
+            bool two = Detail.Length > 0;
+            // Two lines sit centred as one block; tall rows keep them beside the top-aligned tile
+            float top = Height > 80 * s ? 7 * s : Math.Max(0, (Height - 42 * s) / 2);
+            var tr = new RectangleF(x, two ? top : 0, right - x, two ? 22 * s : Height);
+            KitInk.Draw(g, Title, f, Enabled ? KitInk.Text : KitInk.Faint, tr, ContentAlignment.MiddleLeft);
+            if (Suffix.Length > 0) DrawSuffix(g, f, tr, s);
+            if (two) KitInk.Draw(g, Detail, d, KitInk.Sub, new RectangleF(x, top + 21 * s, right - x, 20 * s), ContentAlignment.MiddleLeft);
         }
 
         void DrawGlyph(Graphics g, float s)
@@ -252,24 +254,21 @@ namespace Deskmate
                 g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(tile));
                 return;
             }
-            using (var path = Ink.Round(tile, 8 * s))
-            using (var b = new SolidBrush(KitInk.Hover)) g.FillPath(b, path);
-            using (var icons = new Font(Ink.IconFamily, 15f * s, GraphicsUnit.Pixel))
-                KitInk.Draw(g, Glyph.ToString(), icons, Enabled ? KitInk.Text : KitInk.Faint, tile, ContentAlignment.MiddleCenter);
+            // Icon tile: a whisper of the accent over the card, the brand's quiet signature
+            KitInk.FillRound(g, tile, 9 * s, Ink.Mix(KitInk.Under(this), KitInk.Accent, Ink.Light ? 0.12f : 0.16f));
+            KitInk.Draw(g, Ink.Str(Glyph), Ink.Icons(15f * s), Enabled ? KitInk.Text : KitInk.Faint, tile, ContentAlignment.MiddleCenter);
         }
 
         // Small text on the title's baseline
         void DrawSuffix(Graphics g, Font f, RectangleF tr, float s)
         {
             const TextFormatFlags tight = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
-            using (var small = new Font(Ink.MenuFamily, 9.5f * s, GraphicsUnit.Pixel))
-            {
-                int padded = TextRenderer.MeasureText(g, Title, f, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
-                int bare = TextRenderer.MeasureText(g, Title, f, Size.Empty, tight).Width;
-                float x = tr.X + (padded - bare) / 2f + bare + 1 * s;
-                float baseline = tr.Y + (tr.Height - f.Height) / 2f + Ascent(f);
-                TextRenderer.DrawText(g, Suffix, small, new Point((int)Math.Round(x), (int)Math.Round(baseline - Ascent(small))), KitInk.Sub, tight);
-            }
+            var small = Ink.Text(9.5f * s);
+            int padded = TextRenderer.MeasureText(g, Title, f, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
+            int bare = TextRenderer.MeasureText(g, Title, f, Size.Empty, tight).Width;
+            float x = tr.X + (padded - bare) / 2f + bare + 1 * s;
+            float baseline = tr.Y + (tr.Height - f.Height) / 2f + Ascent(f);
+            TextRenderer.DrawText(g, Suffix, small, new Point((int)Math.Round(x), (int)Math.Round(baseline - Ascent(small))), KitInk.Sub, tight);
         }
 
         static float Ascent(Font f) { return f.Size * f.FontFamily.GetCellAscent(f.Style) / f.FontFamily.GetEmHeight(f.Style); }

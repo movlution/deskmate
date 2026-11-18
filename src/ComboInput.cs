@@ -150,7 +150,7 @@ namespace Deskmate
                     comboBackStreak++;
                     comboShake.Snap((comboBackStreak & 1) == 0 ? 4.2f : -4.2f);
                     comboShake.Target = 0;
-                    SpawnComboCallout(Lang.T("SHIELD RETAK!"), Color.FromArgb(255, 255, 190, 60));
+                    SpawnComboCallout(Lang.T("SHIELD RETAK!"), Ink.FxGold);
                     PlayComboShieldCrackSound();
                     Kick();
                     return;
@@ -159,7 +159,7 @@ namespace Deskmate
                 comboTimeLeft -= (0.55f + Math.Min(0.4f, (comboBackStreak - 1) * 0.1f));
                 comboShake.Snap((comboBackStreak & 1) == 0 ? 5.2f : -5.2f);
                 comboShake.Target = 0;
-                SpawnComboCallout("-DRAIN", Color.FromArgb(255, 255, 80, 90));
+                SpawnComboCallout("-DRAIN", Ink.Base.Negative);
                 if (comboTimeLeft <= 0f)
                 {
                     BreakCombo();
@@ -249,7 +249,7 @@ namespace Deskmate
                 {
                     comboPbPlayedThisRun = true;
                     PlayComboPbFanfare();
-                    SpawnComboCallout("NEW RECORD!", Color.FromArgb(255, 255, 220, 70));
+                    SpawnComboCallout("NEW RECORD!", Ink.FxGold);
                     float cw = OnSide ? SideW : ComboWidth();
                     float ch = OnSide ? 84f : ComboHeight();
                     SpawnComboConfetti(36, cw * 0.4f, ch * 0.5f, 340f, true, true);
@@ -349,7 +349,7 @@ namespace Deskmate
                 comboGoldFlash = 1f;
                 AddComboXp(20 * mult);
                 if (ComboPenaltyMode == "shield" && comboShields < 2) comboShields++;
-                SpawnComboCallout("PERFECT CHAIN!", Color.FromArgb(255, 255, 214, 10));
+                SpawnComboCallout("PERFECT CHAIN!", Ink.FxGold);
                 float cw = OnSide ? SideW : ComboWidth();
                 float ch = OnSide ? 84f : ComboHeight();
                 SpawnComboConfetti(22, cw * 0.45f, ch * 0.5f, 280f, true, false);
@@ -367,7 +367,7 @@ namespace Deskmate
                 comboTimeLeft = Math.Min(hold, comboTimeLeft + 0.35f);
                 AddComboXp(25 * mult);
                 UnlockComboBadge("critical_finisher");
-                SpawnComboCallout("CRITICAL FINISH!", Color.FromArgb(255, 255, 140, 40));
+                SpawnComboCallout("CRITICAL FINISH!", Ink.FxApricot);
                 SpawnComboConfetti(28, OnSide ? SideW * 0.5f : ComboWidth() - 34f, OnSide ? 42f : ComboHeight() * 0.5f, 300f, false, true);
                 if (!Anim.Reduced) celebrateUtc = DateTime.UtcNow;
                 if (!Anim.Reduced)
@@ -386,7 +386,7 @@ namespace Deskmate
                             Life = 0f, MaxLife = 0.5f + (float)comboRng.NextDouble() * 0.25f,
                             Spin = ((float)comboRng.NextDouble() - 0.5f) * 12f,
                             Angle = (float)(comboRng.NextDouble() * Math.PI),
-                            Color = (i % 2 == 0) ? Color.FromArgb(255, 255, 200, 70) : Color.FromArgb(255, 255, 110, 40),
+                            Color = (i % 2 == 0) ? Ink.FxGold : Ink.FxApricot,
                             Kind = i % 3
                         });
                     }

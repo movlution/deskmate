@@ -100,18 +100,15 @@ namespace Deskmate
                     {
                         var r = Spot(i);
                         bool on = i == selected;
-                        Color c = on ? KitInk.Text : i == hover ? KitInk.Sub : KitInk.Faint;
-                        using (var path = Ink.Round(r, r.Height / 2))
-                        using (var b = new SolidBrush(c)) g.FillPath(b, path);
+                        // The chosen spot wears the accent; others stay quiet ink
+                        Fill(g, r, r.Height / 2, on ? KitInk.Accent : i == hover ? KitInk.Sub : KitInk.Faint);
                         if (!on) continue;
                         // Two dots: the island's eyes
-                        using (var dot = new SolidBrush(KitInk.Under(this)))
-                        {
-                            bool upright = r.Height > r.Width;
-                            float cy = r.Y + (upright ? r.Width * 0.9f : r.Height / 2), cx = r.X + r.Width / 2, d = (upright ? 2.1f : 2.6f) * s, gap = (upright ? 2.3f : 3.4f) * s;
-                            g.FillEllipse(dot, cx - gap - d / 2, cy - d / 2, d, d);
-                            g.FillEllipse(dot, cx + gap - d / 2, cy - d / 2, d, d);
-                        }
+                        var dot = KitInk.BrushOf(KitInk.OnAccent);
+                        bool upright = r.Height > r.Width;
+                        float cy = r.Y + (upright ? r.Width * 0.9f : r.Height / 2), cx = r.X + r.Width / 2, d = (upright ? 2.1f : 2.6f) * s, gap = (upright ? 2.3f : 3.4f) * s;
+                        g.FillEllipse(dot, cx - gap - d / 2, cy - d / 2, d, d);
+                        g.FillEllipse(dot, cx + gap - d / 2, cy - d / 2, d, d);
                     }
                     Ring(g, Cell(selected), 10 * s);
                 }

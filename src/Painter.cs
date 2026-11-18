@@ -124,6 +124,13 @@ namespace Deskmate
         {
             shape.Reset();
             Ink.AddRound(shape, r, radius);
+            if (!T.IsDark)
+            {
+                // Paper: the fill alone, one clean warm tone step; no gradient, no lip
+                brush.Color = Ink.A(fill, Alpha);
+                G.FillPath(brush, shape);
+                return;
+            }
             pair[0] = Ink.A(Ink.Over(T.Highlight, fill), Alpha);
             pair[1] = Ink.A(fill, Alpha);
             glow.LinearColors = pair;

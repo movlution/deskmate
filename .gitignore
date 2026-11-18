@@ -17,3 +17,6 @@
 
 # AI agent scratch (keep local, do not commit)
 /.agents/
+
+# Visual harness output (tests/render_surfaces.ps1)
+/tests/out/

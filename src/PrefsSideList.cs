@@ -124,31 +124,27 @@ namespace Deskmate
                 var g = e.Graphics;
                 KitInk.Smooth(g);
                 g.Clear(KitInk.Side);
-                float s = Ui;
-                var active = Ink.Mix(KitInk.Hover, KitInk.Accent, 0.10f);
+                float s = Ui, radius = 9 * s;
+                // Selected: a whisper of the accent, a short soft mark, the label in semibold
+                var active = Ink.Mix(KitInk.Side, KitInk.Accent, Ink.Light ? 0.13f : 0.17f);
                 var activeMark = Contrast(KitInk.Accent, active) >= 3.0 ? KitInk.Accent : KitInk.Text;
-                using (var f = new Font(Ink.MenuFamily, 13.5f * s, GraphicsUnit.Pixel))
-                using (var head = new Font(Ink.MenuFamily, 11.5f * s, FontStyle.Bold, GraphicsUnit.Pixel))
-                using (var icons = new Font(Ink.IconFamily, 14f * s, GraphicsUnit.Pixel))
-                    for (int i = 0; i < Items.Count; i++)
-                    {
-                        var c = Cell(i);
-                        int group = GroupOf(Items[i]);
-                        // First row of a group: its heading above
-                        if ((i == 0 || GroupOf(Items[i - 1]) != group) && HeaderOf(group).Length > 0)
-                            KitInk.Draw(g, HeaderOf(group), head, KitInk.Sub, new RectangleF(c.X + 10 * s, c.Y - HeaderDip * s + 4 * s, c.Width - 10 * s, HeaderDip * s - 6 * s), ContentAlignment.MiddleLeft);
-                        bool sel = Items[i][0] == Selected;
-                        if (sel || i == hover) Fill(g, c, 9 * s, sel ? active : Ink.Mix(KitInk.Side, KitInk.Hover, 0.5f));
-                        if (sel)
-                        {
-                            var bar = new RectangleF(c.X + 3 * s, c.Y + 8 * s, 2 * s, c.Height - 16 * s);
-                            Fill(g, bar, s, activeMark);
-                        }
-                        KitInk.Draw(g, Items[i][2], icons, sel ? KitInk.Text : KitInk.Sub, new RectangleF(c.X + 8 * s, c.Y, 22 * s, c.Height), ContentAlignment.MiddleCenter);
-                        KitInk.Draw(g, Items[i][1], f, sel ? KitInk.Text : KitInk.Sub, new RectangleF(c.X + 38 * s, c.Y, c.Width - 44 * s, c.Height), ContentAlignment.MiddleLeft);
-                    }
+                var hoverFill = Ink.Mix(KitInk.Side, KitInk.Text, Ink.Light ? 0.05f : 0.06f);
+                Font f = Ink.Text(13.5f * s), fs = Ink.Semi(13.5f * s), head = Ink.SmallSemi(11.5f * s), icons = Ink.Icons(14f * s);
+                for (int i = 0; i < Items.Count; i++)
+                {
+                    var c = Cell(i);
+                    int group = GroupOf(Items[i]);
+                    // First row of a group: its heading above
+                    if ((i == 0 || GroupOf(Items[i - 1]) != group) && HeaderOf(group).Length > 0)
+                        KitInk.Draw(g, HeaderOf(group), head, KitInk.Sub, new RectangleF(c.X + 10 * s, c.Y - HeaderDip * s + 4 * s, c.Width - 10 * s, HeaderDip * s - 6 * s), ContentAlignment.MiddleLeft);
+                    bool sel = Items[i][0] == Selected;
+                    if (sel || i == hover) Fill(g, c, radius, sel ? active : hoverFill);
+                    if (sel) Fill(g, new RectangleF(c.X + 3 * s, c.Y + c.Height / 2 - 7 * s, 3 * s, 14 * s), 1.5f * s, activeMark);
+                    KitInk.Draw(g, Items[i][2], icons, sel ? activeMark : KitInk.Sub, new RectangleF(c.X + 8 * s, c.Y, 22 * s, c.Height), ContentAlignment.MiddleCenter);
+                    KitInk.Draw(g, Items[i][1], sel ? fs : f, sel ? KitInk.Text : KitInk.Sub, new RectangleF(c.X + 38 * s, c.Y, c.Width - 44 * s, c.Height), ContentAlignment.MiddleLeft);
+                }
                 int at = IndexOf(Selected);
-                if (at >= 0) Ring(g, Cell(at), 9 * s);
+                if (at >= 0) Ring(g, Cell(at), radius);
             }
 
             protected override AccessibleObject CreateAccessibilityInstance() { return new Access(this); }

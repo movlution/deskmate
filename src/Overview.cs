@@ -565,11 +565,11 @@ namespace Deskmate
             float bw = p.Measure(big, bf);
             if (!string.IsNullOrEmpty(state)) p.Text(state, Ink.Small(11.5f), p.T.Sub, r.X + 24 + bw, r.Y + 54, r.Width - bw - 38, StringAlignment.Near);
             if (tail.Length > 0) p.Text(tail.ToString(), Ink.Small(11f), p.T.Sub, r.X + 16, r.Y + 73, r.Width - 30, StringAlignment.Near);
-            // Level along the bottom; low and unplugged turns red
+            // Level along the bottom: low and unplugged is negative, charging is positive
             var bar = new RectangleF(r.X + 16, r.Bottom - 11, r.Width - 32, 3);
             p.FillRound(bar, 1.5f, p.T.Line);
             bool low = hasBattery && !onAc && pct <= 20;
-            p.FillRound(new RectangleF(bar.X, bar.Y, Math.Max(3, bar.Width * pct / 100f), 3), 1.5f, low ? p.T.Negative : p.T.Progress);
+            p.FillRound(new RectangleF(bar.X, bar.Y, Math.Max(3, bar.Width * pct / 100f), 3), 1.5f, low ? p.T.Negative : hasBattery && onAc && pct < 100 ? p.T.Positive : p.T.Progress);
         }
 
         // Windows' own estimate, when it has one
@@ -646,9 +646,9 @@ namespace Deskmate
             bool spDown = Pressed("homeSprint");
             bool spHover = Hover("homeSprint");
             Color spBg = TypingSprintActive
-                ? (spDown ? Ink.Mix(p.T.Accent, Color.Black, 0.2f) : spHover ? Ink.Mix(p.T.Accent, Color.White, 0.15f) : p.T.Accent)
+                ? (spDown ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.2f) : spHover ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent)
                 : (spDown ? p.T.FillHover : spHover ? Ink.Mix(p.T.Fill, p.T.FillHover, 0.8f) : Ink.Mix(p.T.Fill, p.T.Text, 0.08f));
-            Color spFg = TypingSprintActive ? Color.White : p.T.Text;
+            Color spFg = TypingSprintActive ? p.T.OnAccent : p.T.Text;
             p.FillRound(btnRect, bh / 2f, spBg);
             p.TextCenter(sprintLabel, sf, spFg, btnRect.X + btnRect.Width / 2f, btnRect.Y + btnRect.Height / 2f);
 
@@ -721,7 +721,7 @@ namespace Deskmate
                 if (done)
                 {
                     p.Circle(chkX + 7f, chkY + 7f, 7f, p.T.Accent);
-                    p.Check(chkX + 7f, chkY + 7f, 8f, Color.White, 1f);
+                    p.Check(chkX + 7f, chkY + 7f, 8f, p.T.OnAccent, 1f);
                 }
                 else
                 {
@@ -780,9 +780,9 @@ namespace Deskmate
             bool down = Pressed("homeFocus25");
             bool hover = Hover("homeFocus25");
             Color bg = TimerOn
-                ? (down ? Ink.Mix(p.T.Accent, Color.Black, 0.2f) : hover ? Ink.Mix(p.T.Accent, Color.White, 0.15f) : p.T.Accent)
+                ? (down ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.2f) : hover ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent)
                 : (down ? p.T.FillHover : hover ? Ink.Mix(p.T.Fill, p.T.FillHover, 0.8f) : Ink.Mix(p.T.Fill, p.T.Text, 0.08f));
-            Color fg = TimerOn ? Color.White : p.T.Text;
+            Color fg = TimerOn ? p.T.OnAccent : p.T.Text;
             p.FillRound(btnRect, bh / 2f, bg);
             p.TextCenter(btnLabel, sf, fg, btnRect.X + btnRect.Width / 2f, btnRect.Y + btnRect.Height / 2f);
 

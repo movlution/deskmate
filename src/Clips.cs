@@ -386,7 +386,7 @@ namespace Deskmate
             bool image = item.Image != null;
             var shadow = card;
             shadow.Y += 3;
-            p.FillRound(shadow, 9, Color.FromArgb(36, Color.Black));
+            p.FillRound(shadow, 9, Ink.Scrim(36));
             float s = Squish(id, card, 0.96f);
             Color paper = Ink.Mix(p.T.Bg, p.T.Text, hot ? 0.19f : 0.13f);
             if (!image && p.T.IsDark) paper = Ink.Mix(paper, Color.Peru, 0.10f);

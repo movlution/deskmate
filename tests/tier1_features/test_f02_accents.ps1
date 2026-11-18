@@ -49,9 +49,9 @@ Describe "Feature 2: Light Mode Accent Preset Calibration" {
         Assert-True ($r1 -ge 3.5 -and $r2 -ge 3.5 -and $r3 -ge 3.5) "All three accents must be >= 3.5:1"
     }
 
-    It "Verifies all 7 light mode accents registered in AccentsLight maintain >= 3.5:1 contrast" {
-        $table = Get-DeskmateStaticField "Island" "AccentsLight"
-        Assert-NotNull $table "AccentsLight field must exist on Island"
+    It "Verifies all 7 light mode accents registered in Ink.LightAccents maintain >= 3.5:1 contrast" {
+        $table = Get-DeskmateStaticField "Ink" "LightAccents"
+        Assert-NotNull $table "LightAccents field must exist on Ink"
 
         $checkedCount = 0
         foreach ($row in $table) {
@@ -65,6 +65,6 @@ Describe "Feature 2: Light Mode Accent Preset Calibration" {
             }
         }
 
-        Assert-Equal $checkedCount 7 "Must verify all 7 color presets in AccentsLight"
+        Assert-Equal $checkedCount 7 "Must verify all 7 color presets in Ink.LightAccents"
     }
 }

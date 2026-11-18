@@ -84,11 +84,11 @@ namespace Deskmate
             string curHex = settings.Get("accent", "");
             if (!string.IsNullOrEmpty(curHex))
             {
-                for (int i = 0; i < Accents.Length; i++)
+                for (int i = 0; i < Ink.DarkAccents.Length; i++)
                 {
-                    if (Accents[i][1] == curHex || AccentsLight[i][1] == curHex)
+                    if (Ink.DarkAccents[i][1] == curHex || Ink.LightAccents[i][1] == curHex)
                     {
-                        string newHex = light ? AccentsLight[i][1] : Accents[i][1];
+                        string newHex = light ? Ink.LightAccents[i][1] : Ink.DarkAccents[i][1];
                         if (newHex != curHex)
                         {
                             settings.Set("accent", newHex);
@@ -214,30 +214,5 @@ namespace Deskmate
             CheckLinks();
             ShowInfo(Ink.IcoTerminal, Lang.F("Port {0}", port), Lang.T("sesi agen baru memakainya"), true);
         }
-
-        static readonly string[][] Accents =
-        {
-            new[] { "Biru", "#4C8DFF" },
-            new[] { "Ungu", "#A78BFA" },
-            new[] { "Merah muda", "#FF6B9A" },
-            new[] { "Merah", "#FF5252" },
-            new[] { "Oranye", "#FF9F43" },
-            new[] { "Kuning", "#FFD24A" },
-            new[] { "Hijau", "#3DD68C" },
-            new[] { "Grafit", "" },
-        };
-
-        static readonly string[][] AccentsLight =
-        {
-            new[] { "Biru", "#1668E8" },
-            new[] { "Ungu", "#6C3CE0" },
-            new[] { "Merah muda", "#C2185B" },
-            new[] { "Merah", "#C5221F" },
-            new[] { "Oranye", "#A84B00" },
-            new[] { "Kuning", "#855E00" },
-            new[] { "Hijau", "#107C41" },
-            new[] { "Grafit", "" },
-        };
-
     }
 }

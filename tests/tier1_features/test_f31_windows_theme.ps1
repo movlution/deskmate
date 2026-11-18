@@ -85,14 +85,14 @@ Describe "Feature 31: Windows-aligned theme system" {
         finally { $picker.Dispose() }
     }
 
-    It "Uses Windows 11 neutral canvas colors instead of pure black and white" {
+    It "Uses calm tinted canvases instead of flat gray, pure black, or pure white" {
         $dark = $toneType.GetMethod("Dark", $flags).Invoke($null, @())
         $paper = $toneType.GetMethod("Paper", $flags).Invoke($null, @())
 
-        Assert-Equal ([System.Drawing.ColorTranslator]::FromHtml("#202020").ToArgb()) $dark.Bg.ToArgb() "Dark canvas must match Windows 11 #202020"
-        Assert-Equal ([System.Drawing.ColorTranslator]::FromHtml("#FFFFFF").ToArgb()) $dark.Text.ToArgb() "Dark primary ink must be white"
-        Assert-Equal ([System.Drawing.ColorTranslator]::FromHtml("#F3F3F3").ToArgb()) $paper.Bg.ToArgb() "Light canvas must match Windows 11 #F3F3F3"
-        Assert-Equal ([System.Drawing.ColorTranslator]::FromHtml("#1A1A1A").ToArgb()) $paper.Text.ToArgb() "Light primary ink must be #1A1A1A"
+        Assert-Equal ([System.Drawing.ColorTranslator]::FromHtml("#1C1A22").ToArgb()) $dark.Bg.ToArgb() "Dark canvas must be the violet charcoal #1C1A22"
+        Assert-Equal ([System.Drawing.ColorTranslator]::FromHtml("#F5F2EC").ToArgb()) $dark.Text.ToArgb() "Dark primary ink must be ivory #F5F2EC"
+        Assert-Equal ([System.Drawing.ColorTranslator]::FromHtml("#F5F2EC").ToArgb()) $paper.Bg.ToArgb() "Light canvas must be ivory paper #F5F2EC"
+        Assert-Equal ([System.Drawing.ColorTranslator]::FromHtml("#211C2A").ToArgb()) $paper.Text.ToArgb() "Light primary ink must be plum ink #211C2A"
         Assert-True ($dark.IsDark) "Dark tone must still be classified dark"
         Assert-False ($paper.IsDark) "Paper tone must still be classified light"
     }
@@ -101,12 +101,12 @@ Describe "Feature 31: Windows-aligned theme system" {
         Reset-DeskmateTheme -Light $false
         $darkWindow = Get-DeskmateStaticProperty "KitInk" "Window"
         $darkGroup = Get-DeskmateStaticProperty "KitInk" "Group"
-        Assert-True ($darkGroup.R -gt $darkWindow.R) "Dark cards must be lifted above the #202020 canvas"
+        Assert-True ($darkGroup.R -gt $darkWindow.R) "Dark cards must be lifted above the night canvas"
 
         Reset-DeskmateTheme -Light $true
         $lightWindow = Get-DeskmateStaticProperty "KitInk" "Window"
         $lightGroup = Get-DeskmateStaticProperty "KitInk" "Group"
-        Assert-True ($lightGroup.R -gt $lightWindow.R) "Light cards must be lighter than the #F3F3F3 canvas"
+        Assert-True ($lightGroup.R -gt $lightWindow.R) "Light cards must be lighter than the ivory canvas"
 
         Reset-DeskmateTheme -Light $false
     }
@@ -123,8 +123,8 @@ Describe "Feature 31: Windows-aligned theme system" {
         $glass = $onGlass.Invoke($base, @())
         $sub = $over.Invoke($null, @($glass.Sub, $surface))
         $ratio = Get-DeskmateContrast $sub $surface
-        Assert-True ($ratio -ge 4.5) "Secondary ink on bright wallpaper must stay >= 4.5:1 on the charcoal canvas (actual: ${ratio}:1)"
-        Assert-True ($glass.Sub.A -ge 228) "OnGlass must raise secondary ink enough for the #202020 canvas"
+        Assert-True ($ratio -ge 4.5) "Secondary ink on bright wallpaper must stay >= 4.5:1 on the night canvas (actual: ${ratio}:1)"
+        Assert-True ($glass.Sub.A -ge 240) "OnGlass must raise secondary ink enough for the night canvas"
 
         Reset-DeskmateTheme -Light $false
     }

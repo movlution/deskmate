@@ -26,6 +26,7 @@ namespace Deskmate
                 var group = new List<KitRow>();
                 Action flush = delegate { if (show) Group(group); group = new List<KitRow>(); };
                 Action<string> cap = c => { if (show) { flush(); Caption(c); } };
+                Action<string> note = c => { if (show) { flush(); Note(c); } };
                 Action<KitRow> add = r => { rows.Add(r); group.Add(r); };
                 switch (id)
                 {
@@ -131,14 +132,14 @@ namespace Deskmate
                         themeRow.Height = (int)(100 * Ui);
                         add(themeRow);
 
-                        string accent = settings.Get("accent", "");
+                        string accent = settings.Get("accent", Ink.DefaultAccent);
                         bool custom = island.CustomOn;
                         KitRow accentRow = null;
                         MaterialPicker matPicker = null;
                         var palette = new KitPalette
                         {
-                            Presets = Accents,
-                            PresetsLight = AccentsLight,
+                            Presets = Ink.DarkAccents,
+                            PresetsLight = Ink.LightAccents,
                             SelectedHex = accent,
                             Enabled = !custom,
                             Size = new Size((int)(252 * Ui), (int)(34 * Ui))
@@ -148,18 +149,18 @@ namespace Deskmate
                             island.SetAccentHex(hex);
                             if (accentRow != null)
                             {
-                                accentRow.Detail = Lang.T(Accents[i][0]);
+                                accentRow.Detail = Lang.T(Ink.DarkAccents[i][0]);
                                 accentRow.Invalidate();
                             }
                             themeCards.Invalidate();
                             if (matPicker != null) matPicker.Invalidate();
                         };
                         string curAccentName = Lang.T("Grafit");
-                        for (int i = 0; i < Accents.Length; i++)
+                        for (int i = 0; i < Ink.DarkAccents.Length; i++)
                         {
-                            if (Accents[i][1] == accent || AccentsLight[i][1] == accent)
+                            if (Ink.DarkAccents[i][1] == accent || Ink.LightAccents[i][1] == accent)
                             {
-                                curAccentName = Lang.T(Accents[i][0]);
+                                curAccentName = Lang.T(Ink.DarkAccents[i][0]);
                                 break;
                             }
                         }
@@ -524,13 +525,13 @@ namespace Deskmate
                         add(Row(Lang.T("Target 100x combo harian"), null, Popup(comboGoalLabels, comboAt, i => { settings.Set("keys.combo.quest.combos", comboGoals[i]); settings.Save(); island.ReloadComboSettings(); })));
                         cap(Lang.T("Statistik & Mini-Game"));
                         string progText = Lang.F("Lv.{0} · {1} ({2} XP)", island.ComboLevel, island.ComboLevelTitle, island.ComboXp);
-                        Font progFont = UiFont(12f);
+                        Font progFont = Ink.Text(12f * Ui);
                         int progW = TextRenderer.MeasureText(progText, progFont).Width + (int)(8 * Ui);
                         add(Row(Lang.T("Progres & Rekor"),
                             Lang.F("Rekor {0}x · {1} WPM · Sprint {2} WPM · {3} hr ini", island.ComboAllTimeBest, island.ComboAllTimePeakWpm, island.ComboSprintBestWpm, island.ComboDailyChars),
                             new Label { Text = progText, Font = progFont, ForeColor = KitInk.Sub, BackColor = Color.Transparent, AutoSize = false, TextAlign = ContentAlignment.MiddleRight, Size = new Size(progW, (int)(24 * Ui)) }));
                         string badgeText = island.ComboBadgesCount + "/" + island.ComboBadgesTotal;
-                        Font badgeFont = UiFont(12.5f);
+                        Font badgeFont = Ink.Text(12.5f * Ui);
                         int badgeW = TextRenderer.MeasureText(badgeText, badgeFont).Width + (int)(8 * Ui);
                         add(Row(Lang.T("Lencana"), island.ComboUnlockedBadgesSummary(),
                             new Label { Text = badgeText, Font = badgeFont, ForeColor = KitInk.Sub, BackColor = Color.Transparent, AutoSize = false, TextAlign = ContentAlignment.MiddleRight, Size = new Size(badgeW, (int)(24 * Ui)) }));
@@ -731,7 +732,7 @@ namespace Deskmate
                             Seg(new[] { Lang.T("Tenang"), Lang.T("Bawaan"), Lang.T("Lincah") }, feel == "tenang" ? 0 : feel == "lincah" ? 2 : 1, i => island.SetChoice("motion.feel", i == 0 ? "tenang" : i == 2 ? "lincah" : "bawaan"))));
                         cap(Lang.T("Pintasan keyboard"));
                         // How to change, said once up top
-                        cap(Lang.T("Klik pintasan, lalu tekan kombinasi baru. Backspace mengosongkan, Esc batal."));
+                        note(Lang.T("Klik pintasan, lalu tekan kombinasi baru. Backspace mengosongkan, Esc batal."));
                         bool prompterCap = false;
                         foreach (var d in Hotkeys)
                         {

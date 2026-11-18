@@ -44,11 +44,8 @@ namespace Deskmate
         enum SelectDragKind { None, Move, Handle, EndpointA, EndpointB }
 
         static readonly int[] StrokeWidths = { 3, 6, 12 };
-        static readonly string[][] StrokeColors =
-        {
-            new[] { "Merah", "#FF3B30" }, new[] { "Kuning", "#FFD24A" }, new[] { "Hijau", "#3DD68C" }, new[] { "Biru", "#4C8DFF" },
-            new[] { "Oranye", "#FF9F43" }, new[] { "Ungu", "#A78BFA" }, new[] { "Putih", "#FFFFFF" }, new[] { "Hitam", "#111111" },
-        };
+        // Markers drawn onto the user's image: theme-independent, vivid enough for paper and night
+        static readonly string[][] StrokeColors = Ink.Markers;
 
         readonly Bitmap original;
         Bitmap baseWork;
@@ -151,7 +148,7 @@ namespace Deskmate
             toolStrip.ToolChanged += OnToolChanged;
 
             inkColor.Presets = StrokeColors;
-            inkColor.Value = ColorTranslator.FromHtml("#FF3B30");
+            inkColor.Value = ColorTranslator.FromHtml(Ink.Markers[0][1]);
             inkColor.AccessibleName = Lang.T("Warna coretan");
             inkColor.Picked += delegate { OnStyleOptionChanged(); };
 

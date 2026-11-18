@@ -295,6 +295,7 @@ namespace Deskmate
             en.Add("Krem", "Cream");
             en.Add("Putih lembut", "Soft white");
             en.Add("Cokelat tua", "Dark brown");
+            en.Add("Gading", "Ivory");
             en.Add("Ambil dari layar", "Pick from screen");
             en.Add("Warna lain…", "Other color…");
             en.Add("Klik untuk memilih atau ambil dari layar", "Click to choose, or pick from the screen");

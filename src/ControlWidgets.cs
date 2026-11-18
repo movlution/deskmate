@@ -226,17 +226,28 @@ namespace Deskmate
         // Small secondary pill
         void Chip(RectangleF r, string id, string label, Action act) { Pill(r, id, label, PillKind.Secondary, act); }
 
-        // iOS switch with a sliding knob
+        // Switch on the Kit spec: quiet tinted track and Sub knob off, accent track and
+        // OnAccent knob on, knob lifted by the same two-step contact shadow
         void Switch(RectangleF r, string id, bool on, Action toggle)
         {
             Spring s;
             if (!switches.TryGetValue(id, out s)) { s = new Spring(on ? 1 : 0, 520, 30, 0.004f); switches[id] = s; }
             s.Target = on ? 1 : 0;
             AddHit(RectangleF.Inflate(r, 4, 4), id, toggle);
+            bool hover = Hover(id);
             var track = new RectangleF(r.X, r.Y + r.Height / 2 - 11, 38, 22);
-            p.FillRound(track, 11, Ink.Mix(p.T.Quaternary, p.T.Accent, s.Value));
             float k = Ease.Clamp01(s.Value);
-            p.Circle(track.X + 11 + k * 16, track.Y + 11, Pressed(id) ? 8.2f : 9, Ink.Mix(p.T.Text, p.T.OnAccent, k));
+            var bg = Color.FromArgb(255, p.T.Bg);
+            Color off = Ink.Mix(bg, p.T.Text, hover ? 0.19f : 0.12f);
+            p.FillRound(track, 11, Ink.Mix(off, p.T.Accent, k));
+            float kr = Pressed(id) ? 7.5f : hover ? 8.5f : 8f, cx = track.X + 11 + k * 16, cy = track.Y + 11;
+            var knob = new RectangleF(cx - kr, cy - kr, kr * 2, kr * 2);
+            bool light = !p.T.IsDark;
+            int a = light ? 26 : 90;
+            p.FillRound(new RectangleF(knob.X - 0.3f, knob.Y + 0.9f, knob.Width + 0.6f, knob.Height + 0.3f), kr, Ink.Scrim(a / 2));
+            p.FillRound(new RectangleF(knob.X, knob.Y + 0.45f, knob.Width, knob.Height), kr, Ink.Scrim(a));
+            Color sub = Ink.Over(p.T.Sub, bg);
+            p.Circle(cx, cy, kr, Ink.Mix(hover ? Ink.Mix(sub, p.T.Text, 0.35f) : sub, p.T.OnAccent, k));
         }
 
         bool SwitchesMoving()

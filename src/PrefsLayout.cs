@@ -273,10 +273,10 @@ namespace Deskmate
                     g.Clear(KitInk.Under(this));
                     float s = Ui, cx = Width / 2f, cy = Height / 2f, d = 3f * s;
                     if (Hovered && !dragging) Fill(g, new RectangleF(0.5f, 0.5f, Width - 1, Height - 1), Height / 2f, KitInk.Line);
-                    using (var b = new SolidBrush(dragging || Hovered || Focused ? KitInk.Text : KitInk.Sub))
-                        for (int x = -1; x <= 1; x += 2)
-                            for (int y = -1; y <= 1; y++)
-                                g.FillEllipse(b, cx + x * 3f * s - d / 2, cy + y * 5f * s - d / 2, d, d);
+                    var b = KitInk.BrushOf(dragging || Hovered || Focused ? KitInk.Text : KitInk.Sub);
+                    for (int x = -1; x <= 1; x += 2)
+                        for (int y = -1; y <= 1; y++)
+                            g.FillEllipse(b, cx + x * 3f * s - d / 2, cy + y * 5f * s - d / 2, d, d);
                     Ring(g, new RectangleF(1, 1, Width - 2, Height - 2), Height / 2f);
                 }
             }

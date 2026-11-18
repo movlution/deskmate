@@ -201,7 +201,7 @@ namespace Deskmate
                 var b = new RectangleF(r.Right - w * 0.7f, r.Top - h * 0.28f, w, h);
                 p.FillRound(Inset(b, -1.2f), (h + 2.4f) / 2, Ink.A(p.T.Bg, 0.55f));
                 p.FillRound(b, h / 2, p.T.Negative);
-                p.TextCenter(s, f, p.T.IsDark ? p.T.Bg : Color.White, b.X + b.Width / 2, b.Y + h / 2);
+                p.TextCenter(s, f, p.T.IsDark ? p.T.Bg : Ink.Sheen(255), b.X + b.Width / 2, b.Y + h / 2);
             }
         }
     }

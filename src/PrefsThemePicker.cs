@@ -18,14 +18,8 @@ namespace Deskmate
 
             static readonly string[] Labels = { "Sistem", "Terang", "Gelap" };
 
-            static readonly Color DarkTop = Color.FromArgb(255, 28, 31, 37);
-            static readonly Color DarkBottom = Color.FromArgb(255, 14, 16, 20);
-            static readonly Color LightTop = Color.FromArgb(255, 250, 251, 253);
-            static readonly Color LightBottom = Color.FromArgb(255, 231, 235, 241);
-            static readonly Color DarkWindow = Color.FromArgb(228, 40, 44, 51);
-            static readonly Color LightWindow = Color.FromArgb(236, 255, 255, 255);
-            static readonly Color DarkWindowLine = Color.FromArgb(96, 255, 255, 255);
-            static readonly Color LightWindowLine = Color.FromArgb(72, 22, 26, 34);
+            // Previews paint the real default tones, so the cards always match the windows they choose
+            static readonly Tone NightTone = Tone.Dark(), PaperTone = Tone.Paper();
 
             float LabelH { get { return 15f * Ui; } }
             float LabelGap { get { return 4f * Ui; } }
@@ -157,8 +151,9 @@ namespace Deskmate
             {
                 var g = e.Graphics;
                 KitInk.Smooth(g);
-                g.Clear(KitInk.Under(this));
-                float s = Ui;
+                var under = KitInk.Under(this);
+                g.Clear(under);
+                float s = Ui, radius = Ink.RadiusControl * s;
                 var labelFont = Ink.Text(10.8f * s);
                 var selectedFont = Ink.Semi(10.8f * s);
 
@@ -166,33 +161,22 @@ namespace Deskmate
                 {
                     var tile = TileRect(i);
                     bool sel = i == SelectedIndex;
-                    DrawThumb(g, tile, i, s);
+                    DrawThumb(g, tile, i, radius, s);
 
                     if (sel)
                     {
-                        using (var pen = new Pen(KitInk.Accent, 2f * s))
-                        using (var path = Ink.Round(new RectangleF(tile.X + 1.25f * s, tile.Y + 1.25f * s,
-                                                                   tile.Width - 2.5f * s, tile.Height - 2.5f * s), 9f * s))
-                            g.DrawPath(pen, path);
+                        float inset = 1.25f * s;
+                        KitInk.StrokeRound(g, RectangleF.Inflate(tile, -inset, -inset), radius - inset, KitInk.Accent, 2f * s);
                         DrawCheck(g, tile, s);
                     }
-                    else if (i == hover)
-                    {
-                        using (var pen = new Pen(Ink.A(KitInk.Faint, 0.85f), 1f * s))
-                        using (var path = Ink.Round(new RectangleF(tile.X + 0.5f * s, tile.Y + 0.5f * s,
-                                                                   tile.Width - s, tile.Height - s), 9.5f * s))
-                            g.DrawPath(pen, path);
-                    }
+                    else if (i == hover && Enabled)
+                        KitInk.StrokeRound(g, RectangleF.Inflate(tile, -0.5f * s, -0.5f * s), radius, KitInk.Faint, 1f * s);
 
-                    Color label = sel || i == hover ? KitInk.Text : KitInk.Sub;
-                    var labelRect = LabelRect(i);
-                    KitInk.Draw(g, Lang.T(Labels[i]), sel ? selectedFont : labelFont, label, labelRect, ContentAlignment.MiddleCenter);
-                    if (Focused && ShowFocusCues && !KitInk.ByMouse && sel)
+                    KitInk.Draw(g, Lang.T(Labels[i]), sel ? selectedFont : labelFont, sel || i == hover ? KitInk.Text : KitInk.Sub, LabelRect(i), ContentAlignment.MiddleCenter);
+                    if (sel && Focused && ShowFocusCues && !KitInk.ByMouse)
                     {
-                        using (var pen = new Pen(KitInk.Text, 1f * s) { DashStyle = DashStyle.Dot })
-                        using (var path = Ink.Round(new RectangleF(labelRect.X + 4 * s, labelRect.Y + 0.5f * s,
-                                                                   labelRect.Width - 8 * s, labelRect.Height - s), 3f * s))
-                            g.DrawPath(pen, path);
+                        var ring = KitControl.Inside(RectangleF.Inflate(tile, 2.5f * s, 2.5f * s), Width, Height);
+                        KitInk.FocusRing(g, ring, radius + 2.5f * s, under, s);
                     }
                 }
             }
@@ -202,129 +186,63 @@ namespace Deskmate
             {
                 float d = 14 * s;
                 var badge = new RectangleF(tile.Right - d - 5 * s, tile.Top + 5 * s, d, d);
-                using (var b = new SolidBrush(KitInk.Accent)) g.FillEllipse(b, badge);
-                using (var pen = new Pen(KitInk.OnAccent, 1.8f * s) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                g.FillEllipse(KitInk.BrushOf(KitInk.Accent), badge);
+                var pen = KitInk.PenOf(KitInk.OnAccent, 1.8f * s);
+                float x = badge.X + badge.Width * 0.29f, y = badge.Y + badge.Height * 0.52f;
+                g.DrawLine(pen, x, y, x + badge.Width * 0.16f, y + badge.Height * 0.17f);
+                g.DrawLine(pen, x + badge.Width * 0.16f, y + badge.Height * 0.17f, x + badge.Width * 0.44f, y - badge.Height * 0.20f);
+            }
+
+            void DrawThumb(Graphics g, RectangleF tile, int kind, float radius, float s)
+            {
+                var state = g.Save();
+                g.SetClip(KitInk.Shape(tile, radius), CombineMode.Intersect);
+                if (kind == 0)
                 {
-                    float x = badge.X + badge.Width * 0.29f, y = badge.Y + badge.Height * 0.52f;
-                    g.DrawLine(pen, x, y, x + badge.Width * 0.16f, y + badge.Height * 0.17f);
-                    g.DrawLine(pen, x + badge.Width * 0.16f, y + badge.Height * 0.17f, x + badge.Width * 0.44f, y - badge.Height * 0.20f);
+                    float half = tile.Width / 2f;
+                    DrawDesktop(g, new RectangleF(tile.X, tile.Y, half, tile.Height), NightTone, s, true);
+                    DrawDesktop(g, new RectangleF(tile.X + half, tile.Y, half, tile.Height), PaperTone, s, true);
                 }
+                else DrawDesktop(g, tile, kind == 2 ? NightTone : PaperTone, s, false);
+                g.Restore(state);
+                // Hairline edge so the paper card holds its shape on a paper window
+                KitInk.StrokeRound(g, tile, radius, Ink.Light ? Ink.Scrim(22) : Ink.Sheen(20), 1f);
             }
 
-            void DrawThumb(Graphics g, RectangleF tile, int kind, float s)
+            // Canvas, a card window, the island pill, and the dock, all in the tone's own colours
+            void DrawDesktop(Graphics g, RectangleF r, Tone t, float s, bool compact)
             {
-                using (var clip = Ink.Round(tile, 10 * s))
-                {
-                    var state = g.Save();
-                    g.SetClip(clip, CombineMode.Intersect);
-                    if (kind == 0)
-                    {
-                        float half = tile.Width / 2f;
-                        DrawDesktop(g, new RectangleF(tile.X, tile.Y, half, tile.Height), true, s, true);
-                        DrawDesktop(g, new RectangleF(tile.X + half, tile.Y, half, tile.Height), false, s, true);
-                        using (var pen = new Pen(Color.FromArgb(34, 255, 255, 255), 1f * s))
-                            g.DrawLine(pen, tile.X + half, tile.Y, tile.X + half, tile.Bottom);
-                    }
-                    else
-                    {
-                        DrawDesktop(g, tile, kind == 2, s, false);
-                    }
-                    g.Restore(state);
-                }
-                using (var pen = new Pen(Color.FromArgb(20, Ink.Light ? Color.Black : Color.White), 1f * s))
-                using (var border = Ink.Round(tile, 10 * s))
-                    g.DrawPath(pen, border);
-            }
+                bool dark = t.IsDark;
+                g.FillRectangle(KitInk.BrushOf(dark ? Ink.Mix(t.Bg, Color.Black, 0.18f) : Ink.Mix(t.Bg, t.Text, 0.05f)), r);
+                // A quiet accent horizon along the bottom of the desktop
+                g.FillRectangle(KitInk.BrushOf(Ink.A(KitInk.Accent, dark ? 0.16f : 0.10f)), r.X, r.Y + r.Height * 0.62f, r.Width, r.Height * 0.38f);
 
-            void DrawDesktop(Graphics g, RectangleF r, bool dark, float s, bool compact)
-            {
-                using (var b = new LinearGradientBrush(r, dark ? DarkTop : LightTop, dark ? DarkBottom : LightBottom, 90f))
-                    g.FillRectangle(b, r);
+                float w = Math.Max(10 * s, r.Width * 0.34f), h = 3.6f * s;
+                KitInk.FillRound(g, new RectangleF(r.X + (r.Width - w) / 2f, r.Y + 4 * s, w, h), h / 2f, Ink.A(Tone.Night, 0.93f));
 
-                // A quiet accent wash gives each thumbnail a desktop horizon.
-                Color accent = KitInk.Accent;
-                using (var b = new LinearGradientBrush(r, Color.FromArgb(dark ? 30 : 18, accent), Color.FromArgb(0, accent), 22f))
-                    g.FillRectangle(b, r);
-
-                // Mini island, window, and dock: enough to read as a desktop,
-                // without the stray accent dot that used to look like a defect.
-                DrawIsland(g, r, s);
-                DrawWindow(g, r, dark, s, compact);
-                DrawDock(g, r, dark, s);
-            }
-
-            void DrawIsland(Graphics g, RectangleF r, float s)
-            {
-                float w = Math.Max(10 * s, r.Width * 0.34f);
-                float h = Math.Max(2.5f * s, 3.6f * s);
-                var pill = new RectangleF(r.X + (r.Width - w) / 2f, r.Y + Math.Max(3 * s, 4 * s), w, h);
-                using (var path = Ink.Round(pill, h / 2f))
-                using (var b = new SolidBrush(Color.FromArgb(238, 8, 9, 11)))
-                    g.FillPath(b, path);
-            }
-
-            void DrawWindow(Graphics g, RectangleF r, bool dark, float s, bool compact)
-            {
                 float ww = Math.Max(16 * s, r.Width * (compact ? 0.58f : 0.62f));
                 float wh = Math.Max(11 * s, r.Height * (compact ? 0.30f : 0.42f));
                 var win = new RectangleF(r.X + (r.Width - ww) / 2f, r.Y + r.Height * (compact ? 0.40f : 0.29f), ww, wh);
-                float radius = (compact ? 2.4f : 3.6f) * s;
+                float wr = (compact ? 2.4f : 3.6f) * s;
+                KitInk.FillRound(g, new RectangleF(win.X, win.Y + 1.5f * s, win.Width, win.Height), wr, Color.FromArgb(dark ? 70 : 26, Tone.Plum));
+                KitInk.FillRound(g, win, wr, dark ? Ink.Mix(t.Bg, t.Text, 0.09f) : Ink.Mix(t.Bg, Color.White, 0.85f));
+                float topH = Math.Max(5 * s, win.Height * 0.24f);
+                float dot = 1.2f * s;
+                var ink = KitInk.BrushOf(Ink.A(t.Faint, 0.8f));
+                for (int i = 0; i < 3; i++)
+                    g.FillEllipse(ink, win.X + 3.5f * s + i * (dot + 1.4f * s), win.Y + topH / 2f - dot / 2f, dot, dot);
+                float lx = win.X + 5 * s, lw = Math.Max(4 * s, win.Width - 10 * s), lh = 1.4f * s;
+                var lines = KitInk.BrushOf(Ink.A(t.Faint, 0.55f));
+                g.FillRectangle(lines, lx, win.Y + topH + 4.5f * s, lw, lh);
+                g.FillRectangle(lines, lx, win.Y + topH + 8.5f * s, lw * 0.65f, lh);
+                KitInk.FillRound(g, new RectangleF(win.Right - 12 * s, win.Bottom - 5 * s, 8 * s, 2.2f * s), 1.1f * s, KitInk.Accent);
 
-                using (var shadow = Ink.Round(new RectangleF(win.X, win.Y + 1.5f * s, win.Width, win.Height), radius))
-                using (var b = new SolidBrush(Color.FromArgb(dark ? 60 : 25, 0, 0, 0)))
-                    g.FillPath(b, shadow);
-                using (var path = Ink.Round(win, radius))
-                {
-                    using (var b = new SolidBrush(dark ? DarkWindow : LightWindow)) g.FillPath(b, path);
-                    var state = g.Save();
-                    g.SetClip(path, CombineMode.Intersect);
-                    float topH = Math.Max(5 * s, win.Height * 0.24f);
-                    using (var b = new SolidBrush(dark ? Color.FromArgb(38, 255, 255, 255) : Color.FromArgb(245, 245, 246, 248)))
-                        g.FillRectangle(b, win.X, win.Y, win.Width, topH);
-
-                    float dot = Math.Max(1.1f * s, 1.2f * s);
-                    using (var b = new SolidBrush(dark ? Color.FromArgb(150, 255, 255, 255) : Color.FromArgb(110, 55, 60, 68)))
-                    {
-                        for (int i = 0; i < 3; i++)
-                            g.FillEllipse(b, win.X + 3.5f * s + i * (dot + 1.4f * s), win.Y + topH / 2f - dot / 2f, dot, dot);
-                    }
-
-                    float lx = win.X + 5 * s;
-                    float lw = Math.Max(4 * s, win.Width - 10 * s);
-                    float lh = Math.Max(1.1f * s, 1.4f * s);
-                    using (var b = new SolidBrush(dark ? DarkWindowLine : LightWindowLine))
-                    {
-                        g.FillRectangle(b, lx, win.Y + topH + 4.5f * s, lw, lh);
-                        g.FillRectangle(b, lx, win.Y + topH + 8.5f * s, lw * 0.65f, lh);
-                    }
-                    using (var b = new SolidBrush(Ink.A(KitInk.Accent, 0.8f)))
-                        g.FillRectangle(b, win.Right - 12 * s, win.Bottom - 5 * s, 8 * s, 2.2f * s);
-                    g.Restore(state);
-                }
-                using (var pen = new Pen(dark ? Color.FromArgb(50, 255, 255, 255) : Color.FromArgb(24, 24, 28, 34), 1f * s))
-                using (var border = Ink.Round(win, radius))
-                    g.DrawPath(pen, border);
-            }
-
-            void DrawDock(Graphics g, RectangleF r, bool dark, float s)
-            {
-                float w = Math.Max(12 * s, r.Width * 0.42f);
-                float h = Math.Max(3.2f * s, 4.4f * s);
-                var dock = new RectangleF(r.X + (r.Width - w) / 2f, r.Bottom - h - 4 * s, w, h);
-                using (var path = Ink.Round(dock, h / 2f))
-                {
-                    using (var b = new SolidBrush(dark ? Color.FromArgb(175, 22, 24, 29) : Color.FromArgb(185, 255, 255, 255)))
-                        g.FillPath(b, path);
-                    using (var pen = new Pen(dark ? Color.FromArgb(38, 255, 255, 255) : Color.FromArgb(22, 0, 0, 0), 1f * s))
-                        g.DrawPath(pen, path);
-                    float dot = Math.Max(1.1f * s, 1.2f * s);
-                    using (var b = new SolidBrush(dark ? Color.FromArgb(120, 255, 255, 255) : Color.FromArgb(90, 55, 60, 68)))
-                    {
-                        for (int i = 0; i < 3; i++)
-                            g.FillEllipse(b, dock.X + dock.Width / 2f + (i - 1) * (dot + 1.5f * s) - dot / 2f,
-                                           dock.Y + dock.Height / 2f - dot / 2f, dot, dot);
-                    }
-                }
+                float dw = Math.Max(12 * s, r.Width * 0.42f), dh = 4.4f * s;
+                var dock = new RectangleF(r.X + (r.Width - dw) / 2f, r.Bottom - dh - 4 * s, dw, dh);
+                KitInk.FillRound(g, dock, dh / 2f, dark ? Ink.Mix(t.Bg, t.Text, 0.14f) : Color.White);
+                var dots = KitInk.BrushOf(Ink.A(t.Faint, 0.7f));
+                for (int i = 0; i < 3; i++)
+                    g.FillEllipse(dots, dock.X + dock.Width / 2f + (i - 1) * (dot + 1.5f * s) - dot / 2f, dock.Y + dock.Height / 2f - dot / 2f, dot, dot);
             }
         }
 
@@ -460,43 +378,31 @@ namespace Deskmate
             {
                 var g = e.Graphics;
                 KitInk.Smooth(g);
-                g.Clear(KitInk.Under(this));
-                float s = Ui;
+                var under = KitInk.Under(this);
+                g.Clear(under);
+                float s = Ui, radius = Ink.RadiusControl * s;
                 var labelFont = Ink.Text(10.5f * s);
                 var selectedFont = Ink.Semi(10.5f * s);
 
                 for (int i = 0; i < Kinds.Length; i++)
                 {
                     var cell = CellRect(i);
+                    var card = new RectangleF(cell.X + 0.75f * s, cell.Y + 1.75f * s, cell.Width - 1.5f * s, cell.Height - 3.5f * s);
                     bool sel = i == SelectedIndex;
-                    if (sel || i == hover)
-                    {
-                        using (var path = Ink.Round(new RectangleF(cell.X + 0.5f * s, cell.Y + 1.5f * s,
-                                                                   cell.Width - s, cell.Height - 3 * s), 9f * s))
-                        using (var b = new SolidBrush(sel ? Ink.Mix(KitInk.Hover, KitInk.Accent, 0.10f) : KitInk.Hover))
-                            g.FillPath(b, path);
-                    }
+                    if (sel) KitInk.FillRound(g, card, radius, Ink.Mix(under, KitInk.Accent, Ink.Light ? 0.10f : 0.14f));
+                    else if (i == hover && Enabled) KitInk.FillRound(g, card, radius, KitInk.Hover);
 
                     var sample = new RectangleF(cell.X + 6 * s, cell.Y + 6 * s, cell.Width - 12 * s, 30 * s);
                     DrawSample(g, sample, Kinds[i], s);
 
                     var label = new RectangleF(cell.X, sample.Bottom + 2 * s, cell.Width, 15 * s);
-                    KitInk.Draw(g, Lang.T(Labels[i]), sel ? selectedFont : labelFont,
-                        sel || i == hover ? KitInk.Text : KitInk.Sub, label, ContentAlignment.MiddleCenter);
+                    KitInk.Draw(g, Lang.T(Labels[i]), sel ? selectedFont : labelFont, sel || i == hover ? KitInk.Text : KitInk.Sub, label, ContentAlignment.MiddleCenter);
 
-                    if (sel)
+                    if (sel) KitInk.StrokeRound(g, card, radius, KitInk.Accent, 1.5f * s);
+                    if (sel && Focused && ShowFocusCues && !KitInk.ByMouse)
                     {
-                        using (var pen = new Pen(KitInk.Accent, 1.4f * s))
-                        using (var path = Ink.Round(new RectangleF(cell.X + 0.75f * s, cell.Y + 1.75f * s,
-                                                                   cell.Width - 1.5f * s, cell.Height - 3.5f * s), 9.2f * s))
-                            g.DrawPath(pen, path);
-                    }
-                    if (Focused && ShowFocusCues && !KitInk.ByMouse && sel)
-                    {
-                        using (var pen = new Pen(KitInk.Text, 1f * s) { DashStyle = DashStyle.Dot })
-                        using (var path = Ink.Round(new RectangleF(label.X + 4 * s, label.Y + 0.5f * s,
-                                                                   label.Width - 8 * s, label.Height - s), 3f * s))
-                            g.DrawPath(pen, path);
+                        var ring = KitControl.Inside(RectangleF.Inflate(card, 2f * s, 2f * s), Width, Height);
+                        KitInk.FocusRing(g, ring, radius + 2f * s, under, s);
                     }
                 }
             }
@@ -504,53 +410,29 @@ namespace Deskmate
             void DrawSample(Graphics g, RectangleF r, GlassKind kind, float s)
             {
                 float radius = 8 * s;
-                using (var path = Ink.Round(r, radius))
+                var state = g.Save();
+                g.SetClip(KitInk.Shape(r, radius), CombineMode.Intersect);
+
+                // A fixed, softly coloured desktop sits behind the pane so the four
+                // materials stay legible even when the chosen accent is Grafit.
+                // It is a representative preview, not the live wallpaper.
+                Color a = Ink.Label("sky", false), b = Ink.Label("rose", false);
+                if (!Ink.Light) { a = Ink.Mix(a, Tone.Night, 0.45f); b = Ink.Mix(b, Tone.Night, 0.45f); }
+                using (var brush = new LinearGradientBrush(r, a, b, 24f)) g.FillRectangle(brush, r);
+
+                // The pane: the same recipe and veil the island uses right now
+                g.FillRectangle(KitInk.BrushOf(GlassRecipe.Tint(kind, Ink.Veil, Ink.Light, true, false)), r);
+                if (kind != GlassKind.Solid)
                 {
-                    var state = g.Save();
-                    g.SetClip(path, CombineMode.Intersect);
-
-                    // A fixed, colourful desktop sits behind the pane so the four
-                    // materials stay legible even when the chosen accent is Grafit.
-                    // It is a representative preview, not the live wallpaper.
-                    Color blue = Color.FromArgb(255, 54, 112, 232);
-                    Color coral = Color.FromArgb(255, 236, 112, 94);
-                    Color a = Ink.Light ? Ink.Mix(blue, Color.White, 0.22f) : Ink.Mix(blue, Color.Black, 0.34f);
-                    Color b = Ink.Light ? Ink.Mix(coral, Color.White, 0.22f) : Ink.Mix(coral, Color.Black, 0.34f);
-                    using (var brush = new LinearGradientBrush(r, a, b, 24f)) g.FillRectangle(brush, r);
-                    using (var brush = new LinearGradientBrush(r, Color.FromArgb(105, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f))
-                        g.FillRectangle(brush, new RectangleF(r.X, r.Y, r.Width, r.Height * 0.56f));
-
-                    Color previewVeil = Color.FromArgb(255, 48, 102, 205);
-                    Color tint = GlassRecipe.Tint(kind, previewVeil, Ink.Light, true, false);
-                    using (var brush = new SolidBrush(tint)) g.FillRectangle(brush, r);
-
-                    if (kind != GlassKind.Solid)
-                    {
-                        int sheen = GlassRecipe.Sheen(kind, Ink.Light);
-                        if (sheen > 0)
-                            using (var brush = new SolidBrush(Color.FromArgb(sheen, 255, 255, 255)))
-                                g.FillRectangle(brush, r.X, r.Y, r.Width, Math.Max(1f, 1.4f * s));
-
-                        // A soft band after the tint keeps Liquid glossy and Frost
-                        // matte; the line inside the chip never reads as a button.
-                        int gloss = kind == GlassKind.Liquid ? 72 : kind == GlassKind.Clear ? 46 : 20;
-                        using (var brush = new LinearGradientBrush(
-                            new RectangleF(r.X, r.Y, r.Width, Math.Max(1f, r.Height * 0.62f)),
-                            Color.FromArgb(gloss, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f))
-                            g.FillRectangle(brush, r.X, r.Y, r.Width, r.Height * 0.62f);
-                    }
-                    g.Restore(state);
+                    int sheen = GlassRecipe.Sheen(kind, Ink.Light);
+                    if (sheen > 0) g.FillRectangle(KitInk.BrushOf(Ink.Sheen(sheen)), r.X, r.Y, r.Width, Math.Max(1f, 1.4f * s));
+                    // A soft band keeps Liquid glossy and Frost matte
+                    int gloss = kind == GlassKind.Liquid ? 40 : kind == GlassKind.Clear ? 26 : 10;
+                    g.FillRectangle(KitInk.BrushOf(Ink.Sheen(gloss)), r.X, r.Y, r.Width, r.Height * 0.45f);
                 }
+                g.Restore(state);
 
-                using (var pen = new Pen(Color.FromArgb(GlassRecipe.Border(kind, Ink.Light), kind == GlassKind.Solid ? KitInk.Faint : Color.White), 1f * s))
-                using (var border = Ink.Round(r, radius))
-                    g.DrawPath(pen, border);
-                if (kind == GlassKind.Solid)
-                {
-                    using (var pen = new Pen(Ink.A(KitInk.Faint, 0.75f), 1f * s))
-                    using (var border = Ink.Round(new RectangleF(r.X + 1 * s, r.Y + 1 * s, r.Width - 2 * s, r.Height - 2 * s), radius - 1 * s))
-                        g.DrawPath(pen, border);
-                }
+                KitInk.StrokeRound(g, r, radius, kind == GlassKind.Solid ? Color.FromArgb(GlassRecipe.Border(kind, Ink.Light), KitInk.Faint) : Ink.Sheen(GlassRecipe.Border(kind, Ink.Light)), 1f * s);
             }
 
         }

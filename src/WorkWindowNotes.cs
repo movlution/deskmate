@@ -426,13 +426,10 @@ namespace Deskmate
                     Color sw = NotePalette.ColorOf(key);
                     if (sw == Color.Empty)
                     {
-                        using (var b = new SolidBrush(KitInk.Group)) g.FillEllipse(b, 1, 1, 11, 11);
-                        using (var p = new Pen(KitInk.Sub, 1.3f)) g.DrawEllipse(p, 1, 1, 11, 11);
+                        g.FillEllipse(KitInk.BrushOf(KitInk.Group), 1, 1, 11, 11);
+                        g.DrawEllipse(KitInk.PenOf(KitInk.Sub, 1.3f), 1, 1, 11, 11);
                     }
-                    else
-                    {
-                        using (var b = new SolidBrush(sw)) g.FillEllipse(b, 1, 1, 11, 11);
-                    }
+                    else g.FillEllipse(KitInk.BrushOf(sw), 1, 1, 11, 11);
                 }
                 imgs.Add(bmp);
                 item.Image = bmp;

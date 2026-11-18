@@ -147,6 +147,9 @@ namespace Deskmate
                     e.Handled = true;
                 }
             };
+            // The composer's accent edge follows focus
+            addBox.GotFocus += delegate { Invalidate(Rectangle.Inflate(wellAdd, 2, 2)); };
+            addBox.LostFocus += delegate { Invalidate(Rectangle.Inflate(wellAdd, 2, 2)); };
 
             syncStatus.Back = delegate { return KitInk.Window; };
             syncStatus.Click += delegate
@@ -217,6 +220,8 @@ namespace Deskmate
                 if (string.IsNullOrEmpty(search.Text)) RefreshNotes(current);
                 else searchTimer.Start();
             };
+            search.GotFocus += delegate { Invalidate(Rectangle.Inflate(wellSearch, 2, 2)); };
+            search.LostFocus += delegate { Invalidate(Rectangle.Inflate(wellSearch, 2, 2)); };
 
             newNoteBtn.Text = "+ " + Lang.T("Baru");
             newNoteBtn.AccessibleName = Lang.T("Buat catatan baru");
@@ -468,7 +473,8 @@ namespace Deskmate
             if (!IsHandleCreated) return;
             float s = Ui;
             int maxChipW = Math.Max((int)(80 * s), blockBtn.Left - wellEditor.X - (int)(24 * s));
-            noteTagChip.SetBounds(wellEditor.X + (int)(14 * s), wellEditor.Y + (int)(9 * s), noteTagChip.PreferredWidth(maxChipW), (int)(28 * s));
+            int chipH = (int)(28 * s);
+            noteTagChip.SetBounds(wellEditor.X + (int)(Ink.Sp12 * s), editorHeaderRect.Y + (editorHeaderRect.Height - chipH) / 2, noteTagChip.PreferredWidth(maxChipW), chipH);
         }
 
 
@@ -485,17 +491,19 @@ namespace Deskmate
             {
                 fText = UiFont(Ink.Body.Size); fSub = UiFont(Ink.Callout.Size); fSmall = UiFont(Ink.Caption.Size);
             }
-            int pad = (int)(16 * s), W = ClientSize.Width, H = ClientSize.Height;
+            int pad = (int)(Ink.Sp16 * s), W = ClientSize.Width, H = ClientSize.Height;
+            // Toolbar controls on the 32 px step; buttons and inputs below take the 36 px target
+            int bar = (int)(Ink.Sp32 * s), target = (int)(36 * s);
             tabs.Font = fSub;
             float tw = 0;
             foreach (var it in tabs.Items) tw = Math.Max(tw, TextRenderer.MeasureText(it, fSub).Width);
-            tabs.SetBounds(pad, pad, (int)((tw + 34 * s) * tabs.Items.Length), (int)(30 * s));
-            toolbarDividerY = tabs.Bottom + (int)(12 * s);
-            int y0 = contentTop = toolbarDividerY + (int)(16 * s);
+            tabs.SetBounds(pad, pad, (int)((tw + Ink.Sp32 * s) * tabs.Items.Length), bar);
+            toolbarDividerY = tabs.Bottom + (int)(Ink.Sp12 * s);
+            int y0 = contentTop = toolbarDividerY + (int)(Ink.Sp20 * s);
             int modeWidth = 2 * (Math.Max(TextRenderer.MeasureText(taskMode.Items[0], fSub).Width,
-                TextRenderer.MeasureText(taskMode.Items[1], fSub).Width) + (int)(24 * s));
+                TextRenderer.MeasureText(taskMode.Items[1], fSub).Width) + (int)(Ink.Sp24 * s));
             taskMode.SetBounds(W - pad - modeWidth, tabs.Top, modeWidth, tabs.Height);
-            int gap = (int)(12 * s), columnGap = (int)(32 * s);
+            int gap = (int)(Ink.Sp12 * s), columnGap = (int)(Ink.Sp32 * s);
 
             // Tasks
             bool compact = W < (int)(580 * s);
@@ -518,61 +526,65 @@ namespace Deskmate
 
             sidebarDividerX = compact ? 0 : rx - columnGap / 2;
 
-            int btnSz = (int)(30 * s);
+            int btnSz = bar;
             moreBtn.SetBounds(W - pad - btnSz, y0, btnSz, btnSz);
 
             int syncWidth = syncStatus.PreferredWidth();
-            syncStatus.SetBounds(moreBtn.Left - gap - syncWidth, y0, syncWidth, (int)(28 * s));
+            syncStatus.SetBounds(moreBtn.Left - gap - syncWidth, y0 + (btnSz - (int)(28 * s)) / 2, syncWidth, (int)(28 * s));
 
             int titleRight = (syncStatus.Visible ? syncStatus.Left - gap : moreBtn.Left - gap);
             int titleW = Math.Max(100, titleRight - rx);
-            title.SetBounds(rx, y0, titleW, (int)(52 * s));
+            // Title line, then the subtitle on its own line with air between them
+            title.SetBounds(rx, y0, titleW, (int)(56 * s));
 
-            wellAdd = new Rectangle(rx, y0 + (int)(56 * s), rw, (int)(38 * s));
+            // Composer: a calm input field one tone step off the canvas; the accent shows on focus
+            wellAdd = new Rectangle(rx, title.Bottom + (int)(Ink.Sp12 * s), rw, target);
             addBox.Font = fText;
             addBox.BackColor = TaskInk.Card;
             addBox.ForeColor = KitInk.Text;
-            addBox.SetBounds(wellAdd.X + (int)(38 * s), 0, wellAdd.Width - (int)(52 * s), addBox.Height);
+            addBox.SetBounds(wellAdd.X + (int)(40 * s), 0, wellAdd.Width - (int)(52 * s), addBox.Height);
             addBox.Top = wellAdd.Y + (wellAdd.Height - addBox.Height) / 2;
             addBox.Placeholder = Lang.T("Tambah tugas…");
 
-            int listTop = wellAdd.Bottom + gap;
+            int listTop = wellAdd.Bottom + (int)(Ink.Sp16 * s);
             int listHeight = H - pad - listTop;
             taskView.SetBounds(rx, listTop, rw, listHeight);
             title.Visible = Tab == 0 && (!BoardOn || compact);
             board.BackColor = KitInk.Window;
+            // The horizontal lane scrollbar follows the theme instead of staying light
+            Native.ThemeScroll(board);
             int boardTop = BoardOn && compact ? title.Bottom + gap : y0;
             board.SetBounds(rx, boardTop, rw, H - pad - boardTop);
             LayoutBoard();
             // Notes
             int lw = Math.Max((int)(240 * s), Math.Min((int)(280 * s), (int)(W * 0.31f)));
-            wellSideHead = new Rectangle(pad, y0, lw, (int)(48 * s));
+            wellSideHead = new Rectangle(pad, y0, lw, (int)(56 * s));
             newNoteBtn.Font = Ink.Semi(12.5f * s);
-            newNoteBtn.Size = new Size(TextRenderer.MeasureText(newNoteBtn.Text, newNoteBtn.Font).Width + (int)(26 * s), (int)(30 * s));
-            newNoteBtn.Location = new Point(pad + lw - newNoteBtn.Width, y0);
+            newNoteBtn.Size = new Size(TextRenderer.MeasureText(newNoteBtn.Text, newNoteBtn.Font).Width + (int)(Ink.Sp32 * s), target);
+            newNoteBtn.Location = new Point(pad + lw - newNoteBtn.Width, y0 - (int)(3 * s));
 
-            wellSearch = new Rectangle(pad, wellSideHead.Bottom + (int)(4 * s), lw, (int)(38 * s));
+            wellSearch = new Rectangle(pad, wellSideHead.Bottom + (int)(Ink.Sp12 * s), lw, target);
             search.Font = fText; search.BackColor = KitInk.Group; search.ForeColor = KitInk.Text;
             search.Placeholder = Lang.T("Cari catatan…");
-            search.SetBounds(wellSearch.X + (int)(34 * s), 0, wellSearch.Width - (int)(46 * s), search.PreferredHeight);
+            search.SetBounds(wellSearch.X + (int)(36 * s), 0, wellSearch.Width - (int)(48 * s), search.PreferredHeight);
             search.Top = wellSearch.Y + (wellSearch.Height - search.Height) / 2;
 
             int filterY = wellSearch.Bottom + gap;
             noteArchiveFilter.Font = fSmall;
             int segW = Math.Min((int)(118 * s), lw - (int)(132 * s));
-            noteArchiveFilter.SetBounds(pad, filterY, segW, (int)(30 * s));
-            colorStrip.SetBounds(noteArchiveFilter.Right + (int)(6 * s), filterY, pad + lw - (noteArchiveFilter.Right + (int)(6 * s)), (int)(30 * s));
+            noteArchiveFilter.SetBounds(pad, filterY, segW, bar);
+            colorStrip.SetBounds(noteArchiveFilter.Right + (int)(Ink.Sp8 * s), filterY, pad + lw - (noteArchiveFilter.Right + (int)(Ink.Sp8 * s)), bar);
 
             int nTop = noteArchiveFilter.Bottom + gap;
             noteList.SetBounds(pad, nTop, lw, H - nTop - pad);
 
             int ex = pad + lw + columnGap;
             wellEditor = new Rectangle(ex, y0, W - pad - ex, H - y0 - pad);
-            editorHeaderRect = new Rectangle(wellEditor.X, wellEditor.Y, wellEditor.Width, (int)(46 * s));
+            editorHeaderRect = new Rectangle(wellEditor.X, wellEditor.Y, wellEditor.Width, (int)(48 * s));
 
-            int edBtnSz = (int)(30 * s), edBtnGap = (int)(4 * s);
-            int tbY = wellEditor.Y + (int)(8 * s);
-            int bx = wellEditor.Right - (int)(12 * s) - edBtnSz;
+            int edBtnSz = bar, edBtnGap = (int)(Ink.Sp4 * s);
+            int tbY = wellEditor.Y + (editorHeaderRect.Height - edBtnSz) / 2;
+            int bx = wellEditor.Right - (int)(Ink.Sp12 * s) - edBtnSz;
             delBtn.SetBounds(bx, tbY, edBtnSz, edBtnSz);
             bx -= edBtnSz + edBtnGap; archiveBtn.SetBounds(bx, tbY, edBtnSz, edBtnSz);
             bx -= edBtnSz + edBtnGap; pinBtn.SetBounds(bx, tbY, edBtnSz, edBtnSz);
@@ -582,18 +594,19 @@ namespace Deskmate
 
             LayoutNoteTagChip();
 
+            int inset = (int)(Ink.Sp20 * s);
             noteTitleBox.Font = Ink.Display(20f * s);
             noteTitleBox.BackColor = KitInk.Group; noteTitleBox.ForeColor = KitInk.Text;
             noteTitleBox.Placeholder = Lang.T("Judul catatan…");
-            int titleTop = editorHeaderRect.Bottom + (int)(12 * s);
-            noteTitleBox.SetBounds(wellEditor.X + (int)(18 * s), titleTop, wellEditor.Width - (int)(36 * s), noteTitleBox.PreferredHeight);
+            int titleTop = editorHeaderRect.Bottom + (int)(Ink.Sp16 * s);
+            noteTitleBox.SetBounds(wellEditor.X + inset, titleTop, wellEditor.Width - 2 * inset, noteTitleBox.PreferredHeight);
 
-            editorMetaRect = new Rectangle(wellEditor.X + (int)(18 * s), noteTitleBox.Bottom + (int)(4 * s), wellEditor.Width - (int)(36 * s), (int)(20 * s));
-            editorDividerY = editorMetaRect.Bottom + (int)(8 * s);
+            editorMetaRect = new Rectangle(wellEditor.X + inset, noteTitleBox.Bottom + (int)(Ink.Sp4 * s), wellEditor.Width - 2 * inset, (int)(20 * s));
+            editorDividerY = editorMetaRect.Bottom + (int)(Ink.Sp12 * s);
 
-            int edTop = editorDividerY + (int)(10 * s);
+            int edTop = editorDividerY + (int)(Ink.Sp12 * s);
             editor.Font = fText; editor.BackColor = KitInk.Group; editor.ForeColor = KitInk.Text;
-            editor.SetBounds(wellEditor.X + (int)(18 * s), edTop, wellEditor.Width - (int)(36 * s), Math.Max((int)(40 * s), wellEditor.Bottom - edTop - (int)(14 * s)));
+            editor.SetBounds(wellEditor.X + inset, edTop, wellEditor.Width - 2 * inset, Math.Max((int)(40 * s), wellEditor.Bottom - edTop - (int)(Ink.Sp16 * s)));
             Native.ThemeScroll(editor);
             editor.RefreshFormatting();
 
@@ -607,27 +620,25 @@ namespace Deskmate
             KitInk.Smooth(g);
             float s = Ui;
             if (fSub == null) return;
-            using (var pen = new Pen(KitInk.Line))
-            {
-                int pad = (int)(16 * s);
-                g.DrawLine(pen, pad, toolbarDividerY, ClientSize.Width - pad, toolbarDividerY);
-                int split = Tab == 0 ? sidebarDividerX : (noteList.Right + wellEditor.Left) / 2;
-                if (split > 0) g.DrawLine(pen, split, contentTop, split, ClientSize.Height - pad);
-            }
+            var line = KitInk.PenOf(KitInk.Line, 1f);
+            int pad = (int)(Ink.Sp16 * s);
+            g.DrawLine(line, pad, toolbarDividerY, ClientSize.Width - pad, toolbarDividerY);
+            int split = Tab == 0 ? sidebarDividerX : (noteList.Right + wellEditor.Left) / 2;
+            if (split > 0) g.DrawLine(line, split, contentTop, split, ClientSize.Height - pad);
             if (Tab == 0)
             {
                 if (BoardOn) return;
-                Well(g, wellAdd, Ink.RadiusControl * s);
-                KitInk.Draw(g, "\uE710", Ink.Icons(14 * s), KitInk.Sub, new RectangleF(wellAdd.X + 12 * s, wellAdd.Y, 22 * s, wellAdd.Height), ContentAlignment.MiddleCenter);
+                Field(g, wellAdd, addBox.Focused, s);
+                KitInk.Draw(g, "\uE710", Ink.Icons(14 * s), addBox.Focused ? KitInk.Accent : KitInk.Sub, new RectangleF(wellAdd.X + Ink.Sp12 * s, wellAdd.Y, 22 * s, wellAdd.Height), ContentAlignment.MiddleCenter);
             }
             else
             {
-                int titleMaxW = Math.Max(40, wellSideHead.Width - newNoteBtn.Width - (int)(10 * s));
-                KitInk.Draw(g, Lang.T("Catatan"), Ink.Display(24f * s), KitInk.Text, new RectangleF(wellSideHead.X, wellSideHead.Y, titleMaxW, 30 * s), ContentAlignment.MiddleLeft);
-                KitInk.Draw(g, NoteCountText(), Ink.Text(12.5f * s), KitInk.Sub, new RectangleF(wellSideHead.X, wellSideHead.Y + 30 * s, wellSideHead.Width, 18 * s), ContentAlignment.MiddleLeft);
+                int titleMaxW = Math.Max(40, wellSideHead.Width - newNoteBtn.Width - (int)(Ink.Sp8 * s));
+                KitInk.Draw(g, Lang.T("Catatan"), Ink.Display(22f * s), KitInk.Text, new RectangleF(wellSideHead.X, wellSideHead.Y, titleMaxW, 30 * s), ContentAlignment.MiddleLeft);
+                KitInk.Draw(g, NoteCountText(), Ink.Text(12.5f * s), KitInk.Sub, new RectangleF(wellSideHead.X, wellSideHead.Y + (30 + Ink.Sp8 - 2) * s, wellSideHead.Width, 20 * s), ContentAlignment.MiddleLeft);
 
-                Well(g, wellSearch, Ink.RadiusControl * s);
-                KitInk.Draw(g, "\uE721", Ink.Icons(13.5f * s), KitInk.Sub, new RectangleF(wellSearch.X + 10 * s, wellSearch.Y, 20 * s, wellSearch.Height), ContentAlignment.MiddleCenter);
+                Field(g, wellSearch, search.Focused, s);
+                KitInk.Draw(g, "\uE721", Ink.Icons(13.5f * s), search.Focused ? KitInk.Accent : KitInk.Sub, new RectangleF(wellSearch.X + Ink.Sp12 * s, wellSearch.Y, 20 * s, wellSearch.Height), ContentAlignment.MiddleCenter);
 
                 PaintEditorWell(g, s);
             }
@@ -635,58 +646,53 @@ namespace Deskmate
 
         void PaintEditorWell(Graphics g, float s)
         {
-            using (var cardPath = Ink.Round(wellEditor, Ink.RadiusControl * s))
+            float radius = Ink.RadiusCard * s;
+            KitInk.FillRound(g, wellEditor, radius, KitInk.Group);
+            if (current != null)
             {
-                using (var b = new SolidBrush(KitInk.Group)) g.FillPath(b, cardPath);
-                if (current != null)
+                Color noteCol = CurrentNoteColor();
+                if (noteCol != Color.Empty)
                 {
-                    Color noteCol = CurrentNoteColor();
-                    if (noteCol != Color.Empty)
-                    {
-                        var clip = g.Save();
-                        g.SetClip(cardPath, System.Drawing.Drawing2D.CombineMode.Intersect);
-                        using (var hb = new SolidBrush(EditorHeaderColor())) g.FillRectangle(hb, editorHeaderRect);
-                        using (var pen = new Pen(Ink.Mix(KitInk.Line, noteCol, 0.35f), 1f))
-                            g.DrawLine(pen, editorHeaderRect.Left, editorHeaderRect.Bottom, editorHeaderRect.Right, editorHeaderRect.Bottom);
-                        g.Restore(clip);
-                        using (var bpen = new Pen(Ink.Mix(KitInk.Line, noteCol, 0.42f), 1.5f))
-                            g.DrawPath(bpen, cardPath);
-                    }
-                    string rightStatus = saveStatusText.Length > 0 ? saveStatusText : (dirty ? Lang.T("Menyimpan…") : Lang.T("Tersimpan"));
-                    if (owner.DriveNotesLoading) rightStatus = Lang.T("Memuat…");
-                    int statusW = TextRenderer.MeasureText(rightStatus, fSmall, new Size(int.MaxValue, 1000), TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width + (int)(12 * s);
-                    KitInk.Draw(g, noteMetaLine, fSmall, KitInk.Sub, new RectangleF(editorMetaRect.X, editorMetaRect.Y, Math.Max(40, editorMetaRect.Width - statusW), editorMetaRect.Height), ContentAlignment.MiddleLeft);
-                    KitInk.Draw(g, rightStatus, fSmall, saveFailed ? Ink.Base.Negative : KitInk.Faint, new RectangleF(editorMetaRect.Right - statusW, editorMetaRect.Y, statusW, editorMetaRect.Height), ContentAlignment.MiddleRight);
-                    using (var pen = new Pen(KitInk.Line, 1f))
-                        g.DrawLine(pen, wellEditor.X + 18 * s, editorDividerY, wellEditor.Right - 18 * s, editorDividerY);
+                    // Label colour: a tinted header band and a soft edge, nothing louder
+                    var clip = g.Save();
+                    g.SetClip(KitInk.Shape(wellEditor, radius), System.Drawing.Drawing2D.CombineMode.Intersect);
+                    g.FillRectangle(KitInk.BrushOf(EditorHeaderColor()), editorHeaderRect);
+                    g.DrawLine(KitInk.PenOf(Ink.Mix(KitInk.Line, noteCol, 0.35f), 1f), editorHeaderRect.Left, editorHeaderRect.Bottom, editorHeaderRect.Right, editorHeaderRect.Bottom);
+                    g.Restore(clip);
+                    KitInk.StrokeRound(g, wellEditor, radius, Ink.Mix(KitInk.Line, noteCol, 0.42f), 1.5f);
                 }
-                else
-                {
-                    PaintNoteEmpty(g, s);
-                }
+                string rightStatus = saveStatusText.Length > 0 ? saveStatusText : (dirty ? Lang.T("Menyimpan…") : Lang.T("Tersimpan"));
+                if (owner.DriveNotesLoading) rightStatus = Lang.T("Memuat…");
+                int statusW = TextRenderer.MeasureText(rightStatus, fSmall, new Size(int.MaxValue, 1000), TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width + (int)(Ink.Sp12 * s);
+                KitInk.Draw(g, noteMetaLine, fSmall, KitInk.Sub, new RectangleF(editorMetaRect.X, editorMetaRect.Y, Math.Max(40, editorMetaRect.Width - statusW), editorMetaRect.Height), ContentAlignment.MiddleLeft);
+                KitInk.Draw(g, rightStatus, fSmall, saveFailed ? Ink.Base.Negative : KitInk.Faint, new RectangleF(editorMetaRect.Right - statusW, editorMetaRect.Y, statusW, editorMetaRect.Height), ContentAlignment.MiddleRight);
+                g.DrawLine(KitInk.PenOf(KitInk.Line, 1f), editorMetaRect.Left, editorDividerY, editorMetaRect.Right, editorDividerY);
+            }
+            else
+            {
+                PaintNoteEmpty(g, s);
             }
         }
 
         void PaintNoteEmpty(Graphics g, float s)
         {
-            float box = 40 * s;
+            float box = 44 * s;
             float cx = wellEditor.X + wellEditor.Width / 2f;
             float cy = wellEditor.Y + (wellEditor.Height - 54 * s) / 2f;
-            var tile = new RectangleF(cx - box / 2, cy - box / 2, box, box);
-            TaskInk.Pill(g, tile, box * 0.3f, KitInk.Hover);
-            KitInk.Draw(g, "\uE70B", Ink.Icons(20f * s), KitInk.Faint, tile, ContentAlignment.MiddleCenter);
+            var tile = TaskInk.EmptyTile(g, cx, cy, box, KitInk.Group, "\uE70B", s);
             string eTitle, eSub;
             NoteEmptyStrings(out eTitle, out eSub);
-            float ty = tile.Bottom + 8 * s;
-            KitInk.Draw(g, eTitle, Ink.Semi(15f * s), KitInk.Text, new RectangleF(wellEditor.X + 24 * s, ty, wellEditor.Width - 48 * s, 24 * s), ContentAlignment.MiddleCenter);
-            KitInk.Draw(g, eSub, Ink.Text(12.5f * s), KitInk.Sub, new RectangleF(wellEditor.X + 24 * s, ty + 24 * s, wellEditor.Width - 48 * s, 22 * s), ContentAlignment.MiddleCenter);
+            float ty = tile.Bottom + Ink.Sp12 * s;
+            KitInk.Draw(g, eTitle, Ink.Semi(15f * s), KitInk.Text, new RectangleF(wellEditor.X + Ink.Sp24 * s, ty, wellEditor.Width - 2 * Ink.Sp24 * s, 24 * s), ContentAlignment.MiddleCenter);
+            KitInk.Draw(g, eSub, Ink.Text(12.5f * s), KitInk.Sub, new RectangleF(wellEditor.X + Ink.Sp24 * s, ty + 24 * s, wellEditor.Width - 2 * Ink.Sp24 * s, 22 * s), ContentAlignment.MiddleCenter);
         }
 
-        static void Well(Graphics g, Rectangle r, float radius)
+        // Input field: Group one step off the canvas; focus draws the accent edge instead of a ring
+        static void Field(Graphics g, Rectangle r, bool focused, float s)
         {
-            using (var path = Ink.Round(r, radius))
-            using (var b = new SolidBrush(KitInk.Group))
-                g.FillPath(b, path);
+            float radius = Ink.RadiusControl * s;
+            KitInk.FillRound(g, r, radius, KitInk.Group);
+            if (focused) KitInk.StrokeRound(g, RectangleF.Inflate(r, -0.75f * s, -0.75f * s), radius - 0.75f * s, KitInk.Accent, 1.5f * s);
         }
     }
 }

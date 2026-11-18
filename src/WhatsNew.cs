@@ -214,7 +214,7 @@ namespace Deskmate
             BackColor = KitInk.Window;
             Native.DarkFrame(Handle, !Ink.Light);
             // Settings page metrics: 28 margin, 520 group
-            int m = u(28), w = u(520), top = u(78), btnH = u(30);
+            int m = u(28), w = u(520), top = u(78), btnH = u(36);
             list.Width = w;
             list.Measure(s);
             var area = Screen.FromHandle(Handle).WorkingArea;

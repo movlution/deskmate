@@ -122,7 +122,9 @@ namespace Deskmate
             Anim.Read(settings);
             Fmt.H24 = settings.GetBool("clock.24", true);
             Ink.Apply(ThemeLight());
-            Ink.SetAccent(settings.Get("accent", ""));
+            string savedAccent = settings.Get("accent", null), accentHex = savedAccent == null ? Ink.DefaultAccent : Ink.UpgradeAccent(savedAccent);
+            if (savedAccent != null && accentHex != savedAccent) { settings.Set("accent", accentHex); settings.Save(); }
+            Ink.SetAccent(accentHex);
             clockTimer.Tick += delegate { ClockTick(); };
             taskbarPeekTimer.Tick += delegate { EndTaskbarPeek(); };
             toastTimer.Tick += delegate

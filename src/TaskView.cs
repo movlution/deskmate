@@ -40,6 +40,8 @@ namespace Deskmate
         readonly Timer anim = new Timer { Interval = 15 };
         DateTime lastStep;
         bool dragBar;
+        // Row under a held left button: one tint deeper than hover until release
+        string pressId;
         float dragGrab;
         Font strike, strikeBase;
 
@@ -329,63 +331,66 @@ namespace Deskmate
             KitInk.Smooth(g);
             g.Clear(KitInk.Window);
             float s = Ui;
-            using (var cardPath = Ink.Round(new RectangleF(0, 0, Width, Height), Ink.RadiusControl * s))
+            // The list is one card: Group one tone step off the canvas, no border, no shadow
+            var card = new RectangleF(0, 0, Width, Height);
+            KitInk.FillRound(g, card, Ink.RadiusCard * s, TaskInk.Card);
+            g.SetClip(KitInk.Shape(card, Ink.RadiusCard * s));
+            if (plainEmpty)
             {
-                using (var b = new SolidBrush(TaskInk.Card)) g.FillPath(b, cardPath);
-                g.SetClip(cardPath);
-                if (plainEmpty)
-                {
-                    DrawEmpty(g, new RectangleF(0, 0, Width, Height), true);
-                    g.ResetClip();
-                    return;
-                }
-                for (int i = 0; i < rows.Count; i++)
-                {
-                    var r = rows[i];
-                    float top = r.Y - scroll;
-                    if (top + r.H < e.ClipRectangle.Top) continue;
-                    if (top > e.ClipRectangle.Bottom) break;
-                    if (r.Kind == KEmpty) DrawEmpty(g, new RectangleF(0, top, Width, r.H), false);
-                    else if (r.Kind == KDoneHead) DrawDoneHead(g, r, top, i);
-                    else DrawTask(g, r, top, i);
-                }
-                var bar = Bar();
-                if (!bar.IsEmpty) TaskInk.Pill(g, bar, bar.Width / 2f, TaskInk.Fade(TaskInk.Card, KitInk.Text, dragBar ? 0.4f : 0.22f));
-                int at = SelIndex();
-                if (at >= 0)
-                {
-                    var r = rows[at];
-                    Ring(g, new RectangleF(6 * s, r.Y - scroll + 2 * s, Width - 12 * s, r.H - 4 * s), 10 * s);
-                }
+                DrawEmpty(g, card, true);
                 g.ResetClip();
+                return;
             }
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var r = rows[i];
+                float top = r.Y - scroll;
+                if (top + r.H < e.ClipRectangle.Top) continue;
+                if (top > e.ClipRectangle.Bottom) break;
+                if (r.Kind == KEmpty) DrawEmpty(g, new RectangleF(0, top, Width, r.H), false);
+                else if (r.Kind == KDoneHead) DrawDoneHead(g, r, top, i);
+                else DrawTask(g, r, top, i);
+            }
+            var bar = Bar();
+            if (!bar.IsEmpty) TaskInk.Pill(g, bar, bar.Width / 2f, TaskInk.Fade(TaskInk.Card, KitInk.Text, dragBar ? 0.4f : 0.22f));
+            int at = SelIndex();
+            if (at >= 0)
+            {
+                var r = rows[at];
+                Ring(g, RowRect(r.Y - scroll, r.H), TaskInk.RowRadius(RowInset, s));
+            }
+            g.ResetClip();
         }
+
+        // Row highlights sit inside the card by this much, so their corners nest in the card's
+        float RowInset { get { return 6 * Ui; } }
+        RectangleF RowRect(float top, float h) { float i = RowInset; return new RectangleF(i, top + 2 * Ui, Width - 2 * i, h - 4 * Ui); }
 
         void DrawEmpty(Graphics g, RectangleF area, bool big)
         {
             float s = Ui;
-            float box = (big ? 40 : 32) * s;
+            float box = (big ? 44 : 32) * s;
             float cx = area.X + area.Width / 2f;
             float cy = area.Y + (area.Height - (big ? 54 : 30) * s) / 2f;
-            var tile = new RectangleF(cx - box / 2, cy - box / 2, box, box);
-            TaskInk.Pill(g, tile, box * 0.3f, KitInk.Hover);
+            var tile = TaskInk.EmptyTile(g, cx, cy, box, TaskInk.Card, null, s);
             float d = box * 0.46f;
             var ring = new RectangleF(cx - d / 2, cy - d / 2, d, d);
-            using (var pen = new Pen(KitInk.Faint, Math.Max(1.6f, box * 0.045f))) g.DrawEllipse(pen, ring);
-            TaskInk.CheckMark(g, ring, KitInk.Faint, 1f, Math.Max(1.6f, box * 0.045f));
-            float ty = tile.Bottom + 8 * s;
-            KitInk.Draw(g, emptyTitle, Ink.Semi((big ? 15f : 13.5f) * s), KitInk.Text, new RectangleF(area.X + 16 * s, ty, area.Width - 32 * s, 24 * s), ContentAlignment.MiddleCenter);
+            float stroke = Math.Max(1.6f, box * 0.045f);
+            g.DrawEllipse(KitInk.PenOf(KitInk.Accent, stroke), ring);
+            TaskInk.CheckMark(g, ring, KitInk.Accent, 1f, stroke);
+            float ty = tile.Bottom + Ink.Sp12 * s;
+            KitInk.Draw(g, emptyTitle, Ink.Semi((big ? 15f : 13.5f) * s), KitInk.Text, new RectangleF(area.X + Ink.Sp16 * s, ty, area.Width - Ink.Sp32 * s, 24 * s), ContentAlignment.MiddleCenter);
             if (big && emptySub.Length > 0)
-                KitInk.Draw(g, emptySub, Ink.Text(12.5f * s), KitInk.Sub, new RectangleF(area.X + 16 * s, ty + 24 * s, area.Width - 32 * s, 22 * s), ContentAlignment.MiddleCenter);
+                KitInk.Draw(g, emptySub, Ink.Text(12.5f * s), KitInk.Sub, new RectangleF(area.X + Ink.Sp16 * s, ty + 24 * s, area.Width - Ink.Sp32 * s, 22 * s), ContentAlignment.MiddleCenter);
         }
 
         void DrawDoneHead(Graphics g, Rw r, float top, int index)
         {
             float s = Ui;
             bool sel = selHead, hov = hoverRow == index;
-            var pill = new RectangleF(6 * s, top + 2 * s, Width - 12 * s, r.H - 4 * s);
+            var pill = RowRect(top, r.H);
             Color bg = sel ? TaskInk.RowSelected : hov ? TaskInk.RowHover : TaskInk.Card;
-            if (bg != TaskInk.Card) TaskInk.Pill(g, pill, 10 * s, bg);
+            if (bg != TaskInk.Card) TaskInk.Pill(g, pill, TaskInk.RowRadius(RowInset, s), bg);
             KitInk.Draw(g, doneOpen ? "\uE70D" : "\uE76C", Ink.Icons(12f * s), KitInk.Sub, new RectangleF(10 * s, top, 24 * s, r.H), ContentAlignment.MiddleCenter);
             KitInk.Draw(g, Lang.T("Selesai") + " (" + doneCount.ToString(CultureInfo.InvariantCulture) + ")", Ink.Semi(13f * s), KitInk.Sub, new RectangleF(40 * s, top, Width - 60 * s, r.H), ContentAlignment.MiddleLeft);
         }
@@ -396,9 +401,9 @@ namespace Deskmate
             var t = r.Item;
             bool sel = !selHead && t.Id == selId;
             float amt = HotAmt(t.Id);
-            var pill = new RectangleF(6 * s, top + 2 * s, Width - 12 * s, r.H - 4 * s);
-            Color bg = sel ? TaskInk.RowSelected : TaskInk.Fade(TaskInk.Card, TaskInk.RowHover, amt);
-            if (bg != TaskInk.Card) TaskInk.Pill(g, pill, 10 * s, bg);
+            var pill = RowRect(top, r.H);
+            Color bg = pressId == t.Id ? TaskInk.RowPressed : sel ? TaskInk.RowSelected : TaskInk.Fade(TaskInk.Card, TaskInk.RowHover, amt);
+            if (bg != TaskInk.Card) TaskInk.Pill(g, pill, TaskInk.RowRadius(RowInset, s), bg);
             var geo = Geometry(r, top);
             float first = geo.Circle.Y + geo.Circle.Height / 2f;
             bool cellHere = hoverRow == index;
@@ -417,32 +422,34 @@ namespace Deskmate
             Color ring = TaskInk.Fade(onCircle ? KitInk.Sub : KitInk.Faint, KitInk.Accent, p);
             float stroke = 1.8f * s;
             var rc = RectangleF.Inflate(circle, -stroke / 2, -stroke / 2);
-            if (p < 1f) using (var pen = new Pen(ring, stroke)) g.DrawEllipse(pen, rc);
+            if (p < 1f) g.DrawEllipse(KitInk.PenOf(ring, stroke), rc);
             if (p > 0f)
             {
                 float k = circle.Width / 2f * p;
-                using (var b = new SolidBrush(KitInk.Accent)) g.FillEllipse(b, circle.X + circle.Width / 2f - k, circle.Y + circle.Height / 2f - k, k * 2, k * 2);
+                g.FillEllipse(KitInk.BrushOf(KitInk.Accent), circle.X + circle.Width / 2f - k, circle.Y + circle.Height / 2f - k, k * 2, k * 2);
                 TaskInk.CheckMark(g, circle, KitInk.OnAccent, Math.Max(0f, (p - 0.35f) / 0.65f), 2f * s);
             }
             else if (onCircle) TaskInk.CheckMark(g, circle, KitInk.Faint, 1f, 1.8f * s);
 
-            // Right edge: star, edit, delete
+            // Right edge: star, edit, delete. Hover squircles nest inside the row (control radius minus the inset)
+            float slotRadius = Ink.RadiusControl * s - 3 * s;
+            Color slotHover = Ink.Mix(bg, KitInk.Text, 0.10f);
             bool shown = amt > 0.02f;
             Color fg = TaskInk.Fade(bg, KitInk.Sub, amt);
             if (shown || t.Star)
             {
                 bool hs = cellHere && hoverCell == CStar;
-                if (hs) TaskInk.Pill(g, RectangleF.Inflate(geo.Star, -1 * s, -1 * s), 9 * s, KitInk.Line);
+                if (hs) TaskInk.Pill(g, RectangleF.Inflate(geo.Star, -1 * s, -1 * s), slotRadius, slotHover);
                 Color sc = t.Star ? KitInk.Accent : (hs ? KitInk.Text : fg);
                 KitInk.Draw(g, t.Star ? "\uE735" : "\uE734", Ink.Icons(15f * s), sc, geo.Star, ContentAlignment.MiddleCenter);
             }
             if (shown)
             {
                 bool he = cellHere && hoverCell == CEdit, hd = cellHere && hoverCell == CDelete;
-                if (he) TaskInk.Pill(g, RectangleF.Inflate(geo.Edit, -1 * s, -1 * s), 9 * s, KitInk.Line);
-                if (hd) TaskInk.Pill(g, RectangleF.Inflate(geo.Del, -1 * s, -1 * s), 9 * s, KitInk.Line);
+                if (he) TaskInk.Pill(g, RectangleF.Inflate(geo.Edit, -1 * s, -1 * s), slotRadius, slotHover);
+                if (hd) TaskInk.Pill(g, RectangleF.Inflate(geo.Del, -1 * s, -1 * s), slotRadius, Ink.Mix(bg, Ink.Base.Negative, 0.14f));
                 KitInk.Draw(g, "\uE70F", Ink.Icons(15f * s), he ? KitInk.Text : fg, geo.Edit, ContentAlignment.MiddleCenter);
-                KitInk.Draw(g, "\uE74D", Ink.Icons(15f * s), hd ? KitInk.Text : fg, geo.Del, ContentAlignment.MiddleCenter);
+                KitInk.Draw(g, "\uE74D", Ink.Icons(15f * s), hd ? Ink.Base.Negative : fg, geo.Del, ContentAlignment.MiddleCenter);
             }
 
             // Due chip, then the list label when several lists share the view
@@ -454,14 +461,15 @@ namespace Deskmate
                 string ds = TaskInk.DueText(t.Due.Value);
                 float w = TextRenderer.MeasureText(ds, fChip, new Size(int.MaxValue, 1000), TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width + 18 * s;
                 var chip = new RectangleF(right - w, first - 11 * s, w, 22 * s);
+                // Calm chips: overdue in soft coral, today in the accent, later neutral, done faded
                 Color fill, ink;
                 if (t.Done) { fill = Ink.Mix(bg, KitInk.Text, 0.05f); ink = KitInk.Faint; }
-                else if (late) { fill = Ink.Mix(bg, Ink.Base.Negative, 0.10f); ink = Ink.Base.Negative; }
-                else if (t.Due.Value.Date == DateTime.Today) { fill = Ink.Mix(bg, KitInk.Text, 0.10f); ink = KitInk.Text; }
+                else if (late) { fill = Ink.Mix(bg, Ink.Base.Negative, 0.14f); ink = Ink.Base.Negative; }
+                else if (t.Due.Value.Date == DateTime.Today) { fill = TaskInk.Wash(bg, 0.16f); ink = KitInk.Accent; }
                 else { fill = Ink.Mix(bg, KitInk.Text, 0.07f); ink = KitInk.Sub; }
-                TaskInk.Pill(g, chip, 11 * s, fill);
+                TaskInk.Pill(g, chip, chip.Height / 2f, fill);
                 KitInk.Draw(g, ds, fChip, ink, chip, ContentAlignment.MiddleCenter);
-                right = chip.Left - 8 * s;
+                right = chip.Left - Ink.Sp8 * s;
             }
             if (showList)
             {
@@ -512,6 +520,7 @@ namespace Deskmate
         protected override void OnMouseLeave(EventArgs e)
         {
             SetHover(null, -1, CNone);
+            if (pressId != null) { pressId = null; Invalidate(); }
             Cursor = Cursors.Default;
             base.OnMouseLeave(e);
         }
@@ -549,6 +558,7 @@ namespace Deskmate
             }
             if (e.Button != MouseButtons.Left) return;
             int cell = CellAt(i, e.Location);
+            if (cell == CNone && e.Clicks == 1) { pressId = t.Id; Invalidate(); }
             if (e.Clicks > 1 && cell == CNone) { if (EditItem != null) EditItem(t); return; }
             if (cell == CCheck && ToggleDone != null) ToggleDone(t);
             else if (cell == CStar && ToggleStar != null) ToggleStar(t);
@@ -560,6 +570,7 @@ namespace Deskmate
         protected override void OnMouseUp(MouseEventArgs e)
         {
             if (dragBar) { dragBar = false; Capture = false; Invalidate(); }
+            if (pressId != null) { pressId = null; Invalidate(); }
             base.OnMouseUp(e);
         }
 

@@ -293,26 +293,21 @@ namespace Deskmate
 
             protected override void OnPaintBackground(PaintEventArgs e)
             {
-                e.Graphics.Clear(KitInk.Window);
-                int sideW = (int)(236 * Ui);
-                using (var b = new SolidBrush(KitInk.Side)) e.Graphics.FillRectangle(b, 0, 0, sideW, ClientSize.Height);
-                // Search field: a rounded well
+                var g = e.Graphics;
+                g.Clear(KitInk.Window);
+                g.FillRectangle(KitInk.BrushOf(KitInk.Side), 0, 0, (int)(236 * Ui), ClientSize.Height);
+                // Search field: a soft well; keyboard focus draws the accent edge
                 var r = SearchWell();
-                KitInk.Smooth(e.Graphics);
-                using (var path = Ink.Round(r, 10 * Ui))
-                {
-                    using (var b = new SolidBrush(search.BackColor)) e.Graphics.FillPath(b, path);
-                    if (search.Focused) using (var pen = new Pen(KitInk.Faint, 1.2f)) e.Graphics.DrawPath(pen, path);
-                }
+                KitInk.Smooth(g);
+                KitInk.FillRound(g, r, Ink.RadiusControl * Ui, search.BackColor);
+                if (search.Focused) KitInk.StrokeRound(g, r, Ink.RadiusControl * Ui, KitInk.Focus, 1.5f * Ui);
                 // Magnifier leads the field
-                using (var icons = new Font(Ink.IconFamily, 13f * Ui, GraphicsUnit.Pixel))
-                    KitInk.Draw(e.Graphics, "\uE721", icons, KitInk.Sub, new RectangleF(r.X + 5 * Ui, r.Y, 24 * Ui, r.Height), ContentAlignment.MiddleCenter);
+                KitInk.Draw(g, "\uE721", Ink.Icons(13f * Ui), KitInk.Sub, new RectangleF(r.X + 5 * Ui, r.Y, 24 * Ui, r.Height), ContentAlignment.MiddleCenter);
                 if (search.Text.Length > 0)
                 {
                     var cr = SearchClearRect();
-                    if (overClear) using (var b = new SolidBrush(KitInk.Hover)) using (var p = Ink.Round(cr, 6 * Ui)) e.Graphics.FillPath(b, p);
-                    using (var cf = new Font(Ink.MenuFamily, 14f * Ui, GraphicsUnit.Pixel))
-                        KitInk.Draw(e.Graphics, "\u00D7", cf, overClear ? KitInk.Text : KitInk.Sub, cr, ContentAlignment.MiddleCenter);
+                    if (overClear) KitInk.FillRound(g, cr, 6 * Ui, KitInk.Hover);
+                    KitInk.Draw(g, "\uE711", Ink.Icons(10f * Ui), overClear ? KitInk.Text : KitInk.Sub, cr, ContentAlignment.MiddleCenter);
                 }
             }
 
@@ -333,7 +328,7 @@ namespace Deskmate
                 content.AutoScrollPosition = Point.Empty;
                 // Outer width: the old page's scrollbar must not narrow rows
                 rowW = content.Width - (int)(56 * Ui) - SystemInformation.VerticalScrollBarWidth;
-                y = 22 * Ui;
+                y = Ink.Sp24 * Ui;
                 if (section == "search")
                 {
                     string q = search.Text.Trim();
@@ -364,7 +359,7 @@ namespace Deskmate
                     Build(section, new List<KitRow>(), true);
                 }
                 // Room under the last group
-                var spacer = new Panel { Location = new Point(0, (int)y), Size = new Size(1, (int)(16 * Ui)), BackColor = KitInk.Window };
+                var spacer = new Panel { Location = new Point(0, (int)y), Size = new Size(1, (int)(Ink.Sp16 * Ui)), BackColor = KitInk.Window };
                 content.Controls.Add(spacer);
                 content.ResumeLayout();
                 building = false;
@@ -399,7 +394,7 @@ namespace Deskmate
 
             void Heading(string text)
             {
-                var l = new Label { Text = text, Font = UiFont(24f), ForeColor = KitInk.Text, BackColor = KitInk.Window, AutoSize = true };
+                var l = new Label { Text = text, Font = Ink.Display(22f * Ui), ForeColor = KitInk.Text, BackColor = KitInk.Window, AutoSize = true };
                 // Ink on the group's edge
                 l.Location = new Point((int)(28 * Ui) - LabelPad(l), (int)y);
                 content.Controls.Add(l);
@@ -424,7 +419,7 @@ namespace Deskmate
                 head.SetBounds((int)(28 * Ui), (int)y, rowW, (int)(60 * Ui));
                 content.Controls.Add(head);
                 tabFocus["head"] = head;
-                y += 78 * Ui;
+                y += (60 + Ink.Sp20) * Ui;
             }
 
             protected override bool ProcessCmdKey(ref Message msg, Keys keys)
@@ -452,17 +447,14 @@ namespace Deskmate
                     g.Clear(KitInk.Under(this));
                     float s = Ui;
                     var tile = new RectangleF(0, 6 * s, 48 * s, 48 * s);
-                    var badge = Ink.Mix(KitInk.Group, KitInk.Accent, 0.12f);
+                    // Same accent whisper as the row tiles, one size up
+                    var badge = Ink.Mix(KitInk.Under(this), KitInk.Accent, Ink.Light ? 0.12f : 0.16f);
                     var glyphInk = Contrast(KitInk.Accent, badge) >= 3.0 ? KitInk.Accent : KitInk.Text;
-                    Fill(g, tile, 13 * s, badge);
-                    using (var icons = new Font(Ink.IconFamily, 22f * s, GraphicsUnit.Pixel)) KitInk.Draw(g, Ink.Str(Glyph), icons, glyphInk, tile, ContentAlignment.MiddleCenter);
-                    using (var tf = new Font(Ink.MenuFamily, 24f * s, FontStyle.Bold, GraphicsUnit.Pixel))
-                    {
-                        float x = 68 * s;
-                        var line = new RectangleF(x, 2 * s, Width - x, 32 * s);
-                        KitInk.Draw(g, Title, tf, KitInk.Text, new RectangleF(x - 2 * s, line.Y, Width - x, line.Height), ContentAlignment.MiddleLeft);
-                    }
-                    using (var nf = new Font(Ink.MenuFamily, 13f * s, GraphicsUnit.Pixel)) KitInk.Draw(g, Note, nf, KitInk.Sub, new RectangleF(68 * s, 34 * s, Width - 68 * s, 22 * s), ContentAlignment.MiddleLeft);
+                    Fill(g, tile, Ink.RadiusCard * s, badge);
+                    KitInk.Draw(g, Ink.Str(Glyph), Ink.Icons(22f * s), glyphInk, tile, ContentAlignment.MiddleCenter);
+                    float x = 68 * s;
+                    KitInk.Draw(g, Title, Ink.Display(24f * s), KitInk.Text, new RectangleF(x - 2 * s, 2 * s, Width - x, 32 * s), ContentAlignment.MiddleLeft);
+                    KitInk.Draw(g, Note, Ink.Text(13f * s), KitInk.Sub, new RectangleF(x, 34 * s, Width - x, 22 * s), ContentAlignment.MiddleLeft);
                 }
             }
 
@@ -475,13 +467,24 @@ namespace Deskmate
                 return r;
             }
 
+            // Section heading: small semibold, closer to its group than to the one above
             void Caption(string text)
             {
-                var l = new Label { Text = text, Font = UiFont(12f), ForeColor = KitInk.Sub, BackColor = KitInk.Window, AutoSize = true };
+                y += Ink.Sp8 * Ui;
+                var l = new Label { Text = text, Font = Ink.SmallSemi(12f * Ui), ForeColor = KitInk.Sub, BackColor = KitInk.Window, AutoSize = true };
                 // Ink lines up with the row icons
                 l.Location = new Point((int)(42 * Ui) - LabelPad(l), (int)y);
                 content.Controls.Add(l);
-                y += 24 * Ui;
+                y += Ink.Sp24 * Ui;
+            }
+
+            // Guidance under a heading: body weight, so it never reads as another heading
+            void Note(string text)
+            {
+                var l = new Label { Text = text, Font = Ink.Text(12.5f * Ui), ForeColor = KitInk.Sub, BackColor = KitInk.Window, AutoSize = true };
+                l.Location = new Point((int)(42 * Ui) - LabelPad(l), (int)y);
+                content.Controls.Add(l);
+                y += Ink.Sp24 * Ui;
             }
 
             // Rows into one rounded group
@@ -501,7 +504,7 @@ namespace Deskmate
                 }
                 g.Height = top;
                 content.Controls.Add(g);
-                y += top + 22 * Ui;
+                y += top + Ink.Sp24 * Ui;
             }
 
             void PlaceField(KitRow r)
@@ -545,6 +548,7 @@ namespace Deskmate
                 new[] { "Buka jendela teleprompter", "\uE8A7" }, new[] { "Hentikan", "\uE71A" }, new[] { "Pintasan bawaan", "\uE765" }, new[] { "Tambah aplikasi", "\uE710" }, new[] { "Format jam", "\uE823" }, new[] { "Pakai warna sendiri", "\uE790" }, new[] { "Simpan jadi paket", "\uE74E" }, new[] { "Pembuat paket", "\uE774" }, new[] { "Pindai dari HP", "\uED14" }, new[] { "Aplikasi chat tambahan", "\uE8BD" }, new[] { "Pengirim prioritas", "\uE77B" }, new[] { "Senyap ikut Windows", "\uE708" }, new[] { "Suara", "\uE767" }, new[] { "Simpan isi rak", "\uE74E" }, new[] { "Kosongkan rak otomatis", "\uE916" }, new[] { "Ambil warna", "\uE790" }, new[] { "Ekspor pengaturan", "\uEDE1" }, new[] { "Dikte", "\uE720" }, new[] { "Tombol dikte", "\uE765" }, new[] { "Bahasa ucapan", "\uE774" }, new[] { "Mesin dikte", "\uE720" }, new[] { "Key Groq", "\uE8D7" }, new[] { "Buat key Groq", "\uE774" }, new[] { "Model offline", "\uE896" }, new[] { "Siap dipakai", "\uE73E" }, new[] { "Mengunduh", "\uE896" }, new[] { "Unduh model", "\uE896" }, new[] { "Kamus dan snippet", "\uE70B" }, new[] { "Buang kata pengisi", "\uE74D" }, new[] { "Perintah baris baru", "\uE751" }, new[] { "Gaya per aplikasi", "\uE71D" }, new[] { "Kecilkan musik", "\uE8D6" }, new[] { "Tempel dikte terakhir", "\uE77F" }, new[] { "Rekam rapat", "\uE7C8" }, new[] { "Ringkasan dan to-do", "\uE8A5" }, new[] { "Folder transkrip", "\uE8B7" }, new[] { "Apa yang baru", "\uE789" }, new[] { "Tur Deskmate", "\uE7C1" }, new[] { "GitHub", "\uE943" }, new[] { "Kirim saran", "\uED15" }, new[] { "Bicara", "\uE720" }, new[] { "Suruh Deskmate", "\uE765" }, new[] { "Instagram", "\uE722" }, new[] { "LinkedIn", "\uE716" }, new[] { "Impor pengaturan", "\uE8B5" }, new[] { "Setel ulang pengaturan", "\uE72C" },
                 new[] { "Banner pesan", "\uE8BD" }, new[] { "Banner Windows masih nyala", "\uE7BA" }, new[] { "Deskmate penerima utama", "\uEA8F" }, new[] { "Mode berbagi layar", "\uE7F4" }, new[] { "Isi kiri", "\uE8A0" }, new[] { "Isi kanan", "\uE8A0" },
                 new[] { "Atur Notch", "\uE737" }, new[] { "Atur Dock", "\uE90E" }, new[] { "Beranda", "\uE80F" }, new[] { "Lokasi & Cuaca", "\uE707" }, new[] { "Tema & Gaya", "\uE790" },
+                new[] { "Warna aksen", "\uE790" }, new[] { "Sinkronkan wallpaper", "\uE771" }, new[] { "Warna kustom", "\uE790" }, new[] { "Senyap", "\uE708" }, new[] { "Integrasi", "\uE71B" }, new[] { "Gamifikasi Ketikan", "\uE7FC" }, new[] { "Pembaruan", "\uE72C" }, new[] { "Layanan luar", "\uE774" },
                 new[] { "Rapikan Downloads", "\uE8B7" }, new[] { "Susunan folder", "\uE8B7" }, new[] { "Tawarkan saat", "\uEA8F" }, new[] { "Rapikan sekarang", "\uE8B7" }, new[] { "Urungkan rapikan terakhir", "\uE7A7" },
                 new[] { "Layanan teks", "\uE8F2" }, new[] { "Mesin suara", "\uE720" }, new[] { "Yang dikirim", "\uE72E" }, new[] { "Perbaiki teks terpilih", "\uE8AC" }, new[] { "Terjemahkan teks terpilih", "\uE8C1" },
                 new[] { "Kustomisasi gamifikasi", "\uE7FC" }, new[] { "Overdrive / Fever Mode", "\uE945" }, new[] { "Finisher tombol Enter", "\uE751" },
@@ -564,7 +568,7 @@ namespace Deskmate
 
             KitRow Row(string title, string detail, Control field)
             {
-                var r = new KitRow { Title = title, Detail = detail ?? "", Field = field, Height = (int)((string.IsNullOrEmpty(detail) ? 52 : 62) * Ui), Glyph = GlyphFor(title) };
+                var r = new KitRow { Title = title, Detail = detail ?? "", Field = field, Height = (int)((string.IsNullOrEmpty(detail) ? 56 : 64) * Ui), Glyph = GlyphFor(title) };
                 if (field != null)
                 {
                     field.AccessibleName = title;
@@ -733,8 +737,8 @@ namespace Deskmate
             KitSegmented Seg(string[] items, int selected, Action<int> changed)
             {
                 float w = 0;
-                using (var f = UiFont(12.5f)) foreach (var it in items) w = Math.Max(w, TextRenderer.MeasureText(it, f).Width);
-                var c = new KitSegmented { Items = items, Size = new Size((int)((w + 30 * Ui) * items.Length), (int)(30 * Ui)) };
+                foreach (var it in items) w = Math.Max(w, TextRenderer.MeasureText(it, Ink.Semi(12.5f * Ui)).Width);
+                var c = new KitSegmented { Items = items, Size = new Size((int)((w + 30 * Ui) * items.Length), (int)(ControlH * Ui)) };
                 c.Selected = selected;
                 c.Changed += i => { if (!building) changed(i); };
                 return c;
@@ -742,18 +746,18 @@ namespace Deskmate
 
             KitSlider Slider(int min, int max, int step, int value, Func<int, string> fmt, Action<int> changed)
             {
-                var c = new KitSlider { Minimum = min, Maximum = max, Step = step, Value = Math.Max(min, Math.Min(max, value)), Format = fmt, ShowValue = true, Size = new Size((int)(270 * Ui), (int)(30 * Ui)) };
+                var c = new KitSlider { Minimum = min, Maximum = max, Step = step, Value = Math.Max(min, Math.Min(max, value)), Format = fmt, ShowValue = true, Size = new Size((int)(270 * Ui), (int)(ControlH * Ui)) };
                 c.Changed += v => { if (!building) { changed(v); content.Invalidate(true); } };
                 return c;
             }
 
             KitPopup Popup(string[] items, int selected, Action<int> changed)
             {
-                var c = new KitPopup { Items = items, Font = UiFont(12.5f) };
+                var c = new KitPopup { Items = items, Font = Ink.Text(12.5f * Ui) };
                 c.Selected = selected;
                 float w = 0;
-                using (var f = UiFont(12.5f)) foreach (var it in items) w = Math.Max(w, TextRenderer.MeasureText(it + "  ▾", f).Width);
-                c.Size = new Size((int)Math.Min(260 * Ui, w + 30 * Ui), (int)(30 * Ui));
+                foreach (var it in items) w = Math.Max(w, TextRenderer.MeasureText(it + "  ▾", c.Font).Width);
+                c.Size = new Size((int)Math.Min(260 * Ui, w + 30 * Ui), (int)(ControlH * Ui));
                 c.Changed += i => { if (!building) changed(i); };
                 return c;
             }
@@ -786,21 +790,21 @@ namespace Deskmate
             }
 
             // Swatch row; a pick repaints island and window
-            // Starting points that read well together
+            // Starting points that read well together; the brand night, ivory, and plum ink lead
             static string[][] SwatchPresets(string key)
             {
-                if (key == "bg") return new[] { new[] { "Hitam", "#000000" }, new[] { "Arang", "#1C1C1E" }, new[] { "Navy", "#0E1734" }, new[] { "Hijau tua", "#0F2A22" }, new[] { "Putih", "#FFFFFF" }, new[] { "Krem", "#F5EFE6" } };
-                if (key == "text") return new[] { new[] { "Putih", "#FFFFFF" }, new[] { "Putih lembut", "#EEF4FF" }, new[] { "Hitam", "#111111" }, new[] { "Cokelat tua", "#3B2F2F" } };
+                if (key == "bg") return new[] { new[] { "Malam", "#1C1A22" }, new[] { "Gading", "#F5F2EC" }, new[] { "Hitam", "#000000" }, new[] { "Arang", "#1C1C1E" }, new[] { "Navy", "#0E1734" }, new[] { "Hijau tua", "#0F2A22" }, new[] { "Putih", "#FFFFFF" }, new[] { "Krem", "#F5EFE6" } };
+                if (key == "text") return new[] { new[] { "Gading", "#F5F2EC" }, new[] { "Plum", "#211C2A" }, new[] { "Putih", "#FFFFFF" }, new[] { "Putih lembut", "#EEF4FF" }, new[] { "Hitam", "#111111" }, new[] { "Cokelat tua", "#3B2F2F" } };
                 var list = new System.Collections.Generic.List<string[]>();
-                var table = Ink.Light ? AccentsLight : Accents;
+                var table = Ink.Light ? Ink.LightAccents : Ink.DarkAccents;
                 foreach (var a in table) if (a[1].StartsWith("#")) list.Add(a);
                 return list.ToArray();
             }
 
             KitRow ColorRow(string key, string title, string detail)
             {
-                var sw = new KitSwatch { Font = UiFont(12.5f), Value = island.CustomColor(key), Presets = SwatchPresets(key) };
-                sw.Size = new Size(TextRenderer.MeasureText("      #DDDDDD", sw.Font).Width + (int)(32 * Ui), (int)(30 * Ui));
+                var sw = new KitSwatch { Font = Ink.Text(12.5f * Ui), Value = island.CustomColor(key), Presets = SwatchPresets(key) };
+                sw.Size = new Size(TextRenderer.MeasureText("      #DDDDDD", sw.Font).Width + (int)(32 * Ui), (int)(ControlH * Ui));
                 sw.Picked += c => { island.SetCustomColor(key, c); BeginInvoke(new Action(Relayout)); };
                 var row = Row(title, detail, sw);
                 row.Glyph = '\uE790';
@@ -817,9 +821,9 @@ namespace Deskmate
             // Shortcut row: detail shows default or the clash
             KitRow HotkeyRow(HotkeyDef d)
             {
-                var field = new KitHotkey { Font = UiFont(12.5f) };
+                var field = new KitHotkey { Font = Ink.Text(12.5f * Ui) };
                 var row = Row(Lang.T(d.Name), HotkeyDetail(d), field);
-                field.Size = new Size(TextRenderer.MeasureText("Ctrl+Alt+Shift+PageDown", field.Font).Width + (int)(32 * Ui), (int)(30 * Ui));
+                field.Size = new Size(TextRenderer.MeasureText("Ctrl+Alt+Shift+PageDown", field.Font).Width + (int)(32 * Ui), (int)(ControlH * Ui));
                 field.Combo = island.HotkeyText(d.Id);
                 field.Begin = delegate { island.HoldHotkeys(true); };
                 field.End = delegate { island.HoldHotkeys(false); };
@@ -841,10 +845,13 @@ namespace Deskmate
                 return d.Fallback.Length == 0 ? Lang.T("Tanpa pintasan bawaan") : Lang.F("Bawaan: {0}", d.Fallback);
             }
 
+            // Row controls: the 36px target from DESIGN.md
+            const float ControlH = 36;
+
             KitButton Button(string text, bool primary, Action click)
             {
-                var b = new KitButton { Text = text, Primary = primary, Font = UiFont(12.5f) };
-                b.Size = new Size(TextRenderer.MeasureText(text, b.Font).Width + (int)(32 * Ui), (int)(30 * Ui));
+                var b = new KitButton { Text = text, Primary = primary, Font = Ink.Text(12.5f * Ui) };
+                b.Size = new Size(TextRenderer.MeasureText(text, b.Font).Width + (int)(32 * Ui), (int)(ControlH * Ui));
                 b.Click += delegate { click(); };
                 return b;
             }

@@ -517,7 +517,8 @@ namespace Deskmate
                     }
                     var st = g.Save();
                     if (!glass) g.SetClip(path, CombineMode.Intersect);
-                    int topWash = dock.Glass ? GlassRecipe.TopWash(kind, Ink.Light) : (Ink.Light ? 80 : 22);
+                    // Solid paper sheets stay one flat tone; only the night keeps a faint top light
+                    int topWash = dock.Glass ? GlassRecipe.TopWash(kind, Ink.Light) : (Ink.Light ? 0 : 22);
                     using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 58), Color.FromArgb((int)(fade * topWash), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
                     {
                         // No wrap: a tiled gradient leaves a bright seam
@@ -703,7 +704,7 @@ namespace Deskmate
                 if (available) Hit(new RectangleF(cx - 44, cy - r - 6, 88, more != null ? d + 10 : d + 32), id);
                 bool hover = available && hotId == id, down = available && pressId == id;
                 var circle = new RectangleF(cx - r, cy - r, d, d);
-                Color fill = on ? (down ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.22f) : hover ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent)
+                Color fill = on ? (down ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.22f) : hover ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent)
                                 : down ? p.T.FillPressed : hover ? p.T.FillHover : p.T.Fill;
                 var sq = Squish(id, circle, 0.08f);
                 if (on) p.Circle(cx, cy, r, fill);

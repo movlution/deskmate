@@ -192,7 +192,7 @@ namespace Deskmate
                         float dcy = ddown ? cy + 0.75f : cy;
                         if (isToday)
                         {
-                            Color fill = ddown ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.22f) : dhot ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent;
+                            Color fill = ddown ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.22f) : dhot ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent;
                             p.Circle(cx, dcy, 16, fill);
                         }
                         else if (ddown || dhot)
@@ -232,8 +232,8 @@ namespace Deskmate
                     Hit(addRect, "addEvent");
                     bool addDown = Down("addEvent");
                     if (addDown) addRect.Offset(0, 0.75f);
-                    Color addFill = addDown ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.22f)
-                                            : hotId == "addEvent" ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f)
+                    Color addFill = addDown ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.22f)
+                                            : hotId == "addEvent" ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f)
                                             : p.T.Accent;
                     p.FillRound(addRect, 12, addFill);
                     p.TextCenter(addLbl, Ink.Semi(11.5f), p.T.OnAccent, addRect.X + addW / 2, addRect.Y + addRect.Height / 2);
@@ -277,7 +277,7 @@ namespace Deskmate
                 Hit(b, "quiet");
                 bool qdown = Down("quiet");
                 if (qdown) b.Offset(0, 0.75f);
-                Color qfill = quiet ? (qdown ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.22f) : hotId == "quiet" ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent)
+                Color qfill = quiet ? (qdown ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.22f) : hotId == "quiet" ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent)
                                     : (qdown ? p.T.FillPressed : hotId == "quiet" ? p.T.FillHover : p.T.Fill);
                 p.FillRound(b, 15, qfill);
                 float bcy = b.Y + b.Height / 2;

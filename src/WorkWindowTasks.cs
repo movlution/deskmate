@@ -723,13 +723,20 @@ namespace Deskmate
                 };
                 Controls.AddRange(new Control[] { input, cancelBtn, okBtn });
                 Shown += delegate { input.Focus(); input.SelectAll(); };
+                // The input's accent edge follows focus, like the composer in WorkWindow
+                input.GotFocus += delegate { Invalidate(Rectangle.Inflate(inputWell, 2, 2)); };
+                input.LostFocus += delegate { Invalidate(Rectangle.Inflate(inputWell, 2, 2)); };
             }
 
             protected override void OnPaintBackground(PaintEventArgs e)
             {
                 base.OnPaintBackground(e);
-                KitInk.Smooth(e.Graphics);
-                Well(e.Graphics, inputWell, Ink.RadiusControl * Ui);
+                var g = e.Graphics;
+                KitInk.Smooth(g);
+                float s = Ui;
+                float radius = Ink.RadiusControl * s;
+                KitInk.FillRound(g, inputWell, radius, KitInk.Group);
+                if (input.Focused) KitInk.StrokeRound(g, RectangleF.Inflate(inputWell, -0.75f * s, -0.75f * s), radius - 0.75f * s, KitInk.Accent, 1.5f * s);
             }
         }
 

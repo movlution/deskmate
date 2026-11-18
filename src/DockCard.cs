@@ -429,7 +429,7 @@ namespace Deskmate
                     else if (plate != null && dock.Glass) veil = GlassRecipe.PlateVeil(kind);
                     else veil = 0.94f;
                     g.FillPath(p.B(Ink.A(Ink.Veil, veil)), path);
-                    int topWash = dock.Glass ? GlassRecipe.TopWash(kind, Ink.Light) : (Ink.Light ? 80 : 22);
+                    int topWash = dock.Glass ? GlassRecipe.TopWash(kind, Ink.Light) : (Ink.Light ? 0 : 22);
                     using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 40), Color.FromArgb((int)(fade * topWash), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
                         g.FillRectangle(lg, r.X, r.Y, r.Width, 39);
                     g.Restore(st);
@@ -587,7 +587,7 @@ namespace Deskmate
                     {
                         hits.Add(new KeyValuePair<RectangleF, string>(close, "x" + id));
                         if (hot == "x" + id) p.FillRound(close, 6, p.T.Negative);
-                        p.Icon('\uE711', 9.5f, hot == "x" + id ? (p.T.IsDark ? p.T.Bg : Color.White) : p.T.Sub, close.X + close.Width / 2, close.Y + close.Height / 2);
+                        p.Icon('\uE711', 9.5f, hot == "x" + id ? (p.T.IsDark ? p.T.Bg : Ink.Sheen(255)) : p.T.Sub, close.X + close.Width / 2, close.Y + close.Height / 2);
                     }
                     // Seen only when Windows has no live picture of the window
                     p.FillRound(pic, 8, p.T.Fill);

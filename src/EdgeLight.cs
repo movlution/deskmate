@@ -220,13 +220,25 @@ namespace Deskmate
             Kick();
         }
 
+        // Reused per frame; slot 0 of the combo set follows the tier
+        readonly Color[] edgeComboInk = { Color.Empty, Ink.FxGold, Ink.FxSky, Ink.FxRose, Ink.FxMint };
+        readonly Color[] calmConfetti = new Color[3];
+
         void DrawConfetti(DateTime now, RectangleF r)
         {
             double t = (now - celebrateUtc).TotalSeconds;
             if (t >= ConfettiSec || t < 0) return;
-            Color[] ink = current == View.Combo
-                ? new Color[] { ComboTierColor(ComboTier, t * 2.5), Color.FromArgb(255, 255, 214, 10), Color.FromArgb(255, 50, 173, 230), Color.FromArgb(255, 255, 55, 95), Color.FromArgb(255, 48, 209, 88) }
-                : new Color[] { p.T.Accent, p.T.Text, p.T.Sub };
+            Color[] ink;
+            if (current == View.Combo)
+            {
+                edgeComboInk[0] = ComboTierColor(ComboTier, t * 2.5);
+                ink = edgeComboInk;
+            }
+            else
+            {
+                calmConfetti[0] = p.T.Accent; calmConfetti[1] = p.T.Text; calmConfetti[2] = p.T.Sub;
+                ink = calmConfetti;
+            }
             float fade = 1 - Ease.Clamp01((float)((t - 1.2) / 0.6));
             for (int i = 0; i < 22; i++)
             {

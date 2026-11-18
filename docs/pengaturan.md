@@ -75,8 +75,8 @@ Semua kunci di `%APPDATA%\Deskmate\settings.ini` (ubah saat Deskmate tidak berja
 | `agent.wait` | `110` | Detik menahan permintaan izin |
 | `sound.agent` | `0` | Suara saat agen minta izin atau selesai, dan saat `--run` selesai |
 | `update.check` | `1` | Cek versi baru sekali sehari |
-| `accent` | kosong | Warna aksen, misalnya `#4C8DFF`; kosong untuk monokrom; `album` mengambil warna dari sampul lagu yang diputar |
-| `wall.sync` | `0` | Kaca notch, dock, dan kartu diwarnai dari wallpaper; Bening paling tembus pandang, Frost paling pekat; dock punya inti solid dan tepi tembus pandang agar latar belakang samar terlihat; perubahan wallpaper ikut terdeteksi; aksen ikut jika `accent` kosong; mati saat warna sendiri dipakai |
+| `accent` | tidak ada (Ungu tenang `#AE9DEB`) | Warna aksen, misalnya `#8FB1E6`; kosong untuk Grafit (monokrom); `album` mengambil warna dari sampul lagu yang diputar. Preset jenuh dari versi lama dipindah otomatis ke versi tenangnya saat Deskmate dibuka |
+| `wall.sync` | `0` | Kaca notch, dock, dan kartu diwarnai dari wallpaper; Bening paling tembus pandang, Frost paling pekat; dock punya inti solid dan tepi tembus pandang agar latar belakang samar terlihat; perubahan wallpaper ikut terdeteksi; aksen ikut wallpaper selama `accent` belum diatur atau kosong; mati saat warna sendiri dipakai |
 | `monitor` | kosong | Monitor tempat island tampil; kosong untuk monitor utama. Nilai perangkat Windows yang sah disimpan otomatis; layar yang sementara dicabut memakai monitor utama sampai tersambung kembali. Dock tampil di semua monitor yang tersambung. |
 | `focus.break` | `5` | Menit istirahat setelah fokus |
 | `dock` | `1` | Menempel di tepi layar; `0` untuk mengambang |
