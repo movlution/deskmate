@@ -16,10 +16,16 @@ namespace Deskmate
         static extern bool SpiGetString(uint action, uint size, StringBuilder buf, uint ini);
 
         readonly System.Windows.Forms.Timer wallDebounce = new System.Windows.Forms.Timer { Interval = 800 };
+        readonly System.Windows.Forms.Timer wallPoll = new System.Windows.Forms.Timer { Interval = 5000 };
         bool wallHooked;
         int wallBusy, wallGlassGen;
         // Dominant wallpaper hue, as read; null for greys
         Color? wallPick;
+        // Last file read; Spotlight changes the path, so polling is cheap
+        string wallSeenPath;
+        DateTime wallSeenAt;
+        long wallSeenLen;
+        bool wallSeen;
         // Accent we set ourselves, so it can be given back
         string wallAccent;
 
@@ -32,8 +38,13 @@ namespace Deskmate
             if (wallHooked) return;
             wallHooked = true;
             wallDebounce.Tick += delegate { wallDebounce.Stop(); WallRead(); };
+            wallPoll.Tick += delegate { WallRead(); };
             SystemEvents.UserPreferenceChanged += OnWallPrefs;
-            if (settings.GetBool("wall.sync", false)) WallRead();
+            if (settings.GetBool("wall.sync", false))
+            {
+                wallPoll.Start();
+                WallRead();
+            }
         }
 
         void StopWallSync()
@@ -42,6 +53,7 @@ namespace Deskmate
             wallHooked = false;
             SystemEvents.UserPreferenceChanged -= OnWallPrefs;
             wallDebounce.Stop();
+            wallPoll.Stop();
         }
 
         // Wallpaper or slideshow moved on: look again once it settles
@@ -54,9 +66,14 @@ namespace Deskmate
         // Switch flipped in settings
         void WallToggle(bool on)
         {
-            if (on) WallRead();
+            if (on)
+            {
+                wallPoll.Start();
+                WallRead();
+            }
             else
             {
+                wallPoll.Stop();
                 WallBackdrop.Clear();
                 WallApply();
             }
@@ -66,22 +83,46 @@ namespace Deskmate
         void WallRead()
         {
             if (!settings.GetBool("wall.sync", false)) return;
+            string path = WallpaperPath();
+            DateTime at = DateTime.MinValue;
+            long len = 0;
+            bool seen = path.Length > 0 && File.Exists(path);
+            if (seen)
+            {
+                try
+                {
+                    var info = new FileInfo(path);
+                    at = info.LastWriteTimeUtc;
+                    len = info.Length;
+                }
+                catch (Exception) { seen = false; }
+            }
+            // Spotlight swaps the file path; a still wallpaper can skip the decode
+            if (seen && wallSeen && path == wallSeenPath && at == wallSeenAt && len == wallSeenLen) return;
             if (Interlocked.Exchange(ref wallBusy, 1) != 0) { wallDebounce.Stop(); wallDebounce.Start(); return; }
             ThreadPool.QueueUserWorkItem(delegate
             {
                 Color? pick = null;
-                try { pick = WallPickNow(); }
+                bool read = false;
+                try { pick = WallPickNow(); read = true; }
                 catch (Exception ex) { Log.Write("wall sync: " + ex.Message); }
                 Post(delegate
                 {
                     Interlocked.Exchange(ref wallBusy, 0);
+                    if (read && seen)
+                    {
+                        wallSeen = true;
+                        wallSeenPath = path;
+                        wallSeenAt = at;
+                        wallSeenLen = len;
+                    }
                     wallPick = pick;
                     WallApply();
                 });
             });
         }
 
-        static Color? WallPickNow()
+        static string WallpaperPath()
         {
             var sb = new StringBuilder(520);
             string path = SpiGetString(0x73, 520, sb, 0) ? sb.ToString() : "";
@@ -91,6 +132,12 @@ namespace Deskmate
                 string cached = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Themes\TranscodedWallpaper");
                 path = File.Exists(cached) ? cached : "";
             }
+            return path;
+        }
+
+        static Color? WallPickNow()
+        {
+            string path = WallpaperPath();
             if (path.Length > 0)
             {
                 using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))

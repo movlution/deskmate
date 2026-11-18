@@ -103,6 +103,8 @@ Describe "Feature 4: Liquid Glass Color Space Blending" {
         Assert-True ($dockSrc -match 'WallBackdrop\.Draw') "Dock, card, and sheet frost must fill from the wallpaper tint"
         Assert-True ($syncSrc -match 'WallBackdrop\.SetTint') "WallApply must pass the wallpaper veil to the glass source"
         Assert-True ($syncSrc -match 'WallVeil\(wallPick\.Value') "The glass tint must come from the sampled wallpaper hue"
+        Assert-True ($syncSrc -match 'wallPoll\.Start\(\)') "Wall sync must keep watching for wallpaper changes"
+        Assert-True ($syncSrc -match 'LastWriteTimeUtc') "Wall sync must skip unchanged wallpaper files"
         Assert-True ($glassSrc -match 'GpuGlassOn[^\r\n]*WallGlassOn') "Wall-synced island glass must bypass the live GPU backdrop"
         Assert-True ($wallSrc -notmatch 'Image\.FromStream') "WallBackdrop must not decode the wallpaper picture"
         Assert-True ($wallSrc -notmatch 'WallpaperStyle') "WallBackdrop must not reproduce wallpaper geometry"
