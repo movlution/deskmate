@@ -341,6 +341,8 @@ namespace Deskmate
                             using (var tintBrush = new SolidBrush(Ink.A(job.Bg, frostTint))) fg.FillRectangle(tintBrush, 0, 0, w, h);
                         }
                     }
+                    // A small window onto the desktop, only for wallpaper-tinted glass
+                    WallBackdrop.Fade(pl.Base);
                     if (job.Panel)
                     {
                         lastPanelMs = t0;

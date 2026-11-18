@@ -145,6 +145,35 @@ Describe "Feature 4: Liquid Glass Color Space Blending" {
         }
     }
 
+    It "Verifies wallpaper glass leaves a little desktop visible" {
+        $wall = Get-DeskmateType "WallBackdrop"
+        $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+        $glassSrc = Get-Content (Join-Path $projectRoot "src\Glass.cs") -Raw
+        $dockSrc = Get-Content (Join-Path $projectRoot "src\DockFrost.cs") -Raw
+        Assert-True ($glassSrc -match 'WallBackdrop\.Fade\(pl\.Base\)') "Island shell must fade its wallpaper-tinted plate"
+        Assert-True ($dockSrc -match 'WallBackdrop\.Fade\(img\)') "Dock, card, and sheet plates must fade their wallpaper tint"
+        $fade = $wall.GetMethod("Fade", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
+        $setActive = $wall.GetMethod("SetActive", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
+        $clear = $wall.GetMethod("Clear", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
+        Assert-NotNull $fade "WallBackdrop.Fade must exist"
+        Assert-NotNull $setActive "WallBackdrop.SetActive must exist"
+        Assert-NotNull $clear "WallBackdrop.Clear must exist"
+        $plate = New-Object System.Drawing.Bitmap 4, 4, ([System.Drawing.Imaging.PixelFormat]::Format32bppPArgb)
+        try {
+            $pg = [System.Drawing.Graphics]::FromImage($plate)
+            try { $pg.Clear([System.Drawing.Color]::FromArgb(255, 38, 80, 160)) } finally { $pg.Dispose() }
+            $setActive.Invoke($null, [object[]]@($true))
+            $fade.Invoke($null, [object[]]@([System.Drawing.Bitmap]$plate))
+            $alpha = $plate.GetPixel(1, 1).A
+            Assert-True ($alpha -lt 255) "Wallpaper plate must leave the desktop slightly visible (alpha: $alpha)"
+            Assert-True ($alpha -ge 210) "Wallpaper plate must stay mostly opaque (alpha: $alpha)"
+        }
+        finally {
+            $clear.Invoke($null, @())
+            $plate.Dispose()
+        }
+    }
+
     It "Verifies ClearPass preserves backdrop chroma under a thin veil" {
         $w = 24; $h = 18
         $bmp = New-Object System.Drawing.Bitmap $w, $h, ([System.Drawing.Imaging.PixelFormat]::Format32bppRgb)

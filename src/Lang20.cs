@@ -74,7 +74,7 @@ namespace Deskmate
             en.Add("Bening", "Clear");
             en.Add("Bening, mengikuti warna di belakangnya", "Clear, follows the colors behind it");
             en.Add("Sinkronkan wallpaper", "Sync wallpaper");
-            en.Add("Kaca diwarnai dari wallpaper, bukan gambar atau jendela di belakangnya; blur tetap", "Glass is tinted from the wallpaper, not the picture or windows behind it; the blur stays");
+            en.Add("Kaca diwarnai dari wallpaper dan sedikit tembus pandang; gambar wallpaper tidak ditampilkan", "Glass is tinted from the wallpaper and slightly see-through; the wallpaper picture is never shown");
             en.Add("Buram lembut, tenang di mata", "Soft blur, easy on the eyes");
             en.Add("Tidak berefek saat tampil di rekaman layar aktif", "No effect while shown in screen recordings is on");
             en.Add("Kecerahan", "Brightness");

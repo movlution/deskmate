@@ -252,6 +252,7 @@ namespace Deskmate
                     pg.CompositingMode = CompositingMode.SourceOver;
                     if (!j.Liquid && !j.Clear) using (var tint = new SolidBrush(Ink.A(j.Bg, BaseTint))) pg.FillRectangle(tint, 0, 0, j.Rect.Width, j.Rect.Height);
                 }
+                WallBackdrop.Fade(img);
                 return img;
             }
 
@@ -312,6 +313,7 @@ namespace Deskmate
                     float f = j.Div / 2f;
                     pg.DrawImage(tiny, new RectangleF(-f, -f, dw + f * 2, dh + f * 2));
                 }
+                WallBackdrop.Fade(img);
                 return img;
             }
 

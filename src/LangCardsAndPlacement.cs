@@ -53,7 +53,7 @@ namespace Deskmate
             en.Add("Menempel di tepi layar", "Attach to the screen edge");
             en.Add("Bentuk notch yang menyatu dengan tepi", "A notch that blends into the edge");
             en.Add("Sinkronkan warna wallpaper", "Sync wallpaper color");
-            en.Add("Kaca notch dan dock, serta aksen, mengikuti warna wallpaper; blur tetap", "Notch and dock glass, plus the accent, follow the wallpaper color; the blur stays");
+            en.Add("Kaca notch dan dock, serta aksen, mengikuti warna wallpaper dan sedikit tembus pandang", "Notch and dock glass, plus the accent, follow the wallpaper color and stay slightly see-through");
             en.Add("Hanya untuk letak di atas", "Only when placed at the top");
             en.Add("mnt", "min");
             en.Add("dtk", "sec");

@@ -1,6 +1,8 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 
 namespace Deskmate
 {
@@ -8,6 +10,10 @@ namespace Deskmate
     // The wallpaper picture itself is never drawn behind the glass.
     static class WallBackdrop
     {
+        // Leave a little of the desktop visible through the tinted pane.
+        // The pixels stay mostly tinted; this is not the old clear-window mode.
+        public const float BehindOpacity = 0.85f;
+
         static readonly object gate = new object();
         static Color tint = Color.Empty;
         static bool active;
@@ -45,6 +51,35 @@ namespace Deskmate
                 active = false;
                 tint = Color.Empty;
                 version++;
+            }
+        }
+
+        // Fade a finished plate once so the desktop can show through a little.
+        // PArgb pixels are premultiplied, so all four channels scale together.
+        public static void Fade(Bitmap image)
+        {
+            if (image == null) return;
+            lock (gate) { if (!active) return; }
+            int k = (int)Math.Round(BehindOpacity * 255f);
+            BitmapData data = null;
+            try
+            {
+                var rect = new Rectangle(0, 0, image.Width, image.Height);
+                data = image.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppPArgb);
+                int stride = data.Stride;
+                int n = Math.Min(stride, image.Width * 4);
+                var row = new byte[stride];
+                for (int y = 0; y < image.Height; y++)
+                {
+                    IntPtr at = IntPtr.Add(data.Scan0, y * stride);
+                    Marshal.Copy(at, row, 0, stride);
+                    for (int i = 0; i < n; i++) row[i] = (byte)((row[i] * k + 127) / 255);
+                    Marshal.Copy(row, 0, at, stride);
+                }
+            }
+            finally
+            {
+                if (data != null) image.UnlockBits(data);
             }
         }
 
