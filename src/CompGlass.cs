@@ -59,6 +59,23 @@ namespace Deskmate
             };
         }
 
+        // Clear glass: the backdrop carries the colour. A blue reference is blue because the wallpaper behind
+        // it is blue, not because the pane has a blue material; only a thin veil and a strong blur sit on top.
+        // The veil stays slightly denser on the bar and panels, where small text lives.
+        public static GlassSpec SpecClear(bool panelOrSheet, float scale, float opacity, bool bar = false)
+        {
+            int a = Ink.Light
+                ? (bar ? 72 : panelOrSheet ? 64 : 46)
+                : (bar ? 96 : panelOrSheet ? 82 : 58);
+            return new GlassSpec
+            {
+                Tint = Color.FromArgb(a, Ink.Veil.R, Ink.Veil.G, Ink.Veil.B),
+                Blur = (bar ? 42f : panelOrSheet ? 32f : 24f) * scale,
+                Saturation = 1.30f,
+                Opacity = opacity
+            };
+        }
+
         public static bool Available { get { return EnsureInit(); } }
 
         // Plain CreateBackdropBrush: samples live content behind the window and keeps working while

@@ -86,9 +86,12 @@ namespace Deskmate
                 }
                 if (dockBackdrop == null) dockBackdrop = new CompGlass.CompBackdrop();
                 bool liquid = isle != null && isle.LiquidOn;
+                bool clear = isle != null && isle.ClearOn;
                 // bar: true asks for the denser tint. The bar spans whatever window is behind it, so it needs to
                 // hide background detail that the island can safely let through over wallpaper.
-                var spec = CompGlass.Spec(liquid, gpuBarText, scale, 1f, true);
+                var spec = clear
+                    ? CompGlass.SpecClear(gpuBarText, scale, 1f, true)
+                    : CompGlass.Spec(liquid, gpuBarText, scale, 1f, true);
                 dockBackdrop.Sync(Handle, new Rectangle(winX, winY, cw, ch), true, spec, gpuBarPills, gpuBarCount, null, null, scale, "", clipToPill: true);
             }
 
@@ -128,9 +131,9 @@ namespace Deskmate
                     }
                     var img = glass ? (text ? plate.Text : plate.Image) : null;
                     if (glass) Backdrop(img, r, 1f);
-                    if (glass && isle.LiquidOn && radius > 0) Lens(img, r, radius);
+                    if (glass && (isle.LiquidOn || isle.ClearOn) && radius > 0) Lens(img, r, radius);
                     // Solid until glass arrives; over glass only a light veil (alpha >= 10 keeps hit-testing active)
-                    float veilA = (gpu || glass) ? (isle != null && isle.LiquidOn ? 0.05f : 0.08f) : 0.9f;
+                    float veilA = (gpu || glass) ? (isle != null && isle.ClearOn ? 0.02f : isle != null && isle.LiquidOn ? 0.05f : 0.08f) : 0.9f;
                     g.FillPath(p.B(Ink.A(Ink.Veil, veilA)), path);
                     Sheen(r);
                     g.Restore(st);
@@ -178,7 +181,7 @@ namespace Deskmate
                 g.PixelOffsetMode = PixelOffsetMode.Half;
                 dst.Offset(-offX, -offY);
                 g.DrawImage(img, dst, src.X, src.Y, src.Width, src.Height, GraphicsUnit.Pixel);
-                g.FillRectangle(p.B(Ink.A(Ink.Veil, 0.08f)), dst);
+                g.FillRectangle(p.B(Ink.A(Ink.Veil, isle != null && isle.ClearOn ? 0.03f : 0.08f)), dst);
                 g.Restore(st);
             }
 
@@ -189,7 +192,7 @@ namespace Deskmate
                 using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y, r.Width, Math.Max(1f, r.Height)), p.T.Highlight, p.T.Highlight, 90f))
                 {
                     var cb = new ColorBlend(2);
-                    cb.Colors = new[] { Color.FromArgb(Ink.Light ? 150 : 92, p.T.Highlight), Color.FromArgb(Ink.Light ? 44 : 30, p.T.Highlight) };
+                    cb.Colors = new[] { Color.FromArgb(Ink.Light ? (isle != null && isle.ClearOn ? 168 : 150) : (isle != null && isle.ClearOn ? 122 : 92), p.T.Highlight), Color.FromArgb(Ink.Light ? 44 : isle != null && isle.ClearOn ? 36 : 30, p.T.Highlight) };
                     cb.Positions = new[] { 0f, 1f };
                     lg.InterpolationColors = cb;
                     using (var pen = new Pen(lg, 1f)) g.DrawPath(pen, path);

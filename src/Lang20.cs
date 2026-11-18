@@ -71,6 +71,8 @@ namespace Deskmate
             en.Add("Judul, artis, dan durasi ke LRCLIB, cadangannya NetEase", "Title, artist, and length to LRCLIB, NetEase as backup");
             en.Add("Hitam paling hemat daya", "Black saves the most power");
             en.Add("Kaca cair, warna di belakangnya tetap hidup", "Liquid glass, keeps the colors behind it vivid");
+            en.Add("Bening", "Clear");
+            en.Add("Bening, mengikuti warna di belakangnya", "Clear, follows the colors behind it");
             en.Add("Buram lembut, tenang di mata", "Soft blur, easy on the eyes");
             en.Add("Tidak berefek saat tampil di rekaman layar aktif", "No effect while shown in screen recordings is on");
             en.Add("Kecerahan", "Brightness");

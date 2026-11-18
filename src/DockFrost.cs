@@ -35,7 +35,7 @@ namespace Deskmate
             // Pilot: a fixed picture instead of the user's screen
             public static Func<Rectangle, Bitmap> Backdrop { get; set; }
 
-            sealed class Job { public Rectangle Rect; public Color Bg; public bool Light, Liquid, NeedImage; public int Div; }
+            sealed class Job { public Rectangle Rect; public Color Bg; public bool Light, Liquid, Clear, NeedImage; public int Div; }
 
             readonly Action<DockPlate> deliver;
             readonly AutoResetEvent wake = new AutoResetEvent(false);
@@ -69,14 +69,14 @@ namespace Deskmate
                 Request(rect, bg, light, liquid, true);
             }
 
-            public void Request(Rectangle rect, Color bg, bool light, bool liquid, bool needImage)
+            public void Request(Rectangle rect, Color bg, bool light, bool liquid, bool needImage, bool clear = false)
             {
                 bool fastSheet = !needImage;
-                int div = fastSheet ? 6 : (liquid ? 2 : 5);
-                var j = new Job { Rect = rect, Bg = bg, Light = light, Liquid = liquid, Div = div, NeedImage = needImage };
+                int div = fastSheet ? 6 : (liquid || clear ? 2 : 5);
+                var j = new Job { Rect = rect, Bg = bg, Light = light, Liquid = liquid, Clear = clear, Div = div, NeedImage = needImage };
                 var last = Volatile.Read(ref job);
                 Volatile.Write(ref job, j);
-                if (last == null || last.Rect != rect || last.Bg != bg || last.Liquid != liquid || last.Light != light || last.NeedImage != needImage) wake.Set();
+                if (last == null || last.Rect != rect || last.Bg != bg || last.Liquid != liquid || last.Clear != clear || last.Light != light || last.NeedImage != needImage) wake.Set();
             }
 
             // Windows moved: look again once they settle
@@ -105,7 +105,7 @@ namespace Deskmate
                         j = Volatile.Read(ref job);
                         if (j == null || j.Rect.Width < 8 || j.Rect.Height < 8) { wait = 1000; continue; }
                     }
-                    bool same = last != null && last.Rect == j.Rect && last.Bg == j.Bg && last.Liquid == j.Liquid && last.Light == j.Light && last.NeedImage == j.NeedImage;
+                    bool same = last != null && last.Rect == j.Rect && last.Bg == j.Bg && last.Liquid == j.Liquid && last.Clear == j.Clear && last.Light == j.Light && last.NeedImage == j.NeedImage;
                     try
                     {
                         var frameSw = Stopwatch.StartNew();
@@ -144,6 +144,17 @@ namespace Deskmate
                                 pl.Image = Upscale(tiny, work, j);
                             }
                             Liquid(sig, stride, tw, th, j.Bg, true, work);
+                            if (j.NeedImage) pl.Text = Upscale(tiny, work, j);
+                            else { pl.Text = UpscaleSheet(tiny, work, stride, tw, th, j); pl.ReturnText = Return; }
+                        }
+                        else if (j.Clear)
+                        {
+                            if (j.NeedImage)
+                            {
+                                Clear(sig, stride, tw, th, j.Bg, false, work);
+                                pl.Image = Upscale(tiny, work, j);
+                            }
+                            Clear(sig, stride, tw, th, j.Bg, true, work);
                             if (j.NeedImage) pl.Text = Upscale(tiny, work, j);
                             else { pl.Text = UpscaleSheet(tiny, work, stride, tw, th, j); pl.ReturnText = Return; }
                         }
@@ -198,6 +209,33 @@ namespace Deskmate
                     }
             }
 
+            // Clear for the dock: preserve the backdrop's colour, with a thin veil under text only.
+            static void Clear(byte[] raw, int stride, int w, int h, Color bg, bool text, byte[] dst)
+            {
+                Buffer.BlockCopy(raw, 0, dst, 0, raw.Length);
+                BoxBlur(dst, stride, w, h, text ? 2 : 1);
+                float lt = Luma(bg);
+                bool light = lt > 0.2f;
+                float veil = text ? (light ? 0.2f : 0.24f) : (light ? 0.1f : 0.14f);
+                float linBgB = Linear[bg.B], linBgG = Linear[bg.G], linBgR = Linear[bg.R];
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                    {
+                        int i = y * stride + x * 4;
+                        float b = dst[i], gr = dst[i + 1], r = dst[i + 2];
+                        float grey = 0.2126f * r + 0.7152f * gr + 0.0722f * b;
+                        r = Sat(grey, r, 1.22f); gr = Sat(grey, gr, 1.22f); b = Sat(grey, b, 1.22f);
+                        int ir = (int)Math.Max(0, Math.Min(255, r));
+                        int igr = (int)Math.Max(0, Math.Min(255, gr));
+                        int ib = (int)Math.Max(0, Math.Min(255, b));
+                        float linR = Linear[ir], linG = Linear[igr], linB = Linear[ib];
+                        dst[i] = ToSrgb(linB + (linBgB - linB) * veil);
+                        dst[i + 1] = ToSrgb(linG + (linBgG - linG) * veil);
+                        dst[i + 2] = ToSrgb(linR + (linBgR - linR) * veil);
+                        dst[i + 3] = 255;
+                    }
+            }
+
             static Bitmap Upscale(Bitmap tiny, byte[] px, Job j)
             {
                 var data = tiny.LockBits(new Rectangle(0, 0, tiny.Width, tiny.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
@@ -212,7 +250,7 @@ namespace Deskmate
                     float f = j.Div / 2f;
                     pg.DrawImage(tiny, new RectangleF(-f, -f, j.Rect.Width + f * 2, j.Rect.Height + f * 2));
                     pg.CompositingMode = CompositingMode.SourceOver;
-                    if (!j.Liquid) using (var tint = new SolidBrush(Ink.A(j.Bg, BaseTint))) pg.FillRectangle(tint, 0, 0, j.Rect.Width, j.Rect.Height);
+                    if (!j.Liquid && !j.Clear) using (var tint = new SolidBrush(Ink.A(j.Bg, BaseTint))) pg.FillRectangle(tint, 0, 0, j.Rect.Width, j.Rect.Height);
                 }
                 return img;
             }
@@ -249,7 +287,7 @@ namespace Deskmate
             Bitmap UpscaleSheet(Bitmap tiny, byte[] px, int stride, int tw, int th, Job j)
             {
                 int dw = j.Rect.Width, dh = j.Rect.Height;
-                if (!j.Liquid)
+                if (!j.Liquid && !j.Clear)
                 {
                     BoxBlur(px, stride, tw, th, 1);
                     int a = (int)Math.Round(BaseTint * 256f), ia = 256 - a;

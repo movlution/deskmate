@@ -15,7 +15,7 @@ Bagian di samping dikelompokkan: **Umum**, **Tampilan**, **Dynamic Island**, **D
 
 ### Tampilan
 
-- **Tema dan warna**: tema (gelap, terang, atau otomatis mengikuti mode aplikasi Windows), material (Liquid, Frost, Hitam), aksen (termasuk dari sampul album: warna paling mencolok di sampul lagu yang diputar, diterangkan atau digelapkan sampai terbaca di island), sinkronkan warna wallpaper (kaca notch, dock, dan kartunya diberi nuansa warna dominan wallpaper yang gelap atau pucat mengikuti tema, blur tetap; aksen ikut wallpaper selama belum memilih aksen), dan warna sendiri (pilih latar, teks, dan aksen dari preset, ambil dari layar, atau warna bebas; warna lain diturunkan dari ketiganya seperti di pembuat paket, kontras teks ditampilkan, dan hasilnya bisa disimpan jadi paket tema).
+- **Tema dan warna**: tema (gelap, terang, atau otomatis mengikuti mode aplikasi Windows), material (Bening, Liquid, Frost, Hitam), aksen (termasuk dari sampul album: warna paling mencolok di sampul lagu yang diputar, diterangkan atau digelapkan sampai terbaca di island), sinkronkan warna wallpaper (kaca notch, dock, dan kartunya diberi nuansa warna dominan wallpaper yang gelap atau pucat mengikuti tema, blur tetap; aksen ikut wallpaper selama belum memilih aksen), dan warna sendiri (pilih latar, teks, dan aksen dari preset, ambil dari layar, atau warna bebas; warna lain diturunkan dari ketiganya seperti di pembuat paket, kontras teks ditampilkan, dan hasilnya bisa disimpan jadi paket tema). **Bening** memakai blur kuat dan lapisan tipis, sehingga warna di belakang kaca tetap terlihat dan berubah mengikuti wallpaper atau jendela di belakangnya.
 - **Paket tema**: paket, suara sapaan paket, folder paket, dan pembuat paket.
 
 ### Dynamic Island
@@ -61,7 +61,7 @@ Semua kunci di `%APPDATA%\Deskmate\settings.ini` (ubah saat Deskmate tidak berja
 
 | Kunci | Bawaan | Fungsi |
 |---|---|---|
-| `material` | `liquid` | `liquid`, `frost`, atau `solid` (hitam pekat). Kunci lama `glass=0` dibaca sebagai `solid` |
+| `material` | `liquid` | `clear` (bening, warna di belakang kaca terlihat), `liquid`, `frost`, atau `solid` (hitam pekat). Kunci lama `glass=0` dibaca sebagai `solid` |
 | `theme` | `gelap` | `gelap`, `terang`, atau `otomatis` (mengikuti mode aplikasi Windows) |
 | `lyrics` | `1` | Lirik tersinkron di island |
 | `lyrics.online` | `1` | Cari lirik di LRCLIB dan NetEase |

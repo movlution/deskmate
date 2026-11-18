@@ -302,7 +302,7 @@ namespace Deskmate
                         frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
                         frost.Start();
                     }
-                    frost.Request(new Rectangle(left, top, pw2, ph2), Ink.Veil, Ink.Light, isle.LiquidOn);
+                    frost.Request(new Rectangle(left, top, pw2, ph2), Ink.Veil, Ink.Light, isle.LiquidOn, true, isle != null && isle.ClearOn);
                 }
                 Render();
             }
@@ -395,7 +395,7 @@ namespace Deskmate
                         }
                         g.Restore(inner);
                     }
-                    g.FillPath(p.B(Ink.A(Ink.Veil, gpu ? 0.14f * fade : (plate != null && dock.Glass ? 0.3f : 0.94f))), path);
+                    g.FillPath(p.B(Ink.A(Ink.Veil, gpu ? (isle != null && isle.ClearOn ? 0.04f : 0.14f) * fade : (plate != null && dock.Glass ? (isle != null && isle.ClearOn ? 0.05f : 0.3f) : 0.94f))), path);
                     using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 40), Color.FromArgb((int)(fade * (Ink.Light ? 80 : 22)), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
                         g.FillRectangle(lg, r.X, r.Y, r.Width, 39);
                     g.Restore(st);
@@ -430,7 +430,8 @@ namespace Deskmate
                 }
                 if (cardBackdrop == null) cardBackdrop = new CompGlass.CompBackdrop();
                 bool liquid = isle != null && isle.LiquidOn;
-                var spec = CompGlass.Spec(liquid, true, scale, fade);
+                bool clear = isle != null && isle.ClearOn;
+                var spec = clear ? CompGlass.SpecClear(true, scale, fade) : CompGlass.Spec(liquid, true, scale, fade);
                 cardPills[0] = new CompGlass.PillSpec(0.5f * scale, 0.5f * scale, cw - scale, ch - scale, 16f * scale);
                 cardBackdrop.Sync(Handle, new Rectangle(Location.X, Location.Y, cw, ch), true, spec, cardPills, 1, null, null, scale, "");
             }

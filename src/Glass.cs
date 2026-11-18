@@ -13,7 +13,7 @@ namespace Deskmate
     {
         public int W, H, Left, Top;
         public Color Bg;
-        public bool Light, Liquid;
+        public bool Light, Liquid, Clear;
         // Panel plate: capture rect, tint, sheen
         public bool Panel;
         public Rectangle Bake;
@@ -32,7 +32,7 @@ namespace Deskmate
         // Same glass apart from the music wash
         public bool SameBase(FrostJob o)
         {
-            return o != null && Bg == o.Bg && Light == o.Light && Liquid == o.Liquid && Panel == o.Panel && Bake == o.Bake && Extra == o.Extra && Sheen == o.Sheen;
+            return o != null && Bg == o.Bg && Light == o.Light && Liquid == o.Liquid && Clear == o.Clear && Panel == o.Panel && Bake == o.Bake && Extra == o.Extra && Sheen == o.Sheen;
         }
     }
 
@@ -100,13 +100,13 @@ namespace Deskmate
             frostWake.Set();
         }
 
-        // liquid, frost, or solid; glass=0 means solid
+        // clear, liquid, frost, or solid; glass=0 means solid
         string MaterialName
         {
             get
             {
                 string m = settings.Get("material", "");
-                if (m == "liquid" || m == "frost" || m == "solid") return m;
+                if (m == "clear" || m == "liquid" || m == "frost" || m == "solid") return m;
                 return settings.GetBool("glass", true) ? "liquid" : "solid";
             }
         }
@@ -114,6 +114,7 @@ namespace Deskmate
         // Capturable island can't read the screen (legacy software frost only)
         bool GlassOn { get { return MaterialName != "solid" && !ShowInCapture; } }
         bool LiquidOn { get { return GlassOn && MaterialName == "liquid"; } }
+        bool ClearOn { get { return GlassOn && MaterialName == "clear"; } }
         bool GpuGlassOn { get { return GlassOn && CompGlass.Available; } }
 
         // Island centre; shift is percent of free half-width
@@ -198,6 +199,7 @@ namespace Deskmate
             job.Bg = Ink.Veil;
             job.Light = Ink.Light;
             job.Liquid = LiquidOn;
+            job.Clear = ClearOn;
             job.BackdropGen = backdropGen;
             if (panel)
             {
@@ -207,7 +209,8 @@ namespace Deskmate
                 int bx = PlaceNow == PlaceTop && placeGlide.Settled ? w / 2 - bw / 2 : (int)Math.Round(MidX(PanelW) - PanelW * scale / 2) - job.Left;
                 int by = (int)Math.Round(ShellTop * scale) + TopY(sh.Target) - job.Top;
                 job.Bake = new Rectangle(bx, by, bw, bh);
-                job.Extra = PanelExtra;
+                // Clear glass already carries its veil in the base pass; only a little extra keeps panel text calm.
+                job.Extra = ClearOn ? 0.04f : PanelExtra;
                 job.Sheen = (int)Math.Ceiling((PanelTop - 8) * scale);
                 job.Cover = current == View.Panel && page == PageMusic;
                 // Frost freed its copy: send another
@@ -315,6 +318,7 @@ namespace Deskmate
                     sig = next;
                     next = swap != null && swap.Length == len ? swap : null;
                     if (job.Liquid) LiquidPass(tiny, sig, job.Bg, job.Light);
+                    else if (job.Clear) ClearPass(tiny, sig, job.Bg, job.Panel ? (job.Light ? 0.18f : 0.22f) : (job.Light ? 0.11f : 0.15f));
                     var pl = Interlocked.Exchange(ref plateSpare, null) ?? new Plate();
                     pl.Job = job;
                     Plate.Ensure(ref pl.Base, w, h);
@@ -326,8 +330,8 @@ namespace Deskmate
                         float f = FrostDiv / 2f;
                         fg.DrawImage(tiny, new RectangleF(-f, -f, w + f * 2, h + f * 2));
                         fg.CompositingMode = CompositingMode.SourceOver;
-                        // Liquid tints per pixel already
-                        if (!job.Liquid)
+                        // Liquid and Clear tint per pixel already
+                        if (!job.Liquid && !job.Clear)
                         {
                             float frostTint = ComputeFrostTint(sig, len, job.Bg, job.Light);
                             using (var tintBrush = new SolidBrush(Ink.A(job.Bg, frostTint))) fg.FillRectangle(tintBrush, 0, 0, w, h);
@@ -492,6 +496,39 @@ namespace Deskmate
             finally { tiny.UnlockBits(data); }
         }
 
+        // Clear: blur the capture, keep its chroma, and lay only a thin veil over it.
+        static void ClearPass(Bitmap tiny, byte[] raw, Color bg, float veil)
+        {
+            int w = tiny.Width, h = tiny.Height, stride = w * 4;
+            var src = (byte[])raw.Clone();
+            BoxBlur(src, stride, w, h, 2);
+            BoxBlur(src, stride, w, h, 2);
+            float linBgB = Linear[bg.B], linBgG = Linear[bg.G], linBgR = Linear[bg.R];
+            var data = tiny.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
+            try
+            {
+                var outPx = new byte[data.Stride * h];
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                    {
+                        int i = y * data.Stride + x * 4, j = y * stride + x * 4;
+                        float b = src[j], gr = src[j + 1], r = src[j + 2];
+                        float grey = 0.2126f * r + 0.7152f * gr + 0.0722f * b;
+                        r = Sat(grey, r, 1.22f); gr = Sat(grey, gr, 1.22f); b = Sat(grey, b, 1.22f);
+                        int ir = (int)Math.Max(0, Math.Min(255, r));
+                        int igr = (int)Math.Max(0, Math.Min(255, gr));
+                        int ib = (int)Math.Max(0, Math.Min(255, b));
+                        float linR = Linear[ir], linG = Linear[igr], linB = Linear[ib];
+                        outPx[i] = ToSrgb(linB + (linBgB - linB) * veil);
+                        outPx[i + 1] = ToSrgb(linG + (linBgG - linG) * veil);
+                        outPx[i + 2] = ToSrgb(linR + (linBgR - linR) * veil);
+                        outPx[i + 3] = 255;
+                    }
+                Marshal.Copy(outPx, 0, data.Scan0, outPx.Length);
+            }
+            finally { tiny.UnlockBits(data); }
+        }
+
         static float Smooth(float a, float b, float x)
         {
             float t = (x - a) / (b - a);
@@ -546,7 +583,7 @@ namespace Deskmate
                 pg.CompositingMode = CompositingMode.SourceOver;
                 using (var tb = new SolidBrush(Ink.A(job.Bg, job.Extra))) pg.FillRectangle(tb, 0, 0, bw, bh);
                 // Same inner light as the live path
-                using (var lg = new LinearGradientBrush(new Rectangle(0, 0, bw, job.Sheen), Color.FromArgb(InnerLightAlpha(job.Bg.R > 128), 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f))
+                using (var lg = new LinearGradientBrush(new Rectangle(0, 0, bw, job.Sheen), Color.FromArgb(InnerLightAlpha(job.Bg.R > 128, job.Clear), 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f))
                 {
                     lg.WrapMode = WrapMode.TileFlipXY;
                     pg.FillRectangle(lg, 0, 0, bw, job.Sheen);
@@ -617,7 +654,7 @@ namespace Deskmate
             if (GpuGlassOn)
             {
                 var veil = baseTone ? Ink.Veil : tone.Bg;
-                float veilA = !baseTone ? 0.85f : (current == View.Panel ? 0.08f : 0.03f);
+                float veilA = !baseTone ? 0.85f : (current == View.Panel ? (ClearOn ? 0.025f : 0.08f) : (ClearOn ? 0.012f : 0.03f));
                 g.FillPath(p.B(Ink.A(veil, veilA)), path);
                 if (baseTone && current == View.Panel && page == PageMusic && mediaInfo.Present && BackdropShown(DateTime.UtcNow))
                 {
@@ -634,7 +671,8 @@ namespace Deskmate
                 }
                 InnerLight(bounds, light);
                 if (joined) g.SetClip(bridge, CombineMode.Exclude);
-                g.DrawPath(p.P(Color.FromArgb(light ? 22 : 54, 0, 0, 0), 3f), path);
+                int lineA = light ? (ClearOn ? 14 : 22) : (ClearOn ? 30 : 54);
+                g.DrawPath(p.P(Color.FromArgb(lineA, 0, 0, 0), 3f), path);
                 g.Restore(st);
                 RimOutside(path, bounds, light, false, joined);
                 return;
@@ -645,13 +683,13 @@ namespace Deskmate
             bool covered = pl != null && fx <= Math.Floor(bounds.X * scale) && fx + pl.Job.W >= Math.Ceiling(bounds.Right * scale) &&
                            fy <= Math.Floor(bounds.Y * scale) && fy + pl.Job.H >= Math.Ceiling(bounds.Bottom * scale);
             // Frost has base tint; add the rest
-            float extra = baseTone ? 1 - (1 - tint) / (1 - BaseTint) : tint;
+            float extra = baseTone ? (ClearOn ? (current == View.Panel ? 0.04f : 0f) : 1 - (1 - tint) / (1 - BaseTint)) : tint;
             if (covered && baseTone && current == View.Panel && SurfaceSteady() && PlateFits(pl, fx, fy, bounds, extra)) DrawPlate(pl, fx, fy);
             else
             {
                 // Translucent base outside the frost
                 var veil = baseTone ? Ink.Veil : tone.Bg;
-                if (!covered) g.FillPath(p.B(Ink.A(veil, 0.62f)), path);
+                if (!covered) g.FillPath(p.B(Ink.A(veil, ClearOn ? 0.14f : 0.62f)), path);
                 if (pl != null)
                 {
                     BlitPart(pl.Base, fx, fy, bounds);
@@ -661,7 +699,8 @@ namespace Deskmate
             }
             // Thickness: darker line inside the rim
             if (joined) g.SetClip(bridge, CombineMode.Exclude);
-            g.DrawPath(p.P(Color.FromArgb(light ? 22 : 54, 0, 0, 0), 3f), path);
+            int softLineA = light ? (ClearOn ? 14 : 22) : (ClearOn ? 30 : 54);
+            g.DrawPath(p.P(Color.FromArgb(softLineA, 0, 0, 0), 3f), path);
             g.Restore(st);
             RimOutside(path, bounds, light, false, joined);
         }
@@ -675,7 +714,7 @@ namespace Deskmate
             g.Restore(st);
         }
 
-        static int InnerLightAlpha(bool light) { return light ? 46 : 17; }
+        static int InnerLightAlpha(bool light, bool clear = false) { return light ? (clear ? 52 : 46) : (clear ? 23 : 17); }
 
         LinearGradientBrush lightBrush, rimBrush;
         Pen rimPen;
@@ -702,7 +741,7 @@ namespace Deskmate
             if (lightBrush == null) lightBrush = Vertical();
             // Stops above the panel's first row
             float hl = Math.Min(b.Height * 0.35f, PanelTop - 8);
-            glassPair[0] = Color.FromArgb((int)(InnerLightAlpha(light) * p.Alpha), 255, 255, 255);
+            glassPair[0] = Color.FromArgb((int)(InnerLightAlpha(light, ClearOn) * p.Alpha), 255, 255, 255);
             glassPair[1] = Color.FromArgb(0, 255, 255, 255);
             lightBrush.LinearColors = glassPair;
             MapDown(lightBrush, b.Y, hl);
@@ -720,7 +759,7 @@ namespace Deskmate
                 rimBlend.Positions = new[] { 0f, 0.4f, 0.72f, 1f };
                 rimBlend.Factors = new[] { 0f, 1f, 1f, 0f };
             }
-            int top = solid ? 46 : light ? 190 : 102, side = solid ? 10 : light ? 56 : 20, lip = solid ? 22 : light ? 120 : 41;
+            int top = solid ? 46 : light ? 190 : ClearOn ? 132 : 102, side = solid ? 10 : light ? 56 : ClearOn ? 26 : 20, lip = solid ? 22 : light ? 120 : ClearOn ? 54 : 41;
             float y = bounds.Y - 1, h = bounds.Height + 2;
             rimBlend.Positions[1] = Math.Max(0.05f, Math.Min(0.6f, Math.Min(26f, h * 0.4f) / h));
             rimBlend.Factors[3] = (top - lip) / (float)(top - side);
@@ -748,7 +787,7 @@ namespace Deskmate
         // Plate matches this panel, tone, backdrop
         bool PlateFits(Plate pl, int fx, int fy, RectangleF bounds, float extra)
         {
-            if (pl.Plain == null || !pl.Job.Panel || pl.Job.Bg != Ink.Veil || pl.Job.Light != Ink.Light || Math.Abs(pl.Job.Extra - extra) > 0.005f) return false;
+            if (pl.Plain == null || !pl.Job.Panel || pl.Job.Bg != Ink.Veil || pl.Job.Light != Ink.Light || pl.Job.Clear != ClearOn || pl.Job.Liquid != LiquidOn || Math.Abs(pl.Job.Extra - extra) > 0.005f) return false;
             int bx = fx + pl.Job.Bake.X, by = fy + pl.Job.Bake.Y;
             return Math.Abs(bx - bounds.X * scale) <= 1.01f && Math.Abs(pl.Job.Bake.Width - bounds.Width * scale) <= 1.01f &&
                    Math.Abs(by - bounds.Y * scale) <= 1.01f;
@@ -809,7 +848,9 @@ namespace Deskmate
             if (islandBackdrop == null) islandBackdrop = new CompGlass.CompBackdrop();
             bool panel = current == View.Panel;
             bool liquid = LiquidOn;
-            var spec = CompGlass.Spec(liquid, panel, scale, Ease.Clamp01(opacity.Value));
+            var spec = ClearOn
+                ? CompGlass.SpecClear(panel, scale, Ease.Clamp01(opacity.Value))
+                : CompGlass.Spec(liquid, panel, scale, Ease.Clamp01(opacity.Value));
             var bounds = new Rectangle(frameX, frameY, pxW, pxH);
             // Pills clip with plain circular corners; the shell uses continuous (squircle) corners, so at rest
             // the sliver between the two shows unblurred wallpaper and each corner reads as a different colour.

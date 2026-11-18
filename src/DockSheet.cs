@@ -186,7 +186,7 @@ namespace Deskmate
                 {
                     frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
                     frost.Start();
-                    frost.Request(new Rectangle(baseX, baseY, pw, ph), Ink.Veil, Ink.Light, isle != null && isle.LiquidOn, false);
+                    frost.Request(new Rectangle(baseX, baseY, pw, ph), Ink.Veil, Ink.Light, isle != null && isle.LiquidOn, false, isle != null && isle.ClearOn);
                 }
                 if (Anim.Reduced) open.Snap(1);
                 else { open.Snap(0); open.Target = 1; }
@@ -445,7 +445,8 @@ namespace Deskmate
                     if (gpu)
                     {
                         g.Clear(Color.Transparent);
-                        g.FillPath(p.B(Ink.A(Ink.Veil, Math.Max(0.02f, 0.08f * fade))), path);
+                        float veil = isle != null && isle.ClearOn ? 0.03f : 0.08f;
+                        g.FillPath(p.B(Ink.A(Ink.Veil, Math.Max(0.02f, veil * fade))), path);
                     }
                     else if (glass)
                     {
@@ -478,7 +479,7 @@ namespace Deskmate
                             }
                         }
                         g.Restore(inner);
-                        g.FillRectangle(p.B(Ink.A(Ink.Veil, 0.34f)), 0, 0, cw / scale, ch / scale);
+                        g.FillRectangle(p.B(Ink.A(Ink.Veil, isle != null && isle.ClearOn ? 0.06f : 0.34f)), 0, 0, cw / scale, ch / scale);
                     }
                     else
                     {
@@ -544,7 +545,8 @@ namespace Deskmate
                 }
                 if (sheetBackdrop == null) sheetBackdrop = new CompGlass.CompBackdrop();
                 bool liquid = isle != null && isle.LiquidOn;
-                var spec = CompGlass.Spec(liquid, true, scale, fade);
+                bool clear = isle != null && isle.ClearOn;
+                var spec = clear ? CompGlass.SpecClear(true, scale, fade) : CompGlass.Spec(liquid, true, scale, fade);
                 sheetPills[0] = new CompGlass.PillSpec(0.5f * scale, 0.5f * scale, cw - scale, ch - scale, 20f * scale);
                 sheetBackdrop.Sync(Handle, new Rectangle(x, y, cw, ch), true, spec, sheetPills, 1, null, null, scale, "");
             }
@@ -557,7 +559,8 @@ namespace Deskmate
             // Darker footer shelf
             protected void Shelf(RectangleF r, float height)
             {
-                g.FillRectangle(p.B(Ink.A(Ink.Veil, 0.35f)), r.X, H - height, r.Width, height);
+                float shelfA = dock.Glass && isle != null && isle.ClearOn ? 0.22f : 0.35f;
+                g.FillRectangle(p.B(Ink.A(Ink.Veil, shelfA)), r.X, H - height, r.Width, height);
                 // Solid: a hairline marks the footer
                 if (!dock.Glass) g.DrawLine(p.P(p.T.Line, 1f), r.X, H - height, r.Right, H - height);
             }

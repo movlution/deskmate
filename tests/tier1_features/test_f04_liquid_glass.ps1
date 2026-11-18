@@ -10,6 +10,10 @@ Describe "Feature 4: Liquid Glass Color Space Blending" {
     $island = Get-DeskmateType "Island"
     $toSrgb = $island.GetMethod("ToSrgb", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
     $liquidPass = $island.GetMethod("LiquidPass", [System.Reflection.BindingFlags]'NonPublic,Static')
+    $clearPass = $island.GetMethod("ClearPass", [System.Reflection.BindingFlags]'NonPublic,Static')
+    $compGlass = Get-DeskmateType "CompGlass"
+    $spec = $compGlass.GetMethod("Spec", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
+    $specClear = $compGlass.GetMethod("SpecClear", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
 
     It "Verifies Linear luminance lookup table and ToSrgb method exist on Island engine" {
         Assert-NotNull $toSrgb "ToSrgb static method must exist"
@@ -70,5 +74,58 @@ Describe "Feature 4: Liquid Glass Color Space Blending" {
         Assert-True ($ratio -ge 4.5) "Contrast ratio must be >= 4.5:1 (actual: ${ratio}:1)"
 
         $bmp.Dispose()
+    }
+
+    It "Verifies Clear material stays thinner than Liquid while blurring more of the backdrop" {
+        Reset-DeskmateTheme -Light $false
+        $liquidArgs = [object[]]@([bool]$true, [bool]$false, [float]1.0, [float]1.0, [bool]$false)
+        $clearArgs = [object[]]@([bool]$false, [float]1.0, [float]1.0, [bool]$false)
+        $liquidSpec = $spec.Invoke($null, $liquidArgs)
+        $clearSpec = $specClear.Invoke($null, $clearArgs)
+
+        Assert-NotNull $liquidSpec "Liquid Spec must exist"
+        Assert-NotNull $clearSpec "Clear Spec must exist"
+        Assert-True ($clearSpec.Tint.A -lt $liquidSpec.Tint.A) "Clear veil ($($clearSpec.Tint.A)) must be thinner than Liquid ($($liquidSpec.Tint.A))"
+        Assert-True ($clearSpec.Tint.A -le 72) "Island Clear veil must stay at or below 72/255 (actual: $($clearSpec.Tint.A))"
+        Assert-True ($clearSpec.Blur -gt $liquidSpec.Blur) "Clear must blur more than Liquid (clear $($clearSpec.Blur), liquid $($liquidSpec.Blur))"
+        Assert-True ($clearSpec.Saturation -ge 1.2) "Clear must keep backdrop colour alive (actual: $($clearSpec.Saturation))"
+    }
+
+    It "Verifies ClearPass preserves backdrop chroma under a thin veil" {
+        $w = 24; $h = 18
+        $bmp = New-Object System.Drawing.Bitmap $w, $h, ([System.Drawing.Imaging.PixelFormat]::Format32bppRgb)
+        try {
+            $raw = New-Object byte[] ($w * $h * 4)
+            for ($y = 0; $y -lt $h; $y++) {
+                for ($x = 0; $x -lt $w; $x++) {
+                    $i = ($y * $w + $x) * 4
+                    if ($x -lt ($w / 2)) {
+                        $raw[$i] = 220; $raw[$i + 1] = 90; $raw[$i + 2] = 30
+                    }
+                    else {
+                        $raw[$i] = 40; $raw[$i + 1] = 120; $raw[$i + 2] = 230
+                    }
+                    $raw[$i + 3] = 255
+                }
+            }
+            $clearPass.Invoke($null, [object[]]@([System.Drawing.Bitmap]$bmp, [byte[]]$raw, [System.Drawing.Color]::White, [single]0.16))
+            $centre = $bmp.GetPixel([int]($w / 2), [int]($h / 2))
+            $spread = [Math]::Max($centre.R, [Math]::Max($centre.G, $centre.B)) - [Math]::Min($centre.R, [Math]::Min($centre.G, $centre.B))
+            Assert-Equal 255 $centre.A "Clear output must stay opaque for the layered window"
+            Assert-True ($spread -ge 18) "Clear glass must keep background chroma (actual spread: $spread)"
+
+            $vivid = 0
+            for ($y = 0; $y -lt $h; $y++) {
+                for ($x = 0; $x -lt $w; $x++) {
+                    $c = $bmp.GetPixel($x, $y)
+                    $s = [Math]::Max($c.R, [Math]::Max($c.G, $c.B)) - [Math]::Min($c.R, [Math]::Min($c.G, $c.B))
+                    if ($s -ge 10) { $vivid++ }
+                }
+            }
+            Assert-True ($vivid -ge [int]($w * $h * 0.25)) "At least 25% of Clear pixels must retain visible chroma (got $vivid/$($w * $h))"
+        }
+        finally {
+            $bmp.Dispose()
+        }
     }
 }

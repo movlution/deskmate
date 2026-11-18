@@ -59,6 +59,10 @@ Describe "Tier 3 Pairwise: Accent x Glass" {
         Assert-True ($job.SameBase($copy)) "Identical base jobs must share a glass bake"
         Assert-True ($job.SameCapture($copy)) "Identical capture rectangles must be reusable"
 
+        $copy.Clear = $true
+        Assert-False ($job.SameBase($copy)) "A Clear material change must invalidate the base bake"
+        $copy.Clear = $false
+
         $copy.Light = $true
         Assert-False ($job.SameBase($copy)) "A light/dark flip must invalidate the base bake"
         $copy.Light = $false

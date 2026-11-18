@@ -168,20 +168,22 @@ namespace Deskmate
 
                         // Detail follows the chosen material; capture mode overrides glass entirely
                         string mat = island.MaterialName;
+                        int matIdx = mat == "clear" ? 0 : mat == "frost" ? 2 : mat == "solid" ? 3 : 1;
                         Func<int, string> matNote = i => settings.GetBool("capture.show", false) ? Lang.T("Tidak berefek saat tampil di rekaman layar aktif") :
-                                                         i == 1 ? Lang.T("Buram lembut, tenang di mata") :
-                                                         i == 2 ? Lang.T("Hitam paling hemat daya") :
+                                                         i == 0 ? Lang.T("Bening, mengikuti warna di belakangnya") :
+                                                         i == 2 ? Lang.T("Buram lembut, tenang di mata") :
+                                                         i == 3 ? Lang.T("Hitam paling hemat daya") :
                                                          Lang.T("Kaca cair, warna di belakangnya tetap hidup");
                         KitRow matRow = null;
-                        var matSeg = Seg(new[] { "Liquid", "Frost", Lang.T("Hitam") }, mat == "frost" ? 1 : mat == "solid" ? 2 : 0, i =>
+                        var matSeg = Seg(new[] { Lang.T("Bening"), "Liquid", "Frost", Lang.T("Hitam") }, matIdx, i =>
                         {
-                            island.SetChoice("material", i == 1 ? "frost" : i == 2 ? "solid" : "liquid");
+                            island.SetChoice("material", i == 0 ? "clear" : i == 2 ? "frost" : i == 3 ? "solid" : "liquid");
                             if (matRow == null) return;
                             matRow.Detail = matNote(i);
                             if (matRow.Field != null) matRow.Field.AccessibleDescription = matRow.Detail;
                             matRow.Invalidate();
                         });
-                        matRow = Row(Lang.T("Material"), matNote(mat == "frost" ? 1 : mat == "solid" ? 2 : 0), matSeg);
+                        matRow = Row(Lang.T("Material"), matNote(matIdx), matSeg);
                         add(matRow);
 
                         add(Row(Lang.T("Sinkronkan wallpaper"), custom ? Lang.T("Warna sendiri sedang dipakai") : Lang.T("Kaca dan aksen mengikuti wallpaper; blur tetap"), Switch("wall.sync", false, null)));
