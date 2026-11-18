@@ -77,6 +77,10 @@ namespace Deskmate
             en.Add("Notifikasi, kode OTP, dan berkas dari HP", "Notifications, OTP codes, and files from your phone");
             en.Add("Tugas dan jadwal dari Kulia, Notion, Todoist, dan iCal", "Tasks and schedules from Kulia, Notion, Todoist, and iCal");
             en.Add("Tema, material kaca, dan warna aksen", "Theme, glass material, and accent color");
+            en.Add("Tema, material kaca, warna aksen, paket tema, dan warna kustom", "Theme, glass material, accent color, theme packs, and custom colors");
+            en.Add("Kustomisasi", "Customization");
+            en.Add("Warna kustom", "Custom colors");
+            en.Add("Pilih warna latar, teks, dan aksen manual", "Choose background, text, and accent colors manually");
             en.Add("Gambar, sapaan, dan suara dari paket tema", "Pictures, greetings, and sounds from theme packs");
             en.Add("Di mana island tinggal dan bagaimana ia menempel", "Where the island lives and how it meets the edge");
             en.Add("Kapan island menyingkir dan bagaimana panel terbuka", "When the island steps aside and how the panel opens");

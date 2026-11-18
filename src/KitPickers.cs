@@ -48,7 +48,7 @@ namespace Deskmate
             }
         }
 
-        float ItemStep { get { return Presets.Length > 0 ? Math.Min(30f * Ui, (Width - 4f * Ui) / Presets.Length) : 30f * Ui; } }
+        float ItemStep { get { return Presets.Length > 0 ? Math.Min(31f * Ui, (Width - 4f * Ui) / Presets.Length) : 31f * Ui; } }
 
         PointF Center(int i)
         {
@@ -120,7 +120,7 @@ namespace Deskmate
             KitInk.Smooth(g);
             g.Clear(KitInk.Under(this));
             var table = Ink.Light && PresetsLight != null && PresetsLight.Length == Presets.Length ? PresetsLight : Presets;
-            float r = 7.5f * Ui;
+            float r = 8.5f * Ui;
 
             for (int i = 0; i < Presets.Length; i++)
             {
@@ -139,7 +139,7 @@ namespace Deskmate
 
                 if (i == selected)
                 {
-                    float ringR = r + 3.5f * Ui;
+                    float ringR = r + 3.2f * Ui;
                     using (var pen = new Pen(dotColor, 2f * Ui))
                         g.DrawEllipse(pen, pt.X - ringR, pt.Y - ringR, ringR * 2, ringR * 2);
                 }
@@ -152,6 +152,18 @@ namespace Deskmate
 
                 using (var b = new SolidBrush(dotColor))
                     g.FillEllipse(b, pt.X - r, pt.Y - r, r * 2, r * 2);
+                if (i == selected)
+                {
+                    // A check makes the selection unmistakable without relying on
+                    // colour alone, and keeps the swatch premium at small sizes.
+                    Color check = dotColor.GetBrightness() > 0.62f ? Color.FromArgb(235, 20, 22, 27) : Color.White;
+                    using (var pen = new Pen(check, 1.9f * Ui) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                    {
+                        float x = pt.X - 2.8f * Ui, y = pt.Y + 0.2f * Ui;
+                        g.DrawLine(pen, x, y, x + 1.5f * Ui, y + 1.6f * Ui);
+                        g.DrawLine(pen, x + 1.5f * Ui, y + 1.6f * Ui, x + 4.1f * Ui, y - 1.8f * Ui);
+                    }
+                }
             }
 
             if (Focused && ShowFocusCues && !KitInk.ByMouse)

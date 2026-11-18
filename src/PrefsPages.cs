@@ -120,7 +120,7 @@ namespace Deskmate
                         var themeCards = new ThemeCardPicker
                         {
                             SelectedIndex = themeIdx,
-                            Size = new Size((int)(246 * Ui), (int)(64 * Ui))
+                            Size = new Size((int)(252 * Ui), (int)(84 * Ui))
                         };
                         themeCards.Picked += i =>
                         {
@@ -128,19 +128,20 @@ namespace Deskmate
                             BeginInvoke(new Action(Relayout));
                         };
                         var themeRow = Row(Lang.T("Tema"), themeMode == "sistem" ? Lang.T("Mengikuti mode aplikasi Windows") : null, themeCards);
-                        themeRow.Height = (int)(82 * Ui);
+                        themeRow.Height = (int)(100 * Ui);
                         add(themeRow);
 
                         string accent = settings.Get("accent", "");
                         bool custom = island.CustomOn;
                         KitRow accentRow = null;
+                        MaterialPicker matPicker = null;
                         var palette = new KitPalette
                         {
                             Presets = Accents,
                             PresetsLight = AccentsLight,
                             SelectedHex = accent,
                             Enabled = !custom,
-                            Size = new Size((int)(240 * Ui), (int)(30 * Ui))
+                            Size = new Size((int)(252 * Ui), (int)(34 * Ui))
                         };
                         palette.Picked += (i, hex) =>
                         {
@@ -150,6 +151,8 @@ namespace Deskmate
                                 accentRow.Detail = Lang.T(Accents[i][0]);
                                 accentRow.Invalidate();
                             }
+                            themeCards.Invalidate();
+                            if (matPicker != null) matPicker.Invalidate();
                         };
                         string curAccentName = Lang.T("Grafit");
                         for (int i = 0; i < Accents.Length; i++)
@@ -172,21 +175,28 @@ namespace Deskmate
                         Func<int, string> matNote = i => settings.GetBool("capture.show", false) ? Lang.T("Tidak berefek saat tampil di rekaman layar aktif") :
                                                          i == 0 ? Lang.T("Bening: blur paling kuat, warna latar paling terlihat") :
                                                          i == 2 ? Lang.T("Frost: buram netral dan padat, paling tenang") :
-                                                         i == 3 ? Lang.T("Hitam pekat tanpa kaca") :
+                                                         i == 3 ? Lang.T("Solid: pekat, tanpa kaca, mengikuti warna tema") :
                                                          Lang.T("Liquid: warna paling pekat dan hidup, kilau paling kuat");
                         KitRow matRow = null;
-                        var matSeg = Seg(new[] { Lang.T("Bening"), "Liquid", "Frost", Lang.T("Hitam") }, matIdx, i =>
+                        matPicker = new MaterialPicker
+                        {
+                            SelectedIndex = matIdx,
+                            Notes = new[] { matNote(0), matNote(1), matNote(2), matNote(3) },
+                            Size = new Size((int)(252 * Ui), (int)(64 * Ui))
+                        };
+                        matPicker.Picked += i =>
                         {
                             island.SetChoice("material", i == 0 ? "clear" : i == 2 ? "frost" : i == 3 ? "solid" : "liquid");
                             if (matRow == null) return;
                             matRow.Detail = matNote(i);
                             if (matRow.Field != null) matRow.Field.AccessibleDescription = matRow.Detail;
                             matRow.Invalidate();
-                        });
-                        matRow = Row(Lang.T("Material"), matNote(matIdx), matSeg);
+                        };
+                        matRow = Row(Lang.T("Material"), matNote(matIdx), matPicker);
+                        matRow.Height = (int)(84 * Ui);
                         add(matRow);
 
-                        add(Row(Lang.T("Sinkronkan wallpaper"), custom ? Lang.T("Warna sendiri sedang dipakai") : Lang.T("Kaca diwarnai dari wallpaper; Bening paling tembus pandang, Frost paling pekat; gambar wallpaper tidak ditampilkan"), Switch("wall.sync", false, null)));
+                        add(Row(Lang.T("Sinkronkan wallpaper"), custom ? Lang.T("Warna sendiri sedang dipakai") : Lang.T("Kaca diwarnai wallpaper; gambar tidak ditampilkan"), Switch("wall.sync", false, null)));
 
                         cap(Lang.T("Kustomisasi"));
                         add(Row(Lang.T("Warna kustom"), Lang.T("Pilih warna latar, teks, dan aksen manual"), Switch("look.custom", false, on =>

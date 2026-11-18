@@ -49,11 +49,13 @@ namespace Deskmate
             en.Add("Folder paket", "Packs folder");
             en.Add("Ganti port acak", "Use a random port");
             en.Add("Gaya tab", "Tab style");
+            en.Add("Gaya visual", "Visual style");
             en.Add("Hanya LRCLIB, Kulia, dan GitHub, semuanya bisa dimatikan", "Only LRCLIB, Kulia, and GitHub, each can be turned off");
             en.Add("Hanya bisa dijangkau dari laptop ini", "Reachable from this laptop only");
             en.Add("Hanya di memori", "Memory only");
             en.Add("Hanya izin, tenggat, sholat, dan timer yang muncul", "Only permissions, deadlines, prayers, and timers come through");
             en.Add("Hasil untuk \"{0}\"", "Results for \"{0}\"");
+            en.Add("Grafit", "Graphite");
             en.Add("Hitam", "Black");
             en.Add("Hubungkan", "Connect");
             en.Add("Ikon", "Icons");
@@ -69,12 +71,12 @@ namespace Deskmate
             en.Add("Jalur berkas saja, hanya di memori", "File paths only, memory only");
             en.Add("Jeda", "Pause");
             en.Add("Judul, artis, dan durasi ke LRCLIB, cadangannya NetEase", "Title, artist, and length to LRCLIB, NetEase as backup");
-            en.Add("Hitam pekat tanpa kaca", "Solid black without glass");
+            en.Add("Solid: pekat, tanpa kaca, mengikuti warna tema", "Solid: opaque, no glass, follows the theme background");
             en.Add("Liquid: warna paling pekat dan hidup, kilau paling kuat", "Liquid: deepest, most vivid color and the strongest gloss");
             en.Add("Bening", "Clear");
             en.Add("Bening: blur paling kuat, warna latar paling terlihat", "Clear: strongest blur, backdrop color most visible");
             en.Add("Sinkronkan wallpaper", "Sync wallpaper");
-            en.Add("Kaca diwarnai dari wallpaper; Bening paling tembus pandang, Frost paling pekat; gambar wallpaper tidak ditampilkan", "Glass is tinted from the wallpaper; Clear is the most transparent, Frost the densest; the wallpaper picture is never shown");
+            en.Add("Kaca diwarnai wallpaper; gambar tidak ditampilkan", "Glass tints from the wallpaper; the image is never drawn");
             en.Add("Frost: buram netral dan padat, paling tenang", "Frost: neutral, dense blur, the calmest surface");
             en.Add("Tidak berefek saat tampil di rekaman layar aktif", "No effect while shown in screen recordings is on");
             en.Add("Kecerahan", "Brightness");
@@ -212,6 +214,7 @@ namespace Deskmate
             en.Add("Buka panel", "Open panel");
             en.Add("Format jam", "Time format");
             en.Add("Mengikuti mode aplikasi Windows", "Follows the Windows app mode");
+            en.Add("Warna aksen", "Accent color");
             en.Add("Warna sendiri sedang dipakai", "Your own colors are in use");
             en.Add("Warna sendiri", "Your own colors");
             en.Add("Pakai warna sendiri", "Use your own colors");

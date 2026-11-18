@@ -18,6 +18,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
     $prefsType = $islandType.GetNestedType("PrefsWindow", $flags)
     $sideListType = $islandType.GetNestedType("SideList", $flags)
     $themeCardType = $islandType.GetNestedType("ThemeCardPicker", $flags)
+    $materialType = $islandType.GetNestedType("MaterialPicker", $flags)
     $kitRowType = Get-DeskmateType "KitRow"
     $kitSwitchType = Get-DeskmateType "KitSwitch"
     $kitPaletteType = Get-DeskmateType "KitPalette"
@@ -241,6 +242,44 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         finally {
             if ($bmp1) { $bmp1.Dispose() }
             if ($bmp0) { $bmp0.Dispose() }
+            if ($prefs) { $prefs.Dispose() }
+            if ($isle) { $isle.Dispose() }
+        }
+    }
+
+    It "4b. MaterialPicker paints four visibly different material previews and exposes one choice per material" {
+        $isle = $null; $prefs = $null; $bmps = @()
+        try {
+            $isle = New-TestIsland
+            $prefs = [Activator]::CreateInstance($prefsType, $flags, $null, @($isle), $null)
+            Show-OffscreenPrefs $prefs
+            $prefs.Go("look")
+
+            $picker = $null
+            foreach ($r in (Get-ContentRows $prefs)) {
+                foreach ($ctrl in $r.Controls) {
+                    if ($ctrl -is $materialType) { $picker = $ctrl }
+                }
+            }
+            Assert-NotNull $picker "'look' page must construct MaterialPicker"
+            Assert-True ($picker.Width -ge 240) "MaterialPicker must leave room for four labelled previews"
+            Assert-True ($picker.Height -ge 60) "MaterialPicker must leave room for a preview and a label"
+            Assert-Equal 4 $picker.AccessibilityObject.GetChildCount() "MaterialPicker must expose four material choices"
+
+            $bg = $kitInkType.GetProperty("Group", [System.Reflection.BindingFlags]'Public,Static').GetValue($null)
+            for ($i = 0; $i -lt 4; $i++) {
+                $picker.SelectedIndex = $i
+                $bmp = New-Object System.Drawing.Bitmap($picker.Width, $picker.Height)
+                $picker.DrawToBitmap($bmp, (New-Object System.Drawing.Rectangle(0, 0, $picker.Width, $picker.Height)))
+                $bmps += $bmp
+                Assert-True ((Count-NonBgPixels $bmp $bg) -gt 50) "MaterialPicker $i must paint visible pixels"
+            }
+            for ($i = 1; $i -lt 4; $i++) {
+                Assert-True ((Count-DiffPixels $bmps[$i - 1] $bmps[$i]) -gt 25) "Material previews $($i - 1) and $i must look different"
+            }
+        }
+        finally {
+            foreach ($bmp in $bmps) { $bmp.Dispose() }
             if ($prefs) { $prefs.Dispose() }
             if ($isle) { $isle.Dispose() }
         }
