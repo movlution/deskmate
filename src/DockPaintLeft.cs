@@ -107,31 +107,34 @@ namespace Deskmate
                     case "system": open = delegate { Open("taskmgr.exe"); }; break;
                 }
                 Hit(r, hid, open, null);
-                if (hot && open != null) p.FillRound(r, 10, pressId == hid ? p.T.FillPressed : p.T.Fill);
+                if (hot && open != null) p.FillRound(r, 12, pressId == hid ? p.T.FillPressed : p.T.Fill);
                 float cy = r.Y + r.Height / 2;
                 switch (id)
                 {
                     case "clock":
-                        p.Text(Fmt.Clock(DateTime.Now), Ink.Display(18f), p.T.Text, r.X + 8, cy - 7, r.Width - 12, StringAlignment.Near);
-                        p.Text(DateTime.Now.ToString("ddd, d MMM", Fmt.Id), Ink.Small(10.5f), p.T.Sub, r.X + 8, cy + 11, r.Width - 12, StringAlignment.Near);
+                        p.Text(Fmt.Clock(DateTime.Now), Ink.Display(18f), p.T.Text, r.X + 10, cy - 7, r.Width - 14, StringAlignment.Near);
+                        p.Text(DateTime.Now.ToString("ddd, d MMM", Fmt.Id), Ink.Small(11f), p.T.Sub, r.X + 10, cy + 11, r.Width - 14, StringAlignment.Near);
                         break;
                     case "media": DrawMedia(r, cy); break;
                     case "ai": DrawAi(r, cy); break;
                     case "timer":
-                        Ring(r.X + 16, cy, 10.5f, isle.TimerFraction(), isle.timerPaused);
-                        p.Text(isle.TimerClock(), Ink.Semi(13f), isle.timerPaused ? p.T.Sub : p.T.Text, r.X + 31, cy - 6, r.Width - 33, StringAlignment.Near);
+                        Ring(r.X + 20, cy, 11, isle.TimerFraction(), isle.timerPaused);
+                        p.Text(isle.TimerClock(), Ink.Semi(13.5f), isle.timerPaused ? p.T.Sub : p.T.Text, r.X + 38, cy - 6, r.Width - 42, StringAlignment.Near);
+                        p.Text(isle.TimerLabel(), Ink.Small(11f), p.T.Sub, r.X + 38, cy + 10, r.Width - 42, StringAlignment.Near);
                         break;
                     case "weather":
-                        WeatherIcon(p, isle.weather.Code, r.X + 14, cy, 15f, p.T.Text);
-                        p.Text(isle.weather.Temp + "°", Ink.Semi(14f), p.T.Text, r.X + 27, cy - 6, r.Width - 29, StringAlignment.Near);
+                        WeatherIcon(p, isle.weather.Code, r.X + 19, cy, 17f, p.T.Text);
+                        p.Text(isle.weather.Temp + "°", Ink.Semi(14f), p.T.Text, r.X + 35, cy - 6, r.Width - 37, StringAlignment.Near);
+                        p.Text(WeatherWord(isle.weather.Code), Ink.Small(11f), p.T.Sub, r.X + 35, cy + 10, r.Width - 37, StringAlignment.Near);
                         break;
                     case "battery":
-                        p.Battery(r.X + 7, cy, isle.battery / 100f, isle.battery <= 20 && !isle.onAc ? p.T.Negative : p.T.Text, isle.onAc);
-                        p.Text(Ink.Percent(isle.battery), Ink.Semi(13.5f), isle.battery <= 20 && !isle.onAc ? p.T.Negative : p.T.Text, r.X + 34, cy - 6, r.Width - 36, StringAlignment.Near);
+                        p.Battery(r.X + 9, cy, isle.battery / 100f, isle.battery <= 20 && !isle.onAc ? p.T.Negative : p.T.Text, isle.onAc);
+                        p.Text(Ink.Percent(isle.battery), Ink.Semi(14f), isle.battery <= 20 && !isle.onAc ? p.T.Negative : p.T.Text, r.X + 44, cy - 6, r.Width - 46, StringAlignment.Near);
+                        p.Text(isle.onAc ? Lang.T("mengisi daya") : Lang.T("Baterai"), Ink.Small(11f), p.T.Sub, r.X + 44, cy + 10, r.Width - 46, StringAlignment.Near);
                         break;
                     case "system":
-                        Meter(r.X + 6, cy - 8, r.Width - 12, "CPU", cpuPct);
-                        Meter(r.X + 6, cy + 10, r.Width - 12, "RAM", ramPct);
+                        Meter(r.X + 10, cy - 8, r.Width - 18, "CPU", cpuPct);
+                        Meter(r.X + 10, cy + 10, r.Width - 18, "RAM", ramPct);
                         break;
                 }
             }
@@ -169,31 +172,21 @@ namespace Deskmate
                 }
             }
 
-            // Album art as a dock icon, with a small play/pause badge. The
-            // title and artist wait in the hover label instead of widening
-            // the bar like a taskbar media flyout.
+            // Cover, title, and a play button that stays put
             void DrawMedia(RectangleF r, float cy)
             {
                 var mi = isle.mediaInfo;
-                float side = Math.Min(32f, r.Height - 4f);
-                var cover = new RectangleF(r.X + 5, cy - side / 2, side, side);
-                if (mi.Cover != null)
-                {
-                    p.Image(mi.Cover, cover, 7);
-                    p.StrokeRound(cover, 7, Ink.A(p.T.Line, 1.2f), 1f);
-                }
-                else
-                {
-                    p.FillRound(cover, 7, p.T.FillHover);
-                    p.Icon('\uE8D6', 15f, p.T.Sub, cover.X + side / 2, cover.Y + side / 2);
-                }
-                var c = new PointF(cover.Right - 4, cover.Bottom - 4);
-                float br = hoverId == "w_play" ? 7.5f : 7f;
-                var btn = new RectangleF(c.X - 9, c.Y - 9, 18, 18);
+                var cover = new RectangleF(r.X + 6, cy - 18, 36, 36);
+                if (mi.Cover != null) p.Image(mi.Cover, cover, 9);
+                else p.FillRound(cover, 9, p.T.FillHover);
+                float tx = cover.Right + 9, play = r.Right - 18;
+                p.Text(mi.Title, Ink.Semi(12.5f), p.T.Text, tx, cy - 7, play - 18 - tx, StringAlignment.Near);
+                p.Text(mi.Artist.Length > 0 ? mi.Artist : mi.App, Ink.Small(11f), p.T.Sub, tx, cy + 9, play - 18 - tx, StringAlignment.Near);
+                var btn = new RectangleF(play - 14, cy - 14, 28, 28);
                 Hit(btn, "w_play", delegate { isle.media.TogglePlay(); }, null);
-                p.Circle(c.X, c.Y, br, Ink.A(p.T.Bg, 0.82f));
-                if (mi.Playing) p.Pause(c.X, c.Y, 5.8f, p.T.Text);
-                else p.Play(c.X, c.Y, 6.2f, p.T.Text);
+                p.Circle(play, cy, hoverId == "w_play" ? 14 : 13, p.T.Text);
+                if (mi.Playing) p.Pause(play, cy, 9.5f, p.T.Bg);
+                else p.Play(play, cy, 10f, p.T.Bg);
             }
 
             // Highest quota as a ring; a busy agent fills its centre
@@ -208,10 +201,12 @@ namespace Deskmate
                         if (q.W[i].Has && q.W[i].Pct >= top) { top = q.W[i].Pct; label = WindowLabel(q.W[i], i); }
                 }
                 int busy = isle.BusyCount();
-                Ring(r.X + 16, cy, 10.5f, top / 100f, false);
-                if (busy > 0) p.Circle(r.X + 16, cy, 3.5f, p.T.Accent);
-                string big = label.Length > 0 ? Ink.Percent((int)Math.Floor(top)) : busy.ToString();
-                p.Text(big, Ink.Semi(13f), p.T.Text, r.X + 31, cy - 6, r.Width - 33, StringAlignment.Near);
+                Ring(r.X + 20, cy, 12, top / 100f, false);
+                if (busy > 0) p.Circle(r.X + 20, cy, 4f, p.T.Accent);
+                string big = label.Length > 0 ? Ink.Percent((int)Math.Floor(top)) : Lang.F("{0} agen", busy);
+                p.Text(big, Ink.Semi(13.5f), p.T.Text, r.X + 40, cy - 6, r.Width - 44, StringAlignment.Near);
+                string small = busy > 0 ? Lang.F("{0} bekerja", busy) : label;
+                p.Text(small, Ink.Small(11f), p.T.Sub, r.X + 40, cy + 10, r.Width - 44, StringAlignment.Near);
             }
 
             void Ring(float cx, float cy, float rad, float f, bool quiet)

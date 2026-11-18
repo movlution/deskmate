@@ -37,8 +37,7 @@ namespace Deskmate
             bool globalOwner, registered, shown = true, closing;
             const int AppBarMsg = Native.WM_APP + 0x32;
             static readonly int ShellMsg = Taskbar.RegisterWindowMessage("SHELLHOOK"), FrameMsg = Taskbar.RegisterWindowMessage("DeskmateDockFrame");
-            // Let the dock label settle before a live window preview appears.
-            readonly Timer tick = new Timer { Interval = 1000 }, dwell = new Timer { Interval = 750 }, hideLater = new Timer { Interval = 700 }, revealLater = new Timer();
+            readonly Timer tick = new Timer { Interval = 1000 }, dwell = new Timer { Interval = 420 }, hideLater = new Timer { Interval = 700 }, revealLater = new Timer();
             readonly Stopwatch clock = Stopwatch.StartNew();
             double lastT;
             DockPacer pacer;

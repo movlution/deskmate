@@ -180,17 +180,16 @@ namespace Deskmate
                 g.Restore(st);
             }
 
-            // macOS-style running dot: a small circle, slightly larger for the
-            // front window; accent when the app calls for attention.
+            // Dot when running, a wider bar for the front app; accent when it calls for you
             void Indicator(DockApp a, RectangleF r) { Indicator(a.Dot.Value, a.Attention, r); }
 
             void Indicator(float v, bool attention, RectangleF r)
             {
                 if (v < 0.02f) return;
-                float focus = Ease.Clamp01(v - 1), cx = r.X + r.Width / 2, cy = barBottom - 4.8f;
-                float d = 3.2f + 1.4f * focus;
-                Color c = attention ? p.T.Accent : Ink.Mix(Ink.A(p.T.Text, 0.66f), p.T.Text, focus);
-                p.Circle(cx, cy, d / 2, Ink.A(c, Ease.Clamp01(v)));
+                float focus = Ease.Clamp01(v - 1), cx = r.X + r.Width / 2, cy = barBottom - 4.6f;
+                float w = 4 + 10 * focus, h = 3.2f;
+                Color c = attention ? p.T.Accent : Ink.Mix(Ink.A(p.T.Text, 0.68f), p.T.Text, focus);
+                p.FillRound(new RectangleF(cx - w / 2, cy - h / 2, w, h), h / 2, Ink.A(c, Ease.Clamp01(v)));
             }
 
             // Unread count from Windows notifications

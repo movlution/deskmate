@@ -99,7 +99,7 @@ namespace Deskmate
                 add(Row(Lang.T("Tombol tugas dan catatan"), Lang.T("Satu tombol untuk mengakses Tugas dan catatan"), work));
 
                 cap(Lang.T("Widget"));
-                string[] notes = { "Jam dan tanggal; klik membuka Ringkasan", "Sampul dan tombol putar; judul saat disorot", "Pemakaian tertinggi dan agen yang bekerja", "Saat timer berjalan", "Ikon dan suhu; detail saat disorot", "Hanya di laptop", "CPU dan RAM, dibaca tiap 3 detik" };
+                string[] notes = { "Jam dan tanggal; klik membuka Ringkasan", "Sampul, judul, dan tombol putar", "Pemakaian tertinggi dan agen yang bekerja", "Saat timer berjalan", "Butuh kota di Pengaturan › Cuaca & Pengingat", "Hanya di laptop", "CPU dan RAM, dibaca tiap 3 detik" };
                 char[] glyphs = { (char)0xE823, (char)0xE8D6, (char)0xEC4A, (char)0xE916, (char)0xE753, (char)0xE83F, (char)0xE9D9 };
                 for (int i = 0; i < DockWidgetIds.Length; i++)
                 {

@@ -177,7 +177,7 @@ namespace Deskmate
                 var ids = new List<string>();
                 foreach (var s in slots)
                 {
-                    if (s.Id == "gap" || s.Show < 0.5f) continue;
+                    if (s.Sep || s.Id == "gap" || s.Show < 0.5f) continue;
                     ids.Add(s.App == null ? "sys:" + s.Id : s.Id);
                 }
                 return ids;
