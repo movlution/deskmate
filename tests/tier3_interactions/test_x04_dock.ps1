@@ -11,6 +11,7 @@ Describe "Tier 3 Pairwise: Dock x Theme" {
     $dockType = Get-DeskmateType "DockWindow"
     $painterType = Get-DeskmateType "Painter"
     $toneType = Get-DeskmateType "Tone"
+    $frostKind = [System.Enum]::Parse((Get-DeskmateType "GlassKind"), "Frost")
 
     function New-TestDock {
         $dock = [Activator]::CreateInstance($dockType, $flags, $null, @($null), $null)
@@ -137,7 +138,7 @@ Describe "Tier 3 Pairwise: Dock x Theme" {
                         $dockType.GetField("g", $flags).SetValue($dock, $g)
                         $painterType.GetField("T", $flags).SetValue($painter, $tone)
                         $painterType.GetField("Alpha", $flags).SetValue($painter, [single]1)
-                        [void]$dockType.GetMethod("RimLight", $flags).Invoke($dock, @([System.Drawing.RectangleF](New-Object System.Drawing.RectangleF 10, 10, 140, 50), [System.Drawing.Drawing2D.GraphicsPath]$path))
+                        [void]$dockType.GetMethod("RimLight", $flags).Invoke($dock, @([System.Drawing.RectangleF](New-Object System.Drawing.RectangleF 10, 10, 140, 50), [System.Drawing.Drawing2D.GraphicsPath]$path, $frostKind))
                     }
                     finally { $g.Dispose() }
                     $maxA = 0; $peak = [System.Drawing.Color]::Black

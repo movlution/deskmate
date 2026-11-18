@@ -186,9 +186,20 @@ namespace Deskmate
             if (string.IsNullOrEmpty(s) || maxWidth < 4) return;
             line.Alignment = align;
             var box = LineBox(f, x, cy, maxWidth, align);
-            if (Shadow && c.R > 128 && c.A > 60)
-                G.DrawString(s, f, B(Color.FromArgb((int)(90 * c.A / 255f), 0, 0, 0)), new RectangleF(box.X, box.Y + 1f, box.Width, box.Height), line);
+            if (Shadow && c.A > 60)
+            {
+                G.DrawString(s, f, B(ShadowOf(c, 1f)), new RectangleF(box.X, box.Y + 1f, box.Width, box.Height), line);
+                G.DrawString(s, f, B(ShadowOf(c, 0.45f)), new RectangleF(box.X + 1f, box.Y + 2f, box.Width, box.Height), line);
+            }
             G.DrawString(s, f, B(c), box, line);
+        }
+
+        // Light ink gets a dark shadow; dark ink on Clear glass gets a light one.
+        Color ShadowOf(Color c, float amount)
+        {
+            bool lightInk = c.R > 128;
+            int a = (int)((lightInk ? 165 : 140) * amount * c.A / 255f);
+            return lightInk ? Color.FromArgb(a, 0, 0, 0) : Color.FromArgb(a, 255, 255, 255);
         }
 
         // Notification-only font fallback; the general UI text renderer stays unchanged.
@@ -284,9 +295,13 @@ namespace Deskmate
                     for (int i = 0; i < runs.Count; i++)
                     {
                         var box = LineBox(faces[i], left, cy, Math.Max(widths[i] + 4, maxWidth), StringAlignment.Near);
-                        if (Shadow && c.R > 128 && c.A > 60)
-                            G.DrawString(runs[i], faces[i], B(Color.FromArgb((int)(90 * c.A / 255f), 0, 0, 0)),
+                        if (Shadow && c.A > 60)
+                        {
+                            G.DrawString(runs[i], faces[i], B(ShadowOf(c, 1f)),
                                 new RectangleF(box.X, box.Y + 1, box.Width, box.Height), fmt);
+                            G.DrawString(runs[i], faces[i], B(ShadowOf(c, 0.45f)),
+                                new RectangleF(box.X + 1, box.Y + 2, box.Width, box.Height), fmt);
+                        }
                         G.DrawString(runs[i], faces[i], B(c), box, fmt);
                         left += widths[i];
                     }

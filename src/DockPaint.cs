@@ -90,13 +90,10 @@ namespace Deskmate
                     return;
                 }
                 if (dockBackdrop == null) dockBackdrop = new CompGlass.CompBackdrop();
-                bool liquid = isle != null && isle.LiquidOn;
-                bool clear = isle != null && isle.ClearOn;
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
                 // bar: true asks for the denser tint. The bar spans whatever window is behind it, so it needs to
                 // hide background detail that the island can safely let through over wallpaper.
-                var spec = clear
-                    ? CompGlass.SpecClear(gpuBarText, scale, 1f, true)
-                    : CompGlass.Spec(liquid, gpuBarText, scale, 1f, true);
+                var spec = CompGlass.Spec(kind, gpuBarText, scale, 1f, true);
                 dockBackdrop.Sync(Handle, new Rectangle(winX, winY, cw, ch), true, spec, gpuBarPills, gpuBarCount, null, null, scale, "", clipToPill: true);
             }
 
@@ -143,20 +140,23 @@ namespace Deskmate
                         gpuBarCount = 1;
                         gpuBarText |= text;
                     }
+                    GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
                     var img = glass ? (text ? plate.Text : plate.Image) : null;
                     // Wallpaper tint is a flat colour, not a live scene: magnifying
                     // it only adds seams near the rim. Keep the tint smooth.
                     bool tinted = glass && isle != null && isle.WallGlassOn;
                     if (glass) Backdrop(img, r, 1f);
-                    if (glass && !tinted && (isle.LiquidOn || isle.ClearOn) && radius > 0) Lens(img, r, radius);
+                    // Only Liquid bends the backdrop at its rim; Clear stays a flat
+                    // pane and Frost stays matte.
+                    if (glass && !tinted && kind == GlassKind.Liquid && radius > 0) Lens(img, r, radius, kind);
                     // Solid until glass arrives; over glass only a light veil (alpha >= 10 keeps hit-testing active)
-                    float veilA = (gpu || glass) ? (isle != null && isle.ClearOn ? 0.02f : isle != null && isle.LiquidOn ? 0.05f : 0.08f) : 0.9f;
+                    float veilA = (gpu || glass) ? GlassRecipe.Overlay(kind, false, true) : 0.9f;
                     g.FillPath(p.B(Ink.A(Ink.Veil, veilA)), path);
-                    Sheen(r);
+                    Sheen(r, kind);
                     g.Restore(st);
                     // The tinted dock has a feathered edge; a crisp rim would draw
                     // a second, harder outline over it.
-                    if (!tinted) RimLight(r, path);
+                    if (!tinted) RimLight(r, path, kind);
                     Rim(r, radius);
                 }
             }
@@ -179,15 +179,15 @@ namespace Deskmate
 
             // Thick glass bends light at its rim: along the top and bottom edges
             // the backdrop shows a little magnified, as through a lens
-            void Lens(Bitmap img, RectangleF r, float radius)
+            void Lens(Bitmap img, RectangleF r, float radius, GlassKind kind)
             {
                 float rim = Math.Min(7f, r.Height * 0.13f), x0 = r.X + radius * 0.55f, x1 = r.Right - radius * 0.55f;
                 if (x1 - x0 < 4) return;
-                LensStrip(img, r, new RectangleF(x0, r.Y, x1 - x0, rim));
-                LensStrip(img, r, new RectangleF(x0, r.Bottom - rim, x1 - x0, rim));
+                LensStrip(img, r, new RectangleF(x0, r.Y, x1 - x0, rim), kind);
+                LensStrip(img, r, new RectangleF(x0, r.Bottom - rim, x1 - x0, rim), kind);
             }
 
-            void LensStrip(Bitmap img, RectangleF bar, RectangleF strip)
+            void LensStrip(Bitmap img, RectangleF bar, RectangleF strip, GlassKind kind)
             {
                 const float s = 1.14f;
                 var o = WindowOrigin();
@@ -200,18 +200,18 @@ namespace Deskmate
                 g.PixelOffsetMode = PixelOffsetMode.Half;
                 dst.Offset(-offX, -offY);
                 g.DrawImage(img, dst, src.X, src.Y, src.Width, src.Height, GraphicsUnit.Pixel);
-                g.FillRectangle(p.B(Ink.A(Ink.Veil, isle != null && isle.ClearOn ? 0.03f : 0.08f)), dst);
+                g.FillRectangle(p.B(Ink.A(Ink.Veil, GlassRecipe.Overlay(kind, false, true))), dst);
                 g.Restore(st);
             }
 
             // One specular line: clear along the top edge, softer along the bottom. Two stops only, because a
             // bright stop in the middle lit the bar's waist and read as a seam across the dock.
-            void RimLight(RectangleF r, GraphicsPath path)
+            void RimLight(RectangleF r, GraphicsPath path, GlassKind kind)
             {
                 using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y, r.Width, Math.Max(1f, r.Height)), p.T.Highlight, p.T.Highlight, 90f))
                 {
                     var cb = new ColorBlend(2);
-                    cb.Colors = new[] { Color.FromArgb(Ink.Light ? (isle != null && isle.ClearOn ? 168 : 150) : (isle != null && isle.ClearOn ? 122 : 92), p.T.Highlight), Color.FromArgb(Ink.Light ? 44 : isle != null && isle.ClearOn ? 36 : 30, p.T.Highlight) };
+                    cb.Colors = new[] { Color.FromArgb(GlassRecipe.DockRimTop(kind, Ink.Light), p.T.Highlight), Color.FromArgb(GlassRecipe.DockRimBottom(kind, Ink.Light), p.T.Highlight) };
                     cb.Positions = new[] { 0f, 1f };
                     lg.InterpolationColors = cb;
                     using (var pen = new Pen(lg, 1f)) g.DrawPath(pen, path);
@@ -229,9 +229,9 @@ namespace Deskmate
             // There is deliberately no glow tracking the pointer: that lobe was centred on the bar's waist with a
             // radius taller than the bar, so it painted a pale seam across the dock wherever the cursor sat. The
             // per-icon plate already marks the pointer, which is what a dock is supposed to do.
-            void Sheen(RectangleF r)
+            void Sheen(RectangleF r, GlassKind kind)
             {
-                using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, r.Height + 2), Color.FromArgb(Ink.Light ? 60 : 17, p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
+                using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, r.Height + 2), Color.FromArgb(GlassRecipe.Sheen(kind, Ink.Light), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
                     g.FillRectangle(lg, r.X, r.Y, r.Width, r.Height);
             }
 

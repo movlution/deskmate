@@ -69,13 +69,13 @@ namespace Deskmate
             en.Add("Jalur berkas saja, hanya di memori", "File paths only, memory only");
             en.Add("Jeda", "Pause");
             en.Add("Judul, artis, dan durasi ke LRCLIB, cadangannya NetEase", "Title, artist, and length to LRCLIB, NetEase as backup");
-            en.Add("Hitam paling hemat daya", "Black saves the most power");
-            en.Add("Kaca cair, warna di belakangnya tetap hidup", "Liquid glass, keeps the colors behind it vivid");
+            en.Add("Hitam pekat tanpa kaca", "Solid black without glass");
+            en.Add("Liquid: warna paling pekat dan hidup, kilau paling kuat", "Liquid: deepest, most vivid color and the strongest gloss");
             en.Add("Bening", "Clear");
-            en.Add("Bening, mengikuti warna di belakangnya", "Clear, follows the colors behind it");
+            en.Add("Bening: blur paling kuat, warna latar paling terlihat", "Clear: strongest blur, backdrop color most visible");
             en.Add("Sinkronkan wallpaper", "Sync wallpaper");
-            en.Add("Kaca diwarnai dari wallpaper; dock solid di dalam dengan tepi transparan; gambar wallpaper tidak ditampilkan", "Glass is tinted from the wallpaper; the dock is solid inside with transparent edges; the wallpaper picture is never shown");
-            en.Add("Buram lembut, tenang di mata", "Soft blur, easy on the eyes");
+            en.Add("Kaca diwarnai dari wallpaper; Bening paling tembus pandang, Frost paling pekat; gambar wallpaper tidak ditampilkan", "Glass is tinted from the wallpaper; Clear is the most transparent, Frost the densest; the wallpaper picture is never shown");
+            en.Add("Frost: buram netral dan padat, paling tenang", "Frost: neutral, dense blur, the calmest surface");
             en.Add("Tidak berefek saat tampil di rekaman layar aktif", "No effect while shown in screen recordings is on");
             en.Add("Kecerahan", "Brightness");
             en.Add("Kelas berikutnya", "Next class");

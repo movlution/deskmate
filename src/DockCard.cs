@@ -397,6 +397,7 @@ namespace Deskmate
                 if (g == null || IsDisposed) return;
                 hits.Clear();
                 p.T = dock.Glass ? Ink.Base.OnGlass() : Ink.Base;
+                p.Shadow = dock.Glass && isle != null && GlassRecipe.NeedsShadow(isle.Kind);
                 p.HalfPx = 0.5f / scale;
                 float fade = Ease.Clamp01(open.Value);
                 p.Alpha = fade;
@@ -406,6 +407,7 @@ namespace Deskmate
                 var r = new RectangleF(0.5f, 0.5f, cw / scale - 1, ch / scale - 1);
                 float radius = 16;
                 bool gpu = dock.Glass && CompGlass.Available && !(isle != null && isle.WallGlassOn);
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
                 using (var path = Ink.Round(r, radius))
                 {
                     var st = g.Save();
@@ -422,11 +424,17 @@ namespace Deskmate
                         }
                         g.Restore(inner);
                     }
-                    g.FillPath(p.B(Ink.A(Ink.Veil, gpu ? (isle != null && isle.ClearOn ? 0.04f : 0.14f) * fade : (plate != null && dock.Glass ? (isle != null && isle.ClearOn ? 0.05f : 0.3f) : 0.94f))), path);
-                    using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 40), Color.FromArgb((int)(fade * (Ink.Light ? 80 : 22)), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
+                    float veil;
+                    if (gpu) veil = GlassRecipe.Overlay(kind, true, false) * fade;
+                    else if (plate != null && dock.Glass) veil = GlassRecipe.PlateVeil(kind);
+                    else veil = 0.94f;
+                    g.FillPath(p.B(Ink.A(Ink.Veil, veil)), path);
+                    int topWash = dock.Glass ? GlassRecipe.TopWash(kind, Ink.Light) : (Ink.Light ? 80 : 22);
+                    using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 40), Color.FromArgb((int)(fade * topWash), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
                         g.FillRectangle(lg, r.X, r.Y, r.Width, 39);
                     g.Restore(st);
-                    g.DrawPath(p.P(Color.FromArgb(Ink.Light ? 70 : 40, p.T.Highlight), 1f), path);
+                    int borderA = dock.Glass ? GlassRecipe.Border(kind, Ink.Light) : (Ink.Light ? 70 : 40);
+                    g.DrawPath(p.P(Color.FromArgb(borderA, p.T.Highlight), 1f), path);
                 }
                 if (Kind == WindowsKind) DrawWindows(fade);
                 else DrawTray(fade);
@@ -456,9 +464,8 @@ namespace Deskmate
                     return;
                 }
                 if (cardBackdrop == null) cardBackdrop = new CompGlass.CompBackdrop();
-                bool liquid = isle != null && isle.LiquidOn;
-                bool clear = isle != null && isle.ClearOn;
-                var spec = clear ? CompGlass.SpecClear(true, scale, fade) : CompGlass.Spec(liquid, true, scale, fade);
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
+                var spec = CompGlass.Spec(kind, true, scale, fade);
                 cardPills[0] = new CompGlass.PillSpec(0.5f * scale, 0.5f * scale, cw - scale, ch - scale, 16f * scale);
                 cardBackdrop.Sync(Handle, new Rectangle(Location.X, Location.Y, cw, ch), true, spec, cardPills, 1, null, null, scale, "");
             }

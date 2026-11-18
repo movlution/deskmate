@@ -58,9 +58,16 @@ namespace Deskmate
         // PArgb pixels are premultiplied, so all four channels scale together.
         public static void Fade(Bitmap image)
         {
+            Fade(image, BehindOpacity);
+        }
+
+        // Material-specific opacity: Clear leaves the most desktop visible, Frost
+        // almost none. The dock core always uses FadeCore and stays solid.
+        public static void Fade(Bitmap image, float opacity)
+        {
             if (image == null) return;
             lock (gate) { if (!active) return; }
-            int k = (int)Math.Round(BehindOpacity * 255f);
+            int k = (int)Math.Round(Ease.Clamp01(opacity) * 255f);
             BitmapData data = null;
             try
             {

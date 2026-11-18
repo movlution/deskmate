@@ -513,8 +513,11 @@ namespace Deskmate
         {
             if (GlassOn && tone != null) tone = tone.OnGlass();
             p.T = tone;
-            // Text shadow on the pill only
-            p.Shadow = GlassOn && !LiquidOn && tone.Bg.R < 128 && current != View.Panel;
+            // Clear has almost no veil, so every surface that can sit over a bright
+            // window gets a contrasting shadow. Frost keeps its shadow only where
+            // the ink itself is light; Liquid stays glossy and shadow-free.
+            p.Shadow = GlassOn && (GlassRecipe.NeedsShadow(Kind) ||
+                (Kind != GlassKind.Liquid && tone.Bg.R < 128 && current != View.Panel));
             TrackPress();
             float t = (float)(now - switchedUtc).TotalSeconds;
             if (tone == Ink.Base || (GlassOn && tone != null && tone.Bg == Ink.Base.Bg)) DrawSnapshot(now);

@@ -12,6 +12,7 @@ Describe "Feature 4: Liquid Glass Color Space Blending" {
     $liquidPass = $island.GetMethod("LiquidPass", [System.Reflection.BindingFlags]'NonPublic,Static')
     $clearPass = $island.GetMethod("ClearPass", [System.Reflection.BindingFlags]'NonPublic,Static')
     $compGlass = Get-DeskmateType "CompGlass"
+    $glassKind = Get-DeskmateType "GlassKind"
     $spec = $compGlass.GetMethod("Spec", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
     $specClear = $compGlass.GetMethod("SpecClear", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
 
@@ -78,7 +79,7 @@ Describe "Feature 4: Liquid Glass Color Space Blending" {
 
     It "Verifies Clear material stays thinner than Liquid while blurring more of the backdrop" {
         Reset-DeskmateTheme -Light $false
-        $liquidArgs = [object[]]@([bool]$true, [bool]$false, [float]1.0, [float]1.0, [bool]$false)
+        $liquidArgs = [object[]]@([System.Enum]::Parse($glassKind, "Liquid"), [bool]$false, [float]1.0, [float]1.0, [bool]$false)
         $clearArgs = [object[]]@([bool]$false, [float]1.0, [float]1.0, [bool]$false)
         $liquidSpec = $spec.Invoke($null, $liquidArgs)
         $clearSpec = $specClear.Invoke($null, $clearArgs)
@@ -150,12 +151,14 @@ Describe "Feature 4: Liquid Glass Color Space Blending" {
         $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
         $glassSrc = Get-Content (Join-Path $projectRoot "src\Glass.cs") -Raw
         $dockSrc = Get-Content (Join-Path $projectRoot "src\DockFrost.cs") -Raw
-        Assert-True ($glassSrc -match 'WallBackdrop\.Fade\(pl\.Base\)') "Island shell must fade its wallpaper-tinted plate"
-        Assert-True ($dockSrc -match 'WallBackdrop\.Fade\(img\)') "Dock, card, and sheet plates must fade their wallpaper tint"
-        $fade = $wall.GetMethod("Fade", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
+        Assert-True ($glassSrc -match 'WallBackdrop\.Fade\(pl\.Base') "Island shell must fade its wallpaper-tinted plate"
+        Assert-True ($dockSrc -match 'WallBackdrop\.Fade\(img') "Dock, card, and sheet plates must fade their wallpaper tint"
+        $fade = $wall.GetMethod("Fade", [type[]]@([System.Drawing.Bitmap]))
+        $fadeMaterial = $wall.GetMethod("Fade", [type[]]@([System.Drawing.Bitmap], [single]))
         $setActive = $wall.GetMethod("SetActive", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
         $clear = $wall.GetMethod("Clear", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
         Assert-NotNull $fade "WallBackdrop.Fade must exist"
+        Assert-NotNull $fadeMaterial "WallBackdrop must expose material-specific opacity"
         Assert-NotNull $setActive "WallBackdrop.SetActive must exist"
         Assert-NotNull $clear "WallBackdrop.Clear must exist"
         $plate = New-Object System.Drawing.Bitmap 4, 4, ([System.Drawing.Imaging.PixelFormat]::Format32bppPArgb)
@@ -166,7 +169,14 @@ Describe "Feature 4: Liquid Glass Color Space Blending" {
             $fade.Invoke($null, [object[]]@([System.Drawing.Bitmap]$plate))
             $alpha = $plate.GetPixel(1, 1).A
             Assert-True ($alpha -lt 255) "Wallpaper plate must leave the desktop slightly visible (alpha: $alpha)"
-            Assert-True ($alpha -ge 210) "Wallpaper plate must stay mostly opaque (alpha: $alpha)"
+            Assert-True ($alpha -ge 210) "The default wallpaper plate must stay mostly opaque (alpha: $alpha)"
+
+            $pg = [System.Drawing.Graphics]::FromImage($plate)
+            try { $pg.Clear([System.Drawing.Color]::FromArgb(255, 38, 80, 160)) } finally { $pg.Dispose() }
+            $fadeMaterial.Invoke($null, [object[]]@([System.Drawing.Bitmap]$plate, [single]0.68))
+            $clearAlpha = $plate.GetPixel(1, 1).A
+            Assert-True ($clearAlpha -lt $alpha) "Clear must show more desktop than the default plate (clear: $clearAlpha, default: $alpha)"
+            Assert-InRange ([double]$clearAlpha) 160 185 "Clear wallpaper opacity must be about 0.68 (alpha: $clearAlpha)"
         }
         finally {
             $clear.Invoke($null, @())

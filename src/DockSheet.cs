@@ -459,6 +459,7 @@ namespace Deskmate
                 if (g == null || IsDisposed) return;
                 hits.Clear();
                 p.T = dock.Glass ? Ink.Base.OnGlass() : Ink.Base;
+                p.Shadow = dock.Glass && isle != null && GlassRecipe.NeedsShadow(isle.Kind);
                 p.HalfPx = 0.5f / scale;
                 float fade = Ease.Clamp01(open.Value);
                 p.Alpha = fade;
@@ -467,12 +468,13 @@ namespace Deskmate
                 var r = new RectangleF(0.5f, 0.5f, cw / scale - 1, ch / scale - 1);
                 bool gpu = dock.Glass && CompGlass.Available && !(isle != null && isle.WallGlassOn);
                 bool glass = !gpu && plate != null && dock.Glass;
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
                 using (var path = Ink.Round(r, 20))
                 {
                     if (gpu)
                     {
                         g.Clear(Color.Transparent);
-                        float veil = isle != null && isle.ClearOn ? 0.03f : 0.08f;
+                        float veil = GlassRecipe.Overlay(kind, true, false);
                         g.FillPath(p.B(Ink.A(Ink.Veil, Math.Max(0.02f, veil * fade))), path);
                     }
                     else if (glass)
@@ -506,7 +508,7 @@ namespace Deskmate
                             }
                         }
                         g.Restore(inner);
-                        g.FillRectangle(p.B(Ink.A(Ink.Veil, isle != null && isle.ClearOn ? 0.06f : 0.34f)), 0, 0, cw / scale, ch / scale);
+                        g.FillRectangle(p.B(Ink.A(Ink.Veil, GlassRecipe.PlateVeil(kind))), 0, 0, cw / scale, ch / scale);
                     }
                     else
                     {
@@ -515,7 +517,8 @@ namespace Deskmate
                     }
                     var st = g.Save();
                     if (!glass) g.SetClip(path, CombineMode.Intersect);
-                    using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 58), Color.FromArgb((int)(fade * (Ink.Light ? 80 : 22)), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
+                    int topWash = dock.Glass ? GlassRecipe.TopWash(kind, Ink.Light) : (Ink.Light ? 80 : 22);
+                    using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 58), Color.FromArgb((int)(fade * topWash), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
                     {
                         // No wrap: a tiled gradient leaves a bright seam
                         lg.WrapMode = WrapMode.TileFlipXY;
@@ -536,7 +539,8 @@ namespace Deskmate
                         g.FillRectangle(tr, lw - c, lh - c, c, c);
                         g.Restore(cs);
                     }
-                    g.DrawPath(p.P(Color.FromArgb(Ink.Light ? 70 : 40, p.T.Highlight), 1f), path);
+                    int borderA = dock.Glass ? GlassRecipe.Border(kind, Ink.Light) : (Ink.Light ? 70 : 40);
+                    g.DrawPath(p.P(Color.FromArgb(borderA, p.T.Highlight), 1f), path);
                 }
                 tipText = null;
                 Draw();
@@ -571,9 +575,8 @@ namespace Deskmate
                     return;
                 }
                 if (sheetBackdrop == null) sheetBackdrop = new CompGlass.CompBackdrop();
-                bool liquid = isle != null && isle.LiquidOn;
-                bool clear = isle != null && isle.ClearOn;
-                var spec = clear ? CompGlass.SpecClear(true, scale, fade) : CompGlass.Spec(liquid, true, scale, fade);
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
+                var spec = CompGlass.Spec(kind, true, scale, fade);
                 sheetPills[0] = new CompGlass.PillSpec(0.5f * scale, 0.5f * scale, cw - scale, ch - scale, 20f * scale);
                 sheetBackdrop.Sync(Handle, new Rectangle(x, y, cw, ch), true, spec, sheetPills, 1, null, null, scale, "");
             }
@@ -586,7 +589,8 @@ namespace Deskmate
             // Darker footer shelf
             protected void Shelf(RectangleF r, float height)
             {
-                float shelfA = dock.Glass && isle != null && isle.ClearOn ? 0.22f : 0.35f;
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
+                float shelfA = dock.Glass ? GlassRecipe.Shelf(kind) : 0.35f;
                 g.FillRectangle(p.B(Ink.A(Ink.Veil, shelfA)), r.X, H - height, r.Width, height);
                 // Solid: a hairline marks the footer
                 if (!dock.Glass) g.DrawLine(p.P(p.T.Line, 1f), r.X, H - height, r.Right, H - height);

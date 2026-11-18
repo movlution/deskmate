@@ -170,10 +170,10 @@ namespace Deskmate
                         string mat = island.MaterialName;
                         int matIdx = mat == "clear" ? 0 : mat == "frost" ? 2 : mat == "solid" ? 3 : 1;
                         Func<int, string> matNote = i => settings.GetBool("capture.show", false) ? Lang.T("Tidak berefek saat tampil di rekaman layar aktif") :
-                                                         i == 0 ? Lang.T("Bening, mengikuti warna di belakangnya") :
-                                                         i == 2 ? Lang.T("Buram lembut, tenang di mata") :
-                                                         i == 3 ? Lang.T("Hitam paling hemat daya") :
-                                                         Lang.T("Kaca cair, warna di belakangnya tetap hidup");
+                                                         i == 0 ? Lang.T("Bening: blur paling kuat, warna latar paling terlihat") :
+                                                         i == 2 ? Lang.T("Frost: buram netral dan padat, paling tenang") :
+                                                         i == 3 ? Lang.T("Hitam pekat tanpa kaca") :
+                                                         Lang.T("Liquid: warna paling pekat dan hidup, kilau paling kuat");
                         KitRow matRow = null;
                         var matSeg = Seg(new[] { Lang.T("Bening"), "Liquid", "Frost", Lang.T("Hitam") }, matIdx, i =>
                         {
@@ -186,7 +186,7 @@ namespace Deskmate
                         matRow = Row(Lang.T("Material"), matNote(matIdx), matSeg);
                         add(matRow);
 
-                        add(Row(Lang.T("Sinkronkan wallpaper"), custom ? Lang.T("Warna sendiri sedang dipakai") : Lang.T("Kaca diwarnai dari wallpaper; dock solid di dalam dengan tepi transparan; gambar wallpaper tidak ditampilkan"), Switch("wall.sync", false, null)));
+                        add(Row(Lang.T("Sinkronkan wallpaper"), custom ? Lang.T("Warna sendiri sedang dipakai") : Lang.T("Kaca diwarnai dari wallpaper; Bening paling tembus pandang, Frost paling pekat; gambar wallpaper tidak ditampilkan"), Switch("wall.sync", false, null)));
 
                         cap(Lang.T("Kustomisasi"));
                         add(Row(Lang.T("Warna kustom"), Lang.T("Pilih warna latar, teks, dan aksen manual"), Switch("look.custom", false, on =>

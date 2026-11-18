@@ -150,6 +150,7 @@ Describe "Tier 4 Scenario: S12 Dock Badge And Flyout" {
         $dockType = Get-DeskmateType "DockWindow"
         $painterType = Get-DeskmateType "Painter"
         $toneType = Get-DeskmateType "Tone"
+        $frostKind = [System.Enum]::Parse((Get-DeskmateType "GlassKind"), "Frost")
         $dock = [Activator]::CreateInstance($dockType, $flags, $null, @($null), $null)
         $painter = [Activator]::CreateInstance($painterType, $true)
         try {
@@ -169,7 +170,7 @@ Describe "Tier 4 Scenario: S12 Dock Badge And Flyout" {
                         $dockType.GetField("p", $flags).SetValue($dock, $painter)
                         $painterType.GetField("T", $flags).SetValue($painter, $tone)
                         $painterType.GetField("Alpha", $flags).SetValue($painter, [single]1)
-                        [void]$dockType.GetMethod("RimLight", $flags).Invoke($dock, @([System.Drawing.RectangleF](New-Object System.Drawing.RectangleF 10, 10, 140, 50), [System.Drawing.Drawing2D.GraphicsPath]$path))
+                        [void]$dockType.GetMethod("RimLight", $flags).Invoke($dock, @([System.Drawing.RectangleF](New-Object System.Drawing.RectangleF 10, 10, 140, 50), [System.Drawing.Drawing2D.GraphicsPath]$path, $frostKind))
                     }
                     finally { $g.Dispose() }
 

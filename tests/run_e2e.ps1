@@ -1,14 +1,14 @@
 # run_e2e.ps1
 # Master End-to-End Test Runner CLI for Deskmate
 # Usage:
-#   .\tests\run_e2e.ps1 [-Tier <1-4>] [-Feature <1-32>] [-Rebuild] [-BinaryPath <path>] [-TestFile <path>] [-VerboseOutput]
+#   .\tests\run_e2e.ps1 [-Tier <1-4>] [-Feature <1-35>] [-Rebuild] [-BinaryPath <path>] [-TestFile <path>] [-VerboseOutput]
 
 [CmdletBinding()]
 param(
     [ValidateRange(1, 4)]
     [int]$Tier,
 
-    [ValidateRange(1, 34)]
+    [ValidateRange(1, 35)]
     [int]$Feature,
 
     [switch]$Rebuild,
