@@ -35,7 +35,7 @@ namespace Deskmate
             // Pilot: a fixed picture instead of the user's screen
             public static Func<Rectangle, Bitmap> Backdrop { get; set; }
 
-            sealed class Job { public Rectangle Rect; public Color Bg; public bool Light, Liquid, Clear, NeedImage; public int Div; }
+            sealed class Job { public Rectangle Rect, CoreBar; public Color Bg; public bool Light, Liquid, Clear, NeedImage, Core; public float CoreRadius; public int Div; }
 
             readonly Action<DockPlate> deliver;
             readonly AutoResetEvent wake = new AutoResetEvent(false);
@@ -69,14 +69,15 @@ namespace Deskmate
                 Request(rect, bg, light, liquid, true);
             }
 
-            public void Request(Rectangle rect, Color bg, bool light, bool liquid, bool needImage, bool clear = false)
+            public void Request(Rectangle rect, Color bg, bool light, bool liquid, bool needImage, bool clear = false,
+                bool core = false, Rectangle coreBar = default(Rectangle), float coreRadius = 0f)
             {
                 bool fastSheet = !needImage;
                 int div = fastSheet ? 6 : (liquid || clear ? 2 : 5);
-                var j = new Job { Rect = rect, Bg = bg, Light = light, Liquid = liquid, Clear = clear, Div = div, NeedImage = needImage };
+                var j = new Job { Rect = rect, Bg = bg, Light = light, Liquid = liquid, Clear = clear, Div = div, NeedImage = needImage, Core = core, CoreBar = coreBar, CoreRadius = coreRadius };
                 var last = Volatile.Read(ref job);
                 Volatile.Write(ref job, j);
-                if (last == null || last.Rect != rect || last.Bg != bg || last.Liquid != liquid || last.Clear != clear || last.Light != light || last.NeedImage != needImage) wake.Set();
+                if (last == null || last.Rect != rect || last.Bg != bg || last.Liquid != liquid || last.Clear != clear || last.Light != light || last.NeedImage != needImage || last.Core != core || last.CoreBar != coreBar || last.CoreRadius != coreRadius) wake.Set();
             }
 
             // Windows moved: look again once they settle
@@ -105,7 +106,7 @@ namespace Deskmate
                         j = Volatile.Read(ref job);
                         if (j == null || j.Rect.Width < 8 || j.Rect.Height < 8) { wait = 1000; continue; }
                     }
-                    bool same = last != null && last.Rect == j.Rect && last.Bg == j.Bg && last.Liquid == j.Liquid && last.Clear == j.Clear && last.Light == j.Light && last.NeedImage == j.NeedImage;
+                    bool same = last != null && last.Rect == j.Rect && last.Bg == j.Bg && last.Liquid == j.Liquid && last.Clear == j.Clear && last.Light == j.Light && last.NeedImage == j.NeedImage && last.Core == j.Core && last.CoreBar == j.CoreBar && last.CoreRadius == j.CoreRadius;
                     try
                     {
                         var frameSw = Stopwatch.StartNew();
@@ -252,7 +253,8 @@ namespace Deskmate
                     pg.CompositingMode = CompositingMode.SourceOver;
                     if (!j.Liquid && !j.Clear) using (var tint = new SolidBrush(Ink.A(j.Bg, BaseTint))) pg.FillRectangle(tint, 0, 0, j.Rect.Width, j.Rect.Height);
                 }
-                WallBackdrop.Fade(img);
+                if (j.Core) WallBackdrop.FadeCore(img, j.CoreBar, j.CoreRadius);
+                else WallBackdrop.Fade(img);
                 return img;
             }
 
@@ -313,7 +315,8 @@ namespace Deskmate
                     float f = j.Div / 2f;
                     pg.DrawImage(tiny, new RectangleF(-f, -f, dw + f * 2, dh + f * 2));
                 }
-                WallBackdrop.Fade(img);
+                if (j.Core) WallBackdrop.FadeCore(img, j.CoreBar, j.CoreRadius);
+                else WallBackdrop.Fade(img);
                 return img;
             }
 

@@ -174,6 +174,31 @@ Describe "Feature 4: Liquid Glass Color Space Blending" {
         }
     }
 
+    It "Verifies the dock keeps a solid core and a transparent edge" {
+        $wall = Get-DeskmateType "WallBackdrop"
+        $fadeCore = $wall.GetMethod("FadeCore", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
+        $setActive = $wall.GetMethod("SetActive", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
+        $clear = $wall.GetMethod("Clear", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
+        Assert-NotNull $fadeCore "WallBackdrop.FadeCore must exist for the dock"
+        $bmp = New-Object System.Drawing.Bitmap 80, 40, ([System.Drawing.Imaging.PixelFormat]::Format32bppPArgb)
+        try {
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            try { $g.Clear([System.Drawing.Color]::FromArgb(255, 30, 80, 160)) } finally { $g.Dispose() }
+            $setActive.Invoke($null, [object[]]@($true))
+            $bar = New-Object System.Drawing.Rectangle 0, 0, 80, 40
+            $fadeCore.Invoke($null, [object[]]@([System.Drawing.Bitmap]$bmp, [System.Drawing.Rectangle]$bar, [single]20))
+            $center = $bmp.GetPixel(40, 20).A
+            $edge = $bmp.GetPixel(0, 20).A
+            Assert-Equal 255 $center "The dock core must stay fully opaque"
+            Assert-True ($edge -lt 32) "The dock edge must fade out (alpha: $edge)"
+            Assert-True ($center -gt $edge) "The dock must be solid inside, not inverted"
+        }
+        finally {
+            $clear.Invoke($null, @())
+            $bmp.Dispose()
+        }
+    }
+
     It "Verifies ClearPass preserves backdrop chroma under a thin veil" {
         $w = 24; $h = 18
         $bmp = New-Object System.Drawing.Bitmap $w, $h, ([System.Drawing.Imaging.PixelFormat]::Format32bppRgb)

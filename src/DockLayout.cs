@@ -84,7 +84,15 @@ namespace Deskmate
                 if (frost != null && Glass)
                 {
                     int top = area.Bottom - (int)Math.Ceiling((BarH + Edge) * scale);
-                    frost.Request(new Rectangle(at.X, top, cw, area.Bottom - top), Ink.Veil, Ink.Light, isle.LiquidOn, true, isle.ClearOn);
+                    var bar = Full ? new RectangleF(0, barTop, cw / scale, BarH) : centerPill;
+                    if (bar.Width < 2) bar = new RectangleF(0, barTop, cw / scale, BarH);
+                    var core = new Rectangle(
+                        (int)Math.Round(bar.X * scale),
+                        (int)Math.Round(at.Y + barTop * scale - top),
+                        Math.Max(1, (int)Math.Round(bar.Width * scale)),
+                        Math.Max(1, (int)Math.Round(bar.Height * scale)));
+                    frost.Request(new Rectangle(at.X, top, cw, area.Bottom - top), Ink.Veil, Ink.Light, isle.LiquidOn, true, isle.ClearOn,
+                        true, core, Full ? 0f : Radius * scale);
                 }
                 if (tray != null) tray.SetArea(TrayArea());
             }

@@ -186,7 +186,7 @@ namespace Deskmate
                         matRow = Row(Lang.T("Material"), matNote(matIdx), matSeg);
                         add(matRow);
 
-                        add(Row(Lang.T("Sinkronkan wallpaper"), custom ? Lang.T("Warna sendiri sedang dipakai") : Lang.T("Kaca diwarnai dari wallpaper dan sedikit tembus pandang; gambar wallpaper tidak ditampilkan"), Switch("wall.sync", false, null)));
+                        add(Row(Lang.T("Sinkronkan wallpaper"), custom ? Lang.T("Warna sendiri sedang dipakai") : Lang.T("Kaca diwarnai dari wallpaper; dock solid di dalam dengan tepi transparan; gambar wallpaper tidak ditampilkan"), Switch("wall.sync", false, null)));
 
                         cap(Lang.T("Kustomisasi"));
                         add(Row(Lang.T("Warna kustom"), Lang.T("Pilih warna latar, teks, dan aksen manual"), Switch("look.custom", false, on =>

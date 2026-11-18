@@ -83,6 +83,59 @@ namespace Deskmate
             }
         }
 
+        // The dock keeps a solid tint behind its content and lets the desktop
+        // show only at the rounded edges. The inside stays fully opaque.
+        public static void FadeCore(Bitmap image, Rectangle bar, float radius)
+        {
+            if (image == null) return;
+            lock (gate) { if (!active) return; }
+            var r = Rectangle.Intersect(bar, new Rectangle(0, 0, image.Width, image.Height));
+            if (r.Width < 4 || r.Height < 4) return;
+            float rad = Math.Max(0f, Math.Min(radius, Math.Min(r.Width, r.Height) / 2f));
+            float band = Math.Max(3f, Math.Min(16f, Math.Min(r.Width, r.Height) * 0.20f));
+            float cx = r.X + r.Width / 2f, cy = r.Y + r.Height / 2f;
+            float hw = r.Width / 2f - rad, hh = r.Height / 2f - rad;
+            BitmapData data = null;
+            try
+            {
+                var rect = new Rectangle(0, 0, image.Width, image.Height);
+                data = image.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppPArgb);
+                int stride = data.Stride;
+                var row = new byte[stride];
+                for (int y = r.Top; y < r.Bottom; y++)
+                {
+                    IntPtr at = IntPtr.Add(data.Scan0, y * stride);
+                    Marshal.Copy(at, row, 0, stride);
+                    for (int x = r.Left; x < r.Right; x++)
+                    {
+                        float dx = Math.Abs(x + 0.5f - cx) - hw;
+                        float dy = Math.Abs(y + 0.5f - cy) - hh;
+                        float mx = Math.Max(dx, 0f), my = Math.Max(dy, 0f);
+                        float d = (float)Math.Sqrt(mx * mx + my * my) + Math.Min(Math.Max(dx, dy), 0f) - rad;
+                        float a = d >= 0f ? 0f : d <= -band ? 1f : -d / band;
+                        int i = x * 4;
+                        if (a <= 0f)
+                        {
+                            row[i] = 0; row[i + 1] = 0; row[i + 2] = 0; row[i + 3] = 0;
+                        }
+                        else if (a < 1f)
+                        {
+                            int k = (int)(a * 255f + 0.5f);
+                            row[i] = (byte)((row[i] * k + 127) / 255);
+                            row[i + 1] = (byte)((row[i + 1] * k + 127) / 255);
+                            row[i + 2] = (byte)((row[i + 2] * k + 127) / 255);
+                            row[i + 3] = (byte)((row[i + 3] * k + 127) / 255);
+                        }
+                    }
+                    Marshal.Copy(row, 0, at, stride);
+                }
+            }
+            finally
+            {
+                if (data != null) image.UnlockBits(data);
+            }
+        }
+
         // Fill a pane with a soft two-stop wash. The screen rectangle is only
         // validated; no desktop wallpaper is decoded or cropped here.
         public static bool Draw(Graphics g, Rectangle screenRect, Size dest)
