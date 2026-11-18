@@ -52,6 +52,10 @@ namespace Deskmate
             int tickN;
             // Dock slides in on open and for auto-hide
             readonly Spring reveal = new Spring(0, 1, 1, 0.001f), hover = new Spring(0, 1, 1, 0.002f), workDot = new Spring(0, 1, 1, 0.003f);
+            // Rising: a quick, decisive lift that settles without a visible bounce.
+            // Hiding stays calmer so the bar leaves instead of snapping away.
+            const float RevealUpK = 1600f, RevealUpDamping = 0.94f;
+            const float RevealDownK = 620f, RevealDownDamping = 1f;
             bool wantShown = true, focusReveal;
 
             [DllImport("user32.dll")] static extern bool RegisterShellHookWindow(IntPtr h);
@@ -102,7 +106,7 @@ namespace Deskmate
                 AllowDrop = true;
                 Text = "Deskmate Dock";
                 Bounds = new Rectangle(-32000, -32000, 1, 1);
-                Tune(reveal, 170, 0.86f);
+                Tune(reveal, RevealUpK, RevealUpDamping);
                 Tune(hover, 260, 0.9f);
                 Tune(workDot, 340, 0.78f);
                 tick.Tick += delegate { Tick(); };
@@ -745,6 +749,7 @@ namespace Deskmate
                 if (on) hideLater.Stop();
                 revealLater.Stop();
                 wantShown = on;
+                Tune(reveal, on ? RevealUpK : RevealDownK, on ? RevealUpDamping : RevealDownDamping);
                 reveal.Target = on ? 1 : 0;
                 Animate();
             }

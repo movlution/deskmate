@@ -69,4 +69,66 @@ Describe "Tier 3: Dock edge hover" {
             $dock.Dispose()
         }
     }
+
+    It "4. rises quickly, lands smoothly, and retracts without a bounce" {
+        $animType = Get-DeskmateType "Anim"
+        $reducedField = $animType.GetField("Reduced", $flags)
+        $paceField = $animType.GetField("Pace", $flags)
+        $bounceField = $animType.GetField("Bounce", $flags)
+        $oldReduced = $reducedField.GetValue($null)
+        $oldPace = $paceField.GetValue($null)
+        $oldBounce = $bounceField.GetValue($null)
+        $dock = [Activator]::CreateInstance($dockType, $flags, $null, @($null), $null)
+        try {
+            $reducedField.SetValue($null, $false)
+            $paceField.SetValue($null, [single]1)
+            $bounceField.SetValue($null, [single]1)
+
+            $reveal = $dockType.GetField("reveal", $flags).GetValue($dock)
+            [void]$dockType.GetMethod("Reveal", $flags).Invoke($dock, @($true))
+            $reveal.Value = 0
+            $reveal.Velocity = 0
+            $reveal.Target = 1
+
+            $firstFrame = 0.0
+            $rise90 = -1.0
+            $peak = 0.0
+            for ($i = 1; $i -le 60; $i++) {
+                $reveal.Step([single](1.0 / 60.0))
+                $v = [double]$reveal.Value
+                if ($i -eq 1) { $firstFrame = $v }
+                if ($v -gt $peak) { $peak = $v }
+                if ($rise90 -lt 0 -and $v -ge 0.90) { $rise90 = $i / 60.0 }
+            }
+
+            Assert-True ($firstFrame -ge 0.12) "The first frame must move at least 12% of the rise (got $([Math]::Round($firstFrame * 100, 1))%)"
+            Assert-True ($rise90 -gt 0 -and $rise90 -le 0.12) "The dock must reach 90% of its rise within 120 ms (got $([Math]::Round($rise90 * 1000)) ms)"
+            Assert-True ($peak -le 1.01) "The rise must not visibly bounce past rest (peak $([Math]::Round($peak * 100, 1))%)"
+            Assert-True ([Math]::Abs([double]$reveal.Value - 1.0) -le 0.002) "The rise must settle cleanly at rest"
+
+            [void]$dockType.GetMethod("Reveal", $flags).Invoke($dock, @($false))
+            $reveal.Value = 1
+            $reveal.Velocity = 0
+            $reveal.Target = 0
+
+            $hide90 = -1.0
+            $floor = 1.0
+            for ($i = 1; $i -le 60; $i++) {
+                $reveal.Step([single](1.0 / 60.0))
+                $v = [double]$reveal.Value
+                if ($hide90 -lt 0 -and $v -le 0.10) { $hide90 = $i / 60.0 }
+                if ($v -lt $floor) { $floor = $v }
+            }
+
+            Assert-True ($hide90 -gt 0 -and $hide90 -le 0.32) "The dock must retract calmly within 320 ms (got $([Math]::Round($hide90 * 1000)) ms)"
+            Assert-True ($floor -ge -0.002) "The retract must not dip below its resting edge"
+            Assert-True ($rise90 -lt $hide90 * 0.70) "The rise must be clearly quicker than the retract"
+        }
+        finally {
+            $reducedField.SetValue($null, $oldReduced)
+            $paceField.SetValue($null, $oldPace)
+            $bounceField.SetValue($null, $oldBounce)
+            $dock.Dispose()
+        }
+    }
 }
