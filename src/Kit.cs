@@ -15,18 +15,19 @@ namespace Deskmate
         public static bool ByMouse;
 
         static Color O(Color c) { return Color.FromArgb(255, c.R, c.G, c.B); }
-        public static Color Window { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.0f : 0.04f)); } }
-        public static Color Side { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.05f : 0.07f)); } }
-        public static Color Group { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.035f : 0.09f)); } }
-        public static Color Line { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.12f : 0.15f)); } }
-        public static Color Hover { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.09f : 0.16f)); } }
+        // Windows 11 surfaces: canvas, navigation, cards, separators, hover.
+        public static Color Window { get { return O(Ink.Base.Bg); } }
+        public static Color Side { get { return O(Ink.Mix(Ink.Base.Bg, Color.Black, Ink.Light ? 0.035f : 0.055f)); } }
+        public static Color Group { get { return O(Ink.Light ? Ink.Mix(Ink.Base.Bg, Color.White, 0.85f) : Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.07f)); } }
+        public static Color Line { get { return O(Ink.Light ? Ink.Mix(Ink.Base.Bg, Color.Black, 0.10f) : Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.12f)); } }
+        public static Color Hover { get { return O(Ink.Light ? Ink.Mix(Ink.Base.Bg, Color.Black, 0.06f) : Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.09f)); } }
         // Selected segment, lifted above its track
-        public static Color Raised { get { return Ink.Light ? Color.White : O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.3f)); } }
+        public static Color Raised { get { return Ink.Light ? Color.White : O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.16f)); } }
         public static Color Text { get { return O(Ink.Base.Text); } }
-        // Light Sub sits above Faint (0.65) so secondary text keeps hierarchy and >= 4.5:1 on Line
-        public static Color Sub { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.67f : 0.62f)); } }
-        // 0.65 light / 0.59 dark guarantee >= 4.5:1 across Window, Side, Group, Hover, and Line
-        public static Color Faint { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.65f : 0.59f)); } }
+        // Light Sub sits above Faint so secondary text keeps hierarchy and >= 4.5:1 on Line
+        public static Color Sub { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.74f : 0.72f)); } }
+        // 0.69 light / 0.66 dark guarantee >= 4.5:1 across Window, Side, Group, Hover, and Line
+        public static Color Faint { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.69f : 0.66f)); } }
         // Disabled chrome (switch knob, slider fill): dimmer than tertiary text so
         // raising Faint for readability does not make disabled controls look enabled
         public static Color Disabled { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.30f)); } }

@@ -82,7 +82,7 @@ namespace Deskmate
             static readonly Dictionary<string, string> SectionKeywords = new Dictionary<string, string>
             {
                 { "overview", "beranda home status cepat" },
-                { "look", "tema gelap terang otomatis aksen warna wallpaper paket" },
+                { "look", "tema sistem gelap terang otomatis aksen warna wallpaper paket" },
                 { "island", "notch dynamic island letak posisi ukuran mata jam diam" },
                 { "tabs", "tab kartu ringkasan home urutan" },
                 { "dock", "dock taskbar widget aplikasi" },

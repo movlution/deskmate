@@ -42,18 +42,38 @@ namespace Deskmate
             Kick();
         }
 
-        // theme: gelap, terang, otomatis
+        // theme: sistem (follows Windows), terang, gelap. "otomatis" is the
+        // legacy spelling and keeps working for existing settings files.
+        static string CanonicalThemeMode(string mode)
+        {
+            string m = (mode ?? "").Trim().ToLowerInvariant();
+            if (m == "terang" || m == "light") return "terang";
+            if (m == "gelap" || m == "dark") return "gelap";
+            return "sistem";
+        }
+
+        string ThemeMode()
+        {
+            return CanonicalThemeMode(settings.Get("theme", "sistem"));
+        }
+
+        static int ThemeIndex(string mode)
+        {
+            string m = CanonicalThemeMode(mode);
+            return m == "terang" ? 1 : m == "gelap" ? 2 : 0;
+        }
+
         void SetThemeMode(string mode)
         {
-            settings.Set("theme", mode);
+            settings.Set("theme", CanonicalThemeMode(mode));
             settings.Save();
             ApplyThemeMode();
         }
 
         bool ThemeLight()
         {
-            string mode = settings.Get("theme", "gelap");
-            return mode == "terang" || (mode == "otomatis" && !winDark);
+            string mode = ThemeMode();
+            return mode == "terang" || (mode == "sistem" && !winDark);
         }
 
         void ApplyThemeMode()

@@ -12,11 +12,11 @@ Describe "Tier 4 Scenario: S01 First-Run Onboarding" {
         Reset-DeskmateTheme -Light $false
     }
 
-    It "boots with the default dark theme and readable primary tokens" {
+    It "renders dark tokens with readable primary contrast" {
         Reset-DeskmateTheme -Light $false
         $ink = Get-DeskmateType "Ink"
         Assert-NotNull $ink "Ink type must resolve after first-run initialization"
-        Assert-False (Get-DeskmateStaticField "Ink" "Light") "A fresh profile must start in dark mode"
+        Assert-False (Get-DeskmateStaticField "Ink" "Light") "A dark reset must clear Ink.Light"
         $base = Get-DeskmateStaticField "Ink" "Base"
         Assert-NotNull $base "Ink.Base must exist after Ink.Init()"
         Assert-True ($base.Bg.R -lt 60 -and $base.Text.R -gt 180) "Default tokens must be dark surface with light ink"

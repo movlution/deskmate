@@ -75,7 +75,7 @@ Describe "Tier 3 Pairwise: Pack x Due x Notification" {
             Assert-True ($lightBase.Bg.R -gt 220 -and $lightBase.Text.R -lt 40) "Clearing the pack must restore the light paper surfaces"
             $apply.Invoke($null, @([bool]$false))
             $darkBase = Get-DeskmateStaticField "Ink" "Base"
-            Assert-True ($darkBase.Bg.R -lt 30 -and $darkBase.Text.R -gt 200) "Theme flip back must restore dark surfaces"
+            Assert-True ($darkBase.Bg.R -lt 40 -and $darkBase.Text.R -gt 200) "Theme flip back must restore dark surfaces"
             Assert-True ((Get-DeskmateContrast (Get-DeskmateStaticProperty "KitInk" "Faint") (Get-DeskmateStaticProperty "KitInk" "Window")) -ge 4.5) "Faint must remain readable after the pack round-trip"
         }
         finally { Reset-DeskmateTheme -Light $false }

@@ -15,7 +15,7 @@ Bagian di samping dikelompokkan: **Umum**, **Tampilan**, **Dynamic Island**, **D
 
 ### Tampilan
 
-- **Tema dan warna**: tema (gelap, terang, atau otomatis mengikuti mode aplikasi Windows), material (Bening, Liquid, Frost, Hitam), aksen (termasuk dari sampul album: warna paling mencolok di sampul lagu yang diputar, diterangkan atau digelapkan sampai terbaca di island), sinkronkan warna wallpaper (kaca notch, dock, dan kartunya memakai warna turunan wallpaper; dock punya inti solid dan tepi tembus pandang agar latar belakang samar terlihat; gambar wallpaper tidak ditampilkan; warna ikut berubah saat wallpaper berganti; aksen ikut wallpaper selama belum memilih aksen), dan warna sendiri (pilih latar, teks, dan aksen dari preset, ambil dari layar, atau warna bebas; warna lain diturunkan dari ketiganya seperti di pembuat paket, kontras teks ditampilkan, dan hasilnya bisa disimpan jadi paket tema). **Bening** memakai blur kuat dan lapisan tipis, sehingga warna di belakang kaca tetap terlihat; saat **Sinkronkan wallpaper** aktif, kaca memakai warna wallpaper, dock tetap solid di dalam dengan tepi tembus pandang, dan gambar wallpaper tidak ditampilkan secara utuh.
+- **Tema dan warna**: tema (Sistem, Terang, atau Gelap; Sistem mengikuti mode aplikasi Windows secara langsung), material (Bening, Liquid, Frost, Hitam), aksen (termasuk dari sampul album: warna paling mencolok di sampul lagu yang diputar, diterangkan atau digelapkan sampai terbaca di island), sinkronkan warna wallpaper (kaca notch, dock, dan kartunya memakai warna turunan wallpaper; dock punya inti solid dan tepi tembus pandang agar latar belakang samar terlihat; gambar wallpaper tidak ditampilkan; warna ikut berubah saat wallpaper berganti; aksen ikut wallpaper selama belum memilih aksen), dan warna sendiri (pilih latar, teks, dan aksen dari preset, ambil dari layar, atau warna bebas; warna lain diturunkan dari ketiganya seperti di pembuat paket, kontras teks ditampilkan, dan hasilnya bisa disimpan jadi paket tema). **Bening** memakai blur kuat dan lapisan tipis, sehingga warna di belakang kaca tetap terlihat; saat **Sinkronkan wallpaper** aktif, kaca memakai warna wallpaper, dock tetap solid di dalam dengan tepi tembus pandang, dan gambar wallpaper tidak ditampilkan secara utuh.
 - **Paket tema**: paket, suara sapaan paket, folder paket, dan pembuat paket.
 
 ### Dynamic Island
@@ -62,7 +62,7 @@ Semua kunci di `%APPDATA%\Deskmate\settings.ini` (ubah saat Deskmate tidak berja
 | Kunci | Bawaan | Fungsi |
 |---|---|---|
 | `material` | `liquid` | `clear` (bening, warna di belakang kaca terlihat; dengan `wall.sync`, warnanya dari wallpaper), `liquid`, `frost`, atau `solid` (hitam pekat). Kunci lama `glass=0` dibaca sebagai `solid` |
-| `theme` | `gelap` | `gelap`, `terang`, atau `otomatis` (mengikuti mode aplikasi Windows) |
+| `theme` | `sistem` | `sistem` (mengikuti mode aplikasi Windows), `terang`, atau `gelap`; nilai lama `otomatis` tetap dibaca sebagai `sistem` |
 | `lyrics` | `1` | Lirik tersinkron di island |
 | `lyrics.online` | `1` | Cari lirik di LRCLIB dan NetEase |
 | `visualizer` | `1` | Visualizer musik |

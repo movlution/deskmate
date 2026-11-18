@@ -24,23 +24,26 @@ namespace Deskmate
 
         public bool IsDark { get { return Bg.R + Bg.G + Bg.B < 384; } }
 
-        // Glass can sit on a bright wallpaper: secondary text at 74% keeps 4.5:1
+        // Glass can sit on a bright wallpaper: raise secondary ink so the
+        // charcoal dark canvas still keeps 4.5:1 after the wallpaper tint.
         public Tone OnGlass()
         {
             var t = (Tone)MemberwiseClone();
-            t.Sub = Color.FromArgb(Math.Max((int)Sub.A, 189), Sub);
+            t.Sub = Color.FromArgb(Math.Max((int)Sub.A, 228), Sub);
             return t;
         }
 
         public static Tone Dark()
         {
+            // Windows 11 neutral surfaces: charcoal instead of pure black, with
+            // white ink. This is the same family as Settings and File Explorer.
             return Defaults(new Tone
             {
-                Bg = Color.FromArgb(255, 0, 0, 0),
-                Text = Color.FromArgb(255, 245, 245, 247),
-                Sub = Color.FromArgb(158, 245, 245, 247),
+                Bg = Color.FromArgb(255, 32, 32, 32),
+                Text = Color.FromArgb(255, 255, 255, 255),
+                Sub = Color.FromArgb(158, 255, 255, 255),
                 // 148/255 keeps tertiary text at 4.5:1 on the surface (was 2.96:1)
-                Faint = Color.FromArgb(148, 245, 245, 247),
+                Faint = Color.FromArgb(148, 255, 255, 255),
                 Fill = Color.FromArgb(18, 255, 255, 255),
                 FillHover = Color.FromArgb(28, 255, 255, 255),
                 Line = Color.FromArgb(23, 255, 255, 255),
@@ -73,10 +76,10 @@ namespace Deskmate
         {
             return Defaults(new Tone
             {
-                Bg = Color.FromArgb(255, 245, 245, 245),
-                Text = Color.FromArgb(255, 12, 12, 14),
-                Sub = Color.FromArgb(158, 12, 12, 14),
-                Faint = Color.FromArgb(148, 12, 12, 14),
+                Bg = Color.FromArgb(255, 243, 243, 243),
+                Text = Color.FromArgb(255, 26, 26, 26),
+                Sub = Color.FromArgb(170, 26, 26, 26),
+                Faint = Color.FromArgb(158, 26, 26, 26),
                 Fill = Color.FromArgb(14, 0, 0, 0),
                 FillHover = Color.FromArgb(24, 0, 0, 0),
                 Line = Color.FromArgb(24, 0, 0, 0),

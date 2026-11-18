@@ -37,11 +37,11 @@ namespace Deskmate
                         add(Row(Lang.T("Dock"), dockOn ? Lang.T("Aktif") : Lang.T("Mati"), Switch("dockbar.on", false, on => { island.SetFlag("dockbar.on", on); island.ApplyDock(); Relayout(); })));
                         add(Row(Lang.T("Combo Ketikan"), comboOn ? Lang.T("Aktif") : Lang.T("Mati"), Switch("keys.combo", false, on => { island.SetFlag("keys.combo", on); island.SyncComboHook(); Relayout(); })));
                         add(Row(Lang.T("Senyap"), dndOn ? Lang.T("Aktif") : Lang.T("Mati"), Switch("dnd", false, on => { island.SetFlag("dnd", on); Relayout(); })));
-                        string ovTheme = settings.Get("theme", "gelap");
-                        add(Row(Lang.T("Tema"), ovTheme == "otomatis" ? Lang.T("Mengikuti mode aplikasi Windows") : null,
-                            Seg(new[] { Lang.T("Gelap"), Lang.T("Terang"), Lang.T("Otomatis") }, ovTheme == "terang" ? 1 : ovTheme == "otomatis" ? 2 : 0, i =>
+                        string ovTheme = island.ThemeMode();
+                        add(Row(Lang.T("Tema"), ovTheme == "sistem" ? Lang.T("Mengikuti mode aplikasi Windows") : null,
+                            Seg(new[] { Lang.T("Sistem"), Lang.T("Terang"), Lang.T("Gelap") }, ThemeIndex(ovTheme), i =>
                             {
-                                island.SetThemeMode(i == 1 ? "terang" : i == 2 ? "otomatis" : "gelap");
+                                island.SetThemeMode(i == 1 ? "terang" : i == 2 ? "gelap" : "sistem");
                                 BeginInvoke(new Action(Relayout));
                             })));
                         add(Row(Lang.T("Mulai bersama Windows"), null, StartupSwitch()));
@@ -115,20 +115,20 @@ namespace Deskmate
                         break;
                     case "look":
                         cap(Lang.T("Gaya visual"));
-                        string themeMode = settings.Get("theme", "gelap");
-                        int themeIdx = themeMode == "terang" ? 1 : themeMode == "otomatis" ? 2 : 0;
+                        string themeMode = island.ThemeMode();
+                        int themeIdx = ThemeIndex(themeMode);
                         var themeCards = new ThemeCardPicker
                         {
                             SelectedIndex = themeIdx,
-                            Size = new Size((int)(246 * Ui), (int)(54 * Ui))
+                            Size = new Size((int)(246 * Ui), (int)(64 * Ui))
                         };
                         themeCards.Picked += i =>
                         {
-                            island.SetThemeMode(i == 1 ? "terang" : i == 2 ? "otomatis" : "gelap");
+                            island.SetThemeMode(i == 1 ? "terang" : i == 2 ? "gelap" : "sistem");
                             BeginInvoke(new Action(Relayout));
                         };
-                        var themeRow = Row(Lang.T("Tema"), themeMode == "otomatis" ? Lang.T("Mengikuti mode aplikasi Windows") : null, themeCards);
-                        themeRow.Height = (int)(70 * Ui);
+                        var themeRow = Row(Lang.T("Tema"), themeMode == "sistem" ? Lang.T("Mengikuti mode aplikasi Windows") : null, themeCards);
+                        themeRow.Height = (int)(82 * Ui);
                         add(themeRow);
 
                         string accent = settings.Get("accent", "");
