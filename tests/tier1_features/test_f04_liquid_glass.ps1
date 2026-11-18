@@ -91,68 +91,54 @@ Describe "Feature 4: Liquid Glass Color Space Blending" {
         Assert-True ($clearSpec.Saturation -ge 1.2) "Clear must keep backdrop colour alive (actual: $($clearSpec.Saturation))"
     }
 
-    It "Verifies wall-synced glass crops only the wallpaper snapshot" {
+    It "Verifies wall-synced glass uses a wallpaper tint, not a screen image" {
         $wall = Get-DeskmateType "WallBackdrop"
         Assert-NotNull $wall "WallBackdrop type must exist"
         $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
         $glassSrc = Get-Content (Join-Path $projectRoot "src\Glass.cs") -Raw
         $dockSrc = Get-Content (Join-Path $projectRoot "src\DockFrost.cs") -Raw
-        Assert-True ($glassSrc -match 'WallBackdrop\.Draw') "Island frost must sample the wallpaper snapshot"
-        Assert-True ($dockSrc -match 'WallBackdrop\.Draw') "Dock, card, and sheet frost must sample the wallpaper snapshot"
+        $syncSrc = Get-Content (Join-Path $projectRoot "src\WallSync.cs") -Raw
+        $wallSrc = Get-Content (Join-Path $projectRoot "src\WallBackdrop.cs") -Raw
+        Assert-True ($glassSrc -match 'WallBackdrop\.Draw') "Island frost must fill from the wallpaper tint"
+        Assert-True ($dockSrc -match 'WallBackdrop\.Draw') "Dock, card, and sheet frost must fill from the wallpaper tint"
+        Assert-True ($syncSrc -match 'WallBackdrop\.SetTint') "WallApply must pass the wallpaper veil to the glass source"
+        Assert-True ($syncSrc -match 'WallVeil\(wallPick\.Value') "The glass tint must come from the sampled wallpaper hue"
         Assert-True ($glassSrc -match 'GpuGlassOn[^\r\n]*WallGlassOn') "Wall-synced island glass must bypass the live GPU backdrop"
+        Assert-True ($wallSrc -notmatch 'Image\.FromStream') "WallBackdrop must not decode the wallpaper picture"
+        Assert-True ($wallSrc -notmatch 'WallpaperStyle') "WallBackdrop must not reproduce wallpaper geometry"
         $flags = [System.Reflection.BindingFlags]'NonPublic,Static'
-        $canvasField = $wall.GetField("canvas", $flags)
-        $boundsField = $wall.GetField("screenBounds", $flags)
-        $bgField = $wall.GetField("background", $flags)
+        $tintField = $wall.GetField("tint", $flags)
         $activeField = $wall.GetField("active", $flags)
-        Assert-NotNull $canvasField "WallBackdrop.canvas must exist"
-        Assert-NotNull $boundsField "WallBackdrop.screenBounds must exist"
-        Assert-NotNull $bgField "WallBackdrop.background must exist"
+        Assert-NotNull $tintField "WallBackdrop.tint must exist"
         Assert-NotNull $activeField "WallBackdrop.active must exist"
 
-        $oldCanvas = $canvasField.GetValue($null)
-        $oldBounds = $boundsField.GetValue($null)
-        $oldBg = $bgField.GetValue($null)
+        $oldTint = $tintField.GetValue($null)
         $oldActive = $activeField.GetValue($null)
-        $src = New-Object System.Drawing.Bitmap 8, 4, ([System.Drawing.Imaging.PixelFormat]::Format32bppRgb)
         $target = New-Object System.Drawing.Bitmap 4, 4, ([System.Drawing.Imaging.PixelFormat]::Format32bppRgb)
         $g = [System.Drawing.Graphics]::FromImage($target)
         try {
-            for ($y = 0; $y -lt 4; $y++) {
-                for ($x = 0; $x -lt 8; $x++) {
-                    $src.SetPixel($x, $y, $(if ($x -lt 4) { [System.Drawing.Color]::Red } else { [System.Drawing.Color]::Blue }))
-                }
-            }
-            $canvasField.SetValue($null, $src)
-            $boundsField.SetValue($null, [System.Drawing.Rectangle]::new(0, 0, 8, 4))
-            $bgField.SetValue($null, [System.Drawing.Color]::Black)
+            $tintField.SetValue($null, [System.Drawing.Color]::FromArgb(255, 38, 80, 160))
             $activeField.SetValue($null, $true)
 
             $draw = $wall.GetMethod("Draw", [System.Reflection.BindingFlags]'Public,NonPublic,Static')
             Assert-NotNull $draw "WallBackdrop.Draw must exist"
-            $ok = $draw.Invoke($null, [object[]]@($g, [System.Drawing.Rectangle]::new(4, 0, 4, 4), [System.Drawing.Size]::new(4, 4)))
-            Assert-True ([bool]$ok) "WallBackdrop.Draw must report a wallpaper fill"
-            for ($y = 0; $y -lt 4; $y++) {
-                for ($x = 0; $x -lt 4; $x++) {
-                    $c = $target.GetPixel($x, $y)
-                    Assert-Equal 0 $c.R "Right half must come from the blue wallpaper crop (red channel)"
-                    Assert-Equal 255 $c.B "Right half must come from the blue wallpaper crop (blue channel)"
-                }
-            }
-
             $ok = $draw.Invoke($null, [object[]]@($g, [System.Drawing.Rectangle]::new(0, 0, 4, 4), [System.Drawing.Size]::new(4, 4)))
-            Assert-True ([bool]$ok) "WallBackdrop.Draw must fill the left crop too"
-            $c = $target.GetPixel(1, 1)
-            Assert-Equal 255 $c.R "Left half must come from the red wallpaper crop (red channel)"
-            Assert-Equal 0 $c.B "Left half must not pick up the right-hand crop (blue channel)"
+            Assert-True ([bool]$ok) "WallBackdrop.Draw must report a tint fill"
+            $first = $target.GetPixel(1, 1)
+            Assert-Equal 255 $first.A "Wallpaper tint must stay opaque for the layered window"
+            Assert-True ($first.B -gt $first.R) "Wallpaper tint must keep the wallpaper hue (blue channel over red)"
+
+            $ok = $draw.Invoke($null, [object[]]@($g, [System.Drawing.Rectangle]::new(120, 80, 4, 4), [System.Drawing.Size]::new(4, 4)))
+            Assert-True ([bool]$ok) "WallBackdrop.Draw must fill a pane away from the origin"
+            $second = $target.GetPixel(1, 1)
+            Assert-Equal $first.R $second.R "A wallpaper tint must not depend on the screen crop (red channel)"
+            Assert-Equal $first.G $second.G "A wallpaper tint must not depend on the screen crop (green channel)"
+            Assert-Equal $first.B $second.B "A wallpaper tint must not depend on the screen crop (blue channel)"
         }
         finally {
             $g.Dispose()
             $target.Dispose()
-            $src.Dispose()
-            $canvasField.SetValue($null, $oldCanvas)
-            $boundsField.SetValue($null, $oldBounds)
-            $bgField.SetValue($null, $oldBg)
+            $tintField.SetValue($null, $oldTint)
             $activeField.SetValue($null, $oldActive)
         }
     }

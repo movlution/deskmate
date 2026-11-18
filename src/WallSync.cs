@@ -9,7 +9,7 @@ using Microsoft.Win32;
 
 namespace Deskmate
 {
-    // wall.sync: glass and accent follow the desktop wallpaper; blur stays
+    // wall.sync: glass gets a tint from the desktop wallpaper; blur stays
     partial class Island
     {
         [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SystemParametersInfoW")]
@@ -24,7 +24,7 @@ namespace Deskmate
         string wallAccent;
 
         bool WallSyncOn { get { return settings.GetBool("wall.sync", false) && !CustomOn; } }
-        // Software glass samples the wallpaper still, never the window behind it
+        // Software glass uses the wallpaper tint, never the window behind it
         bool WallGlassOn { get { return WallSyncOn && WallBackdrop.Ready; } }
 
         void StartWallSync()
@@ -72,8 +72,6 @@ namespace Deskmate
                 Color? pick = null;
                 try { pick = WallPickNow(); }
                 catch (Exception ex) { Log.Write("wall sync: " + ex.Message); }
-                try { WallBackdrop.Reload(); }
-                catch (Exception ex) { Log.Write("wall sync backdrop: " + ex.Message); }
                 Post(delegate
                 {
                     Interlocked.Exchange(ref wallBusy, 0);
@@ -128,13 +126,14 @@ namespace Deskmate
         void WallApply()
         {
             bool wasWall = WallGlassOn;
+            bool live = WallSyncOn && wallPick.HasValue;
+            Color? veil = live ? (Color?)WallVeil(wallPick.Value, Ink.Light) : null;
+            WallBackdrop.SetTint(veil ?? Ink.Base.Bg);
             WallBackdrop.SetActive(WallSyncOn);
             int glassVer = WallBackdrop.Version;
             bool glassMoved = wallGlassGen != glassVer;
             wallGlassGen = glassVer;
 
-            bool live = WallSyncOn && wallPick.HasValue;
-            Color? veil = live ? (Color?)WallVeil(wallPick.Value, Ink.Light) : null;
             bool veilChanged = Ink.VeilTint != veil;
             Ink.VeilTint = veil;
 
