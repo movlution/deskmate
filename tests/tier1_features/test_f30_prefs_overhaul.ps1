@@ -447,7 +447,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         }
     }
 
-    It "9. Display selection clears malformed values, preserves unavailable displays, and explains a single display" {
+    It "9. Display selection preserves monitor fallback and offers all displays" {
         $isle = $null; $prefs = $null
         try {
             $isle = New-TestIsland
@@ -482,17 +482,59 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             Assert-NotNull $displayRow "Island settings must include a display selector"
             $displayPicker = $displayRow.Controls | Where-Object { $_ -is $kitPopupType } | Select-Object -First 1
             Assert-NotNull $displayPicker "Display row must contain a popup selector"
-            if ([System.Windows.Forms.Screen]::AllScreens.Length -eq 1) {
-                Assert-False $displayPicker.Enabled "Single display selector must be disabled"
-                Assert-Equal $displayRow.Detail "Sambungkan layar lain untuk memilihnya" "Single display selector must explain how to enable it"
-            }
-            else {
-                Assert-True $displayPicker.Enabled "Multiple displays must enable the selector"
-                Assert-Equal $displayRow.Detail "Pilih layar tempat island tampil" "Multiple display selector must explain its target"
-            }
+            $count = [System.Windows.Forms.Screen]::AllScreens.Length
+            Assert-Equal ($count + 1) $displayPicker.Items.Length "Selector must list All displays and every detected display"
+            Assert-Equal "Semua layar" $displayPicker.Items[0] "All displays must be the first option"
+            if ($count -gt 0) { Assert-True $displayPicker.Enabled "All displays can be selected before a second screen is connected" }
+            Assert-True ($displayPicker.Selected -gt 0) "Existing profiles must open in single-display mode"
+
+            $settings.Set("monitor.all", $true)
+            $prefs.Go("island")
+            $displayRow = Get-ContentRows $prefs | Where-Object { $_.Title -eq "Layar" } | Select-Object -First 1
+            $displayPicker = $displayRow.Controls | Where-Object { $_ -is $kitPopupType } | Select-Object -First 1
+            Assert-Equal 0 $displayPicker.Selected "All displays should be selected when the preference is enabled"
+            Assert-Equal $unavailable ($settings.Get("monitor", "")) "All-display mode must preserve the single-display preference"
         }
         finally {
             if ($prefs) { $prefs.Dispose() }
+            if ($isle) { $isle.Dispose() }
+        }
+    }
+
+    It "Island replica bounds follow placement, DPI, and screen edges without spilling onto a neighbor" {
+        $bounds = $islandType.GetMethod("IslandReplicaBounds", $flags)
+        $left = New-Object System.Drawing.Rectangle(-1920, -200, 1920, 1080)
+        $right = New-Object System.Drawing.Rectangle(0, 0, 2560, 1440)
+        $centered = $bounds.Invoke($null, @($left, [single]1, 0, $true, [single]16, [single]0.22, 0))
+        Assert-Equal -200 $centered.Top "Docked replica must touch its display's top"
+        Assert-Equal -960 ($centered.Left + $centered.Width / 2) "Negative-coordinate screens must center correctly"
+        $corner = $bounds.Invoke($null, @($right, [single]1.5, 2, $false, [single]16, [single]0.22, 0))
+        Assert-Equal 84 $corner.Width "Mini launcher width must scale with DPI"
+        Assert-Equal 9 $corner.Height "Mini launcher thickness must scale with DPI"
+        Assert-Equal ($right.Right - 24) $corner.Right "Corner inset must scale with DPI"
+        $side = $bounds.Invoke($null, @($left, [single]1.5, 3, $true, [single]16, [single]1, 0))
+        Assert-Equal 9 $side.Width "Vertical Mini launcher must use the same thickness"
+        Assert-Equal 84 $side.Height "Vertical Mini launcher must rotate the horizontal dimensions"
+        Assert-Equal $left.Left $side.Left "Side replica must stick to its own edge"
+        Assert-True ($left.Contains($side)) "Side replica must stay within its monitor even at 100% vertical offset"
+        $portable = $islandType.GetMethod("IsPortable", $flags)
+        Assert-True ($portable.Invoke($null, @("monitor.all"))) "Export and import must preserve the display mode"
+    }
+
+    It "Island replica can paint a layered surface without showing or activating a window" {
+        $isle = $null; $replica = $null
+        try {
+            $isle = New-TestIsland
+            $type = $islandType.GetNestedType("IslandReplica", $flags)
+            $replica = [Activator]::CreateInstance($type, $flags, $null, @($isle, 'headless'), $null)
+            $type.GetField("DpiScale", $flags).SetValue($replica, [single]1.25)
+            $at = New-Object System.Drawing.Rectangle(-32000, -32000, 110, 30)
+            $draw = $type.GetMethod("DrawReplica", $flags)
+            Assert-True ($draw.Invoke($replica, @($at, [Drawing.Color]::Black, [Drawing.Color]::White, 0, $true))) "UpdateLayeredWindow must accept the replica surface"
+            Assert-False $replica.Visible "Preparing a replica surface must not show its window"
+        }
+        finally {
+            if ($replica) { $replica.Dispose() }
             if ($isle) { $isle.Dispose() }
         }
     }

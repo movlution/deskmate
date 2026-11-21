@@ -191,7 +191,11 @@ namespace Deskmate
             int want = settings.GetBool("reserve.top", false) && !hiddenByUser && !OnSide ? (int)Math.Ceiling((Gap + 38 + 6) * scale) : 0;
             if (want == reservedPx && want == 0) return;
             var abd = new Native.APPBARDATA { cbSize = System.Runtime.InteropServices.Marshal.SizeOf(typeof(Native.APPBARDATA)), hWnd = Handle, uEdge = 1 };
-            abd.rc = new Native.RECT { Left = monitorPx.Left, Top = monitorPx.Top, Right = monitorPx.Right, Bottom = monitorPx.Top + want };
+            // In multi-display mode keep the work-area strip on the preferred screen, not the moving panel.
+            var preferred = AllIslandScreens ? ChosenScreen() : null;
+            var area = preferred == null ? monitorPx : preferred.Bounds;
+            if (want > 0 && preferred != null) want = (int)Math.Ceiling((Gap + 38 + 6) * MonitorScale(MonitorForScreen(preferred)));
+            abd.rc = new Native.RECT { Left = area.Left, Top = area.Top, Right = area.Right, Bottom = area.Top + want };
             // ABM_QUERYPOS then ABM_SETPOS
             Native.SHAppBarMessage(2, ref abd);
             abd.rc.Bottom = abd.rc.Top + want;

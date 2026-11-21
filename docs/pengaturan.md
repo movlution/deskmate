@@ -30,6 +30,7 @@ Halaman yang digabung menampilkan bagian keduanya di bawah judul bagian (huruf t
 ### Dynamic Island
 
 - **Letak dan bentuk**: letak lewat sketsa layar (atas tengah, pojok kiri atas, pojok kanan atas, sisi kiri, sisi kanan; di sisi kiri dan kanan island berdiri tegak dan panelnya mekar ke samping), lalu geser, jarak dari pojok, atau tinggi sesuai letaknya; menempel di tepi layar, garis cahaya, lebar panel, layar tujuan (beserta resolusinya), dan sisakan ruang di tepi atas. Panel terbuka sebentar selama diatur supaya hasilnya terlihat. Saat layar tujuan dicabut, Deskmate pindah ke layar utama dan kembali saat layar itu tersambung lagi.
+- **Layar**: di **Ukuran dan layar › Layar**, pilih monitor tertentu atau **Semua layar**. Dalam mode semua layar, monitor lain menampilkan notch ringkas; klik atau arahkan kursor sesuai cara buka panel untuk memindahkan panel ke sana. Hanya satu panel aktif pada satu waktu.
 - **Perilaku**: mode (Normal, Mini, Otomatis), notifikasi saat Mini, buka panel dengan arahkan kursor atau klik beserta jedanya, dan aplikasi yang membuat island menyingkir atau menahan notifikasi saat jendelanya di depan.
 - **Saat diam**: mata, mata mengikuti kursor, wajah saat diam (mata atau jam), serta isi kiri dan kanan (kosong, jam, tanggal, baterai, cuaca).
 - **Ringkasan**: urutan kartu (Otomatis: yang sedang berjalan naik; atau Sesuai daftar) dan kartu yang tampil beserta urutannya: kuota AI, musik, agen, timer, kuliah, pesan, rak, cuaca, baterai, clipboard, dan sholat. Klik kanan kartu di Ringkasan untuk menyembunyikannya.
@@ -86,7 +87,8 @@ Semua kunci di `%APPDATA%\Deskmate\settings.ini` (ubah saat Deskmate tidak berja
 | `update.check` | `1` | Cek versi baru sekali sehari |
 | `accent` | tidak ada (Ungu tenang `#AE9DEB`) | Warna aksen, misalnya `#8FB1E6`; kosong untuk Grafit (monokrom); `album` mengambil warna dari sampul lagu yang diputar. Preset jenuh dari versi lama dipindah otomatis ke versi tenangnya saat Deskmate dibuka |
 | `wall.sync` | `0` | Kaca notch, dock, dan kartu diwarnai dari wallpaper; Bening paling tembus pandang, Frost paling pekat; dock punya inti solid dan tepi tembus pandang agar latar belakang samar terlihat; perubahan wallpaper ikut terdeteksi; aksen ikut wallpaper selama `accent` belum diatur atau kosong; mati saat warna sendiri dipakai |
-| `monitor` | kosong | Monitor tempat island tampil; kosong untuk monitor utama. Nilai perangkat Windows yang sah disimpan otomatis; layar yang sementara dicabut memakai monitor utama sampai tersambung kembali. Dock tampil di semua monitor yang tersambung. |
+| `monitor` | kosong | Monitor pilihan untuk island; kosong berarti monitor utama. Jika monitor pilihan dicabut, island kembali sementara ke monitor utama tanpa melupakan pilihan. |
+| `monitor.all` | `0` | Di **Island › Ukuran dan layar › Layar**, pilih **Semua layar** untuk menampilkan notch ringkas di monitor lain. Klik atau arahkan kursor sesuai mode **Buka panel** untuk membuka panel di sana. Hanya satu panel aktif; ruang tepi atas, bila diaktifkan, tetap di monitor pilihan. Pengaturan Dock tidak berubah. |
 | `focus.break` | `5` | Menit istirahat setelah fokus |
 | `dock` | `1` | Menempel di tepi layar; `0` untuk mengambang |
 | `position` | `0` | Geser island, `-40` (kiri) sampai `40` (kanan), persen dari ruang kosong |
@@ -106,7 +108,7 @@ Semua kunci di `%APPDATA%\Deskmate\settings.ini` (ubah saat Deskmate tidak berja
 | `dockbar.previews` | `1` | Pratinjau jendela saat kursor di atas aplikasi yang terbuka |
 | `dockbar.badges` | `1` | Angka notifikasi Windows di ikon aplikasi |
 | `dockbar.search`, `dockbar.taskview` | `1`, `0` | Tombol cari dan semua jendela saat menggantikan taskbar |
-| `dockbar.tray` | `1` | Ikon tray pindah ke dock saat menggantikan taskbar |
+| `dockbar.tray` | `1` | Saat Dock menggantikan taskbar, tombol panah di setiap monitor membuka daftar ikon tersembunyi yang sama di atas Dock yang dipilih |
 | `dockbar.capture` | `0` | Dock ikut screenshot dan screen share; kacanya diganti latar polos |
 | `dockbar.w.clock`, `dockbar.w.media`, `dockbar.w.ai`, `dockbar.w.timer`, `dockbar.w.weather`, `dockbar.w.battery`, `dockbar.w.system` | `1` (`system`: `0`) | Widget dock |
 | `dockbar.pins` | dari taskbar | Aplikasi tersemat dipisah `\|`: shortcut, exe, atau `shell:AppsFolder\<id>`; diisi dari taskbar Windows saat dock pertama kali nyala |

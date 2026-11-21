@@ -33,6 +33,7 @@ namespace Deskmate
             en.Add("{0} agen", "{0} agents");
             en.Add("{0} bekerja", "{0} working");
             en.Add("Ganti taskbar Windows", "Replace the Windows taskbar");
+            en.Add("Ikon tray tersembunyi bisa dibuka dari setiap Dock", "Open hidden tray icons from any Dock");
             en.Add("Taskbar Windows disembunyikan; Start, pencarian, dan jam pindah ke dock", "The Windows taskbar hides; Start, search, and the clock move to the dock");
             en.Add("Tampilkan taskbar Windows", "Show the Windows taskbar");
             en.Add("Sembunyikan taskbar Windows", "Hide the Windows taskbar");
@@ -70,6 +71,8 @@ namespace Deskmate
             en.Add("Bahasa dan jam", "Language and clock");
             en.Add("Bentuk", "Shape");
             en.Add("Ukuran dan layar", "Size and screen");
+            en.Add("Semua layar", "All displays");
+            en.Add("Tampilkan island di semua layar atau satu layar pilihan", "Show the island on all displays or one selected display");
             en.Add("Panel", "Panel");
             en.Add("Isi samping", "Sides");
             en.Add("Bahasa, jam, pembaruan, dan data Deskmate", "Language, clock, updates, and Deskmate's data");

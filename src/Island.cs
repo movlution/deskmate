@@ -295,6 +295,7 @@ namespace Deskmate
             };
             warmTimer.Start();
             ReadPower();
+            SyncIslandReplicas();
             CheckFullscreen();
             clockRoller.Set(Fmt.Clock(DateTime.Now));
             int hour = DateTime.Now.Hour;
@@ -358,6 +359,7 @@ namespace Deskmate
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             if (islandMenu != null) islandMenu.Close();
+            DisposeIslandReplicas();
             StopTimers();
             SystemEvents.DisplaySettingsChanged -= OnDisplaySettings;
             SystemEvents.SessionSwitch -= OnSessionSwitch;
@@ -390,6 +392,7 @@ namespace Deskmate
         {
             if (disposing)
             {
+                DisposeIslandReplicas();
                 StopTimers();
                 ClearClips(clips);
                 ClearClips(imageClips);
@@ -511,9 +514,8 @@ namespace Deskmate
             return primary;
         }
 
-        IntPtr ChosenMonitor()
+        static IntPtr MonitorForScreen(Screen screen)
         {
-            var screen = ChosenScreen();
             if (screen != null)
                 return Native.MonitorFromPoint(new Native.POINT(screen.Bounds.Left + screen.Bounds.Width / 2, screen.Bounds.Top + screen.Bounds.Height / 2), 2);
             return Native.MonitorFromPoint(new Native.POINT(0, 0), 1);
@@ -528,10 +530,14 @@ namespace Deskmate
                     chosen = s.Primary ? "" : s.DeviceName;
                     break;
                 }
+            activeIslandDisplay = null;
+            settings.Set(AllIslandScreensKey, false);
             settings.Set("monitor", chosen);
             settings.Save();
+            DisposeIslandReplicas();
             UpdateMonitor();
             ResetFrost();
+            if (reservedPx > 0) ApplyReserve();
             ApplyDock();
             CheckFullscreen();
             Kick();
@@ -540,6 +546,7 @@ namespace Deskmate
         void OnDisplayChanged()
         {
             UpdateMonitor();
+            SyncIslandReplicas();
             ResetFrost();
             if (reservedPx > 0) { reservedPx = -1; ApplyReserve(); }
             ApplyDock();
@@ -550,25 +557,31 @@ namespace Deskmate
 
         void UpdateMonitor()
         {
-            IntPtr mon = ChosenMonitor();
+            IntPtr mon = MonitorForScreen(ActiveIslandScreen());
             monitorHandle = mon;
             var mi = new Native.MONITORINFO { cbSize = Marshal.SizeOf(typeof(Native.MONITORINFO)) };
             Native.GetMonitorInfo(mon, ref mi);
             monitorPx = Rectangle.FromLTRB(mi.rcMonitor.Left, mi.rcMonitor.Top, mi.rcMonitor.Right, mi.rcMonitor.Bottom);
-            float s = 1f;
-            try
-            {
-                uint dx, dy;
-                if (Native.GetDpiForMonitor(mon, 0, out dx, out dy) == 0) s = dx / 96f;
-            }
-            catch (Exception ex) { Log.Write("dpi: " + ex.Message); }
-            float forced;
-            if (float.TryParse(Environment.GetEnvironmentVariable("DESKMATE_SCALE"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out forced) && forced > 0.5f) s = forced;
+            float s = MonitorScale(mon);
             if (canvas == null || Math.Abs(s - scale) > 0.001f)
             {
                 scale = s;
                 CreateCanvas();
             }
+        }
+
+        static float MonitorScale(IntPtr mon)
+        {
+            float s = 1f;
+            try
+            {
+                uint dx, dy;
+                if (Native.GetDpiForMonitor(mon, 0, out dx, out dy) == 0 && dx > 0) s = dx / 96f;
+            }
+            catch (Exception ex) { Log.Write("dpi: " + ex.Message); }
+            float forced;
+            if (float.TryParse(Environment.GetEnvironmentVariable("DESKMATE_SCALE"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out forced) && forced > 0.5f) s = forced;
+            return s;
         }
     }
 }

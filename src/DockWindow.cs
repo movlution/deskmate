@@ -339,6 +339,15 @@ namespace Deskmate
                 area = Rectangle.FromLTRB(abd.rc.Left, abd.rc.Top, abd.rc.Right, abd.rc.Bottom);
             }
 
+            DockWindow TrayOwner()
+            {
+                if (tray != null) return this;
+                if (!Replacing || !S.GetBool("dockbar.tray", true)) return null;
+                foreach (var dock in isle.dockWins.Values)
+                    if (!dock.closing && dock.tray != null) return dock;
+                return null;
+            }
+
             void StartTray()
             {
                 if (tray != null) return;
@@ -358,6 +367,8 @@ namespace Deskmate
                 var t = tray;
                 tray = null;
                 t.Stop();
+                foreach (var dock in isle.dockWins.Values)
+                    if (dock != this && !dock.closing && dock.TrayExpanded) dock.CloseCard();
                 trayIcons = new List<TrayIcon>();
             }
 
@@ -366,6 +377,13 @@ namespace Deskmate
                 trayPosted = 0;
                 if (tray == null || closing) return;
                 trayIcons = tray.Snapshot();
+                foreach (var dock in isle.dockWins.Values)
+                    if (dock != this && !dock.closing && dock.IsHandleCreated) dock.RefreshTrayCard();
+                RefreshTrayCard();
+            }
+
+            void RefreshTrayCard()
+            {
                 if (card != null && card.Kind == DockCard.TrayKind) card.Refill();
                 // Hidden icons change often (sync spinners); redraw only for what shows
                 string sig = TraySig();
@@ -789,8 +807,9 @@ namespace Deskmate
             // Pointer reached a hidden dock: wait, unless the wait is off
             internal void HoverReveal()
             {
-                revealLater.Stop();
-                if (wantShown || closing) return;
+                if (wantShown || closing || !shown) return;
+                if (!PointerOnEdge()) { CancelHoverReveal(); return; }
+                if (revealLater.Enabled) return;
                 int wait = RevealDelay;
                 if (wait <= 0) { Reveal(true); return; }
                 revealLater.Interval = wait;
@@ -804,7 +823,7 @@ namespace Deskmate
             void RevealNow()
             {
                 if (closing || wantShown || HideMode == "never") return;
-                if (!Bounds.Contains(Cursor.Position)) return;
+                if (!shown || !PointerOnEdge()) return;
                 Reveal(true);
             }
 

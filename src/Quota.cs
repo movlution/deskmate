@@ -13,7 +13,7 @@ namespace Deskmate
     {
         // Toast marker: DrawInfo draws a ring
         const char IcoGauge = '';
-        const float QuotaRowH = 28, QuotaGlanceRowH = 32;
+        const float AgentQuotaPitch = 70, QuotaGlanceRowH = 32;
         static readonly string[] QuotaKeys = { "five_hour", "seven_day", "spend_limit" };
         static readonly DateTime Epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         readonly List<QuotaInfo> quotas = new List<QuotaInfo>();
@@ -169,7 +169,7 @@ namespace Deskmate
         }
 
         // Agen page height, 0 = none
-        float QuotaBlockH() { int n = QuotaCount(false); return n == 0 ? 0 : n * QuotaRowH + 8; }
+        float QuotaBlockH() { int n = QuotaCount(false); return n == 0 ? 0 : n * AgentQuotaPitch + 28; }
 
         float QuotaGlanceH() { int n = QuotaCount(true); return n == 0 ? 0 : n * QuotaGlanceRowH + HomeGap - 2; }
 
@@ -198,23 +198,37 @@ namespace Deskmate
             }
         }
 
-        // Agen page: one calm line per profile
+        // Agent page: fixed-width columns inside each profile card.
         float DrawQuotaBlock(float w, float top)
         {
             float h = QuotaBlockH();
             if (h <= 0) return 0;
-            QuotaActs();
             QuotaTexts();
-            int shown = 0, slot = 0;
-            QuotaColumns(false);
+            p.Text(Lang.T("Kuota agent"), Ink.SmallSemi(12), p.T.Text, 26, top + 10, w - 52, StringAlignment.Near);
+            int shown = 0;
             foreach (var q in quotas)
             {
                 if (!QuotaShown(q) || shown >= 4) continue;
-                QuotaLine(q, 36, w - 26, top + QuotaRowH / 2 + shown * QuotaRowH, q.Tail, ref slot);
-                shown++;
+                var card = new RectangleF(18, top + 22 + shown++ * AgentQuotaPitch, w - 36, AgentQuotaPitch - 6);
+                p.FillRound(card, 10, p.T.Fill);
+                p.Text(q.Who, Ink.SmallSemi(12), p.T.Text, card.Left + 10, card.Top + 12, card.Width - 20, StringAlignment.Near);
+                int count = 0;
+                foreach (var item in q.W) if (item.Has) count++;
+                float col = (card.Width - 20) / count;
+                int index = 0;
+                foreach (var item in q.W)
+                {
+                    if (!item.Has) continue;
+                    float x = card.Left + 10 + index++ * col, width = col - 10;
+                    Color tone = item.Stale ? p.T.Sub : item.Pct >= 95 ? p.T.Negative : item.Pct >= 80 ? p.T.Warning : p.T.Accent;
+                    string usage = item.Stale ? "" : "  " + item.PctText;
+                    p.Text(item.Label + usage, Ink.SmallSemi(11.5f), p.T.Text, x, card.Top + 28, width, StringAlignment.Near);
+                    p.FillRound(new RectangleF(x, card.Top + 38, width, 4), 2, p.T.Line);
+                    float filled = item.Stale ? 0 : width * Ease.Clamp01(item.Pct / 100f);
+                    if (filled > 0) p.FillRound(new RectangleF(x, card.Top + 38, filled, 4), Math.Min(2, filled / 2), tone);
+                    p.Text(item.ResetText, Ink.Caption, p.T.Sub, x, card.Top + 52, width, StringAlignment.Near);
+                }
             }
-            float y = top + h - 3.5f;
-            g.DrawLine(p.P(p.T.Line, 1f), 26, y, w - 26, y);
             return h;
         }
 

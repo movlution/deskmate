@@ -136,7 +136,8 @@ namespace Deskmate
 
         void CheckFullscreen()
         {
-            bool fs = Native.IsFullscreenOn(monitorHandle) || ExceptHidden();
+            RefreshIslandReplicas(true);
+            bool fs = Native.IsFullscreenForDisplay(monitorHandle, AllIslandScreens) || ExceptHidden();
             if (!fs && windowShown) RaiseIsland();
             if (fs == fullscreen) return;
             fullscreen = fs;

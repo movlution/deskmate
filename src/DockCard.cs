@@ -724,6 +724,7 @@ namespace Deskmate
                 if (t == null) return;
                 if (id.StartsWith("x", StringComparison.Ordinal) || e.Button == MouseButtons.Middle)
                 {
+                    if (!ShellApp.Close(t.Win.H)) return;
                     int idx = thumbs.IndexOf(t);
                     var closedBox = t.Box;
                     ShatterCardBox(closedBox);
@@ -739,10 +740,9 @@ namespace Deskmate
                         frames.Start();
                     }
                     else dock.CardDone(this);
-                    ShellApp.Close(t.Win.H);
                     return;
                 }
-                if (e.Button == MouseButtons.Left) { ShellApp.Activate(t.Win.H); dock.CardDone(this); }
+                if (e.Button == MouseButtons.Left) { ShellApp.FocusDockApp(t.Win.H); dock.CardDone(this); }
             }
 
             TrayIcon TrayAt(string id)

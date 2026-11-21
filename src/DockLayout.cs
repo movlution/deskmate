@@ -75,13 +75,13 @@ namespace Deskmate
             // The floating bar leaves a transparent gap above the screen edge. That
             // gap is still part of the dock's hover target: a pointer resting on the
             // edge must keep the bar up instead of falling through to the desktop.
-            float EdgeHitH { get { return Math.Max(2f / Math.Max(0.01f, scale), Edge); } }
+            float EdgeHitH { get { return Math.Max(6f, Edge); } }
 
             static bool InEdgeBand(Rectangle monitor, float scale, float edge, Point p)
             {
                 if (monitor.IsEmpty || scale <= 0) return false;
                 if (p.X < monitor.Left || p.X >= monitor.Right) return false;
-                float bandDip = Math.Max(2f / scale, edge);
+                float bandDip = Math.Max(6f, edge);
                 int band = (int)Math.Ceiling(bandDip * scale);
                 return p.Y >= monitor.Bottom - band && p.Y < monitor.Bottom;
             }
@@ -584,7 +584,9 @@ namespace Deskmate
             List<TrayIcon> OverflowTray()
             {
                 var list = new List<TrayIcon>();
-                foreach (var ic in trayIcons) if (Listed(ic) && !TrayPromo.Promoted(ic)) list.Add(ic);
+                var owner = TrayOwner();
+                if (owner != null)
+                    foreach (var ic in owner.trayIcons) if (Listed(ic) && !TrayPromo.Promoted(ic)) list.Add(ic);
                 return list;
             }
         }

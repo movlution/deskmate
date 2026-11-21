@@ -233,18 +233,23 @@ namespace Deskmate
                         cap(Lang.T("Ukuran dan layar"));
                         add(Row(Lang.T("Lebar panel"), null, Slider(440, 640, 8, (int)island.PanelW, v => v + " px", v => { island.SetLayout("panel.width", v); Preview(); })));
                         var screens = Screen.AllScreens;
-                        var labels = new string[screens.Length];
+                        var labels = new string[screens.Length + 1];
+                        labels[0] = Lang.T("Semua layar");
                         var chosen = island.ChosenScreen();
-                        int screenAt = 0;
+                        int screenAt = 1;
                         for (int i = 0; i < screens.Length; i++)
                         {
-                            labels[i] = Lang.F("Layar {0}", i + 1) + (screens[i].Primary ? " · " + Lang.T("utama") : "") +
+                            labels[i + 1] = Lang.F("Layar {0}", i + 1) + (screens[i].Primary ? " · " + Lang.T("utama") : "") +
                                 " · " + screens[i].Bounds.Width + " × " + screens[i].Bounds.Height;
-                            if (chosen != null && string.Equals(screens[i].DeviceName, chosen.DeviceName, StringComparison.OrdinalIgnoreCase)) screenAt = i;
+                            if (chosen != null && string.Equals(screens[i].DeviceName, chosen.DeviceName, StringComparison.OrdinalIgnoreCase)) screenAt = i + 1;
                         }
-                        var mon = Popup(labels, screenAt, i => island.UseMonitor(screens[i].DeviceName));
-                        mon.Enabled = screens.Length > 1;
-                        add(Row(Lang.T("Layar"), screens.Length > 1 ? Lang.T("Pilih layar tempat island tampil") : Lang.T("Sambungkan layar lain untuk memilihnya"), mon));
+                        var mon = Popup(labels, island.AllIslandScreens ? 0 : screenAt, i =>
+                        {
+                            if (i == 0) island.UseAllIslandScreens();
+                            else island.UseMonitor(screens[i - 1].DeviceName);
+                        });
+                        mon.Enabled = screens.Length > 0;
+                        add(Row(Lang.T("Layar"), Lang.T("Tampilkan island di semua layar atau satu layar pilihan"), mon));
                         var reserve = Switch("reserve.top", false, on => { settings.Set("reserve.top", on); settings.Save(); island.ApplyReserve(); });
                         bool sideNow = place == PlaceLeft || place == PlaceRight;
                         reserve.Enabled = !sideNow;

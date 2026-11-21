@@ -43,7 +43,8 @@ namespace Deskmate
 
             public void TrayDown(TrayIcon ic, MouseButtons button)
             {
-                if (ic == null || tray == null || tray.Gone(ic)) return;
+                var owner = TrayOwner();
+                if (ic == null || owner == null || owner.tray.Gone(ic)) return;
                 bool dbl = button == MouseButtons.Left && lastTrayKey == ic.Key && (DateTime.UtcNow - lastTrayUtc).TotalMilliseconds < SystemInformation.DoubleClickTime;
                 uint msg = button == MouseButtons.Right ? 0x204u : button == MouseButtons.Middle ? 0x207u : dbl ? 0x203u : 0x201u;
                 TrayHost.Down(ic, msg, Cursor.Position);
@@ -51,7 +52,8 @@ namespace Deskmate
 
             public void TrayUp(TrayIcon ic, MouseButtons button)
             {
-                if (ic == null) return;
+                var owner = TrayOwner();
+                if (ic == null || owner == null || owner.tray.Gone(ic)) return;
                 var at = Cursor.Position;
                 if (button == MouseButtons.Left)
                 {

@@ -86,7 +86,8 @@ namespace Deskmate
                     var cr = new RectangleF(x, top, 24, PlateH);
                     bool hot = hoverId == "chev" || TrayExpanded;
                     Hit(cr, "chev", ToggleTrayCard, null);
-                    if (hot) p.FillRound(cr, PlateR, pressId == "chev" ? p.T.FillPressed : p.T.FillHover);
+                    if (hot) p.FillRound(cr, PlateR, TrayExpanded ? Ink.Mix(p.T.FillHover, p.T.Accent, 0.2f) :
+                        pressId == "chev" ? p.T.FillPressed : p.T.FillHover);
                     // Points up while closed, down while the grid is open
                     p.Icon(TrayExpanded ? '\uE70D' : '\uE70E', 10f, hot ? p.T.Text : p.T.Sub, cr.X + cr.Width / 2, cr.Y + cr.Height / 2);
                     x += 24;

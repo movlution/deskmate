@@ -445,6 +445,13 @@ namespace Deskmate
         public static void Launch(string target, bool admin)
         {
             if (string.IsNullOrEmpty(target)) return;
+            var worker = new System.Threading.Thread(() => LaunchOnShellThread(target, admin)) { IsBackground = true };
+            worker.SetApartmentState(System.Threading.ApartmentState.STA);
+            worker.Start();
+        }
+
+        static void LaunchOnShellThread(string target, bool admin)
+        {
             try
             {
                 var psi = new ProcessStartInfo(target) { UseShellExecute = true };
@@ -466,7 +473,7 @@ namespace Deskmate
         [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr h, int cmd);
         [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool altTab);
         [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
-        [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
+        [DllImport("user32.dll", SetLastError = true)] static extern bool PostMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
         [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int pid);
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
@@ -535,7 +542,32 @@ namespace Deskmate
             catch (Exception ex) { Log.Write("relaunch " + exe + ": " + ex.Message); }
         }
 
-        public static void Close(IntPtr h) { PostMessage(h, 0x10, IntPtr.Zero, IntPtr.Zero); }
+        [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
+        [DllImport("user32.dll")] static extern bool FlashWindow(IntPtr h, bool invert);
+
+        public static bool WindowExists(IntPtr h) { return IsWindow(h); }
+
+        public static void FocusDockApp(IntPtr h)
+        {
+            if (!IsWindow(h)) return;
+            if (IsIconic(h)) ShowWindowAsync(h, 9);
+            // Do not join another app's input queue on the Dock UI thread.
+            if (GetForegroundWindow() != h && !SetForegroundWindow(h))
+            {
+                FlashWindow(h, true);
+                Log.Write("dock focus: Windows did not grant foreground activation");
+            }
+        }
+
+        public static bool Close(IntPtr h)
+        {
+            if (!IsWindow(h)) return false;
+            if (PostMessage(h, 0x10, IntPtr.Zero, IntPtr.Zero)) return true;
+            int error = Marshal.GetLastWin32Error();
+            FlashWindow(h, true);
+            Log.Write("dock close: WM_CLOSE rejected, Win32 error " + error);
+            return false;
+        }
 
         public static bool IsMinimized(IntPtr h) { return IsIconic(h); }
         public static bool IsMaximized(IntPtr h) { return IsZoomed(h); }

@@ -92,6 +92,7 @@ namespace Deskmate
 
         void WatchHover()
         {
+            if (HoverIslandReplica()) return;
             if (compactHoverExitPending && !HoldCompactHoverAtEdge(CursorInIsland())) PointerLeave();
             if (messagesCardClick.HasValue)
             {

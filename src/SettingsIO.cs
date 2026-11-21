@@ -14,7 +14,7 @@ namespace Deskmate
         static readonly HashSet<string> Portable = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "material", "theme", "lyrics", "lyrics.online", "visualizer", "music.view", "notif", "notif.content", "notif.apps", "notif.vip",
-            "agent.wait", "agent.quota", "update.check", "accent", "monitor", "focus.break", "focus.hold", "dock", "position", "panel.width", "panel.tabs",
+            "agent.wait", "agent.quota", "update.check", "accent", "monitor", AllIslandScreensKey, "focus.break", "focus.hold", "dock", "position", "panel.width", "panel.tabs",
             "google.tasks", "google.drive.notes", "tasks.sort",
             "place", "place.inset", "place.y", "home.cards", "home.sort", "tabs.trigger",
             "dockbar.on", "dockbar.replace", "dockbar.reserve", "dockbar.magnify", "dockbar.pins", "dockbar.work",

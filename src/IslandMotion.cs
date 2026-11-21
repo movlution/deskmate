@@ -368,6 +368,7 @@ namespace Deskmate
 
         int Frame()
         {
+            if (frameDirty) RefreshIslandReplicas();
             var now = DateTime.UtcNow;
             double t = clock.Elapsed.TotalSeconds;
             float dt = (float)Math.Min(0.05, Math.Max(0.001, t - lastT));

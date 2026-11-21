@@ -174,14 +174,17 @@ namespace Deskmate
             return PeekMessage(out m, IntPtr.Zero, 0, 0, 0);
         }
 
-        // Fullscreen app on the primary monitor
-        // Foreground app covering the island's monitor
-        public static bool IsFullscreenOn(IntPtr monitor)
-        {
-            int quns;
-            if (SHQueryUserNotificationState(out quns) == 0 && (quns == 3 || quns == 4)) return true;
+        public static bool IsFullscreenOn(IntPtr monitor) { return IsFullscreenForDisplay(monitor, false); }
 
-            return IsFullscreenWindow(GetForegroundWindow(), monitor);
+        // Presentation mode is global; a fullscreen game can be isolated to its own display.
+        public static bool IsFullscreenForDisplay(IntPtr monitor, bool perDisplay)
+        {
+            IntPtr fg = GetForegroundWindow();
+            int quns;
+            if (SHQueryUserNotificationState(out quns) == 0 &&
+                (quns == 4 || (quns == 3 && (!perDisplay || MonitorFromWindow(fg, 2) == monitor)))) return true;
+
+            return IsFullscreenWindow(fg, monitor);
         }
 
         public static bool IsFullscreenWindow(IntPtr hwnd, IntPtr monitor)

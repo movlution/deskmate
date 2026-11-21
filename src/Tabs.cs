@@ -114,10 +114,7 @@ namespace Deskmate
 
         float AgentsHeight()
         {
-            if (hub != null && hub.Error != null) return 214;
-            float qh = QuotaBlockH();
-            if (sessions.Count == 0) return 214 + Math.Max(0, qh - 8);
-            return Clamp(PanelTop + 14 + qh + AgentsContentH(), 150, 360);
+            return Clamp(PanelTop + 14 + AgentsPageContentH(), 150, 360);
         }
 
         float TasksHeight()
@@ -251,7 +248,7 @@ namespace Deskmate
             Spring s;
             float content, step;
             if (page == PageHome && !HomeQuiet) { s = homeScroll; content = homeContentH; view = HomeView(); step = 72; }
-            else if (page == PageAgents) { s = agentScroll; content = AgentsContentH() + QuotaBlockH(); step = 84; }
+            else if (page == PageAgents) { s = agentScroll; content = AgentsPageContentH(); view = AgentsHeight() - PanelTop - 14; step = 84; }
             else if (page == PageClass && classSeg == 0) { s = taskScroll; content = (tasks != null ? tasks.Count : 0) * 54 + TaskFoot(); step = 81; }
             else if (page == PageClass) { s = scheduleScroll; content = ScheduleContentH() + EventFoot(); step = ClassRowH * 1.5f; }
             else if (page == PageMessages) { s = notifScroll; content = notifs.Count * 50; step = 75; }

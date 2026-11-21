@@ -99,9 +99,8 @@ namespace Deskmate
                     inside = true;
                     hover.Target = 1;
                     hideLater.Stop();
-                    // Hidden dock: honour the user's edge wait before rising
-                    HoverReveal();
                 }
+                HoverReveal();
                 if (pressId != null && e.Button == MouseButtons.Left && dragApp == null && AppById(pressId) != null && Far(e.Location, downAt)) BeginDrag(AppById(pressId), pt);
                 if (dragApp != null) { DragMove(pt); Animate(); return; }
                 string id = HitAt(pt);
@@ -140,6 +139,7 @@ namespace Deskmate
             protected override void OnMouseLeave(EventArgs e)
             {
                 base.OnMouseLeave(e);
+                CancelHoverReveal();
                 if (dragApp != null) return;
                 inside = false;
                 hover.Target = 0;
@@ -216,17 +216,18 @@ namespace Deskmate
                 bool shift = (ModifierKeys & Keys.Shift) != 0, ctrl = (ModifierKeys & Keys.Control) != 0;
                 if (!a.Running || shift) { Launch(a, shift && ctrl); return; }
                 IntPtr fg = GetForegroundWindow();
-                int at = a.Wins.FindIndex(w => w.H == fg);
-                var next = at >= 0 && a.Wins.Count > 1 ? a.Wins[(at + 1) % a.Wins.Count] : at >= 0 ? a.Wins[at] : a.Recent();
+                var live = a.Wins.FindAll(w => ShellApp.WindowExists(w.H));
+                if (live.Count == 0) { Launch(a, false); return; }
+                int at = live.FindIndex(w => w.H == fg);
+                var recent = a.Recent();
+                var next = at >= 0 ? live[(at + 1) % live.Count] :
+                    recent != null && live.Contains(recent) ? recent : live[0];
                 if (next != null)
                 {
                     a.PulseUtc = DateTime.UtcNow;
                     a.Grow.Velocity += 2.2f;
                     Animate();
-                    // An elevated window ignores us; only the app itself can raise it again
-                    bool stuck = ShellApp.OutOfReach(next.H);
-                    if (stuck) ShellApp.Relaunch(next.H);
-                    else ShellApp.Activate(next.H);
+                    ShellApp.FocusDockApp(next.H);
                 }
                 if (!fromCard) CloseCard();
             }
@@ -277,6 +278,8 @@ namespace Deskmate
                 Rectangle anchor = IconScreenRect(a);
                 if (anchor.IsEmpty) anchor = new Rectangle(useMon.Left + useMon.Width / 2, barTop, 1, 1);
                 m.OpenAt(anchor, Rectangle.Empty, useMon, barTop, sc);
+                // Clicking the same foreground app may not deactivate the sheet.
+                MenuGuard.Watch(m, pt => m.Bounds.Contains(pt), () => SheetDone(m), Dry);
             }
 
             internal AppSheet CurrentAppSheet { get { return sheet as AppSheet; } }

@@ -19,7 +19,11 @@ namespace Deskmate
                 else if (HideMode != "never" && !inside) { hideLater.Stop(); hideLater.Start(); }
             }
 
-            public Bitmap TrayPicture(TrayIcon ic) { return tray != null ? tray.Picture(ic) : null; }
+            public Bitmap TrayPicture(TrayIcon ic)
+            {
+                var owner = TrayOwner();
+                return owner == null ? null : owner.tray.Picture(ic);
+            }
 
             GlassSheet sheet;
 
@@ -75,6 +79,7 @@ namespace Deskmate
             {
                 bool wasStart = s != null && s.Kind == "start";
                 if (s == sheet) sheet = null;
+                MenuGuard.Unwatch(s);
                 if (!s.IsDisposed) s.Dismiss();
                 if (wasStart && !closing) Render();
                 if (sheet == null && !closing && HideMode != "never" && !inside) { hideLater.Stop(); hideLater.Start(); }
