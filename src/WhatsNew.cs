@@ -20,6 +20,18 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.9.0",
+                Items = new[]
+                {
+                    new[] { "Notch di semua layar", "Pilih Semua layar di Ukuran dan layar › Layar. Monitor lain menampilkan notch ringkas, dan panel terbuka di layar yang Anda arahkan atau klik.", "" },
+                    new[] { "Ikon tersembunyi dari setiap Dock", "Saat Dock menggantikan taskbar, tombol panah di setiap monitor membuka daftar ikon tersembunyi tepat di atas Dock itu.", "" },
+                    new[] { "Pengaturan yang ditata ulang", "Pengaturan kini disusun seperti System Settings di macOS, dengan kunci settings.ini yang tetap sama.", "" },
+                    new[] { "Lebih responsif", "Deskmate berjalan pada prioritas normal, animasi notch dan panel lebih ringan, dan Start langsung menampilkan aplikasi, ikon, serta Terbaru.", "" },
+                    new[] { "Kaca dan tema", "Kaca wall.sync kini mewarnai mengikuti wallpaper, Dock naik lebih cepat dan tenang, dan tema mengikuti Windows.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.8.0",
                 Items = new[]
                 {

@@ -8,6 +8,17 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.9.x
+            en.Add("Notch di semua layar", "Notch on every display");
+            en.Add("Pilih Semua layar di Ukuran dan layar › Layar. Monitor lain menampilkan notch ringkas, dan panel terbuka di layar yang Anda arahkan atau klik.", "Choose All displays in Size and display › Display. Other monitors show a compact notch, and the panel opens on the screen you point at or click.");
+            en.Add("Ikon tersembunyi dari setiap Dock", "Hidden icons from every Dock");
+            en.Add("Saat Dock menggantikan taskbar, tombol panah di setiap monitor membuka daftar ikon tersembunyi tepat di atas Dock itu.", "When the Dock replaces the taskbar, the arrow on every monitor opens the hidden-icon list right above that Dock.");
+            en.Add("Pengaturan yang ditata ulang", "Redesigned Settings");
+            en.Add("Pengaturan kini disusun seperti System Settings di macOS, dengan kunci settings.ini yang tetap sama.", "Settings are now laid out like macOS System Settings, with the same settings.ini keys.");
+            en.Add("Lebih responsif", "More responsive");
+            en.Add("Deskmate berjalan pada prioritas normal, animasi notch dan panel lebih ringan, dan Start langsung menampilkan aplikasi, ikon, serta Terbaru.", "Deskmate runs at normal priority, notch and panel animations are lighter, and Start shows apps, icons, and Recent right away.");
+            en.Add("Kaca dan tema", "Glass and theme");
+            en.Add("Kaca wall.sync kini mewarnai mengikuti wallpaper, Dock naik lebih cepat dan tenang, dan tema mengikuti Windows.", "wall.sync glass now tints to the wallpaper, the Dock rises faster and calmer, and the theme follows Windows.");
             // What's new 2.8.x
             en.Add("Gambar di catatan tugas", "Images in task notes");
             en.Add("Pilih Tambah gambar atau tempel screenshot dengan Ctrl+V. Gambar disimpan sebagai PNG, ikut tersinkron ke Google Drive privat, dan tetap bisa dibuka dari cache saat offline.", "Choose Add image or paste a screenshot with Ctrl+V. Images are stored as PNG, sync privately to Google Drive, and remain available from the offline cache.");
