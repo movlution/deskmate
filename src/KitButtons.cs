@@ -261,7 +261,7 @@ namespace Deskmate
                 return;
             }
             // Rows stay monochrome: color belongs to the category tiles
-            KitInk.Draw(g, Ink.Str(Glyph), Ink.Icons(15f * s), Enabled ? KitInk.Sub : KitInk.Faint, box, ContentAlignment.MiddleCenter);
+            KitInk.Draw(g, Ink.Str(Glyph), Ink.Icons(15f * s), Enabled ? KitInk.Text : KitInk.Faint, box, ContentAlignment.MiddleCenter);
         }
 
         // Small text on the title's baseline

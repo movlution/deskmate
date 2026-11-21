@@ -24,18 +24,18 @@ Describe "Tier 3: Dock edge hover" {
         Assert-False ([bool]$band.Invoke($null, @($monitor, [single]1, [single]6, $besideEdge))) "Another monitor at the same Y must not keep this dock up"
     }
 
-    It "2. scales the hover band with DPI and keeps a minimal 2 px edge for full-width bars" {
+    It "2. scales the hover band with DPI and keeps a minimal 6 DIP edge for full-width bars" {
         $band = $dockType.GetMethod("InEdgeBand", $flags)
         $monitor = New-Object System.Drawing.Rectangle 1920, 0, 1920, 1080
         $scaledEdge = New-Object System.Drawing.Point 2880, 1071
         $scaledAbove = New-Object System.Drawing.Point 2880, 1070
-        $fullEdge = New-Object System.Drawing.Point 2880, 1078
-        $fullAbove = New-Object System.Drawing.Point 2880, 1077
+        $fullEdge = New-Object System.Drawing.Point 2880, 1074
+        $fullAbove = New-Object System.Drawing.Point 2880, 1073
 
         Assert-True ([bool]$band.Invoke($null, @($monitor, [single]1.5, [single]6, $scaledEdge))) "At 150%, the 6 DIP gap must cover 9 physical pixels"
         Assert-False ([bool]$band.Invoke($null, @($monitor, [single]1.5, [single]6, $scaledAbove))) "At 150%, the pixel above the gap must stay outside"
-        Assert-True ([bool]$band.Invoke($null, @($monitor, [single]1, [single]0, $fullEdge))) "A full-width bar must still own a 2 px edge"
-        Assert-False ([bool]$band.Invoke($null, @($monitor, [single]1, [single]0, $fullAbove))) "The 2 px edge must not grow into the bar"
+        Assert-True ([bool]$band.Invoke($null, @($monitor, [single]1, [single]0, $fullEdge))) "A full-width bar must still own a 6 DIP edge for auto-hide"
+        Assert-False ([bool]$band.Invoke($null, @($monitor, [single]1, [single]0, $fullAbove))) "The 6 DIP edge must not grow further into the bar"
     }
 
     It "3. renders an invisible hit strip at the bottom while the bar is shown" {
