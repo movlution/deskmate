@@ -16,7 +16,10 @@ namespace Deskmate
 
         [DllImport("psapi.dll")] static extern bool GetProcessMemoryInfo(IntPtr process, ref MemCounters c, uint size);
 
+        // Floor of the leak line; above it, only growth past the settled size counts
         const double LeakMb = 90;
+        const double LeakGrowMb = 60;
+        double settledMb;
         const int LeakTrimCooldownSec = 300;
         // Quiet this long after motion, then trim
         const int RestMs = 3000;
@@ -39,7 +42,7 @@ namespace Deskmate
             if ((DateTime.UtcNow - leakCheckUtc).TotalSeconds < 60) return;
             leakCheckUtc = DateTime.UtcNow;
             double mb = PrivateMb();
-            if (mb > LeakMb)
+            if (mb > Math.Max(LeakMb, settledMb + LeakGrowMb))
             {
                 if ((DateTime.UtcNow - lastLeakTrimUtc).TotalSeconds < LeakTrimCooldownSec) return;
                 lastLeakTrimUtc = DateTime.UtcNow;
@@ -95,6 +98,7 @@ namespace Deskmate
             GC.Collect();
             Native.SetProcessWorkingSetSize(Native.GetCurrentProcess(), (IntPtr)(-1), (IntPtr)(-1));
             trimmedMb = WorkingSetMb();
+            settledMb = PrivateMb();
             if (fpsLog) Log.Write("trim " + (clock.Elapsed.TotalMilliseconds - t0).ToString("0.0") + "ms");
         }
     }

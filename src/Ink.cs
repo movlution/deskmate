@@ -319,9 +319,8 @@ namespace Deskmate
 
         public static void Init()
         {
-            var have = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            using (var fc = new InstalledFontCollection())
-                foreach (var f in fc.Families) have.Add(f.Name);
+            // Ask for the few families we use; enumerating every installed font costs seconds on a cold logon
+            var have = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             families[FDisplay] = Pick(have, "Segoe UI Variable Display Semibold", "Segoe UI Variable Display Semib", "Segoe UI Semibold", "Segoe UI");
             families[FText] = Pick(have, "Segoe UI Variable Text", "Segoe UI");
             families[FSemi] = Pick(have, "Segoe UI Variable Text Semibold", "Segoe UI Semibold", "Segoe UI");
@@ -331,14 +330,28 @@ namespace Deskmate
             families[FSmallSemi] = Pick(have, "Segoe UI Variable Small Semibold", "Segoe UI Variable Small Semibol", "Segoe UI Semibold", "Segoe UI");
         }
 
-        static string Pick(HashSet<string> have, params string[] names)
+        static string Pick(Dictionary<string, bool> have, params string[] names)
         {
             foreach (var n in names)
             {
-                if (have.Contains(n)) return n;
-                if (n.Length > 31 && have.Contains(n.Substring(0, 31))) return n.Substring(0, 31);
+                if (Installed(have, n)) return n;
+                if (n.Length > 31 && Installed(have, n.Substring(0, 31))) return n.Substring(0, 31);
             }
             return System.Drawing.SystemFonts.MessageBoxFont.FontFamily.Name;
+        }
+
+        // Exact family match only: GDI+ throws for a name it does not have
+        static bool Installed(Dictionary<string, bool> have, string name)
+        {
+            bool ok;
+            if (have.TryGetValue(name, out ok)) return ok;
+            try
+            {
+                using (var f = new FontFamily(name)) ok = string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (ArgumentException) { ok = false; }
+            have[name] = ok;
+            return ok;
         }
 
         public static Font Display(float px) { return Get(FDisplay, px); }

@@ -117,6 +117,7 @@ namespace Deskmate
             Text = "Deskmate";
             Bounds = new Rectangle(-32000, -32000, 1, 1);
 
+            Boot.Mark("form");
             Ink.Init();
             Boot.Mark("ink");
             Anim.Read(settings);

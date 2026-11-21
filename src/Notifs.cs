@@ -224,6 +224,7 @@ namespace Deskmate
                 else
                     ToastNotificationManager.History.Clear(n.AppId);
             }
+            catch (ArgumentException) { }
             catch (Exception ex) { Log.Write("notif history drop: " + ex.GetType().Name); }
         }
 
