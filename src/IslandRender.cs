@@ -43,6 +43,8 @@ namespace Deskmate
             inRender = true;
 
             g.ResetTransform();
+            // Bicubic scaling of every icon costs frames while the shell springs; full quality returns once settled
+            g.InterpolationMode = sw.Settled && sh.Settled ? InterpolationMode.HighQualityBicubic : InterpolationMode.Bilinear;
             if (snapWanted) TakeSnapshot();
             snapPxW = pxW;
             g.SetClip(new Rectangle(0, 0, pxW, pxH));

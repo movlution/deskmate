@@ -679,14 +679,10 @@ namespace Deskmate
                 g.FillPath(p.B(Ink.A(veil, veilA)), path);
                 if (baseTone && current == View.Panel && page == PageMusic && mediaInfo.Present && BackdropShown(DateTime.UtcNow))
                 {
-                    var wash = BackdropFor();
+                    var wash = FadedWash(BackdropFor());
                     if (wash != null)
                     {
-                        using (var ia = new ImageAttributes())
-                        {
-                            ia.SetColorMatrix(new ColorMatrix { Matrix33 = 0.28f });
-                            g.DrawImage(wash, Rectangle.Round(bounds), 0f, 0f, wash.Width, wash.Height, GraphicsUnit.Pixel, ia);
-                        }
+                        g.DrawImage(wash, Rectangle.Round(bounds), 0, 0, wash.Width, wash.Height, GraphicsUnit.Pixel);
                         backdropInSurface = true;
                     }
                 }
@@ -725,6 +721,26 @@ namespace Deskmate
             g.DrawPath(p.P(Color.FromArgb(softLineA, 0, 0, 0), 3f), path);
             g.Restore(st);
             RimOutside(path, bounds, light, false, joined);
+        }
+
+        // Per-frame ColorMatrix draws were the slow path; fade the cover once per backdrop instead
+        Bitmap fadedWash, fadedFrom;
+
+        Bitmap FadedWash(Bitmap wash)
+        {
+            if (wash == null) return null;
+            if (ReferenceEquals(wash, fadedFrom) && fadedWash != null) return fadedWash;
+            var faded = new Bitmap(wash.Width, wash.Height, PixelFormat.Format32bppPArgb);
+            using (var fg = Graphics.FromImage(faded))
+            using (var ia = new ImageAttributes())
+            {
+                ia.SetColorMatrix(new ColorMatrix { Matrix33 = 0.28f });
+                fg.DrawImage(wash, new Rectangle(0, 0, wash.Width, wash.Height), 0, 0, wash.Width, wash.Height, GraphicsUnit.Pixel, ia);
+            }
+            if (fadedWash != null) fadedWash.Dispose();
+            fadedWash = faded;
+            fadedFrom = wash;
+            return faded;
         }
 
         void RimOutside(GraphicsPath path, RectangleF bounds, bool light, bool solid, bool joined)

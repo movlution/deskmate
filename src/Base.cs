@@ -248,7 +248,7 @@ namespace Deskmate
                 + "  <RegistrationInfo><Description>Start Deskmate at sign-in without delay for this user.</Description></RegistrationInfo>\r\n"
                 + "  <Principals><Principal id=\"Author\"><UserId>" + x(id.User.Value) + "</UserId><LogonType>InteractiveToken</LogonType></Principal></Principals>\r\n"
                 + "  <Settings><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"
-                + "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy></Settings>\r\n"
+                + "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><Priority>4</Priority></Settings>\r\n"
                 + "  <Triggers><LogonTrigger><UserId>" + x(id.Name) + "</UserId></LogonTrigger></Triggers>\r\n"
                 + "  <Actions Context=\"Author\"><Exec><Command>" + x(exe) + "</Command><WorkingDirectory>" + x(Path.GetDirectoryName(exe)) + "</WorkingDirectory></Exec></Actions>\r\n"
                 + "</Task>\r\n";
