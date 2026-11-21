@@ -733,15 +733,43 @@ namespace Deskmate
                 float dt = (float)Math.Min(0.05, Math.Max(0.001, t - lastT));
                 lastT = t;
                 bool more = false;
+                double f0 = clock.Elapsed.TotalMilliseconds, f1 = f0;
                 // A failed frame must not leave the pacer waiting forever
                 try
                 {
                     more = Step(dt);
+                    f1 = clock.Elapsed.TotalMilliseconds;
                     Render();
                     // A widget set off during this render
                     more |= WidgetsMoving();
                 }
                 finally { pacer.Done(more); }
+                if (fpsLog) CountDockFrame(f0, f1, clock.Elapsed.TotalMilliseconds, more);
+            }
+
+            // DESKMATE_FPS=1 also logs dock frames
+            static readonly bool fpsLog = Environment.GetEnvironmentVariable("DESKMATE_FPS") == "1";
+            int fpsN, fpsGc;
+            double fpsFrom, fpsLast, fpsStep, fpsRender, fpsWorst, fpsGapWorst;
+
+            void CountDockFrame(double f0, double f1, double f2, bool more)
+            {
+                double ms = f2 - f0;
+                if (fpsLast > 0 && f0 - fpsLast < 250) fpsGapWorst = Math.Max(fpsGapWorst, f0 - fpsLast);
+                else fpsFrom = f0;
+                fpsLast = f2;
+                fpsN++;
+                fpsStep += f1 - f0;
+                fpsRender += f2 - f1;
+                fpsWorst = Math.Max(fpsWorst, ms);
+                int gc = GC.CollectionCount(0);
+                if (ms > 12) Log.Write("dock slow " + ms.ToString("0.0") + "ms step=" + (f1 - f0).ToString("0.0") + " render=" + (f2 - f1).ToString("0.0") + " " + cw + "x" + ch + (gc != fpsGc ? " [GC]" : ""));
+                fpsGc = gc;
+                if (more && f2 - fpsFrom < 2000) return;
+                double span = Math.Max(1, f2 - fpsFrom);
+                Log.Write("dock fps " + (fpsN * 1000 / span).ToString("0.0") + " step " + (fpsStep / fpsN).ToString("0.00") + "ms render " + (fpsRender / fpsN).ToString("0.00") +
+                          "ms worst " + fpsWorst.ToString("0.0") + "ms gap " + fpsGapWorst.ToString("0.0") + "ms " + cw + "x" + ch);
+                fpsN = 0; fpsStep = fpsRender = fpsWorst = fpsGapWorst = 0; fpsFrom = f2;
             }
 
             // Auto-hide: the edge brings it back, after an optional wait

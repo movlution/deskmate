@@ -42,8 +42,11 @@ namespace Deskmate
                     startPulseUtc = DateTime.UtcNow;
                     Animate();
                 }
+                double o0 = clock.Elapsed.TotalMilliseconds;
                 sheet = MakeSheet(kind);
+                double o1 = clock.Elapsed.TotalMilliseconds;
                 sheet.OpenAt(HitScreenRect(SheetAnchor(kind)), Full ? Rectangle.Empty : ToScreen(centerPill), mon, BarTopShownScreen(), scale);
+                if (fpsLog) Log.Write("dock open " + kind + " " + (clock.Elapsed.TotalMilliseconds - o0).ToString("0.0") + "ms make=" + (o1 - o0).ToString("0.0") + " open=" + (clock.Elapsed.TotalMilliseconds - o1).ToString("0.0"));
             }
 
             GlassSheet MakeSheet(string kind)
@@ -107,6 +110,8 @@ namespace Deskmate
                         keysPosted = false;
                         if (closing) return;
                         if (globalOwner && Replacing && !Dry && S.GetBool("dockbar.winkey", true)) StartKeys();
+                        // First Start open waited ~0.9s for the catalog and ~0.9s for icons; warm both in the background
+                        if (globalOwner && !Dry) StartCard.Prewarm(this, isle.settings.Get("start.pins", null), Math.Max(32, (int)Math.Ceiling(40 * scale)));
                     }));
                 }
                 catch (InvalidOperationException) { keysPosted = false; }

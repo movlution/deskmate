@@ -415,13 +415,17 @@ namespace Deskmate
                 labelShow.Target = 0;
                 Reveal(true);
                 TrayPromo.Invalidate();
+                double o0 = clock.Elapsed.TotalMilliseconds;
                 var list = OverflowTray();
                 if (list.Count == 0) { Render(); return; }
                 trayOpenUtc = DateTime.UtcNow;
                 trayFrontHwnd = GetForegroundWindow();
+                double o1 = clock.Elapsed.TotalMilliseconds;
                 var c = new DockCard(isle, this, DockCard.TrayKind);
                 card = c;
+                double o2 = clock.Elapsed.TotalMilliseconds;
                 c.ShowTray(list, HitScreenRect("chev"), mon, BarTopShownScreen(), scale);
+                if (fpsLog) Log.Write("dock open tray " + (clock.Elapsed.TotalMilliseconds - o0).ToString("0.0") + "ms list=" + (o1 - o0).ToString("0.0") + " make=" + (o2 - o1).ToString("0.0") + " show=" + (clock.Elapsed.TotalMilliseconds - o2).ToString("0.0") + " icons=" + list.Count);
                 MenuGuard.Watch(c, pt => (!c.IsDisposed && c.Bounds.Contains(pt)) || ChevContainsScreen(pt), delegate
                 {
                     if (card == c) CloseCard();

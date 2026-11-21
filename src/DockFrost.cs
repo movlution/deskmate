@@ -53,8 +53,10 @@ namespace Deskmate
             {
                 if (thread != null) return;
                 run = true;
-                thread = new Thread(Prof.Wrap(Loop)) { IsBackground = true, Name = "dock frost", Priority = ThreadPriority.BelowNormal };
-                thread.Start();
+                var t = new Thread(Prof.Wrap(Loop)) { IsBackground = true, Name = "dock frost", Priority = ThreadPriority.BelowNormal };
+                thread = t;
+                // Thread.Start waits for the new thread to be scheduled, which stalls the UI under CPU load
+                ThreadPool.QueueUserWorkItem(delegate { t.Start(); });
             }
 
             public void Stop()

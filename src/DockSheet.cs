@@ -169,8 +169,10 @@ namespace Deskmate
             // Over its button, within the dock
             public void OpenAt(Rectangle anchor, Rectangle span, Rectangle mon, int barTop, float sc)
             {
+                var tw = System.Diagnostics.Stopwatch.StartNew();
                 scale = sc;
                 Opening(mon, barTop);
+                double tOpening = tw.Elapsed.TotalMilliseconds;
                 H = Math.Max(80, Math.Min(H, (barTop - mon.Top) / scale - 40));
                 if (!IsHandleCreated) CreateHandle();
                 int pw = (int)Math.Ceiling(W * scale), ph = (int)Math.Ceiling(H * scale);
@@ -191,15 +193,23 @@ namespace Deskmate
                 if (Anim.Reduced) open.Snap(1);
                 else { open.Snap(0); open.Target = 1; }
                 lastStep = DateTime.UtcNow;
+                double tSetup = tw.Elapsed.TotalMilliseconds;
                 Render();
+                double tRender = tw.Elapsed.TotalMilliseconds;
                 Show();
                 Present();
+                double tShow = tw.Elapsed.TotalMilliseconds;
                 if (!Anim.Reduced) Animate();
                 // Test runs leave the user's focus alone
-                if (DockWindow.Dry) return;
-                // Keyboard opens too: take focus
-                ShellApp.Activate(Handle);
-                Activate();
+                if (!DockWindow.Dry)
+                {
+                    // Keyboard opens too: take focus
+                    ShellApp.Activate(Handle);
+                    Activate();
+                }
+                if (Environment.GetEnvironmentVariable("DESKMATE_FPS") == "1")
+                    Log.Write("sheet open " + Kind + " opening=" + tOpening.ToString("0.0") + " setup=" + (tSetup - tOpening).ToString("0.0") + " render=" + (tRender - tSetup).ToString("0.0") +
+                              " show=" + (tShow - tRender).ToString("0.0") + " activate=" + (tw.Elapsed.TotalMilliseconds - tShow).ToString("0.0") + " " + cw + "x" + ch);
             }
             public void NudgeFrost() { if (frost != null) frost.Nudge(); }
 
