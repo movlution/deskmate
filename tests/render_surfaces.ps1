@@ -620,7 +620,7 @@ if ($env:DESKMATE_SURFACES_SEED -eq '1') {
 # ---------------------------------------------------------------------------
 $surfaces = [ordered]@{}
 
-foreach ($sec in 'overview', 'look', 'island', 'dock', 'work', 'general', 'about') {
+foreach ($sec in 'general', 'look', 'island', 'dock', 'work', 'about') {
     $id = $sec
     $surfaces["prefs-$id"] = [scriptblock]::Create("Render-Form (New-Deskmate 'PrefsWindow' @(Get-Island)) 1040 720 { param(`$win) `$win.Go('$id') }")
 }

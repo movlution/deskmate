@@ -104,8 +104,10 @@ Corners are squircles (`Ink.AddRound`, smoothing 0.6). Radii nest: an inner radi
 |---|---|---|
 | `RadiusShell` | 32 | island shell |
 | `RadiusModule` | 20 | island modules, dock sheets |
-| `RadiusCard` | 16 | settings groups (`KitGroup`) |
-| `RadiusControl` | 12 | buttons, check rows, segmented track, slider focus |
+| `RadiusCard` | 16 | cards outside Settings (task board, notes) |
+| `RadiusList` | 10 | Settings groups (`KitGroup`) and the page hero card |
+| `RadiusControl` | 12 | buttons, check rows, segmented track, slider focus; capped at 0.35 × height, so 30 px Settings controls get 10 |
+| category tile | 5 (20 px) · 11 (44 px) | sidebar tiles and the hero tile |
 | inner thumb | 12 − 3 = 9 | segmented thumb; settings icon tiles |
 | tick box | 5 | `KitCheck` box |
 | pill | h / 2 | switches, chips, progress tracks only |
@@ -116,9 +118,9 @@ Pills are for small toggles and tracks only. Buttons are soft squircles, not cap
 
 - Scale: `Ink.Sp4 … Sp32` (4, 8, 12, 16, 20, 24, 32). Groups are tight (8–12) and sections are well separated (24–32).
 - Module grid: inset 12, gap 10, padding 16.
-- Hit targets: buttons, segmented controls, popups, swatches, hotkey fields and dialog actions are **36 px** high; switches are 46 × 26.
-- Settings rows: 56 px for one line, 64 px for title plus detail, with both lines centred as one block. Taller custom rows (theme, material, place, QR) top-align their text beside the icon tile.
-- Settings page rhythm: 24 to the page header (60 high), then 20 to the content. A section heading gets 8 extra above it and sits 24 above its group. Groups are 24 apart. A guidance note under a heading uses the body weight.
+- Hit targets: buttons, segmented controls, popups, swatches, hotkey fields and dialog actions are **36 px** high outside Settings. Settings is denser: controls are **30 px** high and switches 38 × 22, still above the 24 px WCAG 2.2 minimum target.
+- Settings rows: 44 px for one line, 54 px for title plus detail, with both lines centred as one block. Taller custom rows (theme, material, place, QR) top-align their text beside the glyph.
+- Settings page rhythm: the content column is at most 720 px wide and centred. 20 to the hero card (72 high), then 24 to the content. A section heading sits 8 above its group; groups are 20 apart. A merged page starts each later part with a part title (Title2) 12 below the last group. A guidance note under a heading uses the body weight.
 - All Kit geometry scales by `KitWindow.Ui` (per-monitor DPI).
 
 ## Type
@@ -128,29 +130,46 @@ Segoe UI Variable (with Segoe UI fallback), from `Ink`:
 | Role | Face | px |
 |---|---|---|
 | Hero | Display Semibold | 40 |
-| Page title (Settings) | Display Semibold | 24 |
-| Title1 / search results | Display Semibold | 22 |
-| Title2 | Text Semibold | 17 |
+| Hero / search results title (Settings) | Text Semibold | 15 / Display Semibold 20 |
+| Title1 | Display Semibold | 22 |
+| Title2 / part title | Text Semibold | 17 |
 | Headline | Text Semibold | 14.5 |
-| Body / row title | Text | 13.5 |
+| Body | Text | 13.5 |
+| Settings row title / side rail label | Text | 13 |
 | Callout / control label | Text | 12.5 |
-| Row detail | Text | 12 |
-| Section heading | Small Semibold | 12, `Sub` |
-| Side rail group heading | Small Semibold | 11.5, `Sub` |
+| Row detail | Text | 11.5 |
+| Section heading (Settings) | Text Semibold | 13, `Text` |
 | Caption | Small | 11 (smallest reading size; 9.5 only for the version suffix) |
 
 The selected segment and the selected side-rail item use Text Semibold. Weight carries emphasis, never color or gradient text.
 
-## Settings side rail
+## Settings (macOS System Settings pattern, Deskmate palette)
 
-Rows are 32 px with a 9 px radius. Hover is `Side` mixed 5–6 % toward `Text`. The selected row is `Side` mixed 13 % (paper) or 17 % (night) toward the accent. It gets a 3 × 14 px soft mark and an accent icon (`Text` if the accent is under 3:1 on that fill), with the label in semibold. Keyboard focus uses the shared focus ring.
+Color is for navigation only: every category owns a tile color, and rows inside a page stay monochrome.
+
+### Category tiles
+
+Tiles reuse the paper twins of `Ink.Labels` in both themes (`Ink.Label(key, true)`), so no new literal exists. The glyph is `Ink.On(tile)`, which is ivory on every twin (≥ 4.9:1). The same color fills the 20 px sidebar tile and the 44 px hero tile of that page.
+
+### Side rail
+
+- 220 px wide on `Side`. The search well (28 px, radius 7) sits on top.
+- The first item is the Deskmate card: app icon, name and version, 58 px high. It opens Tentang.
+- Rows are 30 px with a 7 px radius: tile, 10 px gap, label (Text 13). Groups are separated by 14 px of space, without headings.
+- Hover is `Side` mixed 5–6 % toward `Text`. The selected row is filled with the accent, and its label is `OnAccent` in semibold; the tile keeps its color. Keyboard focus uses the shared focus ring.
+
+### Page
+
+- A hero card (`Group`, `RadiusList`, 72 px) opens every page: 44 px category tile, title (Text Semibold 15), and a one-line note in `Sub`.
+- Rows have no tiles: an optional 16 px glyph in `Sub` leads, the text starts at 44 px, and hairlines start where the text starts.
+- Pages that merge older ones (Island + tab, Tugas + integrasi, AI + dikte, Perangkat + HP) keep each part's own headings and add a part title before every later part. Old ids still open the right page and scroll to their part.
 
 ## Elevation
 
 Each element declares elevation once, either by tone step or by shadow. Never use both a border and a shadow.
 
 - **0, canvas:** `Window`.
-- **1, card:** `Group` is one tone step off the canvas, with no border and no shadow.
+- **1, card:** `Group` is one tone step off the canvas, with no border and no shadow. A selected sidebar row is the only filled navigation surface.
 - **2, raised thumb or knob:** `KitInk.Lift`, a contact shadow at 0.75 px below plus a falloff at 1.5 px below. Paper uses plum `#2A2038` at α 26/13; night uses black at α 90/45. It always has an offset and is never a halo. On paper, the white slider knob also gets a 1 px `Line` edge so it reads on ivory.
 - **3, floating:** island glass and menus. These use the glass materials (`Glass.cs`) and the window shadow, not Kit.
 

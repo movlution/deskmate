@@ -112,7 +112,7 @@ namespace Deskmate
                     continue;
                 }
                 if (!result.Ok) error = result.Status == 403
-                    ? Lang.T("Izin Google Tasks/Drive belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Integrasi.")
+                    ? Lang.T("Izin Google Tasks/Drive belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Tugas & Kalender.")
                     : Lang.T("Gagal menyinkronkan gambar Google Drive");
                 return result;
             }

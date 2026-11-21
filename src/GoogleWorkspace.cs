@@ -45,7 +45,7 @@ namespace Deskmate
             }
             if (r.Status == 403)
             {
-                error = Lang.T("Izin Google Tasks/Drive belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Integrasi.");
+                error = Lang.T("Izin Google Tasks/Drive belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Tugas & Kalender.");
                 return r;
             }
             return r;

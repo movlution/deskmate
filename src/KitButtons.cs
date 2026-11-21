@@ -63,7 +63,8 @@ namespace Deskmate
             return RingOn ? new RectangleF(3.5f * s, 3.5f * s, Width - 7 * s, Height - 7 * s) : new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
         }
 
-        protected static float Radius(RectangleF r, float s) { return Math.Min(r.Height / 2f, Ink.RadiusControl * s); }
+        // Soft squircle at any height: 36 px keeps 12, compact 30 px controls get 10, never a capsule
+        protected static float Radius(RectangleF r, float s) { return Math.Min(r.Height * 0.35f, Ink.RadiusControl * s); }
 
         protected void DrawRing(Graphics g, RectangleF body, float s)
         {
@@ -188,13 +189,14 @@ namespace Deskmate
             g.Clear(Parent != null ? Parent.BackColor : KitInk.Window);
             var w = FindForm() as KitWindow;
             float s = w != null ? w.Ui : 1;
-            KitInk.FillRound(g, new RectangleF(0, 0, Width - 1, Height - 1), Ink.RadiusCard * s, KitInk.Group);
+            KitInk.FillRound(g, new RectangleF(0, 0, Width - 1, Height - 1), Ink.RadiusList * s, KitInk.Group);
             var pen = KitInk.PenOf(KitInk.Line, 1f);
             for (int i = 1; i < Controls.Count; i++)
             {
                 int y = Controls[i].Top;
                 var row = Controls[i] as KitRow;
-                float from = row != null && row.Glyph != '\0' ? (56 + row.Lead) * s : 16 * s;
+                // Hairline starts where the text starts
+                float from = row != null ? row.TextX(s) : 16 * s;
                 g.DrawLine(pen, from, y, Width - 16 * s, y);
             }
         }
@@ -229,34 +231,37 @@ namespace Deskmate
             float s = w != null ? w.Ui : 1;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
             float right = Field != null ? Field.Left - 12 * s : Width - (16 + Trail) * s;
-            float x = (Glyph != '\0' ? 56 : 16) * s + Lead * s;
+            float x = TextX(s);
             if (Glyph != '\0') DrawGlyph(g, s);
             // Hairline between grip and icon
             if (Divider)
                 g.DrawLine(KitInk.PenOf(Ink.Mix(KitInk.Line, KitInk.Sub, 0.45f), Math.Max(1f, s)), (Lead - 2) * s, Height * 0.3f, (Lead - 2) * s, Height * 0.7f);
-            Font f = Ink.Text(13.5f * s), d = Ink.Text(12f * s);
+            Font f = Ink.Text(13f * s), d = Ink.Text(11.5f * s);
             bool two = Detail.Length > 0;
-            // Two lines sit centred as one block; tall rows keep them beside the top-aligned tile
-            float top = Height > 80 * s ? 7 * s : Math.Max(0, (Height - 42 * s) / 2);
-            var tr = new RectangleF(x, two ? top : 0, right - x, two ? 22 * s : Height);
+            // Two lines sit centred as one block; tall rows keep them beside the top-aligned glyph
+            float top = Height > 80 * s ? 8 * s : Math.Max(0, (Height - 38 * s) / 2);
+            var tr = new RectangleF(x, two ? top : 0, right - x, two ? 20 * s : Height);
             KitInk.Draw(g, Title, f, Enabled ? KitInk.Text : KitInk.Faint, tr, ContentAlignment.MiddleLeft);
             if (Suffix.Length > 0) DrawSuffix(g, f, tr, s);
-            if (two) KitInk.Draw(g, Detail, d, KitInk.Sub, new RectangleF(x, top + 21 * s, right - x, 20 * s), ContentAlignment.MiddleLeft);
+            if (two) KitInk.Draw(g, Detail, d, KitInk.Sub, new RectangleF(x, top + 19 * s, right - x, 18 * s), ContentAlignment.MiddleLeft);
         }
+
+        // Text column: after the glyph when there is one
+        public float TextX(float s) { return ((Glyph != '\0' ? 44 : 16) + Lead) * s; }
 
         void DrawGlyph(Graphics g, float s)
         {
             KitInk.Smooth(g);
-            // Tall rows keep the tile beside the title
-            var tile = new RectangleF((14 + Lead) * s, Height > 80 * s ? 16 * s : (Height - 30 * s) / 2, 30 * s, 30 * s);
+            // Tall rows keep the glyph beside the title
+            float size = Glyph == MarkGlyph ? 24 : 20;
+            var box = new RectangleF((14 + Lead) * s, Height > 80 * s ? 9 * s : (Height - size * s) / 2, size * s, size * s);
             if (Glyph == MarkGlyph)
             {
-                g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(tile));
+                g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(box));
                 return;
             }
-            // Icon tile: a whisper of the accent over the card, the brand's quiet signature
-            KitInk.FillRound(g, tile, 9 * s, Ink.Mix(KitInk.Under(this), KitInk.Accent, Ink.Light ? 0.12f : 0.16f));
-            KitInk.Draw(g, Ink.Str(Glyph), Ink.Icons(15f * s), Enabled ? KitInk.Text : KitInk.Faint, tile, ContentAlignment.MiddleCenter);
+            // Rows stay monochrome: color belongs to the category tiles
+            KitInk.Draw(g, Ink.Str(Glyph), Ink.Icons(15f * s), Enabled ? KitInk.Sub : KitInk.Faint, box, ContentAlignment.MiddleCenter);
         }
 
         // Small text on the title's baseline

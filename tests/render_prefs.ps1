@@ -1,7 +1,7 @@
 param(
     [string]$BinaryPath = 'Deskmate.ds.exe',
     [string]$OutDir = '',
-    [string[]]$Sections = @('overview', 'look', 'island', 'tabs', 'dock', 'work', 'remind', 'general', 'keys', 'about')
+    [string[]]$Sections = @('general', 'look', 'island', 'tabs', 'dock', 'messages', 'work', 'remind', 'ai', 'system', 'keys', 'about')
 )
 # Renders the Settings window offscreen, dark and light, one PNG per section: <OutDir>\prefs-<id>-<theme>.png
 # Runs against a throwaway profile (DESKMATE_DIR / DESKMATE_HOME); the user's settings are never touched.

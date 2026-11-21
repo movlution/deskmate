@@ -368,7 +368,7 @@ namespace Deskmate
             var g = e.Graphics;
             KitInk.Smooth(g);
             g.Clear(KitInk.Under(this));
-            float s = Ui, radius = Ink.RadiusControl * s, inset = 3 * s;
+            float s = Ui, radius = Math.Min(Ink.RadiusControl * s, (Height - 1) * 0.35f), inset = 3 * s;
             var box = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
             Fill(g, box, radius, KitInk.Line);
             if (glide < 0) glide = selected;

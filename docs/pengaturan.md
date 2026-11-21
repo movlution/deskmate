@@ -4,7 +4,16 @@
 
 Klik ikon gear di pojok kanan atas panel, atau klik kanan ikon Deskmate lalu **Pengaturan**. Jendelanya punya kolom cari dan bagian di samping; setiap perubahan langsung berlaku tanpa perlu menyimpan.
 
-Bagian di samping dikelompokkan: **Umum**, **Tampilan**, **Dynamic Island**, **Dock**, dan **Fitur**, lalu **Aksesibilitas**, **Pintasan**, dan **Tentang** di bawah label **Bantuan**. Klik satu kategori untuk melihat daftar halamannya beserta keterangan singkat, lalu klik halaman yang dicari. Judul halaman menunjukkan jalurnya, misalnya **Dynamic Island › Ringkasan**; klik nama kategori di judul itu atau tekan **Alt+←** untuk kembali ke daftar. Dock dan halaman di bawah Bantuan langsung terbuka tanpa daftar.
+Susunannya mengikuti System Settings di macOS. Di atas daftar samping ada kartu **Deskmate** (versi, pembaruan, tur, dan pembuat). Di bawahnya ada 13 halaman dengan ikon berwarna, dikelompokkan dengan jarak tanpa judul. Pengaturan terbuka di **Umum**. Setiap halaman diawali kartu judul berisi ikon dan ringkasannya; tombol panah atas dan bawah memindah pilihan di daftar samping.
+
+| Kelompok | Halaman | Isi |
+|---|---|---|
+| 1 | Umum · Tampilan · Island · Dock & Taskbar | Bahasa, jam, data; tema dan material; letak, perilaku, saat diam, serta **Tab dan kartu** panel; dock dan pengganti taskbar |
+| 2 | Notifikasi · Tugas & Kalender · Cuaca & Pengingat | Aturan notifikasi dan Senyap; tugas, fokus, catatan, serta **Integrasi dan kalender**; cuaca, sholat, minum, mata, peregangan |
+| 3 | AI & Dikte · Agen Coding · Musik & Berkas · Perangkat & HP | Layanan AI serta **Dikte dan rapat**; agen coding; musik, rak, clipboard, screenshot, Downloads; HUD sistem serta **HP Android** |
+| 4 | Gamifikasi Ketikan · Pintasan & Aksesibilitas | Combo ketikan; pintasan keyboard dan aksesibilitas |
+
+Halaman yang digabung menampilkan bagian keduanya di bawah judul bagian (huruf tebal di tabel). Tautan lama ke bagian itu, misalnya dari tab panel, langsung menggulir ke judul bagiannya. Halaman **Beranda** sudah dihapus karena semua sakelarnya juga ada di halaman masing-masing.
 
 ### Umum
 
@@ -32,7 +41,7 @@ Bagian di samping dikelompokkan: **Umum**, **Tampilan**, **Dynamic Island**, **D
 
 ### Tugas dan catatan
 
-* Buka dengan **Ctrl+Alt+J**, menu tray **Tugas dan catatan**, **Pengaturan › Fitur › Tugas dan catatan › Buka**, atau tombol **Tugas dan catatan** di dock. **Ctrl+Alt+T** tetap untuk Rekam rapat.
+* Buka dengan **Ctrl+Alt+J**, menu tray **Tugas dan catatan**, **Pengaturan › Tugas & Kalender › Tugas dan catatan › Buka**, atau tombol **Tugas dan catatan** di dock. **Ctrl+Alt+T** tetap untuk Rekam rapat.
 * **Dock › Tombol tugas dan catatan** (`dockbar.work`, aktif secara bawaan) menyatukan pintasan dan jendelanya pada satu slot dock yang sama (seperti aplikasi tersemat): baik dibuka dari ikon dock maupun pintasan **Ctrl+Alt+J**, indikator aktif menyala tepat di bawah ikon tersebut tanpa memunculkan ikon jendela kedua di sisi kanan dock. Tombol **×** menyembunyikan jendela dan memadamkan indikatornya.
 * Tugas lokal: ketik lalu Enter untuk tambah cepat, atau **Tugas baru…** untuk formulir. Gunakan pensil di baris tugas, klik ganda, menu klik kanan, atau **F2/Enter** untuk mengubah judul, tenggat, prioritas, dan status. Filter: Semua, Aktif, Hari ini, Terlambat, Selesai. Sintaks cepat `@besok 09:00` tetap tersedia.
 * Catatan lokal: pilih catatan di kiri atau klik **Baru**. Baris pertama menjadi judul; isi tersimpan otomatis. Jika file berubah dari luar aplikasi, konfirmasi muncul sebelum draf menimpanya. Penghapusan memakai konfirmasi dan bisa dipulihkan dari Recycle Bin.

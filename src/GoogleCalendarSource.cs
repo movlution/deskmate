@@ -284,7 +284,7 @@ namespace Deskmate
 
             if (r.Status == 403)
             {
-                error = Lang.T("Izin tulis Google Calendar belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Integrasi.");
+                error = Lang.T("Izin tulis Google Calendar belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Tugas & Kalender.");
                 return null;
             }
             if (!r.Ok)
@@ -363,7 +363,7 @@ namespace Deskmate
 
             if (r.Status == 403)
             {
-                error = Lang.T("Izin tulis Google Calendar belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Integrasi.");
+                error = Lang.T("Izin tulis Google Calendar belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Tugas & Kalender.");
                 return false;
             }
             if (!r.Ok)

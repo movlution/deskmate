@@ -53,12 +53,13 @@ Describe "Feature 10: KitRow.MarkGlyph Contrast Fix" {
 
         $bmp = Render-DeskmateControlToBitmap $row 200 40
 
-        # Sample pixel inside the mark pill (approx x ~ 24, y ~ 20)
-        $pillPx = $bmp.GetPixel(24, 20)
-
-        # In dark mode, if hardcoded Brushes.Black is used, R=0, G=0, B=0, which blends into dark bg.
-        # It must use KitInk.Text (high contrast against dark bg).
-        Assert-True ($pillPx.R -gt 50 -or $pillPx.G -gt 50 -or $pillPx.B -gt 50) "MarkGlyph pill in dark mode must not be pure black (actual RGB: $($pillPx.R),$($pillPx.G),$($pillPx.B))"
+        # The mark is the app icon (24 px at x 14, centred in the row): its light letter must show,
+        # not a hardcoded black pill. Scan the icon box instead of one geometry-bound pixel.
+        $brightest = 0
+        for ($x = 14; $x -lt 38; $x++) { for ($y = 8; $y -lt 32; $y++) {
+            $px = $bmp.GetPixel($x, $y); $brightest = [Math]::Max($brightest, [Math]::Max($px.R, [Math]::Max($px.G, $px.B)))
+        } }
+        Assert-True ($brightest -gt 50) "MarkGlyph in dark mode must not render as a black pill (brightest channel in icon box: $brightest)"
 
         $bmp.Dispose()
         $row.Dispose()

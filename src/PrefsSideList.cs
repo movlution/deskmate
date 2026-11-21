@@ -10,39 +10,39 @@ namespace Deskmate
 {
     partial class Island
     {
-        // Settings sidebar: icon, name; arrows move
+        // Settings sidebar, macOS style: a Deskmate card, then colored category tiles; arrows move
         class SideList : KitControl
         {
+            // { id, title, glyph, group, tile label key, card detail }
             public List<string[]> Items = new List<string[]>();
-            // One heading per group, above its first row
-            public string[] Headers = new string[0];
             public string Selected = "";
             public event Action<string> Picked;
             int hover = -1;
 
-            float RowH { get { return 32 * Ui; } }
+            float RowH { get { return 30 * Ui; } }
 
             static int GroupOf(string[] item) { return item.Length > 3 ? int.Parse(item[3]) : 0; }
 
-            // Groups sit apart under their heading
+            // The app card carries the Deskmate mark instead of a tile
+            bool IsCard(int i) { return Items[i][2].Length > 0 && Items[i][2][0] == KitRow.MarkGlyph; }
+
+            // Groups sit apart by space alone
             RectangleF Cell(int i)
             {
-                float s = Ui;
-                int group = GroupOf(Items[i]);
-                return new RectangleF(10 * s, 6 * s + i * RowH + (group * GroupGap + HeadsThrough(group) * HeaderDip) * s - scroll, Width - 20 * s, RowH - 2 * s);
+                float s = Ui, y = 6 * s;
+                for (int k = 0; k < i; k++)
+                {
+                    y += IsCard(k) ? CardH * s : RowH;
+                    if (GroupOf(Items[k + 1]) != GroupOf(Items[k])) y += GroupGap * s;
+                }
+                float h = IsCard(i) ? CardH * s : RowH;
+                return new RectangleF(10 * s, y - scroll, Width - 20 * s, h - 2 * s);
             }
 
-            const float GroupGap = 10, HeaderDip = 26;
+            const float GroupGap = 14, CardH = 58;
 
-            string HeaderOf(int group) { return group < Headers.Length ? Headers[group] ?? "" : ""; }
-
-            // Headings above this group, its own included
-            int HeadsThrough(int group)
-            {
-                int n = 0;
-                for (int g = 0; g <= group; g++) if (HeaderOf(g).Length > 0) n++;
-                return n;
-            }
+            // Paper twin of a label, in both themes: deep enough for an ivory glyph
+            static Color TileOf(string[] item) { var c = item.Length > 4 ? Ink.Label(item[4], true) : Color.Empty; return c.IsEmpty ? Ink.Label("slate", true) : c; }
 
             // Short screens: the list scrolls
             float scroll;
@@ -124,24 +124,32 @@ namespace Deskmate
                 var g = e.Graphics;
                 KitInk.Smooth(g);
                 g.Clear(KitInk.Side);
-                float s = Ui, radius = 9 * s;
-                // Selected: a whisper of the accent, a short soft mark, the label in semibold
-                var active = Ink.Mix(KitInk.Side, KitInk.Accent, Ink.Light ? 0.13f : 0.17f);
-                var activeMark = Contrast(KitInk.Accent, active) >= 3.0 ? KitInk.Accent : KitInk.Text;
+                float s = Ui, radius = 7 * s;
+                // Selected: filled with the accent, label in OnAccent semibold; the tile keeps its color
                 var hoverFill = Ink.Mix(KitInk.Side, KitInk.Text, Ink.Light ? 0.05f : 0.06f);
-                Font f = Ink.Text(13.5f * s), fs = Ink.Semi(13.5f * s), head = Ink.SmallSemi(11.5f * s), icons = Ink.Icons(14f * s);
+                Font f = Ink.Text(13f * s), fs = Ink.Semi(13f * s), small = Ink.Text(11.5f * s), icons = Ink.Icons(11.5f * s);
                 for (int i = 0; i < Items.Count; i++)
                 {
                     var c = Cell(i);
-                    int group = GroupOf(Items[i]);
-                    // First row of a group: its heading above
-                    if ((i == 0 || GroupOf(Items[i - 1]) != group) && HeaderOf(group).Length > 0)
-                        KitInk.Draw(g, HeaderOf(group), head, KitInk.Sub, new RectangleF(c.X + 10 * s, c.Y - HeaderDip * s + 4 * s, c.Width - 10 * s, HeaderDip * s - 6 * s), ContentAlignment.MiddleLeft);
+                    if (c.Bottom < 0 || c.Top > Height) continue;
                     bool sel = Items[i][0] == Selected;
-                    if (sel || i == hover) Fill(g, c, radius, sel ? active : hoverFill);
-                    if (sel) Fill(g, new RectangleF(c.X + 3 * s, c.Y + c.Height / 2 - 7 * s, 3 * s, 14 * s), 1.5f * s, activeMark);
-                    KitInk.Draw(g, Items[i][2], icons, sel ? activeMark : KitInk.Sub, new RectangleF(c.X + 8 * s, c.Y, 22 * s, c.Height), ContentAlignment.MiddleCenter);
-                    KitInk.Draw(g, Items[i][1], sel ? fs : f, sel ? KitInk.Text : KitInk.Sub, new RectangleF(c.X + 38 * s, c.Y, c.Width - 44 * s, c.Height), ContentAlignment.MiddleLeft);
+                    if (sel || i == hover) Fill(g, c, radius, sel ? KitInk.Accent : hoverFill);
+                    var ink = sel ? KitInk.OnAccent : KitInk.Text;
+                    if (IsCard(i))
+                    {
+                        var icon = new RectangleF(c.X + 6 * s, c.Y + (c.Height - 36 * s) / 2, 36 * s, 36 * s);
+                        g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(icon));
+                        float tx = c.X + 52 * s;
+                        KitInk.Draw(g, Items[i][1], fs, ink, new RectangleF(tx, c.Y + 8 * s, c.Right - tx - 6 * s, 20 * s), ContentAlignment.MiddleLeft);
+                        string detail = Items[i].Length > 5 ? Items[i][5] : "";
+                        KitInk.Draw(g, detail, small, sel ? KitInk.OnAccent : KitInk.Sub, new RectangleF(tx, c.Y + 28 * s, c.Right - tx - 6 * s, 18 * s), ContentAlignment.MiddleLeft);
+                        continue;
+                    }
+                    var tileColor = TileOf(Items[i]);
+                    var tile = new RectangleF(c.X + 6 * s, c.Y + (c.Height - 20 * s) / 2, 20 * s, 20 * s);
+                    Fill(g, tile, 5 * s, tileColor);
+                    KitInk.Draw(g, Items[i][2], icons, Ink.On(tileColor), tile, ContentAlignment.MiddleCenter);
+                    KitInk.Draw(g, Items[i][1], sel ? fs : f, ink, new RectangleF(c.X + 36 * s, c.Y, c.Width - 40 * s, c.Height), ContentAlignment.MiddleLeft);
                 }
                 int at = IndexOf(Selected);
                 if (at >= 0) Ring(g, Cell(at), radius);
@@ -164,8 +172,8 @@ namespace Deskmate
                 readonly int index;
                 public Item(SideList owner, int index) { this.owner = owner; this.index = index; }
                 public override string Name { get { return owner.Items[index][1]; } }
-                // Readers hear the group's heading too
-                public override string Description { get { return owner.HeaderOf(GroupOf(owner.Items[index])); } }
+                // The card reads its version line too
+                public override string Description { get { var it = owner.Items[index]; return it.Length > 5 ? it[5] : ""; } }
                 public override AccessibleRole Role { get { return AccessibleRole.PageTab; } }
                 public override AccessibleObject Parent { get { return owner.AccessibilityObject; } }
                 public override AccessibleStates State { get { return AccessibleStates.Selectable | (owner.Items[index][0] == owner.Selected ? AccessibleStates.Selected : 0); } }

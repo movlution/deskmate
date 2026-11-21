@@ -30,30 +30,7 @@ namespace Deskmate
                 Action<KitRow> add = r => { rows.Add(r); group.Add(r); };
                 switch (id)
                 {
-                    case "overview":
-                        cap(Lang.T("Status"));
-                        var dockOn = settings.GetBool("dockbar.on", false);
-                        var comboOn = settings.GetBool("keys.combo", false);
-                        var dndOn = settings.GetBool("dnd", false);
-                        add(Row(Lang.T("Dock"), dockOn ? Lang.T("Aktif") : Lang.T("Mati"), Switch("dockbar.on", false, on => { island.SetFlag("dockbar.on", on); island.ApplyDock(); Relayout(); })));
-                        add(Row(Lang.T("Combo Ketikan"), comboOn ? Lang.T("Aktif") : Lang.T("Mati"), Switch("keys.combo", false, on => { island.SetFlag("keys.combo", on); island.SyncComboHook(); Relayout(); })));
-                        add(Row(Lang.T("Senyap"), dndOn ? Lang.T("Aktif") : Lang.T("Mati"), Switch("dnd", false, on => { island.SetFlag("dnd", on); Relayout(); })));
-                        string ovTheme = island.ThemeMode();
-                        add(Row(Lang.T("Tema"), ovTheme == "sistem" ? Lang.T("Mengikuti mode aplikasi Windows") : null,
-                            Seg(new[] { Lang.T("Sistem"), Lang.T("Terang"), Lang.T("Gelap") }, ThemeIndex(ovTheme), i =>
-                            {
-                                island.SetThemeMode(i == 1 ? "terang" : i == 2 ? "gelap" : "sistem");
-                                BeginInvoke(new Action(Relayout));
-                            })));
-                        add(Row(Lang.T("Mulai bersama Windows"), null, StartupSwitch()));
-                        cap(Lang.T("Pintasan cepat"));
-                        add(Row(Lang.T("Atur Notch"), Lang.T("Letak, ukuran, perilaku panel, dan saat diam"), Button(Lang.T("Buka"), false, delegate { Go("island"); })));
-                        add(Row(Lang.T("Atur Dock"), Lang.T("Bar aplikasi, widget, dan pengganti taskbar"), Button(Lang.T("Buka"), false, delegate { Go("dock"); })));
-                        add(Row(Lang.T("Integrasi"), Lang.T("Kulia, Notion, Todoist, dan kalender iCal"), Button(Lang.T("Buka"), false, delegate { Go("integrasi"); })));
-                        add(Row(Lang.T("Gamifikasi Ketikan"), Lang.T("Suara, Fever Mode, penalti, XP, dan Sprint 30 detik"), Button(Lang.T("Buka"), false, delegate { Go("combo"); })));
-                        break;
                     case "general":
-                        add(VersionRow(null));
                         cap(Lang.T("Bahasa dan jam"));
                         add(Row(Lang.T("Bahasa"), null, Seg(new[] { "Indonesia", "English" }, Lang.English ? 1 : 0, i => { island.SetLanguage(i == 1); Relayout(); })));
                         add(Row(Lang.T("Format jam"), null, Seg(new[] { "14.30", "2.30 pm" }, Fmt.H24 ? 0 : 1, i => island.SetClock24(i == 0))));
@@ -240,7 +217,7 @@ namespace Deskmate
                         add(Row(Lang.T("Pembuat paket"), Lang.T("Gambar, sapaan, dan suara, dari pembuat paket upstream"), Button(Lang.T("Buka"), false, delegate { OpenUrl("https://odlaver.github.io/tepi/pack/"); })));
                         break;
                     case "island":
-                        cap(Lang.T("Letak & Ukuran"));
+                        cap(Lang.T("Posisi"));
                         add(PlaceRow());
                         int place = island.placeMode;
                         if (place == PlaceTop)
@@ -251,7 +228,7 @@ namespace Deskmate
                         else
                             add(Row(Lang.T("Tinggi"), Lang.T("Dari tepi atas layar"), Slider(0, 100, 2, (int)Math.Round(island.placeY * 100), v => v + "%", v => island.SetPlaceValue("place.y", v))));
                         cap(Lang.T("Bentuk"));
-                        add(Row(Lang.T("Menempel di tepi layar"), Lang.T("Bentuk notch yang menyatu dengan tepi"), Switch("dock", true, null)));
+                        add(Row(Lang.T("Menempel di tepi layar"), Lang.T("Bentuk island yang menyatu dengan tepi"), Switch("dock", true, null)));
                         add(Row(Lang.T("Garis cahaya"), Lang.T("Progres timer, unduhan, dan cas di tepi island; kilau saat pesan masuk"), Switch("edge.light", true, null)));
                         cap(Lang.T("Ukuran dan layar"));
                         add(Row(Lang.T("Lebar panel"), null, Slider(440, 640, 8, (int)island.PanelW, v => v + " px", v => { island.SetLayout("panel.width", v); Preview(); })));
@@ -330,7 +307,7 @@ namespace Deskmate
                         var follow = Switch("island.follow", true, null);
                         follow.Enabled = settings.GetBool("island.eyes", true);
                         add(Row(Lang.T("Ikuti kursor"), follow.Enabled ? Lang.T("Mata melirik ke arah kursor") : Lang.T("Nyalakan Mata dulu"), follow));
-                        // The face also decides what the mini notch shows, so it stays usable
+                        // The face also decides what the mini island shows, so it stays usable
                         var face = Seg(new[] { Lang.T("Mata"), Lang.T("Jam") }, settings.Get("idle.face", "eyes") == "clock" ? 1 : 0, i => { island.SetChoice("idle.face", i == 1 ? "clock" : "eyes"); BeginInvoke(new Action(Relayout)); });
                         face.Enabled = island.EyesAllowed;
                         add(Row(Lang.T("Saat diam"), face.Enabled ? Lang.T("Isi island saat tidak ada aktivitas, juga di mini") : Lang.T("Tema ini tidak memakai mata"), face));

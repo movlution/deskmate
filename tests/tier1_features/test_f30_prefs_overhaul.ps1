@@ -113,22 +113,28 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         $langType.GetField("English", [System.Reflection.BindingFlags]'Public,Static').SetValue($null, $false)
     }
 
-    It "1. PrefsWindow opens on 'overview', Sections has 19 items across 5 GroupHeaders, and search TextBox is in Controls" {
+    It "1. PrefsWindow opens on 'general', Sections has the Deskmate card plus 13 tiled categories in 5 groups, and search TextBox is in Controls" {
         $isle = $null; $prefs = $null
         try {
             $isle = New-TestIsland
             $prefs = [Activator]::CreateInstance($prefsType, $flags, $null, @($isle), $null)
 
             $section = $prefsType.GetField("section", $flags).GetValue($prefs)
-            Assert-Equal "overview" $section "Default PrefsWindow section must be 'overview'"
+            Assert-Equal "general" $section "Default PrefsWindow section must be 'general'"
 
             $sections = $prefsType.GetField("Sections", $flags).GetValue($null)
-            Assert-Equal 19 $sections.Length "Sections must contain 19 flat 1-click items"
-            Assert-Equal "overview" $sections[0][0] "First section id must be 'overview'"
-            Assert-Equal "Beranda" $sections[0][1] "First section title must be 'Beranda'"
+            Assert-Equal 14 $sections.Length "Sections must contain the Deskmate card and 13 categories"
+            Assert-Equal "about" $sections[0][0] "First section must be the Deskmate card"
+            Assert-Equal ([string][char]1) $sections[0][2] "The card must carry KitRow.MarkGlyph"
 
-            $headers = $prefsType.GetField("GroupHeaders", $flags).GetValue($null)
-            Assert-Equal 5 $headers.Length "GroupHeaders must contain 5 group headers"
+            $groups = @($sections | ForEach-Object { $_[3] } | Sort-Object -Unique)
+            Assert-Equal 5 $groups.Count "Sidebar must have 5 groups"
+            $label = $inkType.GetMethod("Label", [Type[]]@([string], [bool]))
+            foreach ($s in ($sections | Select-Object -Skip 1)) {
+                $tile = $label.Invoke($null, @($s[4], $true))
+                Assert-False $tile.IsEmpty "Section '$($s[0])' must name an Ink.Labels tile color (got '$($s[4])')"
+            }
+            Assert-Null ($prefsType.GetField("GroupHeaders", $flags)) "Sidebar group headings are gone: groups are separated by space"
 
             $search = $prefsType.GetField("search", $flags).GetValue($prefs)
             Assert-NotNull $search "search TextBox field must exist"
@@ -140,27 +146,31 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         }
     }
 
-    It "2. NormalizeSection maps all legacy section IDs and cat:0..5 accurately" {
+    It "2. NormalizeSection maps legacy IDs, merged parts, and cat:0..5 to sidebar pages" {
         $norm = $prefsType.GetMethod("NormalizeSection", $flags)
         Assert-NotNull $norm "NormalizeSection must exist"
 
         $cases = @{
-            ""          = "overview"
-            "unknown"   = "overview"
-            "kulia"     = "integrasi"
+            ""          = "general"
+            "unknown"   = "general"
+            "overview"  = "general"
+            "kulia"     = "work"
+            "integrasi" = "work"
             "packs"     = "look"
             "behave"    = "island"
             "idle"      = "island"
-            "home"      = "tabs"
+            "home"      = "island"
+            "tabs"      = "island"
             "music"     = "files"
             "access"    = "keys"
-            "cat:0"     = "overview"
+            "dikte"     = "ai"
+            "phone"     = "system"
+            "cat:0"     = "general"
             "cat:1"     = "look"
             "cat:2"     = "island"
             "cat:3"     = "dock"
             "cat:4"     = "work"
             "cat:5"     = "about"
-            "tabs"      = "tabs"
             "remind"    = "remind"
         }
         foreach ($k in $cases.Keys) {
@@ -169,7 +179,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         }
     }
 
-    It "3. 'overview' page uses 'dockbar.on' switch matching settings and contains quick-jump buttons" {
+    It "3. 'dock' page owns the 'dockbar.on' switch, and 'general' carries no Beranda duplicates" {
         $isle = $null; $prefs = $null
         try {
             $isle = New-TestIsland
@@ -179,10 +189,15 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             $prefs = [Activator]::CreateInstance($prefsType, $flags, $null, @($isle), $null)
             Show-OffscreenPrefs $prefs
             $prefs.Go("overview")
+            Assert-Equal "general" ($prefsType.GetField("section", $flags).GetValue($prefs)) "Go('overview') must land on 'general'"
+            $generalTitles = @(Get-ContentRows $prefs | ForEach-Object { $_.Title })
+            Assert-False ($generalTitles -contains "Dock") "'general' must not duplicate the Dock switch"
+            Assert-False ($generalTitles -contains "Atur Notch") "'general' must not carry Beranda quick jumps"
 
+            $prefs.Go("dock")
             $rows = Get-ContentRows $prefs
             $dockRow = $rows | Where-Object { $_.Title -eq "Dock" } | Select-Object -First 1
-            Assert-NotNull $dockRow "'overview' must contain 'Dock' row"
+            Assert-NotNull $dockRow "'dock' must contain 'Dock' row"
 
             $dockSwitch = $null
             foreach ($ctrl in $dockRow.Controls) {
@@ -191,15 +206,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             Assert-NotNull $dockSwitch "'Dock' row must contain a KitSwitch"
             Assert-Equal $expectedDock $dockSwitch.Checked "'Dock' KitSwitch.Checked must match settings.GetBool('dockbar.on', false)"
 
-            $jumpBtns = 0
-            foreach ($r in $rows) {
-                if ($r.Title -in @("Atur Notch", "Atur Dock", "Integrasi", "Gamifikasi Ketikan")) {
-                    foreach ($ctrl in $r.Controls) {
-                        if ($ctrl -is $kitButtonType) { $jumpBtns++ }
-                    }
-                }
-            }
-            Assert-Equal 4 $jumpBtns "'overview' must contain 4 quick-jump KitButtons"
+
         }
         finally {
             if ($prefs) { $prefs.Dispose() }
@@ -285,14 +292,17 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         }
     }
 
-    It "5. 'tabs' includes Tab rows and Kartu Ringkasan, while 'dock' does not duplicate Kartu Ringkasan" {
+    It "5. 'tabs' opens the merged Island page with its part title, Tab rows and Kartu Ringkasan, while 'dock' does not duplicate Kartu Ringkasan" {
         $isle = $null; $prefs = $null
         try {
             $isle = New-TestIsland
             $prefs = [Activator]::CreateInstance($prefsType, $flags, $null, @($isle), $null)
             Show-OffscreenPrefs $prefs
             $prefs.Go("tabs")
+            Assert-Equal "island" ($prefsType.GetField("section", $flags).GetValue($prefs)) "Go('tabs') must land on the Island page"
             $tabTexts = Get-ContentTexts $prefs
+            Assert-True ($tabTexts -contains "Tab dan kartu") "Merged Island page must title its tab part"
+            Assert-True ($tabTexts -contains "Posisi") "Merged Island page must keep the island part"
             Assert-True ($tabTexts -contains "Tab yang tampil") "'tabs' must include 'Tab yang tampil'"
             Assert-True ($tabTexts -contains "Kartu Ringkasan") "'tabs' must include 'Kartu Ringkasan'"
             Assert-True ($tabTexts -contains "Urutan kartu") "'tabs' must include 'Urutan kartu'"
@@ -317,7 +327,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             Show-OffscreenPrefs $prefs
             $prefs.Go("island")
             $islandTexts = Get-ContentTexts $prefs
-            Assert-True ($islandTexts -contains "Letak & Ukuran") "'island' must include 'Letak & Ukuran'"
+            Assert-True ($islandTexts -contains "Posisi") "'island' must include 'Posisi'"
             Assert-True ($islandTexts -contains "Perilaku & Fokus") "'island' must include 'Perilaku & Fokus'"
             Assert-True ($islandTexts -contains "Saat Diam") "'island' must include 'Saat Diam'"
 
@@ -347,16 +357,14 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         $side = $null; $bmpA = $null; $bmpB = $null
         try {
             $sections = $prefsType.GetField("Sections", $flags).GetValue($null)
-            $headers = $prefsType.GetField("GroupHeaders", $flags).GetValue($null)
 
             $side = [Activator]::CreateInstance($sideListType, $flags, $null, $null, $null)
             $itemsList = $sideListType.GetField("Items", $flags).GetValue($side)
             foreach ($s in $sections) { [void]$itemsList.Add($s) }
-            $sideListType.GetField("Headers", $flags).SetValue($side, $headers)
             $side.Size = New-Object System.Drawing.Size(220, 620)
             $side.CreateControl()
 
-            $sideListType.GetField("Selected", $flags).SetValue($side, "overview")
+            $sideListType.GetField("Selected", $flags).SetValue($side, "general")
             $bmpA = New-Object System.Drawing.Bitmap(220, 620)
             $side.DrawToBitmap($bmpA, (New-Object System.Drawing.Rectangle(0, 0, 220, 620)))
             $bg = $kitInkType.GetProperty("Side", [System.Reflection.BindingFlags]'Public,Static').GetValue($null)
@@ -382,13 +390,13 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             Assert-NotNull $openForPage "Island.OpenPrefsForPage must exist"
 
             $pageMap = @{
-                "PageHome"     = "tabs"
-                "PageClass"    = "integrasi"
+                "PageHome"     = "island"
+                "PageClass"    = "work"
                 "PageRemind"   = "remind"
                 "PageAgents"   = "agents"
                 "PageMessages" = "messages"
-                "PagePhone"    = "phone"
-                "PageVoice"    = "dikte"
+                "PagePhone"    = "system"
+                "PageVoice"    = "ai"
             }
 
             foreach ($pgFieldName in $pageMap.Keys) {
@@ -414,26 +422,24 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         $langType.GetField("English", [System.Reflection.BindingFlags]'Public,Static').SetValue($null, $true)
         $tMethod = $langType.GetMethod("T", [System.Reflection.BindingFlags]'Public,Static')
         $expectedLang = @{
-            "Tampilan & Ruang Kerja"    = "Appearance & Workspace"
-            "Produktivitas"             = "Productivity"
-            "Perangkat & Media"         = "Devices & Media"
-            "Aplikasi"                  = "Apps"
-            "Tema & Gaya"               = "Theme & Style"
-            "Notch & Perilaku"          = "Notch & Behavior"
-            "Tab & Kartu Notch"         = "Notch Tabs & Cards"
+            "Umum"                      = "General"
+            "Tampilan"                  = "Appearance"
+            "Island"                    = "Island"
             "Dock & Taskbar"            = "Dock & Taskbar"
-            "Integrasi & Kalender"      = "Integrations & Calendar"
-            "Tugas & Fokus"             = "Tasks & Focus"
-            "Layanan AI"                = "AI Services"
-            "Agen Coding"               = "Coding Agents"
-            "Dikte & Rapat"             = "Dictation & Meetings"
-            "Notifikasi & Pesan"        = "Notifications & Messages"
-            "Musik & Berkas"            = "Music & Files"
-            "Gamifikasi Ketikan"        = "Typing Gamification"
-            "Sistem & Perangkat"        = "System & Devices"
+            "Notifikasi"                = "Notifications"
+            "Tugas & Kalender"          = "Tasks & Calendar"
             "Cuaca & Pengingat"         = "Weather & Reminders"
-            "Umum & Data"               = "General & Data"
+            "AI & Dikte"                = "AI & Dictation"
+            "Agen Coding"               = "Coding Agents"
+            "Musik & Berkas"            = "Music & Files"
+            "Perangkat & HP"            = "Devices & Phone"
+            "Gamifikasi Ketikan"        = "Typing Gamification"
             "Pintasan & Aksesibilitas"  = "Shortcuts & Accessibility"
+            "Tab dan kartu"             = "Tabs and cards"
+            "Integrasi dan kalender"    = "Integrations and calendar"
+            "Dikte dan rapat"           = "Dictation and calls"
+            "HP Android"                = "Android phone"
+            "Versi {0}"                 = "Version {0}"
         }
         foreach ($k in $expectedLang.Keys) {
             $actual = $tMethod.Invoke($null, @($k))
@@ -501,7 +507,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             $refresh = $prefsType.GetMethod("RefreshDisplayPicker", $flags)
             Assert-NotNull $refresh "Preferences must expose a display refresh"
 
-            $prefs.Go("tabs")
+            $prefs.Go("dock")
             $tabsFirst = $content.Controls[0]
             [void]$refresh.Invoke($prefs, $null)
             Assert-True ([object]::ReferenceEquals($tabsFirst, $content.Controls[0])) "Display refresh must leave other settings pages intact"

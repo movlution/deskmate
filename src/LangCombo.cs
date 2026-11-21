@@ -167,7 +167,7 @@ namespace Deskmate
             en.Add("Lokasi atau tautan rapat…", "Location or meeting link…");
             en.Add("Durasi", "Duration");
             en.Add("Waktu", "Time");
-            en.Add("Izin tulis Google Calendar belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Integrasi.", "Google Calendar write permission is not active — disconnect and reconnect in Settings › Integrations.");
+            en.Add("Izin tulis Google Calendar belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Tugas & Kalender.", "Google Calendar write permission is not active — disconnect and reconnect in Settings › Tasks & Calendar.");
             en.Add("Fokuskan", "Focus");
             en.Add("Pulihkan", "Restore");
             en.Add("Pulihkan ukuran", "Restore size");
@@ -218,8 +218,7 @@ namespace Deskmate
             en.Add("Perangkat & Media", "Devices & Media");
             en.Add("Beranda", "Home");
             en.Add("Tema & Gaya", "Theme & Style");
-            en.Add("Notch & Perilaku", "Notch & Behavior");
-            en.Add("Tab & Kartu Notch", "Notch Tabs & Cards");
+
             en.Add("Dock & Taskbar", "Dock & Taskbar");
             en.Add("Integrasi & Kalender", "Integrations & Calendar");
             en.Add("Tugas & Fokus", "Tasks & Focus");
@@ -232,9 +231,22 @@ namespace Deskmate
             en.Add("Cuaca & Pengingat", "Weather & Reminders");
             en.Add("Umum & Data", "General & Data");
             en.Add("Pintasan & Aksesibilitas", "Shortcuts & Accessibility");
+            // Settings 3.0: macOS-style sidebar and merged pages
+            en.Add("Island", "Island");
+            en.Add("Tugas & Kalender", "Tasks & Calendar");
+            en.Add("AI & Dikte", "AI & Dictation");
+            en.Add("Perangkat & HP", "Devices & Phone");
+            en.Add("Tab dan kartu", "Tabs and cards");
+            en.Add("Integrasi dan kalender", "Integrations and calendar");
+            en.Add("HP Android", "Android phone");
+            en.Add("Versi {0}", "Version {0}");
+            en.Add("Letak, ukuran, perilaku, saat diam, serta tab dan kartu panel", "Placement, size, behavior, idle, and panel tabs and cards");
+            en.Add("Tugas, fokus, catatan, serta Kulia, Notion, Todoist, dan iCal", "Tasks, focus, notes, plus Kulia, Notion, Todoist, and iCal");
+            en.Add("Layanan AI, dikte, teleprompter, dan rapat", "AI services, dictation, teleprompter, and meetings");
+            en.Add("HUD keyboard, baterai, flashdisk, dan HP Android", "Keyboard HUD, battery, USB drives, and Android phone");
             en.Add("Status", "Status");
             en.Add("Pintasan cepat", "Quick jumps");
-            en.Add("Atur Notch", "Configure Notch");
+
             en.Add("Atur Dock", "Configure Dock");
             en.Add("Butuh kota di Pengaturan › Cuaca & Pengingat", "Needs a city in Settings › Weather & Reminders");
             en.Add("Lokasi & Cuaca", "Location & Weather");
@@ -255,7 +267,7 @@ namespace Deskmate
             en.Add("Arsipkan", "Archive");
             en.Add("Checklist", "Checklist");
             en.Add("Label…", "Labels…");
-            en.Add("Izin Google Tasks/Drive belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Integrasi.", "Google Tasks/Drive permissions are not active — disconnect and reconnect in Settings › Integrations.");
+            en.Add("Izin Google Tasks/Drive belum aktif — putuskan lalu sambungkan ulang di Pengaturan › Tugas & Kalender.", "Google Tasks/Drive permissions are not active — disconnect and reconnect in Settings › Tasks & Calendar.");
             en.Add("Gagal memuat Google Tasks", "Failed to load Google Tasks");
             en.Add("Gagal membuat folder Google Drive", "Failed to create Google Drive folder");
             en.Add("Gagal memuat catatan Google Drive", "Failed to load Google Drive notes");

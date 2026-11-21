@@ -15,96 +15,94 @@ namespace Deskmate
             readonly Island island;
             readonly Settings settings;
             readonly Timer preview = new Timer { Interval = 2500 };
-            // Opens on Beranda
-            string section = "overview", beforeSearch = "overview";
+            // Opens on Umum, like System Settings
+            string section = "general", beforeSearch = "general";
+            // Part a caller asked for inside a merged page; Fill scrolls to it once
+            string focusPart;
+            readonly Dictionary<string, int> partTop = new Dictionary<string, int>();
             readonly TextBox search = new KitText();
             readonly Panel content = new Panel();
             readonly SideList side = new SideList();
             bool building;
             bool overClear;
 
-            static readonly string[] GroupHeaders =
-            {
-                "",
-                "Tampilan & Ruang Kerja",
-                "Produktivitas",
-                "Perangkat & Media",
-                "Aplikasi",
-            };
-
-            // { id, title, glyph, group }
+            // { id, title, glyph, sidebar group, tile color (Ink.Labels key) }; the Deskmate card leads
             static readonly string[][] Sections =
             {
-                new[] { "overview", "Beranda", "\uE80F", "0" },
-                new[] { "look", "Tema & Gaya", "\uE790", "1" },
-                new[] { "island", "Notch & Perilaku", "\uE737", "1" },
-                new[] { "tabs", "Tab & Kartu Notch", "\uE8A9", "1" },
-                new[] { "dock", "Dock & Taskbar", "\uE90E", "1" },
-                new[] { "integrasi", "Integrasi & Kalender", "\uE71B", "2" },
-                new[] { "work", "Tugas & Fokus", "\uE73A", "2" },
-                new[] { "ai", "Layanan AI", "\uE8F2", "2" },
-                new[] { "agents", "Agen Coding", "\uE756", "2" },
-                new[] { "dikte", "Dikte & Rapat", "\uE720", "2" },
-                new[] { "messages", "Notifikasi & Pesan", "\uE8BD", "3" },
-                new[] { "files", "Musik & Berkas", "\uE7B8", "3" },
-                new[] { "combo", "Gamifikasi Ketikan", "\uE7FC", "3" },
-                new[] { "system", "Sistem & Perangkat", "\uE9D9", "3" },
-                new[] { "remind", "Cuaca & Pengingat", "\uEA8F", "3" },
-                new[] { "phone", "Hubungkan HP", "\uE8EA", "3" },
-                new[] { "general", "Umum & Data", "\uE713", "4" },
-                new[] { "keys", "Pintasan & Aksesibilitas", "\uE765", "4" },
-                new[] { "about", "Tentang", "\uE946", "4" },
+                new[] { "about", "Deskmate", "\u0001", "0", "" },
+                new[] { "general", "Umum", "\uE713", "1", "slate" },
+                new[] { "look", "Tampilan", "\uE790", "1", "violet" },
+                new[] { "island", "Island", "\uE737", "1", "sky" },
+                new[] { "dock", "Dock & Taskbar", "\uE90E", "1", "emerald" },
+                new[] { "messages", "Notifikasi", "\uE8BD", "2", "coral" },
+                new[] { "work", "Tugas & Kalender", "\uE73A", "2", "amber" },
+                new[] { "remind", "Cuaca & Pengingat", "\uEA8F", "2", "emerald" },
+                new[] { "ai", "AI & Dikte", "\uE8F2", "3", "violet" },
+                new[] { "agents", "Agen Coding", "\uE756", "3", "slate" },
+                new[] { "files", "Musik & Berkas", "\uE7B8", "3", "rose" },
+                new[] { "system", "Perangkat & HP", "\uE9D9", "3", "sky" },
+                new[] { "combo", "Gamifikasi Ketikan", "\uE7FC", "4", "amber" },
+                new[] { "keys", "Pintasan & Aksesibilitas", "\uE765", "4", "slate" },
             };
+
+            // Pages that merge builders; later parts get a part title
+            static readonly Dictionary<string, string[]> Parts = new Dictionary<string, string[]>
+            {
+                { "island", new[] { "island", "tabs" } },
+                { "work", new[] { "work", "integrasi" } },
+                { "ai", new[] { "ai", "dikte" } },
+                { "system", new[] { "system", "phone" } },
+            };
+
+            static readonly Dictionary<string, string> PartTitles = new Dictionary<string, string>
+            {
+                { "tabs", "Tab dan kartu" },
+                { "integrasi", "Integrasi dan kalender" },
+                { "dikte", "Dikte dan rapat" },
+                { "phone", "HP Android" },
+            };
+
+            static string[] PartsOf(string page) { string[] p; return Parts.TryGetValue(page, out p) ? p : new[] { page }; }
 
             static readonly Dictionary<string, string> SectionNotes = new Dictionary<string, string>
             {
-                { "overview", "Ringkasan status, tombol cepat, dan pintasan pengaturan" },
-                { "look", "Tema, material kaca, warna aksen, paket tema, dan warna kustom" },
-                { "island", "Letak, ukuran, perilaku panel, saat diam, dan pengecualian aplikasi" },
-                { "tabs", "Tab di panel notch, urutan, dan kartu Ringkasan" },
-                { "dock", "Bar aplikasi dan widget, atau pengganti taskbar" },
-                { "integrasi", "Tugas dan jadwal dari Kulia, Notion, Todoist, dan iCal" },
-                { "work", "Daftar tugas, fokus, prioritas harian, dan catatan lokal" },
-                { "ai", "Layanan AI untuk dikte, ringkasan, dan Suruh Deskmate" },
-                { "agents", "Claude Code, Codex, dan agen coding lainnya" },
-                { "dikte", "Bicara, lalu teksnya ditempel; teleprompter dan rapat" },
-                { "messages", "Notifikasi pesan, aturan aplikasi, mode berbagi layar, VIP, dan Senyap" },
-                { "files", "Lirik musik, visualizer, rak berkas, clipboard, screenshot, dan Downloads" },
-                { "combo", "Combo, suara mekanikal/arcade, Fever Mode, penalti, XP, dan Sprint 30 detik" },
-                { "system", "HUD keyboard, baterai, flashdisk, dan aktivitas sistem" },
-                { "remind", "Lokasi cuaca, jadwal sholat, minum air, mata, dan peregangan" },
-                { "phone", "Notifikasi, kode OTP, dan berkas dari HP" },
-                { "general", "Bahasa, jam, mulai bersama Windows, pembaruan, dan data Deskmate" },
-                { "keys", "Pintasan keyboard, pembaca layar, dan kenyamanan gerak" },
                 { "about", "Versi, pembaruan, tur, dan pembuat Deskmate" },
+                { "general", "Bahasa, jam, mulai bersama Windows, pembaruan, dan data Deskmate" },
+                { "look", "Tema, material kaca, warna aksen, paket tema, dan warna kustom" },
+                { "island", "Letak, ukuran, perilaku, saat diam, serta tab dan kartu panel" },
+                { "dock", "Bar aplikasi dan widget, atau pengganti taskbar" },
+                { "messages", "Notifikasi pesan, aturan aplikasi, mode berbagi layar, VIP, dan Senyap" },
+                { "work", "Tugas, fokus, catatan, serta Kulia, Notion, Todoist, dan iCal" },
+                { "remind", "Lokasi cuaca, jadwal sholat, minum air, mata, dan peregangan" },
+                { "ai", "Layanan AI, dikte, teleprompter, dan rapat" },
+                { "agents", "Claude Code, Codex, dan agen coding lainnya" },
+                { "files", "Lirik musik, visualizer, rak berkas, clipboard, screenshot, dan Downloads" },
+                { "system", "HUD keyboard, baterai, flashdisk, dan HP Android" },
+                { "combo", "Combo, suara mekanikal/arcade, Fever Mode, penalti, XP, dan Sprint 30 detik" },
+                { "keys", "Pintasan keyboard, pembaca layar, dan kenyamanan gerak" },
             };
 
             static readonly Dictionary<string, string> SectionKeywords = new Dictionary<string, string>
             {
-                { "overview", "beranda home status cepat" },
-                { "look", "tema sistem gelap terang otomatis aksen warna wallpaper paket" },
-                { "island", "notch dynamic island letak posisi ukuran mata jam diam" },
-                { "tabs", "tab kartu ringkasan home urutan" },
-                { "dock", "dock taskbar widget aplikasi" },
-                { "integrasi", "kulia notion todoist ical google kalender jadwal" },
-                { "work", "tugas fokus prioritas catatan timer" },
-                { "ai", "ai openai gemini groq claude dikte" },
-                { "agents", "agen coding claude code codex kuota port" },
-                { "dikte", "dikte suara mikrofon teleprompter" },
-                { "messages", "pesan notifikasi chat banner vip senyap dnd" },
-                { "files", "musik lirik visualizer rak berkas clipboard screenshot downloads" },
-                { "combo", "combo ketikan gamifikasi suara mekanikal fever xp sprint" },
-                { "system", "sistem keyboard caps num baterai flashdisk usb bluetooth wifi rapat" },
-                { "remind", "cuaca hujan kota sholat adzan minum mata peregangan pengingat" },
-                { "phone", "hp android qr otp notifikasi" },
-                { "general", "bahasa jam startup windows update data ekspor impor reset" },
-                { "keys", "pintasan hotkey shortcut aksesibilitas gerak pembaca layar" },
                 { "about", "tentang versi github tur kopi pembuat" },
+                { "general", "bahasa jam startup windows update data ekspor impor reset" },
+                { "look", "tema sistem gelap terang otomatis aksen warna wallpaper paket material kaca" },
+                { "island", "notch dynamic island letak posisi ukuran mata jam diam tab kartu ringkasan home urutan" },
+                { "dock", "dock taskbar widget aplikasi" },
+                { "messages", "pesan notifikasi chat banner vip senyap dnd" },
+                { "work", "tugas fokus prioritas catatan timer kulia notion todoist ical google kalender jadwal integrasi" },
+                { "remind", "cuaca hujan kota sholat adzan minum mata peregangan pengingat" },
+                { "ai", "ai openai gemini groq claude dikte suara mikrofon teleprompter rapat" },
+                { "agents", "agen coding claude code codex kuota port" },
+                { "files", "musik lirik visualizer rak berkas clipboard screenshot downloads" },
+                { "system", "sistem keyboard caps num baterai flashdisk usb bluetooth wifi hp android qr otp" },
+                { "combo", "combo ketikan gamifikasi suara mekanikal fever xp sprint" },
+                { "keys", "pintasan hotkey shortcut aksesibilitas gerak pembaca layar" },
             };
 
-            static string NormalizeSection(string id)
+            // Older ids and builder parts, resolved to the part they name
+            static string AliasOf(string id)
             {
-                if (string.IsNullOrEmpty(id)) return "overview";
                 switch (id)
                 {
                     case "kulia": return "integrasi";
@@ -114,15 +112,25 @@ namespace Deskmate
                     case "home": return "tabs";
                     case "music": return "files";
                     case "access": return "keys";
-                    case "cat:0": return "overview";
+                    case "overview":
+                    case "cat:0": return "general";
                     case "cat:1": return "look";
                     case "cat:2": return "island";
                     case "cat:3": return "dock";
                     case "cat:4": return "work";
                     case "cat:5": return "about";
                 }
+                return id;
+            }
+
+            // Any id, old or new, to the sidebar page that shows it
+            static string NormalizeSection(string id)
+            {
+                if (string.IsNullOrEmpty(id)) return "general";
+                id = AliasOf(id);
+                foreach (var kv in Parts) if (Array.IndexOf(kv.Value, id) >= 0) return kv.Key;
                 foreach (var s in Sections) if (s[0] == id) return id;
-                return "overview";
+                return "general";
             }
             [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, string l);
             [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)] static extern int SetWindowTheme(IntPtr hwnd, string app, string idList);
@@ -148,11 +156,12 @@ namespace Deskmate
                     Invalidate(Rectangle.Ceiling(SearchWell()));
                     Fill();
                 };
-                search.GotFocus += delegate { Invalidate(new Rectangle(0, 0, (int)(236 * Ui), (int)(60 * Ui))); };
-                search.LostFocus += delegate { Invalidate(new Rectangle(0, 0, (int)(236 * Ui), (int)(60 * Ui))); };
+                search.GotFocus += delegate { Invalidate(new Rectangle(0, 0, (int)(SideW * Ui), (int)(52 * Ui))); };
+                search.LostFocus += delegate { Invalidate(new Rectangle(0, 0, (int)(SideW * Ui), (int)(52 * Ui))); };
                 side.Picked += id =>
                 {
                     section = NormalizeSection(id);
+                    focusPart = null;
                     building = true;
                     search.Text = "";
                     building = false;
@@ -199,6 +208,7 @@ namespace Deskmate
             public void Go(string id)
             {
                 section = NormalizeSection(id);
+                focusPart = string.IsNullOrEmpty(id) ? null : AliasOf(id);
                 building = true;
                 search.Text = "";
                 building = false;
@@ -212,8 +222,8 @@ namespace Deskmate
                 var area = Screen.FromHandle(Handle).WorkingArea;
                 // Tall enough that the whole sidebar shows
                 int chromeW = Width - ClientSize.Width, chromeH = Height - ClientSize.Height;
-                float wantH = 720;
-                Size = new Size((int)Math.Min(1040 * Ui + chromeW, area.Width - 40), (int)Math.Min(wantH * Ui + chromeH, area.Height - 40));
+                float wantH = 680;
+                Size = new Size((int)Math.Min(940 * Ui + chromeW, area.Width - 40), (int)Math.Min(wantH * Ui + chromeH, area.Height - 40));
                 MinimumSize = new Size((int)(680 * Ui), (int)(440 * Ui));
                 Location = new Point(area.X + (area.Width - Width) / 2, area.Y + (area.Height - Height) / 2);
                 Relayout();
@@ -229,10 +239,8 @@ namespace Deskmate
                 try { SetWindowTheme(content.Handle, Ink.Light ? "Explorer" : "DarkMode_Explorer", null); } catch (Exception) { }
                 Text = Lang.T("Pengaturan Deskmate");
                 side.Items = new List<string[]>();
-                foreach (var s in Sections) side.Items.Add(new[] { s[0], Lang.T(s[1]), s[2], s[3] });
-                var hdrs = new string[GroupHeaders.Length];
-                for (int i = 0; i < GroupHeaders.Length; i++) hdrs[i] = GroupHeaders[i].Length > 0 ? Lang.T(GroupHeaders[i]) : "";
-                side.Headers = hdrs;
+                // The card reads its version; every other row its title
+                foreach (var s in Sections) side.Items.Add(new[] { s[0], Lang.T(s[1]), s[2], s[3], s[4], s[0] == "about" ? Lang.F("Versi {0}", AppVersion) : "" });
                 side.Selected = NormalizeSection(section);
                 search.Font = UiFont(13f);
                 search.BackColor = KitInk.Hover;
@@ -244,20 +252,23 @@ namespace Deskmate
                 Invalidate(true);
             }
 
+            // Sidebar width, 1x px
+            const float SideW = 220;
+
             void Place()
             {
                 float s = Ui;
-                int sideW = (int)(236 * s);
+                int sideW = (int)(SideW * s);
                 // Text centred on the well, by its real height
                 int h = search.PreferredHeight;
-                search.SetBounds((int)(40 * s), (int)Math.Round(SearchWell().Y + SearchWell().Height / 2 - h / 2f + 1 * s), sideW - (int)(78 * s), h);
-                side.SetBounds(0, (int)(58 * s), sideW, ClientSize.Height - (int)(58 * s));
+                search.SetBounds((int)(36 * s), (int)Math.Round(SearchWell().Y + SearchWell().Height / 2 - h / 2f + 1 * s), sideW - (int)(72 * s), h);
+                side.SetBounds(0, (int)(52 * s), sideW, ClientSize.Height - (int)(52 * s));
                 content.SetBounds(sideW, 0, Math.Max(10, ClientSize.Width - sideW), ClientSize.Height);
                 content.BackColor = KitInk.Window;
                 side.Invalidate();
             }
 
-            RectangleF SearchWell() { return new RectangleF(12 * Ui, 16 * Ui, 236 * Ui - 24 * Ui, 32 * Ui); }
+            RectangleF SearchWell() { return new RectangleF(12 * Ui, 14 * Ui, SideW * Ui - 24 * Ui, 28 * Ui); }
 
             RectangleF SearchClearRect()
             {
@@ -295,14 +306,14 @@ namespace Deskmate
             {
                 var g = e.Graphics;
                 g.Clear(KitInk.Window);
-                g.FillRectangle(KitInk.BrushOf(KitInk.Side), 0, 0, (int)(236 * Ui), ClientSize.Height);
+                g.FillRectangle(KitInk.BrushOf(KitInk.Side), 0, 0, (int)(SideW * Ui), ClientSize.Height);
                 // Search field: a soft well; keyboard focus draws the accent edge
                 var r = SearchWell();
                 KitInk.Smooth(g);
-                KitInk.FillRound(g, r, Ink.RadiusControl * Ui, search.BackColor);
-                if (search.Focused) KitInk.StrokeRound(g, r, Ink.RadiusControl * Ui, KitInk.Focus, 1.5f * Ui);
+                KitInk.FillRound(g, r, 7 * Ui, search.BackColor);
+                if (search.Focused) KitInk.StrokeRound(g, r, 7 * Ui, KitInk.Focus, 1.5f * Ui);
                 // Magnifier leads the field
-                KitInk.Draw(g, "\uE721", Ink.Icons(13f * Ui), KitInk.Sub, new RectangleF(r.X + 5 * Ui, r.Y, 24 * Ui, r.Height), ContentAlignment.MiddleCenter);
+                KitInk.Draw(g, "\uE721", Ink.Icons(12f * Ui), KitInk.Sub, new RectangleF(r.X + 3 * Ui, r.Y, 22 * Ui, r.Height), ContentAlignment.MiddleCenter);
                 if (search.Text.Length > 0)
                 {
                     var cr = SearchClearRect();
@@ -314,7 +325,7 @@ namespace Deskmate
             // Page builder: title, then groups of rows
 
             float y;
-            int rowW;
+            int rowW, left;
 
             void Fill()
             {
@@ -326,9 +337,12 @@ namespace Deskmate
                 content.Controls.Clear();
                 foreach (var c in old) c.Dispose();
                 content.AutoScrollPosition = Point.Empty;
-                // Outer width: the old page's scrollbar must not narrow rows
-                rowW = content.Width - (int)(56 * Ui) - SystemInformation.VerticalScrollBarWidth;
-                y = Ink.Sp24 * Ui;
+                // Outer width: the old page's scrollbar must not narrow rows. One centred column, at most 720
+                int room = content.Width - SystemInformation.VerticalScrollBarWidth;
+                rowW = Math.Min((int)(720 * Ui), room - (int)(56 * Ui));
+                left = Math.Max((int)(28 * Ui), (room - rowW) / 2);
+                y = Ink.Sp20 * Ui;
+                partTop.Clear();
                 if (section == "search")
                 {
                     string q = search.Text.Trim();
@@ -337,7 +351,7 @@ namespace Deskmate
                     foreach (var s in Sections)
                     {
                         var rows = new List<KitRow>();
-                        Build(s[0], rows, false);
+                        foreach (var part in PartsOf(s[0])) Build(part, rows, false);
                         string kw;
                         SectionKeywords.TryGetValue(s[0], out kw);
                         bool secMatch = Lang.T(s[1]).IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0 || (kw != null && kw.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0);
@@ -356,12 +370,28 @@ namespace Deskmate
                     side.Selected = section;
                     side.Invalidate();
                     Head(section);
-                    Build(section, new List<KitRow>(), true);
+                    var parts = PartsOf(section);
+                    for (int i = 0; i < parts.Length; i++)
+                    {
+                        partTop[parts[i]] = Math.Max(0, (int)(y - Ink.Sp12 * Ui));
+                        string title;
+                        if (i > 0 && PartTitles.TryGetValue(parts[i], out title)) PartTitle(Lang.T(title));
+                        Build(parts[i], new List<KitRow>(), true);
+                    }
                 }
                 // Room under the last group
                 var spacer = new Panel { Location = new Point(0, (int)y), Size = new Size(1, (int)(Ink.Sp16 * Ui)), BackColor = KitInk.Window };
                 content.Controls.Add(spacer);
                 content.ResumeLayout();
+                // A caller named a later part of this page: start there, once
+                int at;
+                if (focusPart != null && focusPart != PartsOf(section)[0] && partTop.TryGetValue(focusPart, out at))
+                {
+                    // WinForms scrolls only children that have a window; make them all first
+                    foreach (Control c in content.Controls) if (!c.IsHandleCreated) { var h = c.Handle; }
+                    content.AutoScrollPosition = new Point(0, at);
+                }
+                focusPart = null;
                 building = false;
             }
 
@@ -394,11 +424,12 @@ namespace Deskmate
 
             void Heading(string text)
             {
-                var l = new Label { Text = text, Font = Ink.Display(22f * Ui), ForeColor = KitInk.Text, BackColor = KitInk.Window, AutoSize = true };
+                // UseMnemonic off: an "&" in a title is text, not an access key
+                var l = new Label { Text = text, Font = Ink.Display(20f * Ui), ForeColor = KitInk.Text, BackColor = KitInk.Window, AutoSize = true, UseMnemonic = false };
                 // Ink on the group's edge
-                l.Location = new Point((int)(28 * Ui) - LabelPad(l), (int)y);
+                l.Location = new Point(left - LabelPad(l), (int)y);
                 content.Controls.Add(l);
-                y += 52 * Ui;
+                y += 46 * Ui;
             }
 
             // Head: the category, or "Category > Page" with a way back
@@ -413,13 +444,14 @@ namespace Deskmate
                     Glyph = sec != null ? sec[2][0] : '\uE713',
                     Title = sec != null ? Lang.T(sec[1]) : "",
                     Note = note != null ? Lang.T(note) : "",
+                    Tile = sec != null && sec[4].Length > 0 ? Ink.Label(sec[4], true) : Color.Empty,
                 };
                 head.AccessibleName = head.Title;
                 head.AccessibleDescription = head.Note;
-                head.SetBounds((int)(28 * Ui), (int)y, rowW, (int)(60 * Ui));
+                head.SetBounds(left, (int)y, rowW, (int)(72 * Ui));
                 content.Controls.Add(head);
                 tabFocus["head"] = head;
-                y += (60 + Ink.Sp20) * Ui;
+                y += (72 + Ink.Sp24) * Ui;
             }
 
             protected override bool ProcessCmdKey(ref Message msg, Keys keys)
@@ -437,24 +469,29 @@ namespace Deskmate
             {
                 public char Glyph;
                 public string Title = "", Note = "";
+                // Category color, the same tile as in the sidebar; Empty for the Deskmate card
+                public Color Tile;
 
                 public PageHeader() { TabStop = false; }
 
+                // Hero card: the category tile, one size up, beside the title and its note
                 protected override void OnPaint(PaintEventArgs e)
                 {
                     var g = e.Graphics;
                     KitInk.Smooth(g);
                     g.Clear(KitInk.Under(this));
                     float s = Ui;
-                    var tile = new RectangleF(0, 6 * s, 48 * s, 48 * s);
-                    // Same accent whisper as the row tiles, one size up
-                    var badge = Ink.Mix(KitInk.Under(this), KitInk.Accent, Ink.Light ? 0.12f : 0.16f);
-                    var glyphInk = Contrast(KitInk.Accent, badge) >= 3.0 ? KitInk.Accent : KitInk.Text;
-                    Fill(g, tile, Ink.RadiusCard * s, badge);
-                    KitInk.Draw(g, Ink.Str(Glyph), Ink.Icons(22f * s), glyphInk, tile, ContentAlignment.MiddleCenter);
-                    float x = 68 * s;
-                    KitInk.Draw(g, Title, Ink.Display(24f * s), KitInk.Text, new RectangleF(x - 2 * s, 2 * s, Width - x, 32 * s), ContentAlignment.MiddleLeft);
-                    KitInk.Draw(g, Note, Ink.Text(13f * s), KitInk.Sub, new RectangleF(x, 34 * s, Width - x, 22 * s), ContentAlignment.MiddleLeft);
+                    Fill(g, new RectangleF(0, 0, Width - 1, Height - 1), Ink.RadiusList * s, KitInk.Group);
+                    var tile = new RectangleF(14 * s, (Height - 44 * s) / 2, 44 * s, 44 * s);
+                    if (Glyph == KitRow.MarkGlyph || Tile.IsEmpty) g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(tile));
+                    else
+                    {
+                        Fill(g, tile, 11 * s, Tile);
+                        KitInk.Draw(g, Ink.Str(Glyph), Ink.Icons(22f * s), Ink.On(Tile), tile, ContentAlignment.MiddleCenter);
+                    }
+                    float x = 72 * s, w = Width - x - 14 * s;
+                    KitInk.Draw(g, Title, Ink.Semi(15f * s), KitInk.Text, new RectangleF(x, 14 * s, w, 22 * s), ContentAlignment.MiddleLeft);
+                    KitInk.Draw(g, Note, Ink.Text(12f * s), KitInk.Sub, new RectangleF(x, 37 * s, w, 20 * s), ContentAlignment.MiddleLeft);
                 }
             }
 
@@ -467,31 +504,39 @@ namespace Deskmate
                 return r;
             }
 
-            // Section heading: small semibold, closer to its group than to the one above
+            // Section heading: semibold body ink, 8 above its group (macOS list heading)
             void Caption(string text)
             {
-                y += Ink.Sp8 * Ui;
-                var l = new Label { Text = text, Font = Ink.SmallSemi(12f * Ui), ForeColor = KitInk.Sub, BackColor = KitInk.Window, AutoSize = true };
-                // Ink lines up with the row icons
-                l.Location = new Point((int)(42 * Ui) - LabelPad(l), (int)y);
+                var l = new Label { Text = text, Font = Ink.Semi(13f * Ui), ForeColor = KitInk.Text, BackColor = KitInk.Window, AutoSize = true, UseMnemonic = false };
+                l.Location = new Point(left + (int)(4 * Ui) - LabelPad(l), (int)y);
                 content.Controls.Add(l);
-                y += Ink.Sp24 * Ui;
+                y += 26 * Ui;
+            }
+
+            // Later part of a merged page: a title one step under the hero
+            void PartTitle(string text)
+            {
+                y += Ink.Sp12 * Ui;
+                var l = new Label { Text = text, Font = Ink.Semi(17f * Ui), ForeColor = KitInk.Text, BackColor = KitInk.Window, AutoSize = true, UseMnemonic = false };
+                l.Location = new Point(left + (int)(2 * Ui) - LabelPad(l), (int)y);
+                content.Controls.Add(l);
+                y += 34 * Ui;
             }
 
             // Guidance under a heading: body weight, so it never reads as another heading
             void Note(string text)
             {
-                var l = new Label { Text = text, Font = Ink.Text(12.5f * Ui), ForeColor = KitInk.Sub, BackColor = KitInk.Window, AutoSize = true };
-                l.Location = new Point((int)(42 * Ui) - LabelPad(l), (int)y);
+                var l = new Label { Text = text, Font = Ink.Text(12.5f * Ui), ForeColor = KitInk.Sub, BackColor = KitInk.Window, AutoSize = true, UseMnemonic = false };
+                l.Location = new Point(left + (int)(4 * Ui) - LabelPad(l), (int)y);
                 content.Controls.Add(l);
-                y += Ink.Sp24 * Ui;
+                y += 22 * Ui;
             }
 
             // Rows into one rounded group
             void Group(List<KitRow> rows)
             {
                 if (rows.Count == 0) return;
-                var g = new KitGroup { Left = (int)(28 * Ui), Top = (int)y, Width = rowW };
+                var g = new KitGroup { Left = left, Top = (int)y, Width = rowW };
                 int top = 0;
                 foreach (var r in rows)
                 {
@@ -504,7 +549,7 @@ namespace Deskmate
                 }
                 g.Height = top;
                 content.Controls.Add(g);
-                y += top + Ink.Sp24 * Ui;
+                y += top + Ink.Sp20 * Ui;
             }
 
             void PlaceField(KitRow r)
@@ -568,7 +613,7 @@ namespace Deskmate
 
             KitRow Row(string title, string detail, Control field)
             {
-                var r = new KitRow { Title = title, Detail = detail ?? "", Field = field, Height = (int)((string.IsNullOrEmpty(detail) ? 56 : 64) * Ui), Glyph = GlyphFor(title) };
+                var r = new KitRow { Title = title, Detail = detail ?? "", Field = field, Height = (int)((string.IsNullOrEmpty(detail) ? 44 : 54) * Ui), Glyph = GlyphFor(title) };
                 if (field != null)
                 {
                     field.AccessibleName = title;
@@ -729,7 +774,7 @@ namespace Deskmate
 
             KitSwitch Switch(string key, bool fallback, Action<bool> after)
             {
-                var s = new KitSwitch { Checked = settings.GetBool(key, fallback), Size = new Size((int)(46 * Ui), (int)(26 * Ui)) };
+                var s = new KitSwitch { Checked = settings.GetBool(key, fallback), Size = new Size((int)(38 * Ui), (int)(22 * Ui)) };
                 s.CheckedChanged += delegate { if (building) return; if (after != null) after(s.Checked); else island.SetFlag(key, s.Checked); };
                 return s;
             }
@@ -845,8 +890,8 @@ namespace Deskmate
                 return d.Fallback.Length == 0 ? Lang.T("Tanpa pintasan bawaan") : Lang.F("Bawaan: {0}", d.Fallback);
             }
 
-            // Row controls: the 36px target from DESIGN.md
-            const float ControlH = 36;
+            // Row controls: the compact 30 px Settings target from DESIGN.md
+            const float ControlH = 30;
 
             KitButton Button(string text, bool primary, Action click)
             {
