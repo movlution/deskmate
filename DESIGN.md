@@ -104,6 +104,7 @@ Corners are squircles (`Ink.AddRound`, smoothing 0.6). Radii nest: an inner radi
 |---|---|---|
 | `RadiusShell` | 32 | island shell |
 | `RadiusModule` | 20 | island modules, dock sheets |
+| dock bar | 0.36 × bar height (18 · 20.9 · 23.8 for s · m · l) | floating dock capsule (`DockWindow.Curve`). Plates nest in it: icon, tray, status and clock plates get curve − their edge inset (7 + 7 % of the icon); two-line widget plates sit 6 from the edge and get curve − 6. Each end plate is as far from the side as from the top. |
 | `RadiusCard` | 16 | cards outside Settings (task board, notes) |
 | `RadiusList` | 14 | Settings groups (`KitGroup`) and the page hero card; under the hero tile's nest limit of 11 + 14 inset |
 | `RadiusControl` | 12 | buttons, check rows, segmented track, slider focus; capped at 0.35 × height, so 30 px Settings controls get 10 |

@@ -24,7 +24,7 @@ namespace Deskmate
                     float s = WidgetShown(id);
                     if (s < 0.01f) { DropGhost(id); continue; }
                     bool here = want.Contains(id);
-                    var r = new RectangleF(x, leftPill.Y + 6, WidgetW(id), leftPill.Height - 12);
+                    var r = new RectangleF(x, leftPill.Y + WidgetIn, WidgetW(id), leftPill.Height - WidgetIn * 2);
                     x += (WidgetW(id) + 6) * s;
                     if (here && s > 0.995f)
                     {
@@ -107,7 +107,7 @@ namespace Deskmate
                     case "system": open = delegate { Open("taskmgr.exe"); }; break;
                 }
                 Hit(r, hid, open, null);
-                if (hot && open != null) p.FillRound(r, 12, pressId == hid ? p.T.FillPressed : p.T.Fill);
+                if (hot && open != null) p.FillRound(r, WidgetR, pressId == hid ? p.T.FillPressed : p.T.Fill);
                 float cy = r.Y + r.Height / 2;
                 switch (id)
                 {

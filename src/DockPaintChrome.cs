@@ -96,7 +96,7 @@ namespace Deskmate
                 x += StatusWidth() + 4;
                 DrawClock(new RectangleF(x, top, ClockWidth(), PlateH));
                 // Show desktop: the bar's far end, padding included
-                var desk = new RectangleF(r.Right - 10, r.Y, 10 + PadX, r.Height);
+                var desk = new RectangleF(r.Right - 10, r.Y, 10 + padR, r.Height);
                 Hit(desk, "desk", ShowDesktop, null);
                 if (hoverId == "desk") g.DrawLine(p.P(p.T.Sub, 1.2f), desk.X + 4.5f, r.Y + 13, desk.X + 4.5f, r.Bottom - 13);
             }

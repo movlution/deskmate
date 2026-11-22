@@ -296,7 +296,7 @@ namespace Deskmate
                 var plateRect = OnBar(s.Icon, 0, press);
                 Color baseFill = startOpen ? Ink.Mix(p.T.FillHover, Ink.A(p.T.Accent, 0.32f), 0.4f) : hot ? p.T.FillHover : p.T.Fill;
                 Color tileFill = press > 0.001f ? Ink.Mix(baseFill, p.T.FillPressed, press) : baseFill;
-                p.FillRound(plateRect, Math.Min(plateRect.Width, plateRect.Height) * 0.3f, tileFill);
+                p.FillRound(plateRect, Math.Min(plateRect.Width, plateRect.Height) * PlateK, tileFill);
                 if (keyMode && keySel == id) FocusRing(s.Icon);
                 if (s.Id == "start" && !Anim.Reduced && startPulseUtc > DateTime.MinValue)
                 {
@@ -376,7 +376,7 @@ namespace Deskmate
             void Plate(RectangleF plate, bool hot, bool down, float alpha)
             {
                 p.Alpha = Ease.Clamp01(alpha);
-                p.FillRound(plate, Math.Min(plate.Width, plate.Height) * 0.3f, down ? p.T.FillPressed : hot ? p.T.FillHover : p.T.Fill);
+                p.FillRound(plate, Math.Min(plate.Width, plate.Height) * PlateK, down ? p.T.FillPressed : hot ? p.T.FillHover : p.T.Fill);
                 p.Alpha = 1;
             }
 

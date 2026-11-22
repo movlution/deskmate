@@ -42,17 +42,32 @@ namespace Deskmate
 
             // Share of the magnify setting that still applies when icons swell without moving neighbours
             const float InPlaceK = 0.6f;
-            const float PadTop = 7, PadBottom = 9, GapX = 8, PadX = 12, Side = 8, SegGap = 21, Hop = 18, HopSecs = 0.42f;
+            const float PadTop = 7, PadBottom = 9, GapX = 8, Side = 8, SegGap = 21, Hop = 18, HopSecs = 0.42f;
             float BarH { get { return IconRest + PadTop + PadBottom; } }
             // Every tile and hover plate shares this size and centre line
             const float GlyphK = 0.62f;
             float PlateH { get { return IconRest * 0.86f; } }
-            float PlateR { get { return PlateH * 0.3f; } }
+            // Corner geometry: one bar curve, and every plate nests in it. A plate's
+            // radius is the bar's minus its inset, and its inset is the same from the
+            // side as from the top, so inner and outer corners run parallel.
+            float Curve { get { return BarH * 0.36f; } }
+            // Slot to plate (as OnBar), and bar edge to an icon plate
+            float PlateIn { get { return IconRest * 0.07f; } }
+            float EdgeIn { get { return PadTop + PlateIn; } }
+            float PlateR { get { return Math.Max(4f, Curve - EdgeIn); } }
+            // Two-line widgets need a taller plate, so it sits closer to the edge
+            const float WidgetIn = 6;
+            float WidgetR { get { return Math.Max(4f, Curve - WidgetIn); } }
+            // Radius per plate height, for plates that grow with a magnified icon
+            float PlateK { get { return PlateR / PlateH; } }
+            // Capsule ends: widgets and tray bring their own inset; an app slot
+            // already carries PlateIn, so PadTop leaves its plate EdgeIn from the side
+            float padL = PadTop, padR = PadTop;
             float PlateCy(RectangleF pill) { return pill.Y + PadTop + IconRest / 2; }
             float Edge { get { return Full ? 0 : 6; } }
             // Room above the bar: magnified icons, their names, a bounce
             float Lift { get { return IconRest * (Mag - 1) + Hop + 40; } }
-            float Radius { get { return Full ? 0 : Math.Min(BarH / 2, 18f); } }
+            float Radius { get { return Full ? 0 : Curve; } }
 
             readonly List<Slot> slots = new List<Slot>();
             readonly Dictionary<string, Spring> sysGrow = new Dictionary<string, Spring>();
@@ -242,7 +257,7 @@ namespace Deskmate
                 iconSize = IconRest;
                 float restW = RestWidth(), wl = LeftWidth(), wr = RightWidth();
                 // Too wide for the screen: icons shrink first, then widgets drop from the end
-                float room = dipW - Side * 2 - PadX * 2;
+                float room = dipW - Side * 2 - EdgeIn * 2;
                 float sides = wl + wr + SegGap * 2;
                 if (sides + restW > room && restW > 1)
                 {
@@ -300,7 +315,9 @@ namespace Deskmate
                 rightPill = hasR ? new RectangleF(right - wr, barTop, wr, BarH) : RectangleF.Empty;
                 sepA = hasL && gapL > 0 ? left + wl + gapL / 2 : float.NaN;
                 sepB = hasR && gapR > 0 ? right - wr - gapR / 2 : float.NaN;
-                centerPill = right > left ? new RectangleF(left - PadX, barTop, right - left + PadX * 2, BarH) : RectangleF.Empty;
+                padL = hasL ? WidgetIn : PadTop;
+                padR = hasR ? EdgeIn : PadTop;
+                centerPill = right > left ? new RectangleF(left - padL, barTop, right - left + padL + padR, BarH) : RectangleF.Empty;
             }
 
             float RestWidth()
