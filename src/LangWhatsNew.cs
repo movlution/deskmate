@@ -8,6 +8,17 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.10.x
+            en.Add("Kaca Kalem", "Calm glass");
+            en.Add("Material kaca baru: warna mengikuti wallpaper, diredam, tanpa kilau, dengan garis tepi tipis yang rata.", "A new glass material: tinted from the wallpaper, muted, no sheen, with a thin even rim.");
+            en.Add("Jam di kepala panel", "Clock in the panel header");
+            en.Add("Panel terbuka menampilkan jam dan tanggal di pojok kiri atas, dan tab kini berada dalam satu kapsul yang lebih mudah dibaca.", "The open panel shows the time and date in the top-left corner, and the tabs now sit in one easier-to-read capsule.");
+            en.Add("Ikon notifikasi asli", "Real notification icons");
+            en.Add("Notifikasi Phone Link menampilkan logo aplikasi Android-nya, dan notifikasi situs web menampilkan ikon browser.", "Phone Link notifications show their Android app's logo, and website notifications show the browser's icon.");
+            en.Add("Editor tugas dua kolom", "Two-column task editor");
+            en.Add("Editor tugas dan catatan kini dua kolom, sakelar bergerak lebih halus, dan pencarian Pengaturan lebih cepat.", "The task and note editors now use two columns, switches move more smoothly, and Settings search is faster.");
+            en.Add("Dock dan panel lebih andal", "More reliable Dock and panel");
+            en.Add("Dock kini muncul di atas aplikasi maksimal ber-title bar kustom seperti ChatGPT, dan panel Clear tetap terbaca di atas jendela terang.", "The Dock now appears over maximized custom-titlebar apps like ChatGPT, and the Clear panel stays readable over bright windows.");
             // What's new 2.9.x
             en.Add("Notch di semua layar", "Notch on every display");
             en.Add("Pilih Semua layar di Ukuran dan layar › Layar. Monitor lain menampilkan notch ringkas, dan panel terbuka di layar yang Anda arahkan atau klik.", "Choose All displays in Size and display › Display. Other monitors show a compact notch, and the panel opens on the screen you point at or click.");

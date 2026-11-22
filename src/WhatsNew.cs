@@ -20,6 +20,18 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.10.0",
+                Items = new[]
+                {
+                    new[] { "Kaca Kalem", "Material kaca baru: warna mengikuti wallpaper, diredam, tanpa kilau, dengan garis tepi tipis yang rata.", "" },
+                    new[] { "Jam di kepala panel", "Panel terbuka menampilkan jam dan tanggal di pojok kiri atas, dan tab kini berada dalam satu kapsul yang lebih mudah dibaca.", "" },
+                    new[] { "Ikon notifikasi asli", "Notifikasi Phone Link menampilkan logo aplikasi Android-nya, dan notifikasi situs web menampilkan ikon browser.", "" },
+                    new[] { "Editor tugas dua kolom", "Editor tugas dan catatan kini dua kolom, sakelar bergerak lebih halus, dan pencarian Pengaturan lebih cepat.", "" },
+                    new[] { "Dock dan panel lebih andal", "Dock kini muncul di atas aplikasi maksimal ber-title bar kustom seperti ChatGPT, dan panel Clear tetap terbaca di atas jendela terang.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.9.0",
                 Items = new[]
                 {
