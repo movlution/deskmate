@@ -61,6 +61,14 @@ namespace Deskmate
             Kick();
         }
 
+        // One row out; keep the scroll inside the shorter list
+        void RemoveConvert(ConvDone d)
+        {
+            ForgetConvert(d);
+            float max = Math.Max(0, convHistory.Count * ConvRowH - ConvListView(PanelHeight()));
+            if (convScroll.Target > max) ScrollTo(convScroll, max, max);
+        }
+
         void ClearConvertHistory()
         {
             Vanish(RowRects("convh", null), true);
@@ -219,19 +227,24 @@ namespace Deskmate
                 if (y + ConvRowH < area.Top || y > area.Bottom) continue;
                 var d = convHistory[i];
                 var row = new RectangleF(area.X + 4, y + 2, area.Width - 8, ConvRowH - 4);
-                string id = "convh" + d.Item.Id;
-                bool hover = Hover(id);
+                string id = "convh" + d.Item.Id, xid = "convx" + d.Item.Id;
+                bool hover = Hover(id) || Hover(xid);
+                bool fits = row.Top >= area.Top && row.Bottom <= area.Bottom;
+                // Remove button appears on row hover
+                bool showX = fits && hover;
                 if (hover) p.FillRound(row, Ink.RadiusControl, Pressed(id) ? p.T.FillPressed : p.T.FillHover);
                 float rcy = row.Y + row.Height / 2;
                 DrawShelfThumb(d.Item, new RectangleF(row.X + 10, rcy - 17, 34, 34), 9);
-                float tx = row.X + 56;
-                p.Text(d.Item.Name, Ink.Semi(12.5f), p.T.Text, tx, rcy - 8, row.Right - tx - 14, StringAlignment.Near);
-                p.Text(d.From + " → " + d.To + " · " + Fmt.Ago(d.Utc), Ink.Small(11f), p.T.Faint, tx, rcy + 9, row.Right - tx - 14, StringAlignment.Near);
+                float tx = row.X + 56, tr = row.Right - (showX ? 44 : 14);
+                p.Text(d.Item.Name, Ink.Semi(12.5f), p.T.Text, tx, rcy - 8, tr - tx, StringAlignment.Near);
+                p.Text(d.From + " → " + d.To + " · " + Fmt.Ago(d.Utc), Ink.Small(11f), p.T.Faint, tx, rcy + 9, tr - tx, StringAlignment.Near);
                 var pick = d;
-                if (row.Top >= area.Top && row.Bottom <= area.Bottom)
+                if (fits)
                 {
                     AddHit(row, id, delegate { OpenShelfItem(pick.Item); }, null, delegate { ConvertMenu(pick); });
                     if (Pressed(id)) ShelfMouseDown(pick.Item);
+                    // Added after the row so it wins the hit test
+                    if (showX) IconButton(row.Right - 22, rcy, 28, xid, Sym.Xmark, delegate { RemoveConvert(pick); }, false);
                 }
             }
             g.Restore(st);
@@ -244,7 +257,7 @@ namespace Deskmate
             m.Items.Add(Lang.T("Tampilkan di folder"), null, delegate { RevealShelfItem(d.Item); });
             m.Items.Add(Lang.T("Salin jalur"), null, delegate { try { Clipboard.SetText(d.Item.Path); } catch (Exception) { } });
             m.Items.Add(new ToolStripSeparator());
-            m.Items.Add(Lang.T("Hapus dari daftar"), null, delegate { ForgetConvert(d); });
+            m.Items.Add(Lang.T("Hapus dari daftar"), null, delegate { RemoveConvert(d); });
             ShowIslandMenu(m);
         }
 
