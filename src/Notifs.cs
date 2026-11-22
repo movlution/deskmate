@@ -258,13 +258,15 @@ namespace Deskmate
                         // ArrivalTime is a FILETIME, so it is already UTC like the rest of Deskmate
                         try { item.Time = DateTime.FromFileTimeUtc(arrival); }
                         catch (Exception) { item.Time = DateTime.UtcNow; }
-                        ParseToast(payload, item);
+                        string logoFile = ParseToast(payload, item);
                         if (item.Title.Length == 0 && item.Body.Length == 0) continue;
                         if (item.AppName.Length == 0) item.AppName = NiceAppId(item.AppId);
                         item.Tag = Column16(stmt, 4) ?? "";
                         item.Group = Column16(stmt, 5) ?? "";
                         item.Chat = IsChat(item.AppId + " " + item.AppName, item.Title + " " + item.Body);
-                        item.Logo = LogoForId(item.AppId);
+                        // Phone Link files each Android app under a sub-id the shell cannot
+                        // resolve; its toast carries that app's real icon instead
+                        item.Logo = LogoForFile(logoFile) ?? LogoForId(item.AppId);
                         list.Add(item);
                     }
                 }
@@ -275,10 +277,12 @@ namespace Deskmate
             return list;
         }
 
-        // Text straight from the toast XML; first line is the title
-        static void ParseToast(string xml, NotifItem item)
+        // Text straight from the toast XML; first line is the title.
+        // Returns the local appLogoOverride image, if the toast names one.
+        static string ParseToast(string xml, NotifItem item)
         {
-            if (string.IsNullOrEmpty(xml)) return;
+            string logo = null;
+            if (string.IsNullOrEmpty(xml)) return null;
             try
             {
                 var doc = new XmlDocument { XmlResolver = null };
@@ -294,8 +298,44 @@ namespace Deskmate
                 }
                 if (texts.Count > 0) item.Title = texts[0];
                 if (texts.Count > 1) item.Body = string.Join(" · ", texts.GetRange(1, texts.Count - 1));
+                foreach (XmlNode img in doc.GetElementsByTagName("image"))
+                {
+                    var el = img as XmlElement;
+                    if (el == null || el.GetAttribute("placement") != "appLogoOverride") continue;
+                    Uri uri;
+                    // Local files only: never fetch a remote URL from a toast
+                    if (Uri.TryCreate(el.GetAttribute("src"), UriKind.Absolute, out uri) && uri.IsFile) logo = uri.LocalPath;
+                    break;
+                }
             }
             catch (Exception ex) { Log.Write("notif payload: " + ex.Message); }
+            return logo;
+        }
+
+        // Icon file named by the toast, cached by path like the app-id logos
+        static Bitmap LogoForFile(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+            string key = "file:" + path;
+            lock (logos)
+            {
+                Bitmap cached;
+                if (logos.TryGetValue(key, out cached)) return cached;
+            }
+            Bitmap logo = null;
+            try
+            {
+                var fi = new FileInfo(path);
+                // Read bytes so the file is not locked while Phone Link rewrites it
+                if (fi.Exists && fi.Length > 0 && fi.Length < 2 * 1024 * 1024)
+                    using (var ms = new MemoryStream(File.ReadAllBytes(path)))
+                    using (var src = Image.FromStream(ms))
+                        logo = Ink.Grayscale(src, 48, true);
+            }
+            catch (Exception ex) { Log.Write("notif toast logo: " + ex.Message); logo = null; }
+            // A missing file is retried next read; only a decoded icon is cached
+            if (logo != null) lock (logos) logos[key] = logo;
+            return logo;
         }
 
         // com.squirrel.Discord.Discord -> Discord, Microsoft.ScreenSketch_x!App -> ScreenSketch
