@@ -30,6 +30,8 @@ namespace Deskmate
         string wallAccent;
 
         bool WallSyncOn { get { return settings.GetBool("wall.sync", false) && !CustomOn; } }
+        // Calm reads the wallpaper hue for window canvases even without wall.sync
+        bool WallWanted { get { return settings.GetBool("wall.sync", false) || MaterialName == "calm"; } }
         // Software glass uses the wallpaper tint, never the window behind it
         bool WallGlassOn { get { return WallSyncOn && WallBackdrop.Ready; } }
 
@@ -40,7 +42,7 @@ namespace Deskmate
             wallDebounce.Tick += delegate { wallDebounce.Stop(); WallRead(); };
             wallPoll.Tick += delegate { WallRead(); };
             SystemEvents.UserPreferenceChanged += OnWallPrefs;
-            if (settings.GetBool("wall.sync", false))
+            if (WallWanted)
             {
                 wallPoll.Start();
                 WallRead();
@@ -60,7 +62,7 @@ namespace Deskmate
         void OnWallPrefs(object sender, UserPreferenceChangedEventArgs e)
         {
             if (e.Category != UserPreferenceCategory.Desktop && e.Category != UserPreferenceCategory.Color) return;
-            Post(delegate { if (settings.GetBool("wall.sync", false)) { wallDebounce.Stop(); wallDebounce.Start(); } });
+            Post(delegate { if (WallWanted) { wallDebounce.Stop(); wallDebounce.Start(); } });
         }
 
         // Switch flipped in settings
@@ -73,16 +75,24 @@ namespace Deskmate
             }
             else
             {
-                wallPoll.Stop();
+                if (!WallWanted) wallPoll.Stop();
                 WallBackdrop.Clear();
                 WallApply();
             }
         }
 
+        // Material changed: Calm needs the hue, others only if wall.sync does
+        void WallMaterial()
+        {
+            if (WallWanted) { wallPoll.Start(); WallRead(); }
+            else wallPoll.Stop();
+            WallApply();
+        }
+
         // Decode off the UI thread; a big wallpaper takes a moment
         void WallRead()
         {
-            if (!settings.GetBool("wall.sync", false)) return;
+            if (!WallWanted) return;
             string path = WallpaperPath();
             DateTime at = DateTime.MinValue;
             long len = 0;
@@ -184,6 +194,11 @@ namespace Deskmate
             bool veilChanged = Ink.VeilTint != veil;
             Ink.VeilTint = veil;
 
+            // Calm windows (Settings, editors) take a quiet canvas in the wallpaper hue
+            Color? canvas = MaterialName == "calm" && !CustomOn && wallPick.HasValue ? (Color?)CalmCanvas(wallPick.Value, Ink.Light) : null;
+            bool canvasChanged = KitInk.Canvas != canvas;
+            if (canvasChanged) { KitInk.Canvas = canvas; veilChanged = true; }
+
             // Accent follows the wallpaper only while none is chosen; unset falls back to the brand default
             string own = settings.Get("accent", null);
             string want = live && string.IsNullOrEmpty(own) ? WallAccentHex(wallPick.Value) : null;
@@ -209,6 +224,8 @@ namespace Deskmate
             if (glassChanged) ApplyGlass();
             RefreshDocks();
             if (prefs != null && !prefs.IsDisposed) prefs.Relayout();
+            // Editors and other Kit windows repaint their canvas too
+            if (canvasChanged) KitWindow.BroadcastThemeChange();
             Kick();
         }
 
@@ -217,6 +234,22 @@ namespace Deskmate
         {
             double s = Math.Min(pick.GetSaturation(), light ? 0.55 : 0.62);
             return FromHsl(pick.GetHue(), s, light ? 0.92 : 0.15);
+        }
+
+        // Window canvas for Calm: the wallpaper hue at low chroma, at the theme's
+        // own lightness, so ink contrast stays where the night/paper tones put it
+        static Color CalmCanvas(Color pick, bool light)
+        {
+            double s = Math.Min(pick.GetSaturation(), light ? 0.30 : 0.34);
+            var c = FromHsl(pick.GetHue(), s, light ? 0.95 : 0.13);
+            // HSL lightness is not luminance: a blue paper reads darker than the
+            // ivory one at the same L. Hold the canvas at the theme tone's
+            // luminance so every ink mix keeps the contrast measured for it.
+            // Light keeps a little headroom: the plum ink mixed into Faint drifts with the canvas hue.
+            double target = Luminance(Ink.Base.Bg) + (light ? 0.02 : 0);
+            for (int i = 0; i < 24 && (light ? Luminance(c) < target : Luminance(c) > target); i++)
+                c = MixRound(c, light ? Color.White : Color.Black, 0.08);
+            return c;
         }
 
         // Dusty version of the hue, in step with the calm presets, lifted to 3:1 on the island

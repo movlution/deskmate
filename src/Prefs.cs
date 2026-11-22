@@ -146,7 +146,7 @@ namespace Deskmate
         {
             settings.Set(key, value);
             settings.Save();
-            if (key == "material") { ApplyGlass(); ResetFrost(); RefreshDocks(); }
+            if (key == "material") { ApplyGlass(); ResetFrost(); RefreshDocks(); WallMaterial(); }
             else if (key == "motion.reduce" || key == "motion.feel") Anim.Read(settings);
             else if (key == "share.mode") ApplyShare();
             Kick();

@@ -15,22 +15,25 @@ namespace Deskmate
         public static bool ByMouse;
 
         static Color O(Color c) { return Color.FromArgb(255, c.R, c.G, c.B); }
+        // Calm material: a canvas in the wallpaper hue at the theme's lightness; null keeps the theme tone
+        public static Color? Canvas;
+        static Color Bg { get { return Canvas ?? Ink.Base.Bg; } }
         // Calm surfaces from the tinted tones: canvas, navigation, cards, separators, hover.
-        public static Color Window { get { return O(Ink.Base.Bg); } }
-        public static Color Side { get { return O(Ink.Mix(Ink.Base.Bg, Color.Black, Ink.Light ? 0.035f : 0.055f)); } }
-        public static Color Group { get { return O(Ink.Light ? Ink.Mix(Ink.Base.Bg, Color.White, 0.85f) : Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.07f)); } }
-        public static Color Line { get { return O(Ink.Light ? Ink.Mix(Ink.Base.Bg, Color.Black, 0.10f) : Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.12f)); } }
-        public static Color Hover { get { return O(Ink.Light ? Ink.Mix(Ink.Base.Bg, Color.Black, 0.06f) : Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.09f)); } }
+        public static Color Window { get { return O(Bg); } }
+        public static Color Side { get { return O(Ink.Mix(Bg, Color.Black, Ink.Light ? 0.035f : 0.055f)); } }
+        public static Color Group { get { return O(Ink.Light ? Ink.Mix(Bg, Color.White, 0.85f) : Ink.Mix(Bg, Ink.Base.Text, 0.07f)); } }
+        public static Color Line { get { return O(Ink.Light ? Ink.Mix(Bg, Color.Black, 0.10f) : Ink.Mix(Bg, Ink.Base.Text, 0.12f)); } }
+        public static Color Hover { get { return O(Ink.Light ? Ink.Mix(Bg, Color.Black, 0.06f) : Ink.Mix(Bg, Ink.Base.Text, 0.09f)); } }
         // Selected segment, lifted above its track
-        public static Color Raised { get { return Ink.Light ? Color.White : O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.22f)); } }
+        public static Color Raised { get { return Ink.Light ? Color.White : O(Ink.Mix(Bg, Ink.Base.Text, 0.22f)); } }
         public static Color Text { get { return O(Ink.Base.Text); } }
         // Light Sub sits above Faint so secondary text keeps hierarchy and >= 4.5:1 on Line
-        public static Color Sub { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.74f : 0.72f)); } }
+        public static Color Sub { get { return O(Ink.Mix(Bg, Ink.Base.Text, Ink.Light ? 0.74f : 0.72f)); } }
         // 0.69 light / 0.66 dark guarantee >= 4.5:1 across Window, Side, Group, Hover, and Line
-        public static Color Faint { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.69f : 0.66f)); } }
+        public static Color Faint { get { return O(Ink.Mix(Bg, Ink.Base.Text, Ink.Light ? 0.69f : 0.66f)); } }
         // Disabled chrome (switch knob, slider fill): dimmer than tertiary text so
         // raising Faint for readability does not make disabled controls look enabled
-        public static Color Disabled { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.30f)); } }
+        public static Color Disabled { get { return O(Ink.Mix(Bg, Ink.Base.Text, 0.30f)); } }
         // Grafit accent: switches and primary buttons use text colour
         public static Color Accent { get { return O(Ink.Base.Accent); } }
         public static Color OnAccent { get { return O(Ink.Base.OnAccent); } }
@@ -39,7 +42,7 @@ namespace Deskmate
         // Thumbs and knobs: paper white on light, ivory on night
         public static Color Knob { get { return Ink.Light ? Color.White : Text; } }
         // Canvas mixed toward primary ink: control fills that step evenly in both themes
-        public static Color Tint(float k) { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, k)); }
+        public static Color Tint(float k) { return O(Ink.Mix(Bg, Ink.Base.Text, k)); }
         // A colour pushed away from the ink drawn on it, so hover and press only gain contrast
         public static Color Deepen(Color fill, Color ink, float k) { return Ink.Mix(fill, ink.GetBrightness() < 0.5f ? Color.White : Color.Black, k); }
 
