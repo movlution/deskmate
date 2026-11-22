@@ -225,9 +225,9 @@ namespace Deskmate
                 int bx = PlaceNow == PlaceTop && placeGlide.Settled ? w / 2 - bw / 2 : (int)Math.Round(MidX(PanelW) - PanelW * scale / 2) - job.Left;
                 int by = (int)Math.Round(ShellTop * scale) + TopY(sh.Target) - job.Top;
                 job.Bake = new Rectangle(bx, by, bw, bh);
-                // Clear glass already carries its veil in the base pass; only a little extra keeps panel text calm.
+                // Clear panels get a reading floor over the thin base veil.
                 // Calm's pass already lays an even veil; panels only need a whisper more.
-                job.Extra = ClearOn ? 0.04f : CalmOn ? 0.06f : PanelExtra;
+                job.Extra = ClearOn ? GlassRecipe.PanelScrim(GlassKind.Clear, Ink.Light, false) : CalmOn ? 0.06f : PanelExtra;
                 job.Sheen = (int)Math.Ceiling((PanelTop - 8) * scale);
                 job.Cover = current == View.Panel && page == PageMusic;
                 // Frost freed its copy: send another
@@ -690,6 +690,7 @@ namespace Deskmate
             {
                 var veil = baseTone ? Ink.Veil : tone.Bg;
                 float veilA = !baseTone ? 0.85f : GlassRecipe.Overlay(Kind, current == View.Panel, false);
+                if (baseTone && current == View.Panel) veilA = Math.Max(veilA, GlassRecipe.PanelScrim(Kind, Ink.Light, true));
                 g.FillPath(p.B(Ink.A(veil, veilA)), path);
                 if (baseTone && current == View.Panel && page == PageMusic && mediaInfo.Present && BackdropShown(DateTime.UtcNow))
                 {
@@ -714,7 +715,7 @@ namespace Deskmate
             bool covered = pl != null && fx <= Math.Floor(bounds.X * scale) && fx + pl.Job.W >= Math.Ceiling(bounds.Right * scale) &&
                            fy <= Math.Floor(bounds.Y * scale) && fy + pl.Job.H >= Math.Ceiling(bounds.Bottom * scale);
             // Frost has base tint; add the rest
-            float extra = baseTone ? (ClearOn ? (current == View.Panel ? 0.04f : 0f) : CalmOn ? (current == View.Panel ? 0.06f : 0f) : 1 - (1 - tint) / (1 - BaseTint)) : tint;
+            float extra = baseTone ? (ClearOn ? (current == View.Panel ? GlassRecipe.PanelScrim(GlassKind.Clear, Ink.Light, false) : 0f) : CalmOn ? (current == View.Panel ? 0.06f : 0f) : 1 - (1 - tint) / (1 - BaseTint)) : tint;
             if (covered && baseTone && current == View.Panel && SurfaceSteady() && PlateFits(pl, fx, fy, bounds, extra)) DrawPlate(pl, fx, fy);
             else
             {

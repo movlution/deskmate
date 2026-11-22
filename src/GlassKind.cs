@@ -158,6 +158,17 @@ namespace Deskmate
             return panel ? (light ? 0.06f : 0.08f) : (light ? 0.04f : 0.05f);
         }
 
+        // Reading floor for the open Clear panel. The compact pill stays
+        // see-through, but a page of text needs a guaranteed backdrop: sized so
+        // body ink keeps roughly 4.5:1 even with a white (dark theme) or black
+        // (light theme) window behind the glass. Live glass already carries the
+        // compositor tint, so it needs less than the baked software plate.
+        public static float PanelScrim(GlassKind kind, bool light, bool gpu)
+        {
+            if (kind != GlassKind.Clear) return 0f;
+            return gpu ? (light ? 0.48f : 0.42f) : (light ? 0.60f : 0.56f);
+        }
+
         public static int InnerLight(GlassKind kind, bool light)
         {
             if (kind == GlassKind.Clear) return light ? 58 : 26;
