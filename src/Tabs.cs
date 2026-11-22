@@ -481,6 +481,7 @@ namespace Deskmate
             }
             int n = tabs.Length;
             var strip = TabStrip(w, dots ? 32 : TabIcon + TabGap);
+            DrawHeaderClock(strip);
             if (dots) { DrawDots(w, strip, now); return; }
             float pitch = strip.Width / Math.Max(1, n);
             int preview = page;
@@ -515,6 +516,17 @@ namespace Deskmate
         {
             float center = strip.X + strip.Width / 2;
             p.Text(TabLabel(preview), Ink.Semi(12f), p.T.Text, center, 42, 2 * (center - 12), StringAlignment.Center);
+        }
+
+        // Time and date fill the empty corner left of the strip; the quiet Overview hero already shows them
+        void DrawHeaderClock(RectangleF strip)
+        {
+            const float x = 24;
+            float room = strip.X - 4 - 12 - x;
+            if (room < 56 || (page == PageHome && HomeQuiet)) return;
+            var local = DateTime.Now;
+            p.Text(Fmt.Clock(local), Ink.Display(17f), p.T.Text, x, TabY + TabH / 2 - 2, room, StringAlignment.Near);
+            p.Text(local.ToString("ddd, d MMM", Fmt.Id), Ink.Small(11f), p.T.Sub, x, 40, room, StringAlignment.Near);
         }
 
         // Dots: hover or focus anywhere opens the whole strip into icons; hover names page
