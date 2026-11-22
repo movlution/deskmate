@@ -75,6 +75,7 @@ namespace Deskmate
             static readonly Dictionary<string, string[]> Parts = new Dictionary<string, string[]>
             {
                 { "island", new[] { "island", "tabs" } },
+                { "dock", new[] { "dock", "pet" } },
                 { "work", new[] { "work", "integrasi" } },
                 { "ai", new[] { "ai", "dikte" } },
                 { "system", new[] { "system", "phone" } },
@@ -83,6 +84,7 @@ namespace Deskmate
             static readonly Dictionary<string, string> PartTitles = new Dictionary<string, string>
             {
                 { "tabs", "Tab dan kartu" },
+                { "pet", "Pet di dock" },
                 { "integrasi", "Integrasi dan kalender" },
                 { "dikte", "Dikte dan rapat" },
                 { "phone", "HP Android" },
@@ -114,7 +116,7 @@ namespace Deskmate
                 { "general", "bahasa jam startup windows update data ekspor impor reset" },
                 { "look", "tema sistem gelap terang otomatis aksen warna wallpaper paket material kaca" },
                 { "island", "notch dynamic island letak posisi ukuran mata jam diam tab kartu ringkasan home urutan" },
-                { "dock", "dock taskbar widget aplikasi" },
+                { "dock", "dock taskbar widget aplikasi pet kucing anjing hewan aseprite" },
                 { "messages", "pesan notifikasi chat banner vip senyap dnd" },
                 { "work", "tugas fokus prioritas catatan timer kulia notion todoist ical google kalender jadwal integrasi" },
                 { "remind", "cuaca hujan kota sholat adzan minum mata peregangan pengingat" },

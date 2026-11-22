@@ -21,6 +21,7 @@ namespace Deskmate
             AddPictureAndReadability(d);
             AddCombo(d);
             AddWhatsNew(d);
+            AddPet(d);
             return d;
         }
 

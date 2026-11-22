@@ -1,22 +1,39 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace Deskmate
 {
-    // Desktop pet: one placeholder cat walking on the dock's top edge, or on the
-    // bottom of the work area without a dock. Opt-in through pet.on, or DESKMATE_PET=1 for trial builds.
+    // Desktop pet: a small animal walking on the dock's top edge, or on the bottom
+    // of the work area without a dock. Opt-in through pet.on.
     partial class Island
     {
         PetWindow pet;
+        PetSheet petSheet;
+        // petError: why the chosen custom pet fell back to the built-in one, as a Lang id
+        string petSheetKey, petError;
 
-        bool PetOn { get { return settings.GetBool("pet.on", false) || Environment.GetEnvironmentVariable("DESKMATE_PET") == "1"; } }
+        bool PetOn { get { return settings.GetBool("pet.on", false); } }
+        string PetKind { get { return settings.Get("pet.kind", "cat"); } }
+        // Logical px tall
+        int PetHeight { get { string s = settings.Get("pet.size", "m"); return s == "s" ? 32 : s == "l" ? 64 : 48; } }
+        // Percent of the base walking speed
+        int PetSpeed { get { return Math.Max(50, Math.Min(200, settings.GetInt("pet.speed", 100))); } }
+
+        void SetPetChoice(string key, object value)
+        {
+            settings.Set(key, value);
+            settings.Save();
+            ApplyPet();
+        }
 
         void ApplyPet()
         {
             if (!PetOn) { ClosePet(); return; }
+            var sheet = LoadPetSheet();
             var dock = dockWin != null && !dockWin.IsDisposed ? dockWin : null;
             var screen = dock != null && dock.PetScreen != null ? dock.PetScreen : ChosenScreen();
             IntPtr mon = MonitorForScreen(screen);
@@ -25,12 +42,64 @@ namespace Deskmate
             if (pet == null || pet.IsDisposed)
             {
                 pet = new PetWindow(work, s, mon, () => dormant || hiddenByUser);
+                pet.Use(sheet, PetHeight, PetSpeed);
                 pet.Show();
             }
-            else pet.Retarget(work, s, mon);
+            else
+            {
+                pet.Use(sheet, PetHeight, PetSpeed);
+                pet.Retarget(work, s, mon);
+            }
             // Owned by the dock: always just above it, and the dock's later windows stay above both
             pet.Owner = dock;
             pet.Floor(dock != null ? dock.PetFloor() : Rectangle.Empty, dock != null);
+        }
+
+        // Built-in art, or the chosen folder under pets\. Reloaded only when the choice
+        // or the files change; a broken custom pet falls back to the cat and says why.
+        PetSheet LoadPetSheet()
+        {
+            string kind = PetKind, color = settings.Get("pet.color", "orange"), key = kind + "|" + color, dir = null;
+            if (kind.StartsWith("custom:", StringComparison.Ordinal))
+            {
+                string name = kind.Substring(7);
+                if (name.Length > 0 && name != "." && name != ".." && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0)
+                    dir = Path.Combine(PetSheet.Folder, name);
+                try
+                {
+                    if (dir != null)
+                        key += "|" + File.GetLastWriteTimeUtc(Path.Combine(dir, "pet.json")).Ticks + "|" + File.GetLastWriteTimeUtc(Path.Combine(dir, "sheet.png")).Ticks;
+                }
+                catch (Exception) { }
+            }
+            if (petSheet != null && key == petSheetKey) return petSheet;
+            petError = null;
+            PetSheet sheet = null;
+            if (kind.StartsWith("custom:", StringComparison.Ordinal))
+            {
+                if (dir == null || !Directory.Exists(dir)) petError = "folder pet tidak ditemukan";
+                else
+                {
+                    try { sheet = PetSheet.Load(dir); }
+                    catch (InvalidDataException ex) { petError = ex.Message; }
+                    catch (Exception ex) { petError = "sheet.png tidak terbaca"; Log.Write("pet: " + ex.Message); }
+                }
+                if (petError != null) Log.Write("pet: " + kind + ": " + petError);
+            }
+            if (sheet == null) sheet = PetSheet.BuiltIn(kind == "dog" ? "dog" : "cat", color);
+            petSheet = sheet;
+            petSheetKey = key;
+            return sheet;
+        }
+
+        void OpenPetFolder()
+        {
+            try
+            {
+                Directory.CreateDirectory(PetSheet.Folder);
+                Process.Start("explorer.exe", "\"" + PetSheet.Folder + "\"");
+            }
+            catch (Exception ex) { Log.Write("pet folder: " + ex.Message); }
         }
 
         // A closing owner would take the pet with it
@@ -43,6 +112,9 @@ namespace Deskmate
         {
             if (pet != null && !pet.IsDisposed) pet.Close();
             pet = null;
+            // Switching off and on again reloads a custom pet
+            petSheet = null;
+            petSheetKey = null;
         }
 
         sealed partial class DockWindow
@@ -72,7 +144,8 @@ namespace Deskmate
             public double X, Left, Right;
             public int Dir = 1;
             // Logical px per second; scaled by Scale
-            public double Speed = 36;
+            public double Speed = BaseSpeed;
+            public const double BaseSpeed = 36;
             public float Scale = 1;
             // Reduced motion: the pet stays where it is
             public bool NoWalk;
@@ -81,6 +154,15 @@ namespace Deskmate
             readonly Random rnd;
 
             public PetBrain(int seed) { rnd = new Random(seed); }
+
+            // Seconds into the current mode, for the sheet's frame timing
+            public double AnimT { get { return animT; } }
+
+            // Seconds until the mode changes on its own; a walk ends where it arrives
+            public double ModeLeft { get { return Mode == PetMode.Walk ? double.MaxValue : Math.Max(0.001, modeLeft); } }
+
+            // The walk cycle follows ground speed
+            public double Pace { get { return Mode == PetMode.Walk ? Speed / BaseSpeed : 1; } }
 
             // Walking or mid-hop: frames run on vsync
             public bool Moving { get { return Mode == PetMode.Walk || hopT >= 0; } }
@@ -176,165 +258,16 @@ namespace Deskmate
                 double r = rnd.NextDouble();
                 modeLeft = m == PetMode.Idle ? 2 + r * 3 : m == PetMode.Sit ? 4 + r * 5 : m == PetMode.Sleep ? 20 + r * 25 : 0;
             }
-
-            // Sprite frames per second; the walk cycle follows ground speed
-            double Rate
-            {
-                get
-                {
-                    if (Mode == PetMode.Walk) return 8 * Speed / 36;
-                    return Mode == PetMode.Idle ? 1.5 : Mode == PetMode.Sit ? 0.8 : 0.6;
-                }
-            }
-
-            // Atlas column: idle 0-1, walk 2-5, sit 6-7, sleep 8-9
-            public int Cell
-            {
-                get
-                {
-                    int n = (int)(animT * Rate);
-                    if (Mode == PetMode.Walk) return 2 + n % 4;
-                    if (Mode == PetMode.Sit) return 6 + n % 2;
-                    if (Mode == PetMode.Sleep) return 8 + n % 2;
-                    return n % 2;
-                }
-            }
-
-            // Seconds until the picture can change while standing still
-            public double NextChangeIn()
-            {
-                double r = Rate, frame = (Math.Floor(animT * r) + 1) / r - animT;
-                return Math.Max(0.001, Math.Min(frame, modeLeft));
-            }
         }
 
-        // Placeholder pixel cat on a 16 px grid, outlined, mirrored for walking left
-        static class PetArt
-        {
-            public const int Grid = 16, Cells = 10;
-            const byte Fur = 1, Stripe = 2, Dark = 3, Nose = 4, Light = 5;
-            static readonly int[] Palette = { 0, unchecked((int)0xFFF0A35E), unchecked((int)0xFFC9773A), unchecked((int)0xFF2A1E17), unchecked((int)0xFFE88A8A), unchecked((int)0xFFF5F1EA) };
-
-            // Opaque or clear pixels only, so the buffer is already premultiplied.
-            // Row 0 faces right, row 1 left; f is the screen px per art px.
-            public static int[] Atlas(int f)
-            {
-                int cell = Grid * f, w = cell * Cells;
-                var px = new int[w * cell * 2];
-                for (int c = 0; c < Cells; c++)
-                {
-                    byte[] g = Outline(Frame(c));
-                    for (int gy = 0; gy < Grid; gy++)
-                        for (int gx = 0; gx < Grid; gx++)
-                        {
-                            int v = Palette[g[gy * Grid + gx]];
-                            if (v == 0) continue;
-                            for (int row = 0; row < 2; row++)
-                            {
-                                int ox = c * cell + (row == 0 ? gx : Grid - 1 - gx) * f, oy = row * cell + gy * f;
-                                for (int y = 0; y < f; y++)
-                                    for (int x = 0; x < f; x++) px[(oy + y) * w + ox + x] = v;
-                            }
-                        }
-                }
-                return px;
-            }
-
-            static byte[] Frame(int c)
-            {
-                var g = new byte[Grid * Grid];
-                switch (c)
-                {
-                    case 0: Stand(g, new[] { 4, 2, 6, 2, 9, 2, 11, 2 }, 0); break;
-                    case 1: Stand(g, new[] { 4, 2, 6, 2, 9, 2, 11, 2 }, 1); break;
-                    case 2: Stand(g, new[] { 4, 2, 6, 2, 9, 2, 11, 2 }, 0); break;
-                    case 3: Stand(g, new[] { 3, 2, 7, 1, 8, 2, 12, 1 }, 1); break;
-                    case 4: Stand(g, new[] { 4, 2, 6, 2, 9, 2, 11, 2 }, 0); break;
-                    case 5: Stand(g, new[] { 5, 1, 6, 2, 10, 1, 11, 2 }, 1); break;
-                    case 6: Sit(g, 0); break;
-                    case 7: Sit(g, 1); break;
-                    case 8: Sleep(g, 0); break;
-                    default: Sleep(g, 1); break;
-                }
-                return g;
-            }
-
-            // legs: x and height pairs; a height of 1 is a raised paw
-            static void Stand(byte[] g, int[] legs, int tail)
-            {
-                Box(g, 3, 8, 9, 4, Fur);
-                Box(g, 10, 4, 5, 4, Fur);
-                Dot(g, 10, 3, Fur); Dot(g, 14, 3, Fur);
-                Dot(g, 13, 5, Dark); Dot(g, 14, 6, Nose);
-                Dot(g, 12, 4, Stripe); Dot(g, 5, 8, Stripe); Dot(g, 7, 8, Stripe); Dot(g, 9, 8, Stripe);
-                for (int i = 0; i < legs.Length; i += 2) Box(g, legs[i], 12, 1, legs[i + 1], Fur);
-                if (tail == 0) { Dot(g, 2, 8, Fur); Dot(g, 1, 7, Fur); Dot(g, 1, 6, Fur); Dot(g, 2, 5, Fur); }
-                else { Dot(g, 2, 9, Fur); Dot(g, 1, 8, Fur); Dot(g, 1, 7, Fur); Dot(g, 1, 6, Fur); }
-            }
-
-            static void Sit(byte[] g, int tail)
-            {
-                Box(g, 5, 7, 6, 5, Fur);
-                Box(g, 4, 10, 2, 4, Fur);
-                Box(g, 6, 12, 3, 2, Fur);
-                Box(g, 10, 12, 1, 2, Fur);
-                Box(g, 9, 3, 5, 4, Fur);
-                Dot(g, 9, 2, Fur); Dot(g, 13, 2, Fur);
-                Dot(g, 12, 4, Dark); Dot(g, 13, 5, Nose);
-                Dot(g, 11, 3, Stripe); Dot(g, 6, 7, Stripe); Dot(g, 8, 7, Stripe);
-                Box(g, 1, 13, 3, 1, Fur);
-                Dot(g, tail == 0 ? 1 : 2, 12, Fur);
-            }
-
-            static void Sleep(byte[] g, int breath)
-            {
-                int top = 10 + breath;
-                Box(g, 3, top, 9, 14 - top, Fur);
-                Box(g, 10, 9, 4, 4, Fur);
-                Dot(g, 10, 8, Fur); Dot(g, 13, 8, Fur);
-                Box(g, 11, 10, 2, 1, Dark);
-                Dot(g, 5, top, Stripe); Dot(g, 7, top, Stripe);
-                Box(g, 2, 12, 1, 2, Fur);
-                if (breath == 1)
-                {
-                    Box(g, 12, 3, 3, 1, Light);
-                    Dot(g, 13, 4, Light);
-                    Box(g, 12, 5, 3, 1, Light);
-                }
-            }
-
-            static void Box(byte[] g, int x, int y, int w, int h, byte c)
-            {
-                for (int yy = y; yy < y + h; yy++)
-                    for (int xx = x; xx < x + w; xx++) Dot(g, xx, yy, c);
-            }
-
-            static void Dot(byte[] g, int x, int y, byte c)
-            {
-                if (x >= 0 && y >= 0 && x < Grid && y < Grid) g[y * Grid + x] = c;
-            }
-
-            static byte[] Outline(byte[] g)
-            {
-                var o = (byte[])g.Clone();
-                for (int y = 0; y < Grid; y++)
-                    for (int x = 0; x < Grid; x++)
-                    {
-                        if (g[y * Grid + x] != 0) continue;
-                        if ((x > 0 && g[y * Grid + x - 1] != 0) || (x < Grid - 1 && g[y * Grid + x + 1] != 0) ||
-                            (y > 0 && g[(y - 1) * Grid + x] != 0) || (y < Grid - 1 && g[(y + 1) * Grid + x] != 0))
-                            o[y * Grid + x] = Dark;
-                    }
-                return o;
-            }
-        }
-
-        // Layered window: clear pixels let clicks through, the cat itself takes hover and
+        // Layered window: clear pixels let clicks through, the pet itself takes hover and
         // clicks. The atlas is uploaded once; a frame picks its cell through pptSrc, and a
         // plain move skips the bitmap entirely.
         sealed class PetWindow : Form
         {
             const uint SWP_NOZORDER = 0x4;
+            // Atlas memory ceiling; a large custom sheet is drawn smaller instead
+            const long AtlasBytes = 32L << 20;
             static readonly int FrameMsg = Taskbar.RegisterWindowMessage("DeskmatePetFrame");
             readonly PetBrain brain = new PetBrain(Environment.TickCount);
             readonly Stopwatch clock = Stopwatch.StartNew();
@@ -343,11 +276,14 @@ namespace Deskmate
             // floor: dock top edge in screen px, or Empty; lane: walkable left edges (X..Right) on ground Y
             Rectangle work, floor, lane;
             readonly Func<bool> away;
+            PetSheet sheet;
+            int height = 48;
             float scale;
             IntPtr monitor, memDC, dib, oldBmp;
-            int f, cell;
+            // f: screen px per art px; cw, ch: one atlas cell
+            int f, cw, ch;
             double lastT;
-            bool hidden, closing, wasMoving, placed;
+            bool hidden, closing, wasMoving, placed, rebuild;
             int waitTicks;
             int drawnX = int.MinValue, drawnY = int.MinValue, drawnCell = -1, drawnRow = -1;
             // Trial counters: frames run, bitmap uploads, moves without a bitmap, worst walking gap
@@ -395,6 +331,18 @@ namespace Deskmate
                 Frame();
             }
 
+            // Look and pace. A new sheet or size rebuilds the atlas; speed alone does not.
+            public void Use(PetSheet sheet, int height, int speedPercent)
+            {
+                if (sheet != this.sheet || height != this.height) rebuild = true;
+                this.sheet = sheet;
+                this.height = height;
+                brain.Speed = PetBrain.BaseSpeed * speedPercent / 100.0;
+                if (!IsHandleCreated || !rebuild) return;
+                Fit();
+                if (placed) Settle();
+            }
+
             public void Retarget(Rectangle work, float scale, IntPtr monitor)
             {
                 this.work = work;
@@ -414,6 +362,14 @@ namespace Deskmate
                 return new Rectangle(floor.Left, floor.Top, room, 0);
             }
 
+            // Whole screen px per art px for a sheet drawn height logical px tall, kept under the atlas ceiling
+            public static int Factor(PetSheet sheet, int height, float scale)
+            {
+                int n = Math.Max(1, (int)Math.Round(height * scale / sheet.H));
+                while (n > 1 && (long)sheet.W * sheet.H * n * n * sheet.Count * 8 > AtlasBytes) n--;
+                return n;
+            }
+
             // dockPresent with an Empty floor: the dock is hidden or has not drawn yet, so the pet
             // keeps its lane (or waits for the first frame; Watch falls back after 3 s)
             public void Floor(Rectangle f, bool dockPresent)
@@ -426,7 +382,8 @@ namespace Deskmate
 
             void Settle()
             {
-                lane = Lane(work, floor, cell);
+                if (sheet == null) return;
+                lane = Lane(work, floor, cw);
                 brain.Bounds(lane.Left, lane.Right, !placed);
                 if (placed) { Draw(); return; }
                 placed = true;
@@ -437,8 +394,16 @@ namespace Deskmate
 
             void Fit()
             {
-                int nf = Math.Max(2, (int)Math.Round(3 * scale));
-                if (nf != f || memDC == IntPtr.Zero) { f = nf; cell = PetArt.Grid * f; Build(); }
+                if (sheet == null) return;
+                int nf = Factor(sheet, height, scale);
+                if (nf != f || rebuild || memDC == IntPtr.Zero)
+                {
+                    f = nf;
+                    cw = sheet.W * f;
+                    ch = sheet.H * f;
+                    rebuild = false;
+                    Build();
+                }
                 brain.Scale = scale;
                 drawnCell = -1;
             }
@@ -446,14 +411,15 @@ namespace Deskmate
             void Build()
             {
                 Free();
-                int w = cell * PetArt.Cells, h = cell * 2;
-                int[] px = PetArt.Atlas(f);
+                int w = cw * sheet.Count, h = ch * 2;
+                int[] px = sheet.Atlas(f);
                 var bmi = new Native.BITMAPINFOHEADER { biSize = Marshal.SizeOf(typeof(Native.BITMAPINFOHEADER)), biWidth = w, biHeight = -h, biPlanes = 1, biBitCount = 32 };
                 IntPtr screen = Native.GetDC(IntPtr.Zero);
                 memDC = Native.CreateCompatibleDC(screen);
                 Native.ReleaseDC(IntPtr.Zero, screen);
                 IntPtr bits;
                 dib = Native.CreateDIBSection(memDC, ref bmi, 0, out bits, IntPtr.Zero, 0);
+                if (dib == IntPtr.Zero) { Native.DeleteDC(memDC); memDC = IntPtr.Zero; Log.Write("pet: atlas " + w + "x" + h + " failed"); return; }
                 oldBmp = Native.SelectObject(memDC, dib);
                 Marshal.Copy(px, 0, bits, px.Length);
             }
@@ -494,23 +460,24 @@ namespace Deskmate
                     return;
                 }
                 pacer.Done(false);
-                rest.Interval = Math.Max(16, (int)Math.Ceiling(brain.NextChangeIn() * 1000));
+                double wait = Math.Min(sheet.NextChange(brain.Mode, brain.AnimT, brain.Pace), brain.ModeLeft);
+                rest.Interval = Math.Max(16, (int)Math.Min(int.MaxValue, Math.Ceiling(wait * 1000)));
                 rest.Start();
             }
 
             void Draw()
             {
                 if (memDC == IntPtr.Zero || hidden || !placed) return;
-                int x = (int)Math.Round(brain.X), c = brain.Cell, row = brain.Dir > 0 ? 0 : 1;
-                // The outline row under the paws touches the ground
-                int y = lane.Y - (PetArt.Grid - 1) * f - (int)Math.Round(brain.Lift);
+                int x = (int)Math.Round(brain.X), c = sheet.Frame(brain.Mode, brain.AnimT, brain.Pace), row = brain.Dir > 0 ? 0 : 1;
+                // The lowest opaque row of the sheet stands on the ground
+                int y = lane.Y - (sheet.Base + 1) * f - (int)Math.Round(brain.Lift);
                 bool art = c != drawnCell || row != drawnRow;
                 if (!art && x == drawnX && y == drawnY) return;
                 if (art)
                 {
                     var dst = new Native.POINT(x, y);
-                    var size = new Native.SIZE(cell, cell);
-                    var src = new Native.POINT(c * cell, row * cell);
+                    var size = new Native.SIZE(cw, ch);
+                    var src = new Native.POINT(c * cw, row * ch);
                     var blend = new Native.BLENDFUNCTION { SourceConstantAlpha = 255, AlphaFormat = 1 };
                     Native.UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, memDC, ref src, 0, ref blend, Native.ULW_ALPHA);
                     Uploads++;
@@ -545,7 +512,7 @@ namespace Deskmate
                 if (m.Msg == FrameMsg) { Frame(); return; }
                 if (m.Msg == 0x200 && placed)
                 {
-                    if (brain.Notice(Cursor.Position.X - (Left + cell / 2))) Frame();
+                    if (brain.Notice(Cursor.Position.X - (Left + cw / 2))) Frame();
                     return;
                 }
                 if (m.Msg == 0x201 && placed) { brain.Hop(); Frame(); return; }

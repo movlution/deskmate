@@ -357,6 +357,9 @@ namespace Deskmate
                     case "dock":
                         DockRows(cap, add);
                         break;
+                    case "pet":
+                        PetRows(cap, add);
+                        break;
                     case "work":
                         add(Row(Lang.T("Tugas dan catatan"), Lang.T("Buka daftar tugas dan editor catatan lokal"),
                             Button(Lang.T("Buka"), true, delegate { island.OpenWork(); })));
