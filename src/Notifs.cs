@@ -398,6 +398,16 @@ namespace Deskmate
             return false;
         }
 
+        // Browser AUMID behind a site toast id, or null when the id is not a site
+        static string SiteBrowser(string appId)
+        {
+            int bang = appId.IndexOf('!');
+            if (bang <= 0 || appId.IndexOf("://", bang, StringComparison.Ordinal) < 0) return null;
+            string owner = appId.Substring(0, bang);
+            // Edge's package id is not its AppsFolder entry; other browsers use their own
+            return owner.StartsWith("Microsoft.MicrosoftEdge", StringComparison.OrdinalIgnoreCase) ? "MSEdge" : owner;
+        }
+
         // App icon by app id alone: the shell knows both packaged and packed-in apps
         static Bitmap LogoForId(string appId)
         {
@@ -412,6 +422,10 @@ namespace Deskmate
             {
                 // shell:AppsFolder resolves an AUMID; a plain path resolves a file
                 string item = appId.IndexOf(':') >= 0 ? appId : ShellApp.AppsFolderOf(appId);
+                // A site toast is filed as "<browser>!https://site/"; the shell has no
+                // entry for that, so show the browser, as Action Center does
+                string browser = SiteBrowser(appId);
+                if (browser != null) item = ShellApp.AppsFolderOf(browser);
                 logo = ShellApp.Icon(item, 48);
                 if (logo == null) logo = ShellApp.Icon(appId, 48);
                 if (logo != null) logo = Ink.Grayscale(logo, 48, true);
