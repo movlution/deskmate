@@ -194,8 +194,13 @@ namespace Deskmate
             GetClassName(hwnd, cls, 256);
             string c = cls.ToString();
             if (c == "Progman" || c == "WorkerW" || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd") return false;
-            const int WS_CAPTION = 0x00C00000;
-            if ((GetWindowLong(hwnd, -16) & WS_CAPTION) == WS_CAPTION) return false;
+            const int WS_CAPTION = 0x00C00000, WS_THICKFRAME = 0x00040000, WS_MAXIMIZE = 0x01000000;
+            int style = GetWindowLong(hwnd, -16);
+            if ((style & WS_CAPTION) == WS_CAPTION) return false;
+            // Custom-titlebar apps (ChatGPT, Electron) drop the caption but keep the sizing frame;
+            // maximized over a hidden taskbar they fill the monitor yet are not fullscreen.
+            // Real fullscreen (games, F11) drops WS_THICKFRAME too.
+            if ((style & (WS_THICKFRAME | WS_MAXIMIZE)) == (WS_THICKFRAME | WS_MAXIMIZE)) return false;
 
             RECT r;
             if (!GetWindowRect(hwnd, out r)) return false;
