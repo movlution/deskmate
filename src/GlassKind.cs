@@ -4,7 +4,9 @@ using System.Drawing;
 namespace Deskmate
 {
     // One material vocabulary shared by the island, dock, cards, and sheets.
-    enum GlassKind { Clear, Liquid, Frost, Solid }
+    // Calm: the wallpaper's own hue, muted and a little deeper, under a thin
+    // even rim. No sheen and no accent in the pane; colour lives in indicators.
+    enum GlassKind { Clear, Liquid, Frost, Solid, Calm }
 
     // Every surface takes its tint, blur, chrome, and wallpaper fade from this
     // recipe. GPU and software paths read the same numbers so a material keeps
@@ -22,6 +24,7 @@ namespace Deskmate
             if (name == "liquid") return GlassKind.Liquid;
             if (name == "frost") return GlassKind.Frost;
             if (name == "solid") return GlassKind.Solid;
+            if (name == "calm") return GlassKind.Calm;
             return glass ? GlassKind.Liquid : GlassKind.Solid;
         }
 
@@ -37,6 +40,9 @@ namespace Deskmate
         public static int TintAlpha(GlassKind kind, bool light, bool panelOrSheet, bool bar)
         {
             if (kind == GlassKind.Solid) return 255;
+            if (kind == GlassKind.Calm)
+                return light ? (bar ? 196 : panelOrSheet ? 182 : 170)
+                             : (bar ? 184 : panelOrSheet ? 166 : 150);
             if (kind == GlassKind.Clear)
                 return light ? (bar ? 72 : panelOrSheet ? 64 : 46)
                              : (bar ? 96 : panelOrSheet ? 82 : 58);
@@ -60,6 +66,7 @@ namespace Deskmate
         public static Color TintBase(GlassKind kind, Color veil, bool light)
         {
             if (kind == GlassKind.Clear) return veil;
+            if (kind == GlassKind.Calm) return CalmTint(veil, light);
             if (kind == GlassKind.Liquid)
             {
                 // Live GPU glass has no wallpaper hue, so the veil is the theme's
@@ -74,6 +81,14 @@ namespace Deskmate
             }
             if (kind == GlassKind.Frost) return FrostTint(veil, light);
             return Ink.Base.Bg;
+        }
+
+        // The veil's hue, slightly muted; dark goes a step deeper so the pane
+        // reads as the wallpaper in shade rather than a grey sheet over it.
+        public static Color CalmTint(Color veil, bool light)
+        {
+            Color muted = Saturate(veil, 0.85f);
+            return light ? Ink.Mix(muted, Color.White, 0.18f) : Ink.Mix(muted, Color.Black, 0.22f);
         }
 
         public static Color FrostTint(Color veil, bool light)
@@ -91,6 +106,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) px = bar ? 46f : panelOrSheet ? 38f : 28f;
             else if (kind == GlassKind.Liquid) px = bar ? 28f : panelOrSheet ? 20f : 14f;
             else if (kind == GlassKind.Frost) px = bar ? 44f : panelOrSheet ? 34f : 28f;
+            else if (kind == GlassKind.Calm) px = bar ? 40f : panelOrSheet ? 32f : 26f;
             else px = 0f;
             return px * scale;
         }
@@ -100,6 +116,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return 1.30f;
             if (kind == GlassKind.Liquid) return 1.62f;
             if (kind == GlassKind.Frost) return 0.58f;
+            if (kind == GlassKind.Calm) return 0.85f;
             return 1f;
         }
 
@@ -111,6 +128,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return panelOrSheet ? 0.68f : bar ? 0.74f : 0.70f;
             if (kind == GlassKind.Liquid) return panelOrSheet ? 0.84f : 0.84f;
             if (kind == GlassKind.Frost) return panelOrSheet ? 0.93f : 0.92f;
+            if (kind == GlassKind.Calm) return panelOrSheet ? 0.82f : 0.80f;
             return 1f;
         }
 
@@ -119,6 +137,7 @@ namespace Deskmate
         {
             if (kind == GlassKind.Clear) return panelOrSheet ? 0.025f : bar ? 0.020f : 0.012f;
             if (kind == GlassKind.Liquid) return panelOrSheet ? 0.055f : bar ? 0.050f : 0.028f;
+            if (kind == GlassKind.Calm) return panelOrSheet ? 0.030f : bar ? 0.030f : 0.018f;
             return panelOrSheet ? 0.085f : bar ? 0.075f : 0.045f;
         }
 
@@ -128,6 +147,7 @@ namespace Deskmate
         {
             if (kind == GlassKind.Clear) return 0.10f;
             if (kind == GlassKind.Liquid) return 0.32f;
+            if (kind == GlassKind.Calm) return 0.30f;
             return 0.42f;
         }
 
@@ -143,6 +163,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return light ? 58 : 26;
             if (kind == GlassKind.Liquid) return light ? 50 : 20;
             if (kind == GlassKind.Frost) return light ? 68 : 34;
+            if (kind == GlassKind.Calm) return light ? 36 : 12;
             return 0;
         }
 
@@ -151,6 +172,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return light ? 12 : 28;
             if (kind == GlassKind.Liquid) return light ? 20 : 38;
             if (kind == GlassKind.Frost) return light ? 10 : 16;
+            if (kind == GlassKind.Calm) return light ? 12 : 22;
             return 0;
         }
 
@@ -159,6 +181,8 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return light ? 224 : 176;
             if (kind == GlassKind.Liquid) return light ? 206 : 132;
             if (kind == GlassKind.Frost) return light ? 150 : 64;
+            // Calm: one even hairline, top barely brighter than the sides
+            if (kind == GlassKind.Calm) return light ? 104 : 58;
             return 46;
         }
 
@@ -167,6 +191,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return light ? 72 : 34;
             if (kind == GlassKind.Liquid) return light ? 60 : 24;
             if (kind == GlassKind.Frost) return light ? 38 : 14;
+            if (kind == GlassKind.Calm) return light ? 80 : 42;
             return 10;
         }
 
@@ -175,6 +200,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return light ? 140 : 68;
             if (kind == GlassKind.Liquid) return light ? 126 : 52;
             if (kind == GlassKind.Frost) return light ? 92 : 30;
+            if (kind == GlassKind.Calm) return light ? 64 : 30;
             return 22;
         }
 
@@ -185,6 +211,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return light ? 168 : 122;
             if (kind == GlassKind.Liquid) return light ? 190 : 118;
             if (kind == GlassKind.Frost) return light ? 146 : 78;
+            if (kind == GlassKind.Calm) return light ? 110 : 60;
             return 0;
         }
 
@@ -193,6 +220,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return light ? 44 : 36;
             if (kind == GlassKind.Liquid) return light ? 54 : 40;
             if (kind == GlassKind.Frost) return light ? 32 : 22;
+            if (kind == GlassKind.Calm) return light ? 48 : 34;
             return 0;
         }
 
@@ -210,6 +238,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return light ? 50 : 12;
             if (kind == GlassKind.Liquid) return light ? 82 : 28;
             if (kind == GlassKind.Frost) return light ? 62 : 18;
+            if (kind == GlassKind.Calm) return light ? 22 : 6;
             return 0;
         }
 
@@ -218,6 +247,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return light ? 62 : 32;
             if (kind == GlassKind.Liquid) return light ? 80 : 48;
             if (kind == GlassKind.Frost) return light ? 54 : 26;
+            if (kind == GlassKind.Calm) return light ? 64 : 40;
             return light ? 30 : 20;
         }
 
@@ -226,6 +256,7 @@ namespace Deskmate
             if (kind == GlassKind.Clear) return 0.18f;
             if (kind == GlassKind.Liquid) return 0.30f;
             if (kind == GlassKind.Frost) return 0.42f;
+            if (kind == GlassKind.Calm) return 0.22f;
             return 0.35f;
         }
 

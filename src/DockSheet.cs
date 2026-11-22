@@ -188,7 +188,7 @@ namespace Deskmate
                 {
                     frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
                     frost.Start();
-                    frost.Request(new Rectangle(baseX, baseY, pw, ph), Ink.Veil, Ink.Light, isle != null && isle.LiquidOn, false, isle != null && isle.ClearOn);
+                    frost.Request(new Rectangle(baseX, baseY, pw, ph), Ink.Veil, Ink.Light, isle != null ? isle.Kind : GlassKind.Frost, false);
                 }
                 if (Anim.Reduced) open.Snap(1);
                 else { open.Snap(0); open.Target = 1; }
@@ -228,7 +228,7 @@ namespace Deskmate
                         frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
                         frost.Start();
                     }
-                    frost.Request(new Rectangle(baseX, baseY, cw, ch), Ink.Veil, Ink.Light, isle != null && isle.LiquidOn, false, isle != null && isle.ClearOn);
+                    frost.Request(new Rectangle(baseX, baseY, cw, ch), Ink.Veil, Ink.Light, isle != null ? isle.Kind : GlassKind.Frost, false);
                 }
                 else if (frost != null)
                 {

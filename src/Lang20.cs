@@ -74,6 +74,8 @@ namespace Deskmate
             en.Add("Solid: pekat, tanpa kaca, mengikuti warna tema", "Solid: opaque, no glass, follows the theme background");
             en.Add("Liquid: warna paling pekat dan hidup, kilau paling kuat", "Liquid: deepest, most vivid color and the strongest gloss");
             en.Add("Bening", "Clear");
+            en.Add("Kalem", "Calm");
+            en.Add("Kalem: warna wallpaper diredam, tepi tipis, tanpa kilau", "Calm: the wallpaper's hue, muted, with a thin edge and no gloss");
             en.Add("Bening: blur paling kuat, warna latar paling terlihat", "Clear: strongest blur, backdrop color most visible");
             en.Add("Sinkronkan wallpaper", "Sync wallpaper");
             en.Add("Kaca diwarnai wallpaper; gambar tidak ditampilkan", "Glass tints from the wallpaper; the image is never drawn");

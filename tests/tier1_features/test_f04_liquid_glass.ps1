@@ -92,6 +92,34 @@ Describe "Feature 4: Liquid Glass Color Space Blending" {
         Assert-True ($clearSpec.Saturation -ge 1.2) "Clear must keep backdrop colour alive (actual: $($clearSpec.Saturation))"
     }
 
+    It "Verifies Calm sits between Clear and Frost, mutes the backdrop, and carries no sheen" {
+        Reset-DeskmateTheme -Light $false
+        $recipe = Get-DeskmateType "GlassRecipe"
+        $calm = [System.Enum]::Parse($glassKind, "Calm")
+        $alpha = $recipe.GetMethod("TintAlpha")
+        $a = { param($k) $alpha.Invoke($null, [object[]]@([System.Enum]::Parse($glassKind, $k), [bool]$false, [bool]$true, [bool]$false)) }
+        Assert-True ((& $a "Calm") -gt (& $a "Clear")) "Calm panel veil must be denser than Clear"
+        Assert-True ((& $a "Calm") -lt (& $a "Frost")) "Calm panel veil must be thinner than Frost"
+        Assert-True ($recipe.GetMethod("Saturation").Invoke($null, @($calm)) -lt 1.0) "Calm must mute, not boost, the backdrop"
+        Assert-Equal 0 ($recipe.GetMethod("Sheen").Invoke($null, [object[]]@($calm, [bool]$false))) "Calm dark must carry no sheen"
+        Assert-Equal 0 ($recipe.GetMethod("Sheen").Invoke($null, [object[]]@($calm, [bool]$true))) "Calm light must carry no sheen"
+    }
+
+    It "Verifies light text on dark Calm glass over a white window keeps >= 4.5:1" {
+        $calmPass = $island.GetMethod("CalmPass", [System.Reflection.BindingFlags]'NonPublic,Static')
+        Assert-NotNull $calmPass "CalmPass static method must exist"
+        $recipe = Get-DeskmateType "GlassRecipe"
+        $navy = [System.Drawing.Color]::FromArgb(255, 20, 30, 70)
+        $tint = $recipe.GetMethod("CalmTint").Invoke($null, [object[]]@($navy, [bool]$false))
+        $bmp = New-Object System.Drawing.Bitmap 32, 32, ([System.Drawing.Imaging.PixelFormat]::Format32bppRgb)
+        $raw = [byte[]](,255 * (32 * 32 * 4))
+        $calmPass.Invoke($null, [object[]]@([System.Drawing.Bitmap]$bmp, [byte[]]$raw, [System.Drawing.Color]$tint))
+        $px = $bmp.GetPixel(16, 16)
+        $ratio = Assert-Contrast ([System.Drawing.Color]::White) $px 4.5 "White text on Calm over white"
+        Assert-True ($ratio -ge 4.5) "Contrast ratio must be >= 4.5:1 (actual: ${ratio}:1)"
+        $bmp.Dispose()
+    }
+
     It "Verifies wall-synced glass uses a wallpaper tint, not a screen image" {
         $wall = Get-DeskmateType "WallBackdrop"
         Assert-NotNull $wall "WallBackdrop type must exist"

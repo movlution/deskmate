@@ -110,7 +110,7 @@ namespace Deskmate
                         (int)Math.Round(at.Y + barTop * scale - top),
                         Math.Max(1, (int)Math.Round(bar.Width * scale)),
                         Math.Max(1, (int)Math.Round(bar.Height * scale)));
-                    frost.Request(new Rectangle(at.X, top, cw, area.Bottom - top), Ink.Veil, Ink.Light, isle.LiquidOn, true, isle.ClearOn,
+                    frost.Request(new Rectangle(at.X, top, cw, area.Bottom - top), Ink.Veil, Ink.Light, isle.Kind, true,
                         true, core, Full ? 0f : Radius * scale);
                 }
                 if (tray != null) tray.SetArea(TrayArea());

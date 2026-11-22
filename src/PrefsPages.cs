@@ -149,22 +149,24 @@ namespace Deskmate
 
                         // Detail follows the chosen material; capture mode overrides glass entirely
                         string mat = island.MaterialName;
-                        int matIdx = mat == "clear" ? 0 : mat == "frost" ? 2 : mat == "solid" ? 3 : 1;
+                        string[] matNames = { "clear", "liquid", "frost", "calm", "solid" };
+                        int matIdx = Math.Max(0, Array.IndexOf(matNames, mat));
                         Func<int, string> matNote = i => settings.GetBool("capture.show", false) ? Lang.T("Tidak berefek saat tampil di rekaman layar aktif") :
                                                          i == 0 ? Lang.T("Bening: blur paling kuat, warna latar paling terlihat") :
                                                          i == 2 ? Lang.T("Frost: buram netral dan padat, paling tenang") :
-                                                         i == 3 ? Lang.T("Solid: pekat, tanpa kaca, mengikuti warna tema") :
+                                                         i == 3 ? Lang.T("Kalem: warna wallpaper diredam, tepi tipis, tanpa kilau") :
+                                                         i == 4 ? Lang.T("Solid: pekat, tanpa kaca, mengikuti warna tema") :
                                                          Lang.T("Liquid: warna paling pekat dan hidup, kilau paling kuat");
                         KitRow matRow = null;
                         matPicker = new MaterialPicker
                         {
                             SelectedIndex = matIdx,
-                            Notes = new[] { matNote(0), matNote(1), matNote(2), matNote(3) },
-                            Size = new Size((int)(252 * Ui), (int)(64 * Ui))
+                            Notes = new[] { matNote(0), matNote(1), matNote(2), matNote(3), matNote(4) },
+                            Size = new Size((int)(300 * Ui), (int)(64 * Ui))
                         };
                         matPicker.Picked += i =>
                         {
-                            island.SetChoice("material", i == 0 ? "clear" : i == 2 ? "frost" : i == 3 ? "solid" : "liquid");
+                            island.SetChoice("material", matNames[i]);
                             if (matRow == null) return;
                             matRow.Detail = matNote(i);
                             if (matRow.Field != null) matRow.Field.AccessibleDescription = matRow.Detail;

@@ -256,14 +256,14 @@ namespace Deskmate
             public event Action<int> Picked;
             int hover = -1;
 
-            static readonly GlassKind[] Kinds = { GlassKind.Clear, GlassKind.Liquid, GlassKind.Frost, GlassKind.Solid };
-            static readonly string[] Labels = { "Bening", "Liquid", "Frost", "Solid" };
+            static readonly GlassKind[] Kinds = { GlassKind.Clear, GlassKind.Liquid, GlassKind.Frost, GlassKind.Calm, GlassKind.Solid };
+            static readonly string[] Labels = { "Bening", "Liquid", "Frost", "Kalem", "Solid" };
 
             float Gap { get { return 5f * Ui; } }
 
             RectangleF CellRect(int i)
             {
-                float w = (Width - Gap * 3) / 4f;
+                float w = (Width - Gap * (Kinds.Length - 1)) / Kinds.Length;
                 return new RectangleF(i * (w + Gap), 0, w, Height);
             }
 
@@ -427,8 +427,9 @@ namespace Deskmate
                     int sheen = GlassRecipe.Sheen(kind, Ink.Light);
                     if (sheen > 0) g.FillRectangle(KitInk.BrushOf(Ink.Sheen(sheen)), r.X, r.Y, r.Width, Math.Max(1f, 1.4f * s));
                     // A soft band keeps Liquid glossy and Frost matte
-                    int gloss = kind == GlassKind.Liquid ? 40 : kind == GlassKind.Clear ? 26 : 10;
-                    g.FillRectangle(KitInk.BrushOf(Ink.Sheen(gloss)), r.X, r.Y, r.Width, r.Height * 0.45f);
+                    // Calm has no band at all: an even pane under one hairline
+                    int gloss = kind == GlassKind.Liquid ? 40 : kind == GlassKind.Clear ? 26 : kind == GlassKind.Calm ? 0 : 10;
+                    if (gloss > 0) g.FillRectangle(KitInk.BrushOf(Ink.Sheen(gloss)), r.X, r.Y, r.Width, r.Height * 0.45f);
                 }
                 g.Restore(state);
 

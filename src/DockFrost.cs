@@ -74,9 +74,15 @@ namespace Deskmate
             public void Request(Rectangle rect, Color bg, bool light, bool liquid, bool needImage, bool clear = false,
                 bool core = false, Rectangle coreBar = default(Rectangle), float coreRadius = 0f)
             {
+                Request(rect, bg, light, GlassRecipe.FromFlags(liquid, clear), needImage, core, coreBar, coreRadius);
+            }
+
+            public void Request(Rectangle rect, Color bg, bool light, GlassKind kind, bool needImage,
+                bool core = false, Rectangle coreBar = default(Rectangle), float coreRadius = 0f)
+            {
+                if (kind == GlassKind.Solid) kind = GlassKind.Frost;
                 bool fastSheet = !needImage;
-                GlassKind kind = GlassRecipe.FromFlags(liquid, clear);
-                int div = fastSheet ? 6 : (kind == GlassKind.Liquid || kind == GlassKind.Clear ? 2 : 5);
+                int div = fastSheet ? 6 : (kind == GlassKind.Frost ? 5 : 2);
                 var j = new Job { Rect = rect, Bg = bg, Light = light, Kind = kind, Div = div, NeedImage = needImage, Core = core, CoreBar = coreBar, CoreRadius = coreRadius };
                 var last = Volatile.Read(ref job);
                 Volatile.Write(ref job, j);
@@ -151,6 +157,17 @@ namespace Deskmate
                             if (j.NeedImage) pl.Text = Upscale(tiny, work, j);
                             else { pl.Text = UpscaleSheet(tiny, work, stride, tw, th, j); pl.ReturnText = Return; }
                         }
+                        else if (j.Kind == GlassKind.Calm)
+                        {
+                            if (j.NeedImage)
+                            {
+                                Calm(sig, stride, tw, th, j.Bg, false, work);
+                                pl.Image = Upscale(tiny, work, j);
+                            }
+                            Calm(sig, stride, tw, th, j.Bg, true, work);
+                            if (j.NeedImage) pl.Text = Upscale(tiny, work, j);
+                            else { pl.Text = UpscaleSheet(tiny, work, stride, tw, th, j); pl.ReturnText = Return; }
+                        }
                         else if (j.Kind == GlassKind.Clear)
                         {
                             if (j.NeedImage)
@@ -198,6 +215,46 @@ namespace Deskmate
                         r = Sat(grey, r, sat);
                         gr = Sat(grey, gr, sat);
                         b = Sat(grey, b, sat);
+                        int ir = (int)Math.Max(0, Math.Min(255, r));
+                        int igr = (int)Math.Max(0, Math.Min(255, gr));
+                        int ib = (int)Math.Max(0, Math.Min(255, b));
+                        float linR = Linear[ir], linG = Linear[igr], linB = Linear[ib];
+                        float lum = 0.2126f * linR + 0.7152f * linG + 0.0722f * linB;
+                        float a = light ? (lum < limit ? (limit - lum) / Math.Max(0.001f, lt - lum) : 0)
+                                        : (lum > limit ? (lum - limit) / Math.Max(0.001f, lum - lt) : 0);
+                        a = a < aMin ? aMin : a > aMax ? aMax : a;
+                        dst[i] = ToSrgb(linB + (linBgB - linB) * a);
+                        dst[i + 1] = ToSrgb(linG + (linBgG - linG) * a);
+                        dst[i + 2] = ToSrgb(linR + (linBgR - linR) * a);
+                        dst[i + 3] = 255;
+                    }
+            }
+
+            // Calm: the backdrop's hue, a touch muted, under an even veil in the
+            // wallpaper tint. The veil only thickens where text would lose contrast.
+            static void Calm(byte[] raw, int stride, int w, int h, Color veil, bool text, byte[] dst)
+            {
+                CalmVeil(raw, stride, w, h, GlassRecipe.CalmTint(veil, Luma(veil) > 0.2f), text, dst);
+            }
+
+            // Shared with the island; bg is already the Calm tint
+            internal static void CalmVeil(byte[] raw, int stride, int w, int h, Color bg, bool text, byte[] dst)
+            {
+                float lt = Luma(bg);
+                bool light = lt > 0.2f;
+                float limit = text ? (light ? 0.62f : 0.09f) : (light ? 0.5f : 0.2f);
+                float aMin = text ? (light ? 0.5f : 0.46f) : (light ? 0.36f : 0.32f), aMax = 0.9f, sat = GlassRecipe.Saturation(GlassKind.Calm);
+                Buffer.BlockCopy(raw, 0, dst, 0, raw.Length);
+                BoxBlur(dst, stride, w, h, 2);
+                BoxBlur(dst, stride, w, h, 2);
+                float linBgB = Linear[bg.B], linBgG = Linear[bg.G], linBgR = Linear[bg.R];
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                    {
+                        int i = y * stride + x * 4;
+                        float b = dst[i], gr = dst[i + 1], r = dst[i + 2];
+                        float grey = 0.2126f * r + 0.7152f * gr + 0.0722f * b;
+                        r = Sat(grey, r, sat); gr = Sat(grey, gr, sat); b = Sat(grey, b, sat);
                         int ir = (int)Math.Max(0, Math.Min(255, r));
                         int igr = (int)Math.Max(0, Math.Min(255, gr));
                         int ib = (int)Math.Max(0, Math.Min(255, b));

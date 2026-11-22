@@ -112,13 +112,13 @@ namespace Deskmate
             frostWake.Set();
         }
 
-        // clear, liquid, frost, or solid; glass=0 means solid
+        // clear, liquid, frost, calm, or solid; glass=0 means solid
         string MaterialName
         {
             get
             {
                 string m = settings.Get("material", "");
-                if (m == "clear" || m == "liquid" || m == "frost" || m == "solid") return m;
+                if (m == "clear" || m == "liquid" || m == "frost" || m == "calm" || m == "solid") return m;
                 return settings.GetBool("glass", true) ? "liquid" : "solid";
             }
         }
@@ -130,6 +130,7 @@ namespace Deskmate
         bool LiquidOn { get { return GlassOn && Kind == GlassKind.Liquid; } }
         bool ClearOn { get { return GlassOn && Kind == GlassKind.Clear; } }
         bool FrostOn { get { return GlassOn && Kind == GlassKind.Frost; } }
+        bool CalmOn { get { return GlassOn && Kind == GlassKind.Calm; } }
         bool GpuGlassOn { get { return GlassOn && CompGlass.Available && !WallGlassOn; } }
 
         // Island centre; shift is percent of free half-width
@@ -225,7 +226,8 @@ namespace Deskmate
                 int by = (int)Math.Round(ShellTop * scale) + TopY(sh.Target) - job.Top;
                 job.Bake = new Rectangle(bx, by, bw, bh);
                 // Clear glass already carries its veil in the base pass; only a little extra keeps panel text calm.
-                job.Extra = ClearOn ? 0.04f : PanelExtra;
+                // Calm's pass already lays an even veil; panels only need a whisper more.
+                job.Extra = ClearOn ? 0.04f : CalmOn ? 0.06f : PanelExtra;
                 job.Sheen = (int)Math.Ceiling((PanelTop - 8) * scale);
                 job.Cover = current == View.Panel && page == PageMusic;
                 // Frost freed its copy: send another
@@ -337,6 +339,7 @@ namespace Deskmate
                     next = swap != null && swap.Length == len ? swap : null;
                     if (job.Kind == GlassKind.Liquid) LiquidPass(tiny, sig, job.Bg, job.Light);
                     else if (job.Kind == GlassKind.Clear) ClearPass(tiny, sig, job.Bg, GlassRecipe.ClearVeil(job.Panel, job.Light));
+                    else if (job.Kind == GlassKind.Calm) CalmPass(tiny, sig, job.Bg);
                     var pl = Interlocked.Exchange(ref plateSpare, null) ?? new Plate();
                     pl.Job = job;
                     Plate.Ensure(ref pl.Base, w, h);
@@ -348,8 +351,8 @@ namespace Deskmate
                         float f = FrostDiv / 2f;
                         fg.DrawImage(tiny, new RectangleF(-f, -f, w + f * 2, h + f * 2));
                         fg.CompositingMode = CompositingMode.SourceOver;
-                        // Liquid and Clear tint per pixel already
-                        if (job.Kind != GlassKind.Liquid && job.Kind != GlassKind.Clear)
+                        // Liquid, Clear and Calm tint per pixel already
+                        if (job.Kind == GlassKind.Frost)
                         {
                             float frostTint = ComputeFrostTint(sig, len, job.Bg, job.Light) + GlassRecipe.FrostExtra;
                             if (frostTint > 0.92f) frostTint = 0.92f;
@@ -514,6 +517,17 @@ namespace Deskmate
                     }
                 Marshal.Copy(outPx, 0, data.Scan0, outPx.Length);
             }
+            finally { tiny.UnlockBits(data); }
+        }
+
+        // Calm: same pixel math as the dock, so island and dock read as one pane
+        static void CalmPass(Bitmap tiny, byte[] raw, Color bg)
+        {
+            int w = tiny.Width, h = tiny.Height, stride = w * 4;
+            var outPx = new byte[raw.Length];
+            DockFrost.CalmVeil(raw, stride, w, h, bg, true, outPx);
+            var data = tiny.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
+            try { Marshal.Copy(outPx, 0, data.Scan0, Math.Min(outPx.Length, data.Stride * h)); }
             finally { tiny.UnlockBits(data); }
         }
 
@@ -700,13 +714,13 @@ namespace Deskmate
             bool covered = pl != null && fx <= Math.Floor(bounds.X * scale) && fx + pl.Job.W >= Math.Ceiling(bounds.Right * scale) &&
                            fy <= Math.Floor(bounds.Y * scale) && fy + pl.Job.H >= Math.Ceiling(bounds.Bottom * scale);
             // Frost has base tint; add the rest
-            float extra = baseTone ? (ClearOn ? (current == View.Panel ? 0.04f : 0f) : 1 - (1 - tint) / (1 - BaseTint)) : tint;
+            float extra = baseTone ? (ClearOn ? (current == View.Panel ? 0.04f : 0f) : CalmOn ? (current == View.Panel ? 0.06f : 0f) : 1 - (1 - tint) / (1 - BaseTint)) : tint;
             if (covered && baseTone && current == View.Panel && SurfaceSteady() && PlateFits(pl, fx, fy, bounds, extra)) DrawPlate(pl, fx, fy);
             else
             {
                 // Translucent base outside the frost
                 var veil = baseTone ? Ink.Veil : tone.Bg;
-                float uncovered = Kind == GlassKind.Clear ? 0.10f : Kind == GlassKind.Frost ? 0.70f : 0.58f;
+                float uncovered = Kind == GlassKind.Clear ? 0.10f : Kind == GlassKind.Frost ? 0.70f : Kind == GlassKind.Calm ? 0.50f : 0.58f;
                 if (!covered) g.FillPath(p.B(Ink.A(veil, uncovered)), path);
                 if (pl != null)
                 {
