@@ -50,7 +50,15 @@ namespace Deskmate
             return plan;
         }
 
+        // The pet stands on the owner dock, so it is detached before docks close and re-seated after
         void ApplyDock()
+        {
+            DetachPet();
+            ApplyDockBars();
+            ApplyPet();
+        }
+
+        void ApplyDockBars()
         {
             if (!DockBarOn) { CloseDocks(); return; }
             if (dockWins.Count == 0) { ImportTaskbarPins(false); WatchPins(true); }

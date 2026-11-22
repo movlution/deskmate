@@ -372,6 +372,7 @@ namespace Deskmate
             foreach (var reg in new[] { powerSrc, powerPct, powerDisplay })
                 if (reg != IntPtr.Zero) Native.UnregisterPowerSettingNotification(reg);
             ReleaseApprovals();
+            ClosePet();
             CloseDocks();
             CleanShots(true);
             CloseMirror();

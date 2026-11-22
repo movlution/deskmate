@@ -79,6 +79,7 @@ namespace Deskmate
                 Native.UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, memDC, ref src, 0, ref blend, Native.ULW_ALPHA);
                 Bounds = new Rectangle(at.X, at.Y, cw, ch);
                 SyncDockBackdrop(at.X, at.Y);
+                if (isle != null) isle.PetFollow(this);
                 if (dumpDir != null) DumpDock();
             }
 
