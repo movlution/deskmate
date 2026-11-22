@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build Deskmate.exe from source
         shell: cmd
         run: build.cmd
@@ -29,7 +29,7 @@ jobs:
       - name: SHA-256
         shell: pwsh
         run: (Get-FileHash Deskmate.exe -Algorithm SHA256).Hash
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Deskmate
           path: Deskmate.exe
