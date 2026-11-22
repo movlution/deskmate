@@ -20,6 +20,15 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.11.0",
+                Items = new[]
+                {
+                    new[] { "Pet di dock", "Kucing atau anjing piksel berjalan di atas dock, ikut naik turun saat dock bersembunyi, dan menoleh atau melompat saat disentuh kursor. Nyalakan di Pengaturan › Dock & Taskbar.", "" },
+                    new[] { "Pet dari Aseprite", "Taruh sheet.png dan pet.json hasil Export Sprite Sheet di folder pet, lalu pilih di Hewan. Warna bulu, ukuran, dan kecepatan jalan juga bisa diatur.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.10.0",
                 Items = new[]
                 {

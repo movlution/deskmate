@@ -39,6 +39,7 @@ Halaman yang digabung menampilkan bagian keduanya di bawah judul bagian (huruf t
 ### Dock
 
 - **Dock**: bar aplikasi dan widget di tepi bawah setiap layar, mati sampai dinyalakan. Setiap dock mengikuti layar, ukuran, kecerahan, area kerja, layar penuh, dan sembunyi otomatisnya sendiri. Ganti taskbar Windows (Start, tray, Quick Settings, dan jam pindah ke dock di layar island; taskbar kembali saat dimatikan), bentuk (mengambang atau selebar layar), ukuran ikon, perbesar saat disorot, sembunyikan dock (selalu tampil, otomatis, atau saat tertutup jendela), tetap tampil di desktop kosong, tampil di rekaman layar, sisakan ruang, pratinjau jendela, angka notifikasi, tombol cari dan semua jendela, tombol Windows membuka Deskmate Start, widget (jam, musik, kuota AI dan agen, timer, cuaca, baterai, CPU dan RAM), dan aplikasi tersemat. Saat menggantikan taskbar, **Tampilkan taskbar Windows** di menu island atau klik kanan dock menawarkan durasi 5, 10, 30, atau 60 detik; taskbar asli kembali selama durasi itu lalu dock menggantikannya lagi. Pilihan **Ganti taskbar Windows** tidak berubah, dan **Sembunyikan taskbar Windows** tersedia untuk mengakhiri lebih cepat.
+- **Pet di dock**: hewan piksel kecil yang berjalan di atas dock, atau di tepi bawah layar tanpa dock; mati sampai dinyalakan. Pilih hewan (kucing, anjing, atau pet buatan sendiri), warna bulu, ukuran (kecil, sedang, besar), dan kecepatan jalan. **Folder pet** membuka `%APPDATA%\Deskmate\pets\`; satu folder per pet berisi `sheet.png` dan `pet.json` dari **Export Sprite Sheet** di Aseprite (JSON Array atau Hash). Tag `walk` wajib, `idle`, `sit`, dan `sleep` boleh tidak ada; tanpa tag sama sekali, semua frame dipakai untuk berjalan. Pet yang gagal dimuat diganti kucing dan alasannya tampil di bawah **Hewan**.
 
 ### Tugas dan catatan
 
@@ -112,6 +113,11 @@ Semua kunci di `%APPDATA%\Deskmate\settings.ini` (ubah saat Deskmate tidak berja
 | `dockbar.capture` | `0` | Dock ikut screenshot dan screen share; kacanya diganti latar polos |
 | `dockbar.w.clock`, `dockbar.w.media`, `dockbar.w.ai`, `dockbar.w.timer`, `dockbar.w.weather`, `dockbar.w.battery`, `dockbar.w.system` | `1` (`system`: `0`) | Widget dock |
 | `dockbar.pins` | dari taskbar | Aplikasi tersemat dipisah `\|`: shortcut, exe, atau `shell:AppsFolder\<id>`; diisi dari taskbar Windows saat dock pertama kali nyala |
+| `pet.on` | `0` | Pet berjalan di atas dock, atau di tepi bawah layar tanpa dock |
+| `pet.kind` | `cat` | `cat`, `dog`, atau `custom:<nama folder>` di `%APPDATA%\Deskmate\pets\` |
+| `pet.color` | `orange` | Warna bulu hewan bawaan: `orange`, `brown`, `gray`, `black`, `cream` |
+| `pet.size` | `m` | Tinggi pet: `s` 32 px, `m` 48 px, `l` 64 px, dikali skala layar |
+| `pet.speed` | `100` | Kecepatan jalan, persen, `50` sampai `200` |
 | `notif.muted` | kosong | Aplikasi yang banner Windows-nya dimatikan oleh Deskmate penerima utama |
 | `panel.width` | `560` | Lebar panel, `440` sampai `640`; dari sekitar `570` Ringkasan memakai tiga kolom |
 | `panel.tabs` | semua | Tab yang tampil dan urutannya: `home`, `music`, `agents`, `class`, `messages`, `shelf`, `control`, `remind`, `convert`, `phone`. Kunci lama `tabs` dipindahkan sekali |

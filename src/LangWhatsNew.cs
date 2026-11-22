@@ -8,6 +8,11 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.11.x
+            en.Add("Pet di dock", "Dock pet");
+            en.Add("Kucing atau anjing piksel berjalan di atas dock, ikut naik turun saat dock bersembunyi, dan menoleh atau melompat saat disentuh kursor. Nyalakan di Pengaturan › Dock & Taskbar.", "A pixel cat or dog walks on top of the Dock, rides it up and down when it hides, and turns or hops when you point at it. Turn it on in Settings › Dock & Taskbar.");
+            en.Add("Pet dari Aseprite", "Pets from Aseprite");
+            en.Add("Taruh sheet.png dan pet.json hasil Export Sprite Sheet di folder pet, lalu pilih di Hewan. Warna bulu, ukuran, dan kecepatan jalan juga bisa diatur.", "Put the sheet.png and pet.json from Export Sprite Sheet in the pet folder, then pick it under Animal. Fur color, size, and walking speed can be set too.");
             // What's new 2.10.x
             en.Add("Kaca Kalem", "Calm glass");
             en.Add("Material kaca baru: warna mengikuti wallpaper, diredam, tanpa kilau, dengan garis tepi tipis yang rata.", "A new glass material: tinted from the wallpaper, muted, no sheen, with a thin even rim.");
