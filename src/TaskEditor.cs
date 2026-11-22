@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -12,7 +12,12 @@ namespace Deskmate
         readonly KitPopup date = new KitPopup();
         readonly KitPopup time = new KitPopup();
         readonly KitCheck star = new KitCheck { Text = Lang.T("Prioritas") };
-        readonly KitCheck done = new KitCheck { Text = Lang.T("Selesai") };
+        readonly KitPopup done = new KitPopup { AccessibleName = Lang.T("Status") };
+        readonly Label statusLabel = new Label { Text = Lang.T("Status"), AutoSize = true };
+        readonly Label dueLabel = new Label { Text = Lang.T("Tenggat"), AutoSize = true };
+        readonly Label priorityLabel = new Label { Text = Lang.T("Prioritas"), AutoSize = true };
+        readonly Panel titleFrame = new Panel { BorderStyle = BorderStyle.FixedSingle };
+        readonly Panel noteFrame = new Panel { BorderStyle = BorderStyle.FixedSingle };
         readonly Label warning = new Label { AutoSize = false };
         bool titleInvalid;
         readonly KitButton save = new KitButton { Text = Lang.T("Simpan"), Primary = true };
@@ -25,6 +30,13 @@ namespace Deskmate
         readonly KitButton blocks = new KitButton { Text = Lang.T("Blok") + " +" };
         readonly KitButton bold = new KitButton { Text = "B", AccessibleName = Lang.T("Format tebal") };
         readonly KitButton italic = new KitButton { Text = "I", AccessibleName = Lang.T("Format miring") };
+        // Task fields, a shared notes toolbar, and a fixed action footer
+        readonly Panel ribbon = new Panel(), canvas = new Panel(), page = new Panel(), footerBar = new Panel();
+        readonly Label ribbonLine = new Label { AutoSize = false }, footerLine = new Label { AutoSize = false };
+        readonly Label sep1 = new Label { AutoSize = false }, sep2 = new Label { AutoSize = false };
+        readonly KitButton addImage = new KitButton { Text = Lang.T("Tambah gambar") };
+        readonly KitButton addTable = new KitButton { Text = Lang.T("Tambah tabel") };
+        readonly KitButton tableMenu = new KitButton { Text = Lang.T("Atur tabel ▾"), Enabled = false };
         readonly string originalNotes, originalTitle, originalList;
         readonly DateTime? originalDue;
         readonly bool originalStar, originalDone;
@@ -37,12 +49,12 @@ namespace Deskmate
         const int DaysShown = 60;
         DateTime chosen, firstDay;
         TimeSpan[] timeSlots;
-        Font uiFont, fSmall;
+        Font uiFont, fSmall, fTitle;
 
         public string TaskTitle { get { return title.Text.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ').Trim(); } }
         public DateTime? Due { get { return hasDue.Checked ? (DateTime?)(chosen.Date + timeSlots[time.Selected]) : null; } }
         public bool Star { get { return star.Checked; } }
-        public bool Done { get { return done.Checked; } }
+        public bool Done { get { return done.Selected == 1; } }
         public string ListName { get { return listPick.Selected >= 0 && listPick.Items != null && listPick.Selected < listPick.Items.Length ? listPick.Items[listPick.Selected] : TaskLists.Default; } }
         public string Notes { get; private set; }
         internal bool NotesChanged { get { return Notes != originalNotes; } }
@@ -69,7 +81,12 @@ namespace Deskmate
             var fallback = DateTime.Today.AddDays(1);
             chosen = item != null && item.Due.HasValue ? item.Due.Value.Date : fallback;
             hasDue.Checked = item != null && item.Due.HasValue;
-            star.Checked = item != null && item.Star; done.Checked = item != null && item.Done;
+            star.Checked = item != null && item.Star;
+            done.Items = new[] { Lang.English ? "Not completed" : "Belum selesai", Lang.T("Selesai") };
+            done.Selected = item != null && item.Done ? 1 : 0;
+            listPick.AccessibleName = Lang.T("Daftar");
+            hasDue.AccessibleName = Lang.T("Tenggat");
+            hasDue.Text = "";
             var loadedLists = TaskLists.Load();
             var listNames = new System.Collections.Generic.List<string>();
             foreach (var l in loadedLists)
@@ -119,8 +136,22 @@ namespace Deskmate
             Disposed += delegate { tips.Dispose(); };
             bold.Click += delegate { notesBox.ToggleBold(); };
             italic.Click += delegate { notesBox.ToggleItalic(); };
-            Controls.AddRange(new Control[] { titleLabel, title, listLabel, listPick, hasDue, date, time, star, done,
-                notesLabel, bold, italic, blocks, notesBox, warning, cancel, save });
+            addImage.Click += delegate { notesBox.PickImage(); };
+            addTable.Click += delegate { notesBox.PickTable(); };
+            tableMenu.Click += delegate { notesBox.OpenTableMenu(tableMenu); };
+            notesBox.TableFocusChanged = delegate(bool inTable) { tableMenu.Enabled = inTable; };
+            notesBox.Notice = delegate(string text) { warning.Text = text; };
+            tips.SetToolTip(tableMenu, Lang.T("Klik sel untuk mengatur tabel"));
+            title.BorderStyle = BorderStyle.None;
+            titleLabel.Visible = false;
+            titleFrame.Controls.Add(title);
+            noteFrame.Controls.AddRange(new Control[] { ribbon, notesBox });
+            ribbon.Controls.AddRange(new Control[] { bold, italic, sep1, blocks, sep2, addImage, addTable, tableMenu, ribbonLine });
+            page.Controls.AddRange(new Control[] { titleLabel, titleFrame, listLabel, listPick, statusLabel, done, dueLabel, hasDue, date, time,
+                priorityLabel, star, notesLabel, noteFrame });
+            canvas.Controls.Add(page);
+            footerBar.Controls.AddRange(new Control[] { footerLine, warning, cancel, save });
+            Controls.AddRange(new Control[] { canvas, footerBar });
             Shown += delegate { title.Focus(); title.SelectAll(); };
         }
 
@@ -208,8 +239,8 @@ namespace Deskmate
             {
                 Rectangle area = Screen.FromHandle(Handle).WorkingArea;
                 int borderWidth = Width - ClientSize.Width, borderHeight = Height - ClientSize.Height;
-                MinimumSize = new Size(Math.Min(area.Width, (int)(520 * Ui) + borderWidth),
-                    Math.Min(area.Height, (int)(410 * Ui) + borderHeight));
+                MinimumSize = new Size(Math.Min(area.Width, (int)(680 * Ui) + borderWidth),
+                    Math.Min(area.Height, (int)(540 * Ui) + borderHeight));
                 ClientSize = new Size(Math.Min(area.Width - borderWidth, (int)(800 * Ui)),
                     Math.Min(area.Height - borderHeight, (int)(695 * Ui)));
                 layoutReady = true;
@@ -229,51 +260,88 @@ namespace Deskmate
             if (!layoutReady) return;
             if (uiFont == null) uiFont = UiFont(14);
             if (fSmall == null) fSmall = UiFont(13);
+            if (fTitle == null) fTitle = new Font(Ink.MenuFamily, 24 * Ui, FontStyle.Bold, GraphicsUnit.Pixel);
             Font = uiFont;
             BackColor = KitInk.Window;
             ForeColor = KitInk.Text;
-            titleLabel.Font = listLabel.Font = notesLabel.Font = fSmall;
+            titleLabel.Font = listLabel.Font = notesLabel.Font = statusLabel.Font = dueLabel.Font = priorityLabel.Font = uiFont;
             listPick.Font = date.Font = time.Font = star.Font = done.Font = hasDue.Font = fSmall;
+            bold.Font = italic.Font = blocks.Font = fSmall;
+            // Title reads as the page heading, not a form field
+            addImage.Font = addTable.Font = tableMenu.Font = fSmall;
+            title.Font = fTitle;
+            // Grey canvas, raised sheet: the sheet is the only bright surface
+            ribbon.BackColor = footerBar.BackColor = KitInk.Window;
+            canvas.BackColor = page.BackColor = KitInk.Window;
+            titleFrame.BackColor = noteFrame.BackColor = KitInk.Group;
             title.BackColor = KitInk.Group;
             title.ForeColor = KitInk.Text;
+            listLabel.BackColor = notesLabel.BackColor = KitInk.Group;
+            listLabel.ForeColor = notesLabel.ForeColor = KitInk.Sub;
+            warning.BackColor = KitInk.Window;
+            ribbonLine.BackColor = footerLine.BackColor = sep1.BackColor = sep2.BackColor = KitInk.Line;
             warning.ForeColor = Ink.Base.Negative;
             LayoutFields();
+            // Body sits on the page itself, like a document
             notesBox.SetTheme(KitInk.Group, KitInk.Text, KitInk.Sub, KitInk.Hover);
             notesBox.LoadMarkdown(originalNotes);
         }
 
         void LayoutFields()
         {
-            int margin = Px(20), gap = Px(8);
-            int width = Math.Max(1, Math.Min(Px(1120), ClientSize.Width - 2 * margin));
-            margin = Math.Max(margin, (ClientSize.Width - width) / 2);
-            int right = margin + width;
-            int col = (width - 2 * gap) / 3;
-            int y = Px(15);
-            titleLabel.Location = new Point(margin, y);
-            title.SetBounds(margin, y + Px(23), width, Px(31));
-            y = Px(77);
-            listLabel.Location = new Point(margin, y + Px(4));
-            hasDue.SetBounds(margin + col + gap, y, col, Px(25));
-            y += Px(30);
-            listPick.SetBounds(margin, y, col, Px(30));
-            date.SetBounds(margin + col + gap, y, col, Px(30));
-            time.SetBounds(margin + 2 * (col + gap), y, col, Px(30));
-            star.SetBounds(margin, y + Px(36), col, Px(27));
-            done.SetBounds(margin + col + gap, y + Px(36), col, Px(27));
-            y = Px(185);
-            notesLabel.Location = new Point(margin, y + Px(6));
-            blocks.SetBounds(right - Px(86), y, Px(86), Px(29));
-            italic.SetBounds(blocks.Left - gap - Px(34), y, Px(34), Px(29));
-            bold.SetBounds(italic.Left - gap - Px(34), y, Px(34), Px(29));
-            int footer = ClientSize.Height - Px(51);
-            int editorTop = y + Px(37);
-            notesBox.SetBounds(margin, editorTop, width, Math.Max(1, footer - editorTop - Px(14)));
-            save.SetBounds(right - Px(100), footer, Px(100), Px(34));
-            cancel.SetBounds(save.Left - gap - Px(100), footer, Px(100), Px(34));
-            warning.SetBounds(margin, footer, Math.Max(1, cancel.Left - margin - gap), Px(38));
+            int w = ClientSize.Width, h = ClientSize.Height, margin = Px(18), gap = Px(8);
+            int width = Math.Max(1, w - margin * 2), right = margin + width;
+            int line = Math.Max(1, Px(1)), foot = Px(54), footTop = Math.Max(0, h - foot);
+            canvas.SetBounds(0, 0, w, footTop);
+            page.SetBounds(0, 0, w, footTop);
+            footerBar.SetBounds(0, footTop, w, foot);
+            titleFrame.SetBounds(margin, Px(18), width, Px(46));
+            title.SetBounds(Px(13), (titleFrame.ClientSize.Height - title.PreferredHeight) / 2,
+                Math.Max(1, titleFrame.ClientSize.Width - Px(26)), title.PreferredHeight);
+
+            int gutter = Px(42), col = Math.Max(1, (width - gutter) / 2), x2 = right - col;
+            int row = Px(34), y = Px(80);
+            listLabel.Location = new Point(margin, y);
+            statusLabel.Location = new Point(x2, y);
+            listPick.SetBounds(margin, y + Px(21), col, row);
+            done.SetBounds(x2, y + Px(21), col, row);
+            y += Px(70);
+            dueLabel.Location = new Point(margin, y);
+            priorityLabel.Location = new Point(x2, y);
+            y += Px(21);
+            int check = Px(26), timeW = Math.Min(Px(100), col / 3);
+            hasDue.SetBounds(margin, y, check, row);
+            date.SetBounds(margin + check + gap, y, Math.Max(1, col - check - timeW - 2 * gap), row);
+            time.SetBounds(margin + col - timeW, y, timeW, row);
+            star.SetBounds(x2, y, col, row);
+
+            y += row + Px(18);
+            notesLabel.Location = new Point(margin, y);
+            y += Px(23);
+            noteFrame.SetBounds(margin, y, width, Math.Max(1, footTop - y - margin));
+            int rw = noteFrame.ClientSize.Width, btn = Px(30), inset = Px(8), x = inset, top = inset;
+            foreach (Control tool in new Control[] { bold, italic, sep1, blocks, addImage, addTable, sep2, tableMenu })
+            {
+                bool separator = tool == sep1 || tool == sep2;
+                int tw = separator ? line : tool == bold || tool == italic ? btn : Fit(tool);
+                if (x > inset && x + tw > rw - inset) { x = inset; top += btn + Px(4); }
+                tool.SetBounds(x, top + (separator ? Px(5) : 0), tw, separator ? btn - Px(10) : btn);
+                x += tw + Px(5);
+            }
+            int ribbonH = top + btn + inset;
+            ribbon.SetBounds(0, 0, rw, ribbonH);
+            ribbonLine.SetBounds(0, ribbonH - line, rw, line);
+            notesBox.SetBounds(0, ribbonH, rw, Math.Max(1, noteFrame.ClientSize.Height - ribbonH));
+
+            footerLine.SetBounds(0, 0, w, line);
+            int fy = (foot - row) / 2;
+            save.SetBounds(right - Px(96), fy, Px(96), row);
+            cancel.SetBounds(save.Left - gap - Px(82), fy, Px(82), row);
+            warning.SetBounds(margin, fy, Math.Max(1, cancel.Left - margin - gap), row);
             warning.TextAlign = ContentAlignment.MiddleLeft;
         }
+
+        int Fit(Control c) { return TextRenderer.MeasureText(c.Text, fSmall ?? Font).Width + Px(18); }
 
         int Px(int value) { return (int)Math.Round(value * Ui); }
 
@@ -294,6 +362,7 @@ namespace Deskmate
             {
                 if (uiFont != null) uiFont.Dispose();
                 if (fSmall != null) fSmall.Dispose();
+                if (fTitle != null) fTitle.Dispose();
             }
         }
     }

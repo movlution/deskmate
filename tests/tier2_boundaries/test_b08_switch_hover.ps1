@@ -72,6 +72,30 @@ Describe "Tier 2 Boundary Suite: Feature 8 - KitSwitch Dynamics & Boundaries" {
         $sw.Dispose()
     }
 
+    It "Snaps both live controls before the next timer tick under reduced motion" {
+        $prior = Get-DeskmateStaticField "Anim" "Reduced"
+        $sw = New-DeskmateControl "KitSwitch" @{}
+        $seg = New-DeskmateControl "KitSegmented" @{}
+        try {
+            Set-DeskmateStaticField "Anim" "Reduced" $true
+            $sw.CreateControl()
+            $seg.CreateControl()
+            $seg.Items = [string[]]@("A", "B")
+            $sw.Checked = $true
+            $seg.Selected = 1
+            foreach ($pair in @(@($sw, "knob"), @($seg, "glide"))) {
+                $ctrl = $pair[0]
+                $flags = [Reflection.BindingFlags]'Instance,NonPublic'
+                Assert-Equal ($ctrl.GetType().GetField($pair[1], $flags).GetValue($ctrl)) 1 "Thumb at destination"
+                Assert-False ($ctrl.GetType().GetField("anim", $flags).GetValue($ctrl).Enabled) "No pending animation"
+            }
+        } finally {
+            $sw.Dispose()
+            $seg.Dispose()
+            Set-DeskmateStaticField "Anim" "Reduced" $prior
+        }
+    }
+
     It "Respects system Anim.Reduced motion invariant during knob animation" {
         # Test with Anim.Reduced = true
         Set-DeskmateStaticField "Anim" "Reduced" $true

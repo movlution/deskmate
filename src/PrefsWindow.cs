@@ -21,6 +21,32 @@ namespace Deskmate
             string focusPart;
             readonly Dictionary<string, int> partTop = new Dictionary<string, int>();
             readonly TextBox search = new KitText();
+            readonly Timer searchTimer = new Timer { Interval = 140 };
+            string appliedSearch = "";
+            // Row text per part, built once: typing filters this, and only matching parts build controls
+            readonly Dictionary<string, List<string>> searchIndex = new Dictionary<string, List<string>>();
+
+            void EnsureSearchIndex()
+            {
+                foreach (var s in Sections)
+                    foreach (var part in PartsOf(s[0]))
+                    {
+                        if (searchIndex.ContainsKey(part)) continue;
+                        var rows = new List<KitRow>();
+                        Build(part, rows, false);
+                        var text = new List<string>();
+                        foreach (var r in rows) { text.Add(r.Title + "\n" + r.Detail); if (r.Field != null) r.Field.Dispose(); r.Dispose(); }
+                        searchIndex[part] = text;
+                    }
+            }
+
+            bool PartMatches(string part, string q)
+            {
+                List<string> text;
+                if (!searchIndex.TryGetValue(part, out text)) return true;
+                foreach (var t in text) if (t.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
+                return false;
+            }
             readonly Panel content = new Panel();
             readonly SideList side = new SideList();
             bool building;
@@ -146,23 +172,24 @@ namespace Deskmate
                 FormClosed += delegate { preview.Stop(); island.PreviewLayout(false); };
                 content.AutoScroll = true;
                 search.BorderStyle = BorderStyle.None;
+                searchTimer.Tick += delegate { ApplySearch(); };
                 search.TextChanged += delegate
                 {
+                    searchTimer.Stop();
                     if (building) return;
-                    bool typing = search.Text.Trim().Length > 0;
-                    // Clearing the field returns to where it started
-                    if (typing && section != "search") beforeSearch = section;
-                    section = typing ? "search" : section == "search" ? beforeSearch : section;
                     Invalidate(Rectangle.Ceiling(SearchWell()));
-                    Fill();
+                    string query = search.Text.Trim();
+                    if (query.Length == 0) ApplySearch();
+                    else if (query != appliedSearch) searchTimer.Start();
                 };
-                search.GotFocus += delegate { Invalidate(new Rectangle(0, 0, (int)(SideW * Ui), (int)(52 * Ui))); };
+                search.GotFocus += delegate { BeginInvoke(new Action(EnsureSearchIndex)); Invalidate(new Rectangle(0, 0, (int)(SideW * Ui), (int)(52 * Ui))); };
                 search.LostFocus += delegate { Invalidate(new Rectangle(0, 0, (int)(SideW * Ui), (int)(52 * Ui))); };
                 side.Picked += id =>
                 {
                     section = NormalizeSection(id);
                     focusPart = null;
                     building = true;
+                    appliedSearch = "";
                     search.Text = "";
                     building = false;
                     Invalidate(Rectangle.Ceiling(SearchWell()));
@@ -170,7 +197,12 @@ namespace Deskmate
                 };
                 search.KeyDown += delegate(object s, KeyEventArgs e)
                 {
-                    if (e.KeyCode == Keys.Escape && search.Text.Length > 0)
+                    if (e.KeyCode == Keys.Enter && searchTimer.Enabled)
+                    {
+                        ApplySearch();
+                        e.SuppressKeyPress = true;
+                    }
+                    else if (e.KeyCode == Keys.Escape && search.Text.Length > 0)
                     {
                         search.Text = "";
                         e.SuppressKeyPress = true;
@@ -179,6 +211,22 @@ namespace Deskmate
                 Controls.Add(search);
                 Controls.Add(side);
                 Controls.Add(content);
+            }
+
+            void ApplySearch()
+            {
+                searchTimer.Stop();
+                if (building || IsDisposed) return;
+                string query = search.Text.Trim();
+                if (query == appliedSearch) return;
+                appliedSearch = query;
+                if (query.Length > 0)
+                {
+                    if (section != "search") beforeSearch = section;
+                    section = "search";
+                }
+                else if (section == "search") section = beforeSearch;
+                Fill();
             }
 
             protected override void OnShown(EventArgs e)
@@ -199,7 +247,7 @@ namespace Deskmate
 
             public void RefreshNotifApps()
             {
-                if (section != "messages" && section != "search") return;
+                if (searchTimer.Enabled || (section != "messages" && section != "search")) return;
                 var at = content.AutoScrollPosition;
                 Fill();
                 content.AutoScrollPosition = new Point(-at.X, -at.Y);
@@ -210,6 +258,7 @@ namespace Deskmate
                 section = NormalizeSection(id);
                 focusPart = string.IsNullOrEmpty(id) ? null : AliasOf(id);
                 building = true;
+                appliedSearch = "";
                 search.Text = "";
                 building = false;
                 Invalidate(Rectangle.Ceiling(SearchWell()));
@@ -247,6 +296,7 @@ namespace Deskmate
                 search.ForeColor = KitInk.Text;
                 // Hint stays while focused
                 SendMessage(search.Handle, 0x1501, (IntPtr)1, Lang.T("Cari pengaturan"));
+                searchIndex.Clear();
                 Place();
                 Fill();
                 Invalidate(true);
@@ -345,16 +395,17 @@ namespace Deskmate
                 partTop.Clear();
                 if (section == "search")
                 {
-                    string q = search.Text.Trim();
+                    string q = appliedSearch;
                     Heading(Lang.F("Hasil untuk \"{0}\"", q));
                     int found = 0;
+                    EnsureSearchIndex();
                     foreach (var s in Sections)
                     {
-                        var rows = new List<KitRow>();
-                        foreach (var part in PartsOf(s[0])) Build(part, rows, false);
                         string kw;
                         SectionKeywords.TryGetValue(s[0], out kw);
                         bool secMatch = Lang.T(s[1]).IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0 || (kw != null && kw.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0);
+                        var rows = new List<KitRow>();
+                        foreach (var part in PartsOf(s[0])) if (secMatch || PartMatches(part, q)) Build(part, rows, false);
                         var hits = secMatch ? rows : rows.FindAll(r => r.Title.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0 || r.Detail.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0);
                         if (!secMatch) foreach (var r in rows) if (!hits.Contains(r)) r.Dispose();
                         if (hits.Count == 0) continue;

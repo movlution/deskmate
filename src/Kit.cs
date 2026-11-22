@@ -216,6 +216,21 @@ namespace Deskmate
         protected void Fill(Graphics g, RectangleF r, float radius, Color c) { KitInk.FillRound(g, r, radius, c); }
     }
 
+    // Timers only request frames. Late frames sample the current time, not the next step.
+    struct KitGlide
+    {
+        float from;
+        int start;
+        public void Begin(float position) { from = position; start = Environment.TickCount; }
+
+        public float Sample(float target, float seconds)
+        {
+            float t = unchecked((uint)(Environment.TickCount - start)) / (1000f * Anim.Response(seconds));
+            if (Anim.Reduced || t >= 1f) return target;
+            return from + (target - from) * Ease.OutCubic(t);
+        }
+    }
+
     // iOS switch over CheckBox for readers
     class KitSwitch : CheckBox
     {
@@ -226,6 +241,7 @@ namespace Deskmate
         protected override void OnKeyUp(KeyEventArgs e) { if (KitInk.ByMouse) { KitInk.ByMouse = false; Invalidate(); } base.OnKeyUp(e); }
 
         float knob;
+        KitGlide travel;
         readonly Timer anim = new Timer { Interval = 15 };
 
         public KitSwitch()
@@ -236,11 +252,21 @@ namespace Deskmate
             anim.Tick += delegate
             {
                 float want = Checked ? 1 : 0;
-                knob += (want - knob) * (Anim.Reduced ? 1f : 0.35f);
-                if (Math.Abs(want - knob) < 0.01f) { knob = want; anim.Stop(); }
+                knob = travel.Sample(want, 0.15f);
+                if (knob == want) anim.Stop();
                 Invalidate();
             };
-            CheckedChanged += delegate { anim.Start(); };
+            CheckedChanged += delegate
+            {
+                float target = Checked ? 1 : 0;
+                if (!IsHandleCreated || !Visible || Anim.Reduced || knob == target)
+                {
+                    knob = target;
+                    anim.Stop();
+                }
+                else { travel.Begin(knob); anim.Start(); }
+                Invalidate();
+            };
         }
 
         protected override void OnCreateControl() { base.OnCreateControl(); knob = Checked ? 1 : 0; }
@@ -262,6 +288,8 @@ namespace Deskmate
             float r = (hovered && live ? 8.5f : 8f) * s;
             float cx = track.X + 11 * s + knob * 18 * s, cy = track.Y + 11 * s;
             var dot = new RectangleF(cx - r, cy - r, r * 2, r * 2);
+            // A small stretch in transit, round again at both stops.
+            if (live && !Anim.Reduced) dot.Inflate(6f * s * knob * (1f - knob), 0);
             Color knobColor = live ? Ink.Mix(hovered ? Ink.Mix(KitInk.Sub, KitInk.Text, 0.35f) : KitInk.Sub, KitInk.OnAccent, knob) : KitInk.Disabled;
             if (live) KitInk.Lift(g, dot, r, s * 0.6f);
             KitInk.FillRound(g, dot, r, knobColor);
@@ -283,6 +311,7 @@ namespace Deskmate
         int selected, hot = -1;
         // Thumb position in segments, gliding toward the pick; -1 until first paint
         float glide = -1;
+        KitGlide travel;
         readonly Timer anim = new Timer { Interval = 15 };
         public event Action<int> Changed;
 
@@ -290,8 +319,8 @@ namespace Deskmate
         {
             anim.Tick += delegate
             {
-                glide += (selected - glide) * (Anim.Reduced ? 1f : 0.3f);
-                if (Math.Abs(selected - glide) < 0.01f) { glide = selected; anim.Stop(); }
+                glide = travel.Sample(selected, 0.18f);
+                if (glide == selected) anim.Stop();
                 Invalidate();
             };
         }
@@ -303,7 +332,9 @@ namespace Deskmate
             {
                 if (value == selected) return;
                 selected = value;
-                if (IsHandleCreated && glide >= 0) anim.Start(); else glide = -1;
+                if (IsHandleCreated && Visible && glide >= 0 && glide != selected && !Anim.Reduced)
+                { travel.Begin(glide); anim.Start(); }
+                else { glide = selected; anim.Stop(); }
                 Invalidate();
                 AccessibilityNotifyClients(AccessibleEvents.Selection, selected);
             }

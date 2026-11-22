@@ -305,7 +305,7 @@ namespace Deskmate
                 return b;
             }
 
-            protected override void Dispose(bool disposing) { if (disposing) preview.Dispose(); base.Dispose(disposing); }
+            protected override void Dispose(bool disposing) { if (disposing) { searchTimer.Dispose(); preview.Dispose(); } base.Dispose(disposing); }
         }
     }
 }

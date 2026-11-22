@@ -13,8 +13,16 @@ namespace Deskmate
     sealed class TaskNoteEditor : ElementHost
     {
         readonly RichTextBox editor;
+        readonly System.Windows.Controls.TextBlock placeholder = new System.Windows.Controls.TextBlock
+        {
+            IsHitTestVisible = false, Margin = new Wpf.Thickness(14, 8, 14, 0),
+            VerticalAlignment = Wpf.VerticalAlignment.Top, FontSize = 14
+        };
         string initialMarkdown;
         internal Action OpenBlockMenu, SaveTask, CancelTask;
+        // The host's ribbon owns the insert buttons; these report back to it
+        internal Action<bool> TableFocusChanged;
+        internal Action<string> Notice;
 
         public TaskNoteEditor()
         {
@@ -68,7 +76,7 @@ namespace Deskmate
             ((Wpf.FrameworkElement)Child).Resources["EditorHover"] = Brush(header);
             ((Wpf.FrameworkElement)Child).Resources["EditorBorder"] = Brush(Ink.Mix(background, text, 0.30f));
             tableTools.Background = Brush(background);
-            tableHint.Foreground = Brush(muted);
+            tableHint.Foreground = placeholder.Foreground = Brush(muted);
             tableError.Foreground = Brush(Ink.Base.Negative);
         }
 
@@ -261,7 +269,13 @@ namespace Deskmate
             toolbar.Children.Add(tableSize);
             System.Windows.Controls.DockPanel.SetDock(toolbar, System.Windows.Controls.Dock.Top);
             root.Children.Add(toolbar);
-            root.Children.Add(editor);
+            var body = new System.Windows.Controls.Grid();
+            body.Children.Add(editor);
+            placeholder.Text = Lang.English ? "Write task notes…" : "Tulis catatan tugas…";
+            body.Children.Add(placeholder);
+            root.Children.Add(body);
+            editor.TextChanged += delegate { UpdatePlaceholder(); };
+            UpdatePlaceholder();
             Child = root;
             root.Resources.Add(typeof(System.Windows.Controls.Button),
                 (Wpf.Style)Wpf.Markup.XamlReader.Parse(
@@ -291,14 +305,9 @@ namespace Deskmate
                 </Style>"));
             tableHint.Margin = new Wpf.Thickness(4, 0, 0, 6);
             tableHint.FontSize = 12;
-            var addTable = new System.Windows.Controls.Button();
-            SetupButton(addTable, "Tambah tabel", ShowTablePicker);
             SetupButton(manageTable, "Atur tabel ▾", ShowTableMenu);
-            var addImage = new System.Windows.Controls.Button();
-            SetupButton(addImage, "Tambah gambar", ChooseImage);
-            tableTools.Children.Add(addImage);
-            tableTools.Children.Add(addTable);
-            tableTools.Children.Add(manageTable);
+            // Insert tools live in the host ribbon; only the table size row shows here
+            tableTools.Visibility = Wpf.Visibility.Collapsed;
             tableTools.Children.Add(tableHint);
 
             AddSizeField("Baris", rowCount);
@@ -325,6 +334,16 @@ namespace Deskmate
                     || e.UndoAction == System.Windows.Controls.UndoAction.Redo) UpdateDocumentWidth();
             };
             UpdateTableTools();
+        }
+
+        void UpdatePlaceholder()
+        {
+            var paragraph = editor.Document.Blocks.FirstBlock as Documents.Paragraph;
+            var inline = paragraph == null ? null : paragraph.Inlines.FirstInline;
+            var run = inline as Documents.Run;
+            bool empty = editor.Document.Blocks.Count == 0 || (paragraph != null && paragraph.NextBlock == null &&
+                (inline == null || (run != null && run.NextInline == null && run.Text.Length == 0)));
+            placeholder.Visibility = empty ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         }
 
         static void SetupButton(System.Windows.Controls.Button button, string label, Action click)
@@ -368,7 +387,12 @@ namespace Deskmate
         void UpdateTableTools()
         {
             var cell = FindCell();
-            manageTable.IsEnabled = cell != null;
+            bool inTable = cell != null;
+            if (manageTable.IsEnabled != inTable || TableFocusChanged == null)
+            {
+                manageTable.IsEnabled = inTable;
+                if (TableFocusChanged != null) TableFocusChanged(inTable);
+            }
             tableHint.Text = Lang.T(cell == null ? "Klik sel untuk mengatur tabel"
                 : "Tab pindah sel · Enter di sel terakhir keluar dari tabel");
         }
@@ -441,8 +465,20 @@ namespace Deskmate
                 if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(menu.Dispose));
                 else menu.Dispose();
             };
-            var point = manageTable.PointToScreen(new Wpf.Point(0, manageTable.ActualHeight + 2));
-            menu.Show(this, PointToClient(ToDrawingPoint(point)));
+            if (tableMenuAnchor != null) menu.Show(tableMenuAnchor, new Point(0, tableMenuAnchor.Height + 3));
+            else menu.Show(this, PointToClient(ToDrawingPoint(manageTable.PointToScreen(new Wpf.Point(0, manageTable.ActualHeight + 2)))));
+        }
+
+        Control tableMenuAnchor;
+        internal void PickImage() { ChooseImage(); }
+        internal void PickTable() { ShowTablePicker(); }
+        internal void OpenTableMenu(Control anchor) { tableMenuAnchor = anchor; try { ShowTableMenu(); } finally { tableMenuAnchor = null; } }
+
+        void ImageFailed()
+        {
+            string text = Lang.T("Gambar tidak valid atau melebihi 4 MB / 16 megapiksel");
+            tableHint.Text = text;
+            if (Notice != null) Notice(text);
         }
 
         internal void ChangeTable(string command, int offset, Documents.TableCell target = null)
@@ -582,7 +618,7 @@ namespace Deskmate
                         throw new System.IO.InvalidDataException("Image must be at most 4 MB.");
                     InsertImage(TaskNoteImages.Decode(System.IO.File.ReadAllBytes(dialog.FileName)));
                 }
-                catch (Exception) { tableHint.Text = Lang.T("Gambar tidak valid atau melebihi 4 MB / 16 megapiksel"); }
+                catch (Exception) { ImageFailed(); }
             }
         }
 
@@ -608,7 +644,7 @@ namespace Deskmate
             if (e.DataObject.GetDataPresent(Wpf.DataFormats.Bitmap))
             {
                 try { InsertImage(e.DataObject.GetData(Wpf.DataFormats.Bitmap) as System.Windows.Media.Imaging.BitmapSource); }
-                catch (Exception) { tableHint.Text = Lang.T("Gambar tidak valid atau melebihi 4 MB / 16 megapiksel"); }
+                catch (Exception) { ImageFailed(); }
                 return;
             }
             string value = e.DataObject.GetData(Wpf.DataFormats.UnicodeText) as string;

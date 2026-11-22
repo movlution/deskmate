@@ -192,7 +192,7 @@ Keyboard only (`KitInk.ByMouse` hides it after pointer use). `KitInk.FocusRing` 
 
 ## Motion
 
-- One easing everywhere: exponential approach per 15 ms tick (switch knob 0.35, segmented thumb 0.30), which settles in about 150–200 ms. Window arrival is a 160 ms ease-out-quad fade.
+- Switches (150 ms) and segmented choices (180 ms) use elapsed-time cubic ease-out scaled by the motion pace. A new choice redirects the thumb from its displayed position. The switch knob stretches slightly in transit and is round at rest. Window arrival is a 160 ms ease-out-quad fade.
 - Every animation snaps to its end state when `Anim.Reduced` is set (the Windows "animation effects" setting).
 - Nothing loops or pulses inside Kit.
 
