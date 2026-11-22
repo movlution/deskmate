@@ -306,8 +306,9 @@ namespace Deskmate
         public const float Sp4 = 4, Sp8 = 8, Sp12 = 12, Sp16 = 16, Sp20 = 20, Sp24 = 24, Sp32 = 32;
         // Concentric radii: shell, module, card, control; nested thumbs subtract their inset
         public const float RadiusShell = 32, RadiusModule = 20, RadiusCard = 16, RadiusControl = 12;
-        // Settings groups and the page hero card
-        public const float RadiusList = 10;
+        // Settings groups and the page hero card; 14 reads soft beside 12 px controls without
+        // out-rounding the 25 px nest limit of the hero tile (11 + 14 inset)
+        public const float RadiusList = 14;
         // Module grid: shell inset, gap, inner padding
         public const float ModuleInset = 12, ModuleGap = 10, ModulePad = 16;
 

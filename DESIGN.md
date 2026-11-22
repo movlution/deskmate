@@ -105,7 +105,7 @@ Corners are squircles (`Ink.AddRound`, smoothing 0.6). Radii nest: an inner radi
 | `RadiusShell` | 32 | island shell |
 | `RadiusModule` | 20 | island modules, dock sheets |
 | `RadiusCard` | 16 | cards outside Settings (task board, notes) |
-| `RadiusList` | 10 | Settings groups (`KitGroup`) and the page hero card |
+| `RadiusList` | 14 | Settings groups (`KitGroup`) and the page hero card; under the hero tile's nest limit of 11 + 14 inset |
 | `RadiusControl` | 12 | buttons, check rows, segmented track, slider focus; capped at 0.35 × height, so 30 px Settings controls get 10 |
 | category tile | 5 (20 px) · 11 (44 px) | sidebar tiles and the hero tile |
 | inner thumb | 12 − 3 = 9 | segmented thumb; settings icon tiles |
@@ -172,6 +172,15 @@ Each element declares elevation once, either by tone step or by shadow. Never us
 - **1, card:** `Group` is one tone step off the canvas, with no border and no shadow. A selected sidebar row is the only filled navigation surface.
 - **2, raised thumb or knob:** `KitInk.Lift`, a contact shadow at 0.75 px below plus a falloff at 1.5 px below. Paper uses plum `#2A2038` at α 26/13; night uses black at α 90/45. It always has an offset and is never a halo. On paper, the white slider knob also gets a 1 px `Line` edge so it reads on ivory.
 - **3, floating:** island glass and menus. These use the glass materials (`Glass.cs`) and the window shadow, not Kit.
+
+### Calm material (`material=calm`)
+
+The quietest glass: the pane is the wallpaper in shade, not a coloured sheet over it.
+
+- Pane: the veil's hue at 0.85 saturation, mixed 22 % toward black (night) or 18 % toward white (paper) (`GlassRecipe.CalmTint`). No accent in the pane, no sheen, almost no top wash.
+- Edge: one even hairline. The top rim is only slightly brighter than the sides (night 58 / 42, paper 104 / 80).
+- Software glass (`CalmVeil`, shared by island and dock) blurs twice, mutes the backdrop, and lays an even veil that thickens only where text would drop under its contrast floor.
+- Kit windows (Settings, editors) take `KitInk.Canvas`: the wallpaper hue at low chroma, held at the theme tone's luminance (paper + 0.02 headroom), so every ink mix keeps the floors above. Calm reads the wallpaper hue even with `wall.sync` off; theme packs override it. Verified ≥ 4.5:1 for Text, Sub, and Faint on every Kit surface across 12 hues in both themes (`test_b06`).
 
 ## States
 
