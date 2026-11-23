@@ -20,6 +20,15 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.11.1",
+                Items = new[]
+                {
+                    new[] { "Dock selalu di atas", "Dock, pet, dan notch di layar lain kembali ke atas dalam sedetik bila ada aplikasi yang menutupinya.", "" },
+                    new[] { "Pengaturan pet tidak melompat", "Mengganti hewan, warna bulu, atau menyalakan pet tidak lagi menggulir halaman Pengaturan ke atas.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.11.0",
                 Items = new[]
                 {

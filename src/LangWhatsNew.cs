@@ -9,6 +9,10 @@ namespace Deskmate
         static void AddWhatsNew(Dictionary<string, string> en)
         {
             // What's new 2.11.x
+            en.Add("Dock selalu di atas", "Dock stays on top");
+            en.Add("Dock, pet, dan notch di layar lain kembali ke atas dalam sedetik bila ada aplikasi yang menutupinya.", "The Dock, the pet, and the notch on other screens come back on top within a second when an app covers them.");
+            en.Add("Pengaturan pet tidak melompat", "Pet settings stay put");
+            en.Add("Mengganti hewan, warna bulu, atau menyalakan pet tidak lagi menggulir halaman Pengaturan ke atas.", "Changing the animal or fur color, or turning the pet on, no longer scrolls Settings back to the top.");
             en.Add("Pet di dock", "Dock pet");
             en.Add("Kucing atau anjing piksel berjalan di atas dock, ikut naik turun saat dock bersembunyi, dan menoleh atau melompat saat disentuh kursor. Nyalakan di Pengaturan › Dock & Taskbar.", "A pixel cat or dog walks on top of the Dock, rides it up and down when it hides, and turns or hops when you point at it. Turn it on in Settings › Dock & Taskbar.");
             en.Add("Pet dari Aseprite", "Pets from Aseprite");
