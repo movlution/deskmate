@@ -78,7 +78,11 @@ namespace Deskmate
                 if (checkFullscreen)
                     replica.Blocked = replica.Monitor == IntPtr.Zero || replica.Monitor == exceptMonitor || Native.IsFullscreenForDisplay(replica.Monitor, true);
                 if (hide || replica.Blocked || replica.Monitor == monitorHandle) replica.HideReplica();
-                else replica.Present(placeMode, Docked, placeInset, placeY, shiftPct);
+                else
+                {
+                    replica.Present(placeMode, Docked, placeInset, placeY, shiftPct);
+                    if (checkFullscreen && replica.IsHandleCreated) Native.KeepTopmost(replica.Handle);
+                }
             }
         }
 

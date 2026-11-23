@@ -13,8 +13,28 @@ namespace Deskmate
         public const int WM_DISPLAYCHANGE = 0x7E, WM_DPICHANGED = 0x2E0, WM_APP = 0x8000;
         public const int ULW_ALPHA = 2, SW_HIDE = 0, SW_SHOWNOACTIVATE = 4;
         public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOACTIVATE = 0x10, SWP_SHOWWINDOW = 0x40, SWP_HIDEWINDOW = 0x80;
-        public const uint GW_HWNDNEXT = 2;
+        public const uint GW_HWNDNEXT = 2, GW_HWNDPREV = 3;
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+
+        [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+
+        // A topmost window can sink below ordinary apps while its WS_EX_TOPMOST bit stays set.
+        // Topmost windows always sit above ordinary ones, so one visible ordinary window
+        // above us means the band was lost: climb back. Healthy order costs no z-order change.
+        public static bool KeepTopmost(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd)) return false;
+            IntPtr h = hwnd;
+            for (int i = 0; i < 1024; i++)
+            {
+                h = GetWindow(h, GW_HWNDPREV);
+                if (h == IntPtr.Zero) return false;
+                if (!IsWindowVisible(h) || (GetWindowLong(h, -20) & WS_EX_TOPMOST) != 0) continue;
+                SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                return true;
+            }
+            return false;
+        }
 
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT { public int X, Y; public POINT(int x, int y) { X = x; Y = y; } }

@@ -648,6 +648,7 @@ namespace Deskmate
                 if (sheet != null && !sheet.IsDisposed) sheet.NudgeFrost();
                 if (closing || !IsHandleCreated) return;
                 UpdateVisibility();
+                KeepOnTop();
                 if (shown && HideMode == "smart") SmartHide();
                 // Focus moved elsewhere: the tray grid has done its job
                 if (TrayExpanded && (DateTime.UtcNow - trayOpenUtc).TotalMilliseconds > 250)
@@ -693,6 +694,13 @@ namespace Deskmate
                 }
             }
 
+            // Sunk under an app: back to the top band; the owned pet follows, the glass is restacked
+            void KeepOnTop()
+            {
+                if (Dry || !shown || !Native.KeepTopmost(Handle)) return;
+                if (dockBackdrop != null) dockBackdrop.SyncOrder(Handle);
+            }
+
             internal void RevealAfterSwitch(IntPtr monitor)
             {
                 if (closing || !IsHandleCreated || monitorHandle != monitor || HideMode == "never") return;
@@ -708,6 +716,7 @@ namespace Deskmate
                 tickN++;
                 UpdateVisibility();
                 if (!shown) return;
+                KeepOnTop();
                 if (HideMode == "auto" && StayOnDesktop && !wantShown && DesktopFront()) Reveal(true);
                 // Any dock stands in for the bar on its screen; Rehide only touches owned ones
                 if (Replacing && !Dry && Taskbar.Showing()) Taskbar.Rehide();
