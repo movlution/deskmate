@@ -281,4 +281,115 @@ Describe "Tier 1 Feature Suite: Desktop Pet" {
         $orange = $sheetType.GetMethod("BuiltIn").Invoke($null, @("cat", "orange"))
         Assert-Equal $odd.Art[0][8 * 16 + 6] $orange.Art[0][8 * 16 + 6] "Unknown colour falls back to orange"
     }
+
+    $strokeType = Get-DeskmateType "PetStroke"
+    $emoteArtType = Get-DeskmateType "PetEmoteArt"
+
+    function Get-Mode($b) { return [string]$brainType.GetField("Mode").GetValue($b) }
+    function Step-Brain($b, [double]$dt, [int]$n) { for ($i = 0; $i -lt $n; $i++) { $brainType.GetMethod("Step").Invoke($b, @([double]$dt)) | Out-Null } }
+
+    It "16. A reaction holds its pose with a hop, then returns to Idle; nothing reacts while away" {
+        $b = New-Brain 21 0 1000
+        $happy = [Enum]::Parse($modeType, "Happy")
+        Assert-True ($brainType.GetMethod("React").Invoke($b, @($happy, [double]1.5, [double]1))) "React must be accepted"
+        Assert-Equal (Get-Mode $b) "Happy" "The reaction pose shows"
+        Assert-True $brainType.GetProperty("Moving").GetValue($b) "A happy reaction hops"
+        Step-Brain $b (1.0 / 60) 96
+        Assert-Equal (Get-Mode $b) "Idle" "After the reaction the pet stands again"
+        $brainType.GetMethod("SetAway").Invoke($b, @($true, [double]0)) | Out-Null
+        Assert-False ($brainType.GetMethod("React").Invoke($b, @($happy, [double]1.5, [double]1))) "Nobody to react to while away"
+    }
+
+    It "17. Away: the pet sleeps in place until the user returns, then stretches and stands" {
+        $b = New-Brain 23 0 1000
+        $x0 = $brainType.GetField("X").GetValue($b)
+        $brainType.GetMethod("SetAway").Invoke($b, @($true, [double]0)) | Out-Null
+        Assert-Equal (Get-Mode $b) "Sleep" "Away puts the pet to sleep"
+        Step-Brain $b 1.0 600
+        Assert-Equal (Get-Mode $b) "Sleep" "Ten minutes away and still asleep"
+        Assert-Equal $brainType.GetField("X").GetValue($b) $x0 "A sleeping pet does not move"
+        $brainType.GetMethod("SetAway").Invoke($b, @($false, [double]1.2)) | Out-Null
+        Assert-Equal (Get-Mode $b) "Stretch" "Coming back starts with a stretch"
+        Step-Brain $b 0.1 13
+        Assert-Equal (Get-Mode $b) "Idle" "After the stretch the pet stands"
+    }
+
+    It "18. A focus session keeps the pet off its feet for ten minutes" {
+        $b = New-Brain 7 0 1000
+        $brainType.GetField("Calm").SetValue($b, $true)
+        $x0 = $brainType.GetField("X").GetValue($b)
+        for ($i = 0; $i -lt 6000; $i++) {
+            $brainType.GetMethod("Step").Invoke($b, @([double]0.1)) | Out-Null
+            Assert-True ((Get-Mode $b) -ne "Walk") "No walking during focus (step $i)"
+        }
+        Assert-Equal $brainType.GetField("X").GetValue($b) $x0 "The pet stays where it was"
+    }
+
+    It "19. Music bobs a standing pet in quarter-second steps, never with reduced motion" {
+        $b = New-Brain 9 0 1000
+        $brainType.GetField("Groove").SetValue($b, $true)
+        Step-Brain $b 0.1 1
+        Assert-Equal $brainType.GetProperty("Lift").GetValue($b) ([double]0) "First quarter second on the ground"
+        Step-Brain $b 0.2 1
+        Assert-Equal $brainType.GetProperty("Lift").GetValue($b) ([double]2) "Second quarter second lifted 2 px"
+        $next = $brainType.GetProperty("NextBob").GetValue($b)
+        Assert-True ($next -gt 0 -and $next -le 0.25) "Next bob within a quarter second (got $next)"
+        $brainType.GetField("NoWalk").SetValue($b, $true)
+        Assert-Equal $brainType.GetProperty("Lift").GetValue($b) ([double]0) "Reduced motion: no bob"
+        Assert-Equal $brainType.GetProperty("NextBob").GetValue($b) ([double]::MaxValue) "Reduced motion: no bob frames"
+    }
+
+    It "20. During a reaction, hover does not turn the pet" {
+        $b = New-Brain 11 0 1000
+        $brainType.GetMethod("React").Invoke($b, @([Enum]::Parse($modeType, "Surprised"), [double]1, [double]0.5)) | Out-Null
+        $dir = $brainType.GetField("Dir").GetValue($b)
+        Assert-False ($brainType.GetMethod("Notice").Invoke($b, @([int](-$dir * 50)))) "Hover is ignored while reacting"
+        Assert-Equal $brainType.GetField("Dir").GetValue($b) $dir "The pet keeps facing the same way"
+    }
+
+    It "21. Petting: three quick back-and-forth turns count, slow or tiny moves do not" {
+        $feed = $strokeType.GetMethod("Feed")
+        $s = [Activator]::CreateInstance($strokeType, $true)
+        $got = @(); $t = 0.0
+        foreach ($x in 100, 110, 100, 110, 100) { $got += $feed.Invoke($s, @([int]$x, [double]$t, [int]4)); $t += 0.1 }
+        Assert-Equal ($got -join ",") "False,False,False,False,True" "The third quick turn is petting"
+        $slow = [Activator]::CreateInstance($strokeType, $true); $t = 0.0; $any = $false
+        foreach ($x in 100, 110, 100, 110, 100, 110, 100) { if ($feed.Invoke($slow, @([int]$x, [double]$t, [int]4))) { $any = $true }; $t += 1.0 }
+        Assert-False $any "Turns a second apart are not petting"
+        $tiny = [Activator]::CreateInstance($strokeType, $true); $t = 0.0; $any = $false
+        foreach ($x in 100, 102, 100, 102, 100, 102, 100) { if ($feed.Invoke($tiny, @([int]$x, [double]$t, [int]4))) { $any = $true }; $t += 0.1 }
+        Assert-False $any "Jitter under the step size is not petting"
+    }
+
+    It "22. Reaction tags are optional: built-ins borrow poses, Aseprite tags are used when present" {
+        $cat = $sheetType.GetMethod("BuiltIn").Invoke($null, @("cat", "orange"))
+        $seq = { param($s, [string]$m) ($s.Sequence([Enum]::Parse($modeType, $m))) -join "," }
+        Assert-Equal (& $seq $cat "Happy") "0,1" "Built-in joy borrows standing"
+        Assert-Equal (& $seq $cat "Surprised") "0,1" "Built-in surprise borrows standing"
+        Assert-Equal (& $seq $cat "Stretch") "6,7" "Built-in stretch borrows sitting"
+        Assert-True ($cat.Top -ge 1 -and $cat.Top -lt $cat.Base) "Top row lies above the ground row (top $($cat.Top), base $($cat.Base))"
+        Assert-True ([Math]::Abs($cat.Length([Enum]::Parse($modeType, "Walk")) - 0.5) -lt 1e-9) "Walk cycle lasts 0.5 s"
+        try {
+            $frames = (0..3 | ForEach-Object { Frame-Json $_ ($_ * 8) 8 }) -join ","
+            $dir = Write-Pet "reactions" ('{"frames":[' + $frames + '],"meta":{"frameTags":[{"name":"walk","from":0,"to":1},{"name":"Happy","from":2,"to":2},{"name":"stretch","from":3,"to":3}]}}')
+            $sheet = $sheetType.GetMethod("Load").Invoke($null, @([string]$dir))
+            Assert-Equal (& $seq $sheet "Happy") "2" "happy tag"
+            Assert-Equal (& $seq $sheet "Stretch") "3" "stretch tag"
+            Assert-Equal (& $seq $sheet "Surprised") "0" "Missing surprised borrows standing"
+            Assert-True ([Math]::Abs($sheet.Length([Enum]::Parse($modeType, "Happy")) - 0.1) -lt 1e-9) "Tag length comes from frame durations"
+        } finally { if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp } }
+    }
+
+    It "23. Emote glyphs: four outlined cells, each clearly drawn" {
+        $count = [int]$emoteArtType.GetProperty("Count").GetValue($null)
+        Assert-Equal $count 4 "Heart, bang, note, sparkle"
+        $f = 2; $cell = 9 * $f; $w = $cell * $count
+        $px = [int[]]$emoteArtType.GetMethod("Atlas").Invoke($null, @([int]$f))
+        Assert-Equal $px.Length ($w * $cell) "Atlas is one row of cells"
+        for ($k = 0; $k -lt $count; $k++) {
+            $opaque = 0
+            for ($y = 0; $y -lt $cell; $y++) { for ($x = 0; $x -lt $cell; $x++) { if ($px[$y * $w + $k * $cell + $x] -ne 0) { $opaque++ } } }
+            Assert-True ($opaque -gt 60) "Glyph $k must be visible (opaque px: $opaque)"
+        }
+    }
 }

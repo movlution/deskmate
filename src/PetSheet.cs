@@ -18,12 +18,13 @@ namespace Deskmate
             public const int MaxFrames = 128, MaxSide = 256, MaxImage = 4096, MaxArtPx = 1 << 20;
             public static readonly string[] Colors = { "orange", "brown", "gray", "black", "cream" };
 
-            // Art px per frame, and the lowest opaque row: the one that stands on the ground
-            public int W, H, Base;
+            // Art px per frame, the lowest opaque row (it stands on the ground), and the highest (emotes sit above it)
+            public int W, H, Base, Top;
             // Premultiplied ARGB, W*H each, facing right
             public readonly List<int[]> Art = new List<int[]>();
-            readonly int[][] seq = new int[4][];
-            readonly double[][] dur = new double[4][];
+            const int Modes = 7;
+            readonly int[][] seq = new int[Modes][];
+            readonly double[][] dur = new double[Modes][];
 
             public int Count { get { return Art.Count; } }
 
@@ -49,6 +50,14 @@ namespace Deskmate
 
             // Frame indices for a mode, for tests and the atlas check
             public int[] Sequence(PetMode m) { return (int[])seq[(int)m].Clone(); }
+
+            // Seconds for one pass through a mode's frames
+            public double Length(PetMode m)
+            {
+                double total = 0;
+                foreach (var s in dur[(int)m]) total += s;
+                return total;
+            }
 
             void Locate(PetMode m, double t, double pace, out int index, out double left)
             {
@@ -79,6 +88,18 @@ namespace Deskmate
                 if (seq[(int)PetMode.Idle] == null) Set(PetMode.Idle, new[] { seq[(int)PetMode.Walk][0] }, new[] { 1.0 });
                 if (seq[(int)PetMode.Sit] == null) Set(PetMode.Sit, seq[(int)PetMode.Idle], dur[(int)PetMode.Idle]);
                 if (seq[(int)PetMode.Sleep] == null) Set(PetMode.Sleep, seq[(int)PetMode.Sit], dur[(int)PetMode.Sit]);
+                // Reactions are optional tags: joy and surprise borrow standing, the stretch borrows sitting
+                if (seq[(int)PetMode.Happy] == null) Set(PetMode.Happy, seq[(int)PetMode.Idle], dur[(int)PetMode.Idle]);
+                if (seq[(int)PetMode.Surprised] == null) Set(PetMode.Surprised, seq[(int)PetMode.Idle], dur[(int)PetMode.Idle]);
+                if (seq[(int)PetMode.Stretch] == null) Set(PetMode.Stretch, seq[(int)PetMode.Sit], dur[(int)PetMode.Sit]);
+                Top = H - 1;
+                foreach (var a in Art)
+                    for (int y = 0; y < Top; y++)
+                    {
+                        bool hit = false;
+                        for (int x = 0; x < W && !hit; x++) hit = ((uint)a[y * W + x] >> 24) != 0;
+                        if (hit) { Top = y; break; }
+                    }
                 Base = 0;
                 foreach (var a in Art)
                     for (int y = H - 1; y > Base; y--)
@@ -276,6 +297,9 @@ namespace Deskmate
                     case "walk": case "run": case "jalan": m = PetMode.Walk; return true;
                     case "sit": case "duduk": m = PetMode.Sit; return true;
                     case "sleep": case "tidur": m = PetMode.Sleep; return true;
+                    case "happy": case "senang": m = PetMode.Happy; return true;
+                    case "surprised": case "surprise": case "kaget": m = PetMode.Surprised; return true;
+                    case "stretch": case "geliat": m = PetMode.Stretch; return true;
                 }
                 m = PetMode.Idle;
                 return false;

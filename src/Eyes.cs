@@ -240,6 +240,8 @@ namespace Deskmate
         // Queue a mood for the eyes
         void EyesReact(EyeMood m, int side)
         {
+            // The pet has its own switches and reduced-motion handling
+            PetReact(m);
             if (!EyesOn || Anim.Reduced) return;
             moodQueued = m;
             moodSide = side;
@@ -267,7 +269,13 @@ namespace Deskmate
         // Toasts that the face reacts to afterwards
         void EyesToast(View v, Toast t)
         {
-            if (v == View.Done) { EyesReact(EyeMood.Happy, 0); moodToast = t; }
+            if (v == View.Done)
+            {
+                // A failed run is sad at once, so the pet does not celebrate it; the eyes reached the same face later
+                var run = t != null ? t.Data as AgentSession : null;
+                EyesReact(run != null && run.Failed ? EyeMood.Sad : EyeMood.Happy, 0);
+                moodToast = t;
+            }
             else if (v == View.Notif) EyesReact(EyeMood.Surprised, 1);
             else if (v == View.Privacy) EyesReact(EyeMood.Glance, -1);
         }

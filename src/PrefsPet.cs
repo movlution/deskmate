@@ -56,11 +56,16 @@ namespace Deskmate
                 speedRow.Glyph = (char)0xEC4A;
                 add(speedRow);
 
+                var react = Switch("pet.react", true, v => change("pet.react", v));
+                var reactRow = Row(Lang.T("Reaksi"), Lang.T("Kaget, senang, bergoyang saat musik, dan tidur saat Anda pergi"), react);
+                reactRow.Glyph = (char)0xE76E;
+                add(reactRow);
+
                 refresh = () =>
                 {
                     bool on = petOn.Checked;
                     bool custom = ids[kindPop.Selected].StartsWith("custom:", StringComparison.Ordinal);
-                    kindPop.Enabled = sizeSeg.Enabled = speed.Enabled = on;
+                    kindPop.Enabled = sizeSeg.Enabled = speed.Enabled = react.Enabled = on;
                     colorPop.Enabled = on && !custom;
                     SetPetDetail(kindRow, on && island.petError != null
                         ? Lang.T("Gagal dimuat, memakai kucing") + ": " + Lang.T(island.petError) : "");

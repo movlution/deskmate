@@ -25,6 +25,8 @@ namespace Deskmate
             AddPetText(en, "Sedang", "Medium");
             AddPetText(en, "Besar", "Large");
             AddPetText(en, "Kecepatan jalan", "Walking speed");
+            AddPetText(en, "Reaksi", "Reactions");
+            AddPetText(en, "Kaget, senang, bergoyang saat musik, dan tidur saat Anda pergi", "Startled, happy, bobs to music, and naps while you're away");
             AddPetText(en, "Pet buatan sendiri", "Your own pets");
             AddPetText(en, "Folder pet", "Pet folder");
             AddPetText(en, "Per pet: sheet.png dan pet.json dari Aseprite; tag walk, idle, sit, sleep", "Per pet: sheet.png and pet.json from Aseprite; tags walk, idle, sit, sleep");
