@@ -567,6 +567,65 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         }
     }
 
+    It "Pet choices update in place without resetting the Settings scroll position" {
+        Assert-IsolatedSettings
+        $isle = $null; $prefs = $null; $pet = $null
+        try {
+            $isle = New-TestIsland
+            $cfg = $islandType.GetField("settings", $flags).GetValue($isle)
+            $cfg.Set("pet.on", $true)
+            $cfg.Set("pet.kind", "cat")
+            $custom = Join-Path $f30Tmp "pets\QA Incomplete"
+            [void][IO.Directory]::CreateDirectory($custom)
+            [IO.File]::WriteAllText((Join-Path $custom "pet.json"), "{}")
+
+            # Reuse a hidden pet so ApplyPet never shows a window on the active desktop.
+            $petType = $islandType.GetNestedType("PetWindow", $flags)
+            $pet = [Activator]::CreateInstance($petType, $flags, $null,
+                @([Drawing.Rectangle]::new(-32000, -32000, 1000, 600), [single]1, [IntPtr]::Zero, $null), $null)
+            $petType.GetField("hidden", $flags).SetValue($pet, $true)
+            [void]$pet.Handle
+            $islandType.GetField("pet", $flags).SetValue($isle, $pet)
+
+            $prefs = [Activator]::CreateInstance($prefsType, $flags, $null, @($isle), $null)
+            # Create the hidden controls as in render_prefs.ps1; Handle alone does not mark them Created.
+            $create = [Windows.Forms.Control].GetMethod("CreateControl", [Reflection.BindingFlags]'NonPublic,Instance', $null, [Type[]]@([bool]), $null)
+            [void]$create.Invoke($prefs, @($true))
+            $prefs.Go("pet")
+            $content = $prefsType.GetField("content", $flags).GetValue($prefs)
+            # Give the hidden panel a known scroll range.
+            $content.AutoScrollMinSize = [Drawing.Size]::new(0, 2000)
+            $content.AutoScrollPosition = [Drawing.Point]::new(0, 800)
+            $baseline = $content.AutoScrollPosition
+            Assert-True ($baseline.Y -lt 0) "The pet section must be scrolled into view first"
+            $rows = @(Get-ContentRows $prefs)
+            $animal = ($rows | Where-Object Title -eq "Hewan").Field
+            $fur = ($rows | Where-Object Title -eq "Warna bulu").Field
+            $toggle = ($rows | Where-Object Title -eq "Pet di dock").Field
+
+            $animal.Pick(1)
+            Assert-Equal "dog" $cfg.Get("pet.kind", "") "Choosing Dog must persist the new value"
+            Assert-False $animal.IsDisposed "Changing the animal must not replace the picker"
+            Assert-Equal $baseline.Y $content.AutoScrollPosition.Y "Changing Cat to Dog must preserve scroll"
+
+            $animal.Pick([Array]::IndexOf($animal.Items, "QA Incomplete"))
+            Assert-False $fur.Enabled "A custom pet must disable the fur picker"
+            Assert-True ($animal.Parent.Detail -like "*sheet.png*") "Invalid custom pet must explain the fallback"
+            $animal.Pick(0)
+            Assert-True $fur.Enabled "The fur picker must be re-enabled for Cat"
+            Assert-Equal "" $animal.Parent.Detail "A valid pet must clear the error"
+            $toggle.Checked = $false
+            Assert-False $animal.Enabled "Turning Pet off must disable the animal picker"
+            Assert-False $toggle.IsDisposed "Turning Pet off must not replace the toggle"
+            Assert-Equal $baseline.Y $content.AutoScrollPosition.Y "Custom pet and toggle updates must preserve scroll"
+        }
+        finally {
+            if ($prefs) { $prefs.Dispose() }
+            if ($pet -and -not $pet.IsDisposed) { $pet.Close(); $pet.Dispose() }
+            if ($isle) { $isle.Dispose() }
+        }
+    }
+
     It "11. Dock reconciliation plans every detected display with one selected global owner" {
         $plan = $null
         $planMethod = $islandType.GetMethod("PlanDocks", $flags)
