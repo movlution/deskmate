@@ -52,7 +52,17 @@ namespace Deskmate
             void ServiceRows(Action<KitRow> add, AiProvider p, bool withModel)
             {
                 if (p.Id == "custom") add(UrlRow());
-                if (p.NoKey)
+                if (p.Cli != null)
+                {
+                    KitRow cli = null;
+                    string exe = AiCli.Exe(p);
+                    cli = Row(Lang.F("Program {0}", p.Cli),
+                        exe != null ? Lang.T("Memakai akun yang sudah login di CLI ini, tanpa key") : Lang.T("Belum ditemukan; pasang lalu login sekali di terminal"),
+                        Pair(TestButton(p, () => cli), Button(Lang.T("Cari lagi"), false, delegate { AiCli.Forget(p); Rebuild(); })));
+                    cli.Glyph = '';
+                    add(cli);
+                }
+                else if (p.NoKey)
                 {
                     KitRow local = null;
                     local = Row(Lang.F("Server {0}", Ai.Label(p)), Lang.F("Di laptop ini, tanpa internet dan key · {0}", new Uri(p.Base).Authority), TestButton(p, () => local));

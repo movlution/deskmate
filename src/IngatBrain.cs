@@ -37,7 +37,7 @@ namespace Deskmate
             {
                 string m = settings.Get("ingat.embed", "nomic-embed-text").Trim();
                 var p = Provider;
-                return m == "off" || p == null || p.Anthropic ? "" : m;
+                return m == "off" || p == null || p.Anthropic || p.Cli != null ? "" : m;
             }
         }
 

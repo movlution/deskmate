@@ -957,6 +957,16 @@ namespace Deskmate
             en.Add("Agent lebih hati-hati", "More careful agents");
             en.Add("Tahan Ctrl kanan di aplikasi apa pun, bicara, lalu lepas: teksnya ditempel di tempat kursor. Ada kamus istilah dan snippet, lewat layanan AI pilihanmu atau offline.", "Hold right Ctrl in any app, speak, then let go: the text is pasted at the cursor. With a term list and snippets, through the AI service you pick or offline.");
             en.Add("Pengaturan", "Settings");
+            en.Add("bawaan CLI", "CLI default");
+            en.Add("tanpa keterangan", "no details");
+            en.Add("Cari lagi", "Look again");
+            en.Add("Program {0}", "{0} program");
+            en.Add("{0} gagal: {1}", "{0} failed: {1}");
+            en.Add("{0} terlalu lama menjawab", "{0} took too long to answer");
+            en.Add("{0} belum terpasang di laptop ini", "{0} is not installed on this laptop");
+            en.Add("{0} belum login; jalankan \"{1}\" sekali di terminal", "{0} is not signed in; run \"{1}\" once in a terminal");
+            en.Add("Memakai akun yang sudah login di CLI ini, tanpa key", "Uses the account signed in to this CLI, no key");
+            en.Add("Belum ditemukan; pasang lalu login sekali di terminal", "Not found; install it and sign in once in a terminal");
         }
     }
 }

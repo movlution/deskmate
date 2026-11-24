@@ -9,6 +9,8 @@ namespace Deskmate
     class AiProvider
     {
         public string Id, Name, Base, KeyHint, KeyUrl, SttModel;
+        // A signed-in CLI on this laptop (codex, claude) instead of HTTP
+        public string Cli;
         public string[] Models;
         // Anthropic Messages instead of chat/completions
         public bool Anthropic, NoKey, Stt;
@@ -35,6 +37,8 @@ namespace Deskmate
                              Models = new[] { "mistral-small-latest", "mistral-large-latest" } },
             new AiProvider { Id = "ollama", Name = "Ollama", Base = "http://localhost:11434/v1/", NoKey = true, Models = new string[0] },
             new AiProvider { Id = "lmstudio", Name = "LM Studio", Base = "http://localhost:1234/v1/", NoKey = true, Models = new string[0] },
+            new AiProvider { Id = "codex-cli", Name = "Codex CLI (ChatGPT)", Cli = "codex", Models = new string[0] },
+            new AiProvider { Id = "claude-cli", Name = "Claude Code (Claude)", Cli = "claude", Models = new[] { "sonnet", "haiku", "opus" } },
             new AiProvider { Id = "custom", Name = "Kustom", Base = "", KeyHint = "…", Stt = true, SttModel = "whisper-1", Models = new string[0] },
         };
 
@@ -60,17 +64,18 @@ namespace Deskmate
         // Groq keeps groq.key: nothing to migrate
         static string KeyPath(string id) { return Path.Combine(Settings.Dir, id == "groq" ? "groq.key" : "ai-" + id + ".key"); }
 
-        public static string Key(AiProvider p) { return p == null ? "" : p.NoKey ? "" : Vault.Load(KeyPath(p.Id)) ?? ""; }
+        public static string Key(AiProvider p) { return p == null ? "" : p.NoKey || p.Cli != null ? "" : Vault.Load(KeyPath(p.Id)) ?? ""; }
         public static void SaveKey(AiProvider p, string key) { Vault.Save(KeyPath(p.Id), key); Forget(p); }
         public static void DropKey(AiProvider p) { Vault.Delete(KeyPath(p.Id)); Forget(p); }
 
         // Model list learned again next use
-        public static void Forget(AiProvider p) { lock (models) models.Remove(p.Id); }
+        public static void Forget(AiProvider p) { lock (models) models.Remove(p.Id); AiCli.Forget(p); }
 
         // Usable: key saved, or none needed
         public static bool Ready(AiProvider p)
         {
             if (p == null) return false;
+            if (p.Cli != null) return AiCli.Exe(p) != null;
             if (p.Id == "custom") return BaseUrl(p).Length > 0;
             return p.NoKey || Key(p).Length > 0;
         }
@@ -149,6 +154,7 @@ namespace Deskmate
         public static string Check(AiProvider p, string key)
         {
             if (p.Id == "custom" && BaseUrl(p).Length == 0) return Lang.T("Alamat server belum diisi");
+            if (p.Cli != null) return AiCli.Check(p);
             string path = p.Id == "openrouter" ? "key" : "models";
             var r = Web.Send("GET", BaseUrl(p) + path, Auth(p, key ?? ""), null, 15000);
             if (r.Ok) { if (path == "models") Remember(p, r.Body); return null; }
@@ -182,6 +188,7 @@ namespace Deskmate
         {
             string set = settings == null ? "" : settings.Get("ai." + p.Id + ".model", "").Trim();
             if (set.Length > 0) return set;
+            if (p.Cli != null) return DefaultModel(p);
             List<string> have;
             lock (models) models.TryGetValue(p.Id, out have);
             if (have == null)
@@ -203,7 +210,7 @@ namespace Deskmate
             return p.Models.Length > 0 ? p.Models[0] : "";
         }
 
-        public static string DefaultModel(AiProvider p) { return p.Models.Length > 0 ? p.Models[0] : Lang.T("model pertama di server"); }
+        public static string DefaultModel(AiProvider p) { return p.Models.Length > 0 ? p.Models[0] : p.Cli != null ? Lang.T("bawaan CLI") : Lang.T("model pertama di server"); }
 
         // One reply: text, or tool calls
         public class Reply
@@ -236,6 +243,13 @@ namespace Deskmate
         {
             error = null;
             if (p == null) { error = Lang.T("Layanan AI belum dipilih"); return null; }
+            if (p.Cli != null)
+            {
+                string cliModel = settings == null ? "" : settings.Get("ai." + p.Id + ".model", "").Trim();
+                // A model from the user's own CLI settings may not exist for this account
+                if (cliModel.Length == 0 && p.Models.Length > 0) cliModel = p.Models[0];
+                return AiCli.Ask(p, cliModel, system, turns, out error);
+            }
             if (!Ready(p)) { error = p.Id == "custom" && BaseUrl(p).Length == 0 ? Lang.T("Alamat server belum diisi") : Lang.F("Key {0} belum diisi", Label(p)); return null; }
             string key = Key(p);
             string model = Model(p, key);
@@ -247,7 +261,7 @@ namespace Deskmate
         public static float[] Embed(AiProvider p, string model, string text, out string error, int timeoutMs = 15000)
         {
             error = null;
-            if (p == null || p.Anthropic || !Ready(p)) { error = "no embeddings"; return null; }
+            if (p == null || p.Anthropic || p.Cli != null || !Ready(p)) { error = "no embeddings"; return null; }
             var payload = new Dictionary<string, object> { { "model", model }, { "input", text } };
             var r = Web.Send("POST", BaseUrl(p) + "embeddings", Auth(p, Key(p)), Json.Encode(payload), timeoutMs);
             if (!r.Ok) { error = Error(p, r); return null; }
