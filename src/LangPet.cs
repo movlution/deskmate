@@ -8,6 +8,7 @@ namespace Deskmate
         static void AddPet(Dictionary<string, string> en)
         {
             AddPetText(en, "Pet di dock", "Dock pet");
+            AddPetText(en, "Pet", "Pet");
             AddPetText(en, "Hewan kecil yang berjalan di atas dock, atau di tepi bawah layar tanpa dock", "A little animal that walks on top of the dock, or along the bottom of the screen without one");
             AddPetText(en, "Hewan", "Animal");
             AddPetText(en, "Kucing", "Cat");

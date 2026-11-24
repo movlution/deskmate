@@ -67,7 +67,7 @@ namespace Deskmate
                 new[] { "agents", "Agen Coding", "\uE756", "3", "slate" },
                 new[] { "files", "Musik & Berkas", "\uE7B8", "3", "rose" },
                 new[] { "system", "Perangkat & HP", "\uE9D9", "3", "sky" },
-                new[] { "combo", "Gamifikasi Ketikan", "\uE7FC", "4", "amber" },
+                new[] { "game", "Gamifikasi", "\uE7FC", "4", "amber" },
                 new[] { "keys", "Pintasan & Aksesibilitas", "\uE765", "4", "slate" },
             };
 
@@ -75,7 +75,7 @@ namespace Deskmate
             static readonly Dictionary<string, string[]> Parts = new Dictionary<string, string[]>
             {
                 { "island", new[] { "island", "tabs" } },
-                { "dock", new[] { "dock", "pet" } },
+                { "game", new[] { "combo", "pet" } },
                 { "work", new[] { "work", "integrasi" } },
                 { "ai", new[] { "ai", "dikte" } },
                 { "system", new[] { "system", "phone" } },
@@ -84,7 +84,8 @@ namespace Deskmate
             static readonly Dictionary<string, string> PartTitles = new Dictionary<string, string>
             {
                 { "tabs", "Tab dan kartu" },
-                { "pet", "Pet di dock" },
+                { "combo", "Ketikan" },
+                { "pet", "Pet" },
                 { "integrasi", "Integrasi dan kalender" },
                 { "dikte", "Dikte dan rapat" },
                 { "phone", "HP Android" },
@@ -106,7 +107,7 @@ namespace Deskmate
                 { "agents", "Claude Code, Codex, dan agen coding lainnya" },
                 { "files", "Lirik musik, visualizer, rak berkas, clipboard, screenshot, dan Downloads" },
                 { "system", "HUD keyboard, baterai, flashdisk, dan HP Android" },
-                { "combo", "Combo, suara mekanikal/arcade, Fever Mode, penalti, XP, dan Sprint 30 detik" },
+                { "game", "Combo ketikan, XP, Sprint 30 detik, dan pet yang menemani di dock" },
                 { "keys", "Pintasan keyboard, pembaca layar, dan kenyamanan gerak" },
             };
 
@@ -116,7 +117,7 @@ namespace Deskmate
                 { "general", "bahasa jam startup windows update data ekspor impor reset" },
                 { "look", "tema sistem gelap terang otomatis aksen warna wallpaper paket material kaca" },
                 { "island", "notch dynamic island letak posisi ukuran mata jam diam tab kartu ringkasan home urutan" },
-                { "dock", "dock taskbar widget aplikasi pet kucing anjing hewan aseprite" },
+                { "dock", "dock taskbar widget aplikasi" },
                 { "messages", "pesan notifikasi chat banner vip senyap dnd" },
                 { "work", "tugas fokus prioritas catatan timer kulia notion todoist ical google kalender jadwal integrasi" },
                 { "remind", "cuaca hujan kota sholat adzan minum mata peregangan pengingat" },
@@ -124,7 +125,7 @@ namespace Deskmate
                 { "agents", "agen coding claude code codex kuota port" },
                 { "files", "musik lirik visualizer rak berkas clipboard screenshot downloads" },
                 { "system", "sistem keyboard caps num baterai flashdisk usb bluetooth wifi hp android qr otp" },
-                { "combo", "combo ketikan gamifikasi suara mekanikal fever xp sprint" },
+                { "game", "gamifikasi game combo ketikan typing suara mekanikal fever xp sprint pet kucing anjing hewan aseprite teman" },
                 { "keys", "pintasan hotkey shortcut aksesibilitas gerak pembaca layar" },
             };
 
@@ -146,6 +147,7 @@ namespace Deskmate
                     case "cat:2": return "island";
                     case "cat:3": return "dock";
                     case "cat:4": return "work";
+                    case "gamification": return "game";
                     case "cat:5": return "about";
                 }
                 return id;
@@ -428,7 +430,7 @@ namespace Deskmate
                     {
                         partTop[parts[i]] = Math.Max(0, (int)(y - Ink.Sp12 * Ui));
                         string title;
-                        if (i > 0 && PartTitles.TryGetValue(parts[i], out title)) PartTitle(Lang.T(title));
+                        if (parts.Length > 1 && parts[i] != section && PartTitles.TryGetValue(parts[i], out title)) PartTitle(Lang.T(title));
                         Build(parts[i], new List<KitRow>(), true);
                     }
                 }

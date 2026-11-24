@@ -27,6 +27,9 @@ namespace Deskmate
             en.Add("Selesai! · {0} WPM", "Finished! · {0} WPM");
             en.Add("Selesai! · Puncak {0} WPM", "Finished! · Peak {0} WPM");
             en.Add("Gamifikasi Ketikan", "Typing Gamification");
+            en.Add("Gamifikasi", "Gamification");
+            en.Add("Ketikan", "Typing");
+            en.Add("Combo ketikan, XP, Sprint 30 detik, dan pet yang menemani di dock", "Typing combos, XP, 30s Sprint, and the pet that keeps you company on the dock");
             en.Add("Combo, suara mekanikal/arcade, Fever Mode, penalti, XP, dan Sprint 30 detik", "Combos, mechanical/arcade sounds, Fever Mode, penalties, XP, and 30s Sprint");
             en.Add("Kustomisasi gamifikasi", "Customize gamification");
             en.Add("Suara, Fever Mode, penalti, XP, dan Sprint 30 detik", "Sound, Fever Mode, penalty, XP, and 30s Sprint");
