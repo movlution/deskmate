@@ -634,6 +634,78 @@ Describe "Tier 1 Feature Suite: Desktop Pet" {
         Assert-False ($b.TryDockTrick(176, 24, $true, 0.4, 9.1)) "An icon does not interrupt a chase"
     }
 
+    It "Action bar open: a walk stops, no new walk or auto chase starts, and a hop still plays" {
+        $b = New-Brain 7 0 1000
+        $b.Scale = 1
+        for ($i = 0; $i -lt 2000 -and (Get-Mode $b) -ne "Walk"; $i++) { $b.Step(0.05) }
+        Assert-Equal (Get-Mode $b) "Walk" "The pet walks at some point"
+        $b.Attending = $true
+        $b.Step(0.05)
+        Assert-Equal (Get-Mode $b) "Idle" "Opening the bar stops the walk"
+        $x = $b.X
+        for ($i = 0; $i -lt 1200; $i++) { $b.Step(0.05) }
+        Assert-Equal $b.X $x "While the bar is open the pet stays put (60 s)"
+        Assert-False ($b.CanProbeAuto(100)) "No auto chase while the bar is open"
+        $b.Hop()
+        $b.Step(0.2)
+        Assert-True ($b.Lift -gt 0) "A click hop still plays while attending"
+        $b.Attending = $false
+    }
+
+    It "Action bar Nap and Chase: nap sleeps and a click wakes; chase is refused in focus, reduced motion, or away" {
+        $b = New-Brain 3 0 1000
+        $b.Scale = 1
+        Assert-True ($b.Nap()) "Nap starts"
+        Assert-Equal (Get-Mode $b) "Sleep" "Nap sleeps"
+        Assert-False ($b.Nap()) "Nap while asleep does nothing"
+        $b.Click(1.2)
+        Assert-Equal (Get-Mode $b) "Idle" "A click wakes a napping pet"
+
+        $b.Calm = $true
+        Assert-False ($b.StartChase(3)) "No chase during focus"
+        $b.Calm = $false
+        $b.NoWalk = $true
+        Assert-False ($b.StartChase(3)) "No chase with reduced motion"
+        $b.NoWalk = $false
+        $b.SetAway($true, 1.2)
+        Assert-False ($b.StartChase(3)) "No chase while away"
+        $b.SetAway($false, 1.2)
+        Assert-True ($b.StartChase(3)) "Chase starts otherwise"
+        Assert-True $b.Playing "Chasing"
+        Assert-Equal (Get-Mode $b) "Walk" "Chase runs"
+        $narrow = New-Brain 1 0 10
+        $narrow.Scale = 1
+        Assert-False ($narrow.StartChase(3)) "No chase on a lane narrower than 24 px"
+    }
+
+    It "Action bar layout: big cells that never overlap and fit every label, at 100% and 150%" {
+        $barType = Get-DeskmateType "PetActionBar"
+        $iconsType = Get-DeskmateType "PetIcons"
+        foreach ($field in $iconsType.GetFields($flags)) {
+            $icon = [string[]]$field.GetValue($null)
+            Assert-Equal $icon.Length 7 "$($field.Name) has 7 rows"
+            foreach ($row in $icon) { Assert-Equal $row.Length 7 "$($field.Name) rows are 7 wide" }
+        }
+        foreach ($scale in 1.0, 1.5) {
+            $font = (Get-DeskmateType "Ink").GetMethod("Semi").Invoke($null, @([float](11 * $scale)))
+            foreach ($labels in @(@("Elus", "Lompat", "Kejar", "Tidur", "Chat", "Atur"), @("Pet", "Hop", "Chase", "Nap", "Chat", "Settings"))) {
+                $widths = [int[]]($labels | ForEach-Object { [Windows.Forms.TextRenderer]::MeasureText($_, $font).Width })
+                $body = [Drawing.Size]::Empty
+                $args2 = [object[]]@($widths, [float]$scale, $body)
+                $cells = [Drawing.Rectangle[]]$barType.GetMethod("Cells").Invoke($null, $args2)
+                $body = [Drawing.Size]$args2[2]
+                Assert-Equal $cells.Length $labels.Length "One cell per action"
+                for ($i = 0; $i -lt $cells.Length; $i++) {
+                    $c = $cells[$i]
+                    Assert-True ($c.Width -ge [Math]::Round(54 * $scale) -and $c.Height -ge [Math]::Round(54 * $scale)) "Cell $i is at least 54 logical px ($($c.Width)x$($c.Height))"
+                    Assert-True ($c.Width -ge $widths[$i] + 4) "Label '$($labels[$i])' fits ($($widths[$i]) in $($c.Width))"
+                    Assert-True ($c.Right -le $body.Width -and $c.Bottom -le $body.Height) "Cell $i inside the bar"
+                    if ($i -gt 0) { Assert-True ($c.Left -gt $cells[$i - 1].Right) "Cell $i does not overlap the one before" }
+                }
+            }
+        }
+    }
+
     It "Emote glyphs: five outlined cells, each clearly drawn" {
         $count = [int]$emoteArtType.GetProperty("Count").GetValue($null)
         Assert-Equal $count 5 "Heart, bang, note, sparkle, scratch"

@@ -102,7 +102,9 @@ namespace Deskmate
                 brain.Calm = FocusActive;
                 if (PlayBlocked || brain.Away)
                 {
+                    // Nothing to drag here, so the press is the click
                     brain.Click(StretchSeconds);
+                    ToggleActions();
                 }
                 else
                 {
@@ -134,7 +136,12 @@ namespace Deskmate
                 petPressed = false;
                 if (PlayBlocked) { brain.CancelHold(); return; }
                 if (brain.Holding) brain.EndHold();
-                else if (!PetBrain.DragThreshold(pressAt, at, scale)) brain.Click(StretchSeconds);
+                else if (!PetBrain.DragThreshold(pressAt, at, scale))
+                {
+                    // A click hops, and opens (or closes) the action bar; a drag only carries the pet
+                    brain.Click(StretchSeconds);
+                    ToggleActions();
+                }
                 lastT = clock.Elapsed.TotalSeconds;
             }
 
@@ -227,30 +234,6 @@ namespace Deskmate
                 int dir = IsRemote ? remoteDir : brain.Dir;
                 int cx = drawnX + cw / 2 + dir * cw / 4;
                 emote.Pop(kind, cx, drawnY + sheet.Top * f - factor, factor, clock.Elapsed.TotalSeconds, Anim.Reduced);
-            }
-
-            void ShowPetContextMenu()
-            {
-                if (hidden || closing || sheet == null || Isle == null) return;
-                var menu = new ContextMenuStrip();
-                var chat = menu.Items.Add(Lang.T("Kirim pesan..."), null, delegate
-                {
-                    Isle.OpenPetChatInput(this);
-                });
-                chat.Enabled = Isle.PetRoomConnected;
-                menu.Items.Add(Lang.T("Teman pet..."), null, delegate
-                {
-                    Isle.OpenPrefs("dock");
-                });
-                MenuLook.Apply(menu);
-                menu.Closed += delegate
-                {
-                    lastT = clock.Elapsed.TotalSeconds;
-                    menu.BeginInvoke(new Action(menu.Dispose));
-                    if (!closing && !hidden) Frame();
-                };
-                MenuGuard.Watch(menu);
-                menu.Show(Cursor.Position);
             }
 
             // Once a second: music, a focus session, and whether anyone is at the keyboard

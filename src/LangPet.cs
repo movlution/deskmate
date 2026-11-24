@@ -77,8 +77,14 @@ namespace Deskmate
             AddPetText(en, "tanda tangan cloudflared.exe tidak valid", "cloudflared.exe is not validly signed by Cloudflare");
             AddPetText(en, "Berhenti menjadi host untuk bergabung ke teman lain", "Stop hosting to join another friend");
             AddPetText(en, "Putuskan koneksi terlebih dahulu untuk menjadi host", "Disconnect first to host a room");
-            AddPetText(en, "Kirim pesan...", "Send message...");
-            AddPetText(en, "Teman pet...", "Pet friends...");
+            // Action bar above the pet
+            AddPetText(en, "Aksi pet", "Pet actions");
+            AddPetText(en, "Elus", "Pet");
+            AddPetText(en, "Lompat", "Hop");
+            AddPetText(en, "Kejar", "Chase");
+            AddPetText(en, "Tidur", "Nap");
+            AddPetText(en, "Chat", "Chat");
+            AddPetText(en, "Atur", "Settings");
             AddPetText(en, "Kirim pesan lewat pet", "Send message via pet");
             AddPetText(en, "Kirim", "Send");
             AddPetText(en, "Pesan baru dari pet", "New message from pet");

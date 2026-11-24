@@ -203,6 +203,8 @@ namespace Deskmate
             public const double HopTime = 0.4, HopHeight = 12, BobStep = 0.25;
             // Ambient cues, refreshed once a second: music playing, a focus session
             public bool Groove, Calm;
+            // The action bar is open: stay put and look up, so its buttons don't walk away from the pointer
+            public bool Attending;
             bool away;
             double playLeft, autoAfter, autoSampleTime = -1;
             Point autoSample;
@@ -228,7 +230,7 @@ namespace Deskmate
 
             public bool CanProbeAuto(double now)
             {
-                return !Playing && !Away && !NoWalk && !Calm && !Reacting && !Manipulating &&
+                return !Playing && !Away && !NoWalk && !Calm && !Attending && !Reacting && !Manipulating &&
                     Mode != PetMode.Sleep && hopT < 0 && Right - Left >= 24 * Scale && now >= autoAfter;
             }
 
@@ -280,6 +282,25 @@ namespace Deskmate
             }
 
             public void StopPlay() { if (Playing) Enter(PetMode.Idle); }
+
+            // Asked for from the action bar: chase the pointer for a few seconds
+            public bool StartChase(double seconds)
+            {
+                if (NoWalk || Calm || away || Manipulating || Right - Left < 24 * Scale) return false;
+                Enter(PetMode.Walk);
+                hopT = -1;
+                playLeft = seconds;
+                return true;
+            }
+
+            // Asked for from the action bar: curl up until the usual sleep ends or a click wakes it
+            public bool Nap()
+            {
+                if (away || Manipulating || Mode == PetMode.Sleep) return false;
+                hopT = -1;
+                Enter(PetMode.Sleep);
+                return true;
+            }
 
             // Walking or mid-hop: frames run on vsync
             public bool Moving { get { return Mode == PetMode.Walk || hopT >= 0 || Manipulating; } }
@@ -469,6 +490,7 @@ namespace Deskmate
                 if (Mode == PetMode.Walk)
                 {
                     if (NoWalk || Calm) { Enter(PetMode.Sit); return; }
+                    if (Attending) { Enter(PetMode.Idle); return; }
                     // A stalled frame slows the step instead of teleporting the pet
                     double v = Speed * Scale * Math.Min(dt, 0.1), gap = targetX - X;
                     if (Math.Abs(gap) <= v) { X = targetX; Enter(rnd.NextDouble() < 0.6 ? PetMode.Idle : PetMode.Sit); }
@@ -483,7 +505,7 @@ namespace Deskmate
             {
                 double r = rnd.NextDouble();
                 // A focus session keeps the pet off its feet
-                if (Reacting) Enter(PetMode.Idle);
+                if (Reacting || (Attending && Mode != PetMode.Sleep)) Enter(PetMode.Idle);
                 else if (Mode == PetMode.Idle) { if (r < 0.65 && !Calm) StartWalk(); else Enter(PetMode.Sit); }
                 else if (Mode == PetMode.Sit) { if (r < (Calm ? 0.5 : 0.3)) Enter(PetMode.Sleep); else if (r < 0.65 && !Calm) StartWalk(); else Enter(PetMode.Idle); }
                 else Enter(PetMode.Sit);
@@ -839,6 +861,7 @@ namespace Deskmate
                 Frames++;
                 brain.NoWalk = Anim.Reduced;
                 brain.Calm = FocusActive;
+                brain.Attending = actionBar != null;
                 bool caught = false;
                 if (brain.DockTrickActive && (PlayBlocked || !DockTrickVisible(now)))
                 {
@@ -849,8 +872,10 @@ namespace Deskmate
                 if (brain.Playing)
                 {
                     Point at = Cursor.Position;
-                    caught = brain.StepPlay(dt, at.X, cw / 2.0, !PlayBlocked && AutoChaseAllowed(at, now));
+                    caught = brain.StepPlay(dt, at.X, cw / 2.0,
+                        !PlayBlocked && (manualChase ? ManualChaseAllowed(now) : AutoChaseAllowed(at, now)));
                     if (caught) brain.React(PetMode.Happy, Math.Max(1.4, sheet.Length(PetMode.Happy)), 0);
+                    if (!brain.Playing) manualChase = false;
                 }
                 else
                 {
@@ -945,6 +970,7 @@ namespace Deskmate
                 drawnRow = row;
                 PlaceWellness();
                 PlaceChatBubble();
+                PlaceActions();
             }
 
             // Out of the way of fullscreen games, video and presentations, and gone with a hidden Deskmate
@@ -963,6 +989,7 @@ namespace Deskmate
                     if (emote != null) emote.Stop();
                     CloseWellness();
                     CloseChatBubble();
+                    CloseActions();
                     Native.ShowWindow(Handle, Native.SW_HIDE);
                     Schedule();
                     return;
@@ -999,7 +1026,7 @@ namespace Deskmate
                 if ((m.Msg == 0x201 || m.Msg == 0x203) && placed && sheet != null) { BeginPetPress(); return; }
                 if (m.Msg == 0x202 && petPressed) { EndPetPress(Cursor.Position); Frame(); return; }
                 if ((m.Msg == 0x001F || m.Msg == 0x0215) && petPressed) { CancelPetPress(); Frame(); }
-                if (m.Msg == 0x205 && placed && !petPressed && !brain.Manipulating) { ShowPetContextMenu(); return; }
+                if (m.Msg == 0x205 && placed && !petPressed && !brain.Manipulating) { ToggleActions(); return; }
                 if (m.Msg == Native.WM_MOUSEACTIVATE) { m.Result = (IntPtr)Native.MA_NOACTIVATE; return; }
                 base.WndProc(ref m);
             }
@@ -1009,6 +1036,7 @@ namespace Deskmate
                 closing = true;
                 CloseWellness();
                 CloseChatBubble();
+                CloseActions();
                 CancelPetPress();
                 rest.Stop();
                 watch.Stop();
