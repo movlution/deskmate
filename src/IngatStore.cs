@@ -879,7 +879,12 @@ namespace Deskmate
             int n = db.Exec("DELETE FROM episodes WHERE end>=? AND start<=?", fromUtc, toUtc);
             var from = fromUtc.ToLocalTime().Date;
             for (var d = from; d <= toUtc.ToLocalTime().Date; d = d.AddDays(1))
-                db.Exec("DELETE FROM daily WHERE date=?", d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            {
+                // The recap is rebuilt from what is left and folded into the facts again, so what other hours taught comes back
+                string key = d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                db.Exec("DELETE FROM daily WHERE date=?", key);
+                db.Exec("DELETE FROM meta WHERE k=?", "facts.folded." + key);
+            }
             ForgetFactsTx(fromUtc, toUtc);
             return n;
         }
@@ -889,7 +894,7 @@ namespace Deskmate
             lock (db.Gate) dirty.Clear();
             VecDrop();
             if (triOn) db.Exec("DELETE FROM episodes_tri");
-            db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;DELETE FROM chunks;UPDATE meetings SET episode=0, title='';DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM facts;DELETE FROM facts_fts;" +
+            db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;DELETE FROM chunks;UPDATE meetings SET episode=0, title='';DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM meta WHERE k LIKE 'facts.folded.%';DELETE FROM facts;DELETE FROM facts_fts;" +
                 "DELETE FROM messages_fts;DELETE FROM messages;DELETE FROM commitments;DELETE FROM conversations;DELETE FROM episode_people;DELETE FROM people");
             db.Exec("VACUUM");
         }

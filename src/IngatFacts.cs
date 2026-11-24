@@ -183,6 +183,33 @@ namespace Deskmate
             return both / (double)(x.Count + y.Count - both);
         }
 
+        // The same fact in other words: most words shared, and only one side adds any.
+        // When both sides have words the other lacks ("Senin" vs "Kamis", "Unity" vs "Godot"), a detail changed: not the same fact.
+        public static bool SameFact(string a, string b)
+        {
+            var x = FactWords(a);
+            var y = FactWords(b);
+            if (x.Count == 0 || y.Count == 0) return false;
+            int both = 0;
+            foreach (var w in x) if (y.Contains(w)) both++;
+            if (both / (double)(x.Count + y.Count - both) < 0.6) return false;
+            return both == x.Count || both == y.Count;
+        }
+
+        // The active fact other than one that already says the same, or null
+        static FactRow SameAs(List<FactRow> facts, string text, long except, bool activeOnly)
+        {
+            FactRow same = null;
+            double best = 0;
+            foreach (var x in facts)
+            {
+                if (x.Id == except || (activeOnly && x.Status != "active") || !SameFact(x.Text, text)) continue;
+                double o = FactOverlap(x.Text, text);
+                if (o > best) { best = o; same = x; }
+            }
+            return same;
+        }
+
         static string AddSource(string sources, string day)
         {
             if (string.IsNullOrEmpty(day)) return sources ?? "";
@@ -234,15 +261,10 @@ namespace Deskmate
                     {
                         string text = CleanFact(op.Text);
                         if (text.Length <= 3 || counts[0] >= MaxFactAdds) continue;
-                        // The same fact in new words strengthens the one we have, archived ones included
-                        FactRow same = null;
-                        double best = 0;
-                        foreach (var x in all)
-                        {
-                            double o = FactOverlap(x.Text, text);
-                            if (o > best) { best = o; same = x; }
-                        }
-                        if (same != null && best >= 0.6)
+                        // The same fact in new words strengthens the one we have, archived ones included.
+                        // A changed detail is a new fact: the old one stays until a later day archives it or it fades.
+                        FactRow same = SameAs(all, text, 0, false);
+                        if (same != null)
                         {
                             if (touched.Add(same.Id)) { Reinforce(same, day, now); counts[2]++; }
                             continue;
@@ -260,6 +282,16 @@ namespace Deskmate
                     {
                         string text = CleanFact(op.Text);
                         if (!byId.TryGetValue(op.Id, out f) || f.Status != "active" || text.Length <= 3 || !touched.Add(f.Id)) continue;
+                        // Updated into what another fact already says: merge into that one instead of keeping two
+                        var twin = SameAs(all, text, f.Id, true);
+                        if (twin != null)
+                        {
+                            if (touched.Add(twin.Id)) Reinforce(twin, day, now);
+                            Archive(f.Id);
+                            f.Status = "archived";
+                            counts[1]++;
+                            continue;
+                        }
                         db.Exec("UPDATE facts SET text=?, kind=CASE WHEN ?<>'' THEN ? ELSE kind END, hits=hits+1, confidence=MAX(confidence, ?), last=?, updated=?, sources=? WHERE id=?",
                             text, op.Kind ?? "", op.Kind == null ? "" : CleanKind(op.Kind), NewConfidence, now, now, AddSource(f.Sources, day), f.Id);
                         db.Exec("DELETE FROM facts_fts WHERE rowid=?", f.Id);

@@ -512,12 +512,12 @@ namespace Deskmate
             return v;
         }
 
-        // Yesterday and up to a week back: a day summary, then the long-term facts
+        // Up to a week back, oldest first so a later day's correction is never undone by an earlier one: a day summary, then the long-term facts
         bool Days()
         {
             if (FoldFacts()) return true;
             var today = DateTime.Today;
-            for (int back = 1; back <= 7; back++)
+            for (int back = 7; back >= 1; back--)
             {
                 var day = today.AddDays(-back);
                 string key = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);

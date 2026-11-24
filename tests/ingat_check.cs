@@ -33,6 +33,7 @@ namespace Deskmate
             TestFtsQuery();
             TestFastPaths();
             TestFacts();
+            TestFactEdits();
             TestRecallQuality();
             TestStoreAndSearch();
             TestRetentionAndForget();
@@ -219,6 +220,41 @@ namespace Deskmate
         {
             foreach (var d in store.FactDetails()) if (Json.Str(d, "text") == text) return (long)Json.Num(d, "id", 0);
             return 0;
+        }
+
+        // A changed detail is not the same fact; an update that repeats another fact merges; forgetting a day lets it fold again
+        static void TestFactEdits()
+        {
+            string path = TempDb();
+            using (var store = new IngatStore(path))
+            {
+                Assert(IngatStore.SameFact("Mengembangkan game Unity bernama Mainra", "Mengembangkan game Unity yang bernama Mainra"), "reworded fact is the same");
+                Assert(!IngatStore.SameFact("Rapat tim setiap Senin pagi", "Rapat tim setiap Kamis pagi"), "changed day is not the same fact");
+                store.ApplyFactOps(new List<IngatFactOp> { Op("add", 0, "Rapat tim setiap Senin pagi"), Op("add", 0, "Mengembangkan game Unity bernama Mainra") }, "2026-11-20");
+                var n = store.ApplyFactOps(new List<IngatFactOp> { Op("add", 0, "Rapat tim setiap Kamis pagi"), Op("add", 0, "Mengembangkan game Godot bernama Mainra") }, "2026-11-21");
+                Assert(n[0] == 2 && n[2] == 0 && store.Facts().Contains("Rapat tim setiap Kamis pagi") && store.Facts().Contains("Mengembangkan game Godot bernama Mainra"),
+                    "a changed detail is stored, not folded into the old fact: +" + n[0] + " =" + n[2]);
+
+                long vs = 0, cs = 0;
+                store.ApplyFactOps(new List<IngatFactOp> { Op("add", 0, "Sering memakai Visual Studio Code"), Op("add", 0, "Menulis kode dengan bahasa Python") }, "2026-11-20");
+                vs = FactId(store, "Sering memakai Visual Studio Code");
+                cs = FactId(store, "Menulis kode dengan bahasa Python");
+                long count = store.FactCount();
+                n = store.ApplyFactOps(new List<IngatFactOp> { Op("update", cs, "Sering memakai Visual Studio Code") }, "2026-11-21");
+                var vsRow = store.FactDetails().Find(d => (long)Json.Num(d, "id", 0) == vs);
+                Assert(n[1] == 1 && store.FactCount() == count - 1 && FactId(store, "Menulis kode dengan bahasa Python") == 0 && Json.Num(vsRow, "seen", 0) == 2,
+                    "update into another fact's words merges into it");
+
+                var day = DateTime.Today.AddDays(-1);
+                string key = day.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+                store.SaveDaily(key, "rekap");
+                store.SetMeta("facts.folded." + key, "1");
+                store.Forget(day.AddHours(23).ToUniversalTime(), day.AddHours(23.5).ToUniversalTime());
+                Assert(!store.HasDaily(key) && store.Meta("facts.folded." + key) == "", "forgotten day is rebuilt and folded again");
+                store.SetMeta("facts.folded." + key, "1");
+                store.ForgetAll();
+                Assert(store.Meta("facts.folded." + key) == "", "forget all clears fold markers");
+            }
         }
 
         // Long-term facts: small operations, dedupe, archive limits, relevance, decay, forgetting, and the old schema
