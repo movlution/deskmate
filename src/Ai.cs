@@ -210,6 +210,36 @@ namespace Deskmate
             return p.Models.Length > 0 ? p.Models[0] : "";
         }
 
+        // Every text model the provider offers now, for the picker: id and a short note
+        public static List<KeyValuePair<string, string>> ListModels(AiProvider p, out string error)
+        {
+            error = null;
+            if (p == null) { error = Lang.T("Layanan AI belum dipilih"); return null; }
+            if (p.Cli != null) return AiCli.ListModels(p, out error);
+            if (p.Id == "custom" && BaseUrl(p).Length == 0) { error = Lang.T("Alamat server belum diisi"); return null; }
+            if (!Ready(p)) { error = Lang.F("Key {0} belum diisi", Label(p)); return null; }
+            var r = Web.Send("GET", BaseUrl(p) + "models", Auth(p, Key(p)), null, 15000);
+            if (!r.Ok) { error = Error(p, r); return null; }
+            Remember(p, r.Body);
+            List<string> have;
+            lock (models) models.TryGetValue(p.Id, out have);
+            var list = new List<string>();
+            foreach (var m in have ?? new List<string>())
+            {
+                string low = m.ToLowerInvariant();
+                if (low.Contains("whisper") || low.Contains("guard") || low.Contains("tts") || low.Contains("embed") || low.Contains("transcribe") ||
+                    low.Contains("dall-e") || low.Contains("moderation") || low.Contains("image") || low.Contains("realtime")) continue;
+                if (!list.Contains(m)) list.Add(m);
+            }
+            list.Sort(StringComparer.OrdinalIgnoreCase);
+            var result = new List<KeyValuePair<string, string>>();
+            // Deskmate's picks first, then the rest by name
+            foreach (var m in p.Models) if (list.Remove(m)) result.Add(new KeyValuePair<string, string>(m, Lang.T("disarankan")));
+            foreach (var m in list) result.Add(new KeyValuePair<string, string>(m, ""));
+            if (result.Count == 0) error = Lang.F("{0} tidak punya model teks", Label(p));
+            return result;
+        }
+
         public static string DefaultModel(AiProvider p) { return p.Models.Length > 0 ? p.Models[0] : p.Cli != null ? Lang.T("bawaan CLI") : Lang.T("model pertama di server"); }
 
         // One reply: text, or tool calls

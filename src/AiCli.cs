@@ -135,6 +135,41 @@ namespace Deskmate
             }
         }
 
+        // Claude Code lists no models: its aliases (always the newest) and the current ids
+        static readonly string[] ClaudeAliases = { "sonnet", "opus", "haiku", "fable" };
+        static readonly string[] ClaudeIds = { "claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5", "claude-fable-5-2" };
+
+        public static List<KeyValuePair<string, string>> ListModels(AiProvider p, out string error)
+        {
+            error = null;
+            var list = new List<KeyValuePair<string, string>>();
+            if (p.Cli == "claude")
+            {
+                foreach (var a in ClaudeAliases) list.Add(new KeyValuePair<string, string>(a, Lang.T("alias, selalu versi terbaru")));
+                foreach (var id in ClaudeIds) list.Add(new KeyValuePair<string, string>(id, ""));
+                return list;
+            }
+            string exe = Exe(p);
+            if (exe == null) { error = Lang.F("{0} belum terpasang di laptop ini", Ai.Label(p)); return null; }
+            var r = Run(exe, "debug models", null, 30000);
+            if (r.TimedOut) { error = Lang.F("{0} terlalu lama menjawab", Ai.Label(p)); return null; }
+            try
+            {
+                foreach (var o in Json.Arr(Json.Parse(r.Out), "models"))
+                {
+                    var m = o as Dictionary<string, object>;
+                    string slug = Json.Str(m, "slug");
+                    // Hidden entries are internal or retired
+                    if (slug.Length == 0 || Json.Str(m, "visibility") != "list") continue;
+                    string name = Json.Str(m, "display_name");
+                    list.Add(new KeyValuePair<string, string>(slug, name.Equals(slug, StringComparison.OrdinalIgnoreCase) ? "" : name));
+                }
+            }
+            catch (Exception) { list.Clear(); }
+            if (list.Count == 0) { error = Lang.F("{0} gagal: {1}", Ai.Label(p), Short(r.Err.Length > 0 ? r.Err : Lang.T("daftar model kosong"))); return null; }
+            return list;
+        }
+
         // One prompt from the turns: the CLI keeps no history of its own here
         internal static string Transcript(List<KeyValuePair<string, string>> turns)
         {

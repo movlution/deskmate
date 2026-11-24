@@ -958,6 +958,16 @@ namespace Deskmate
             en.Add("Tahan Ctrl kanan di aplikasi apa pun, bicara, lalu lepas: teksnya ditempel di tempat kursor. Ada kamus istilah dan snippet, lewat layanan AI pilihanmu atau offline.", "Hold right Ctrl in any app, speak, then let go: the text is pasted at the cursor. With a term list and snippets, through the AI service you pick or offline.");
             en.Add("Pengaturan", "Settings");
             en.Add("bawaan CLI", "CLI default");
+            en.Add("Model tidak ditemukan", "No model found");
+            en.Add("Tersimpan: {0}", "Saved: {0}");
+            en.Add("Mengambil daftar model…", "Fetching the model list…");
+            en.Add("{0} model tersedia", "{0} models available");
+            en.Add("disarankan", "suggested");
+            en.Add("pakai nama ini", "use this name");
+            en.Add("Cari dari {0} model", "Search {0} models");
+            en.Add("alias, selalu versi terbaru", "alias, always the newest");
+            en.Add("daftar model kosong", "empty model list");
+            en.Add("{0} tidak punya model teks", "{0} has no text models");
             en.Add("tanpa keterangan", "no details");
             en.Add("Cari lagi", "Look again");
             en.Add("Program {0}", "{0} program");

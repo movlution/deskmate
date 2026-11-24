@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -78,7 +79,7 @@ namespace Deskmate
                     add(saved);
                 }
                 else KeyRows(add, p);
-                if (withModel) add(ModelRow(p, "ai." + p.Id + ".model", Lang.T("Model"), Ai.DefaultModel(p)));
+                if (withModel) add(ModelRow(p, "ai." + p.Id + ".model", Lang.T("Model"), Ai.DefaultModel(p), true));
             }
 
             KitButton TestButton(AiProvider p, Func<KitRow> row)
@@ -164,11 +165,46 @@ namespace Deskmate
                 return row;
             }
 
-            KitRow ModelRow(AiProvider p, string key, string title, string cue)
+            KitRow ModelRow(AiProvider p, string key, string title, string cue, bool pick = false)
             {
                 var f = new KitField(Ui, false, cue, 120);
                 f.Box.Text = settings.Get(key, "");
-                var row = Row(title, Lang.T("Kosong: pilihan Deskmate"), f);
+                KitRow row = null;
+                Control right = f;
+                if (pick)
+                {
+                    KitButton choose = null;
+                    choose = Button(Lang.T("Pilih"), false, delegate
+                    {
+                        choose.Enabled = false;
+                        Say(row, Lang.T("Mengambil daftar model\u2026"));
+                        ThreadPool.QueueUserWorkItem(delegate
+                        {
+                            string err;
+                            List<KeyValuePair<string, string>> list;
+                            try { list = Ai.ListModels(p, out err); }
+                            catch (Exception ex) { list = null; err = Lang.F("Tidak tersambung ke {0}", Ai.Label(p)); Log.Write("ai model: " + ex.GetType().Name); }
+                            island.Post(delegate
+                            {
+                                if (choose.IsDisposed) return;
+                                choose.Enabled = true;
+                                if (list == null || list.Count == 0) { Say(row, err ?? Lang.T("Model tidak ditemukan")); return; }
+                                Say(row, Lang.F("{0} model tersedia", list.Count));
+                                var menu = new ModelMenu(Ui, list, f.Box.Text.Trim(), id =>
+                                {
+                                    f.Box.Text = id;
+                                    settings.Set(key, id);
+                                    settings.Save();
+                                    Say(row, Lang.F("Tersimpan: {0}", id));
+                                });
+                                menu.Closed += delegate { menu.BeginInvoke(new Action(menu.Dispose)); };
+                                menu.Show(choose, new Point(choose.Width - menu.PreferredSize.Width, choose.Height));
+                            });
+                        });
+                    });
+                    right = Pair(f, choose);
+                }
+                row = Row(title, Lang.T("Kosong: pilihan Deskmate"), right);
                 row.Glyph = '\uE8F1';
                 Action save = delegate
                 {
