@@ -73,9 +73,20 @@ namespace Deskmate
                 "CREATE TABLE IF NOT EXISTS commitments(id INTEGER PRIMARY KEY, conversation INTEGER, person INTEGER, who TEXT, what TEXT, due TEXT, t INTEGER, done INTEGER DEFAULT 0, hash TEXT UNIQUE);" +
                 "CREATE TABLE IF NOT EXISTS episode_people(episode INTEGER, person INTEGER, PRIMARY KEY(episode, person))");
             // Columns added after the first release: older databases get them here
-            foreach (var col in new[] { "channel TEXT DEFAULT ''", "digested INTEGER DEFAULT 0" })
-                try { db.Exec("ALTER TABLE episodes ADD COLUMN " + col); }
+            foreach (var col in new[]
+            {
+                "episodes|channel TEXT DEFAULT ''", "episodes|digested INTEGER DEFAULT 0",
+                // sent | received | draft (written, never sent); said: the time the chat showed
+                "messages|status TEXT DEFAULT ''", "messages|said TEXT DEFAULT ''",
+                // Where a conversation stands: topic, who waits for whom, questions still open, decisions
+                "conversations|topic TEXT DEFAULT ''", "conversations|status TEXT DEFAULT ''", "conversations|last_from TEXT DEFAULT ''",
+                "conversations|open TEXT DEFAULT ''", "conversations|decisions TEXT DEFAULT ''",
+            })
+            {
+                var p = col.Split('|');
+                try { db.Exec("ALTER TABLE " + p[0] + " ADD COLUMN " + p[1]); }
                 catch (InvalidOperationException) { }
+            }
         }
 
         public void Dispose() { db.Dispose(); }
@@ -358,15 +369,29 @@ namespace Deskmate
 
         public void SetDigest(long conversation, string digest) { db.Exec("UPDATE conversations SET digest=?, digest_t=? WHERE id=?", digest, DateTime.UtcNow, conversation); }
 
-        // False when this exact line is already known in this conversation
         public bool AddMessage(long conversation, DateTime t, string sender, bool mine, string text, long episode)
+        {
+            return AddMessage(conversation, t, sender, mine ? "sent" : "received", text, episode, "");
+        }
+
+        // False when this line is already known in this conversation (same sender, same words; spacing and case aside).
+        // A draft that later shows up as sent becomes sent.
+        public bool AddMessage(long conversation, DateTime t, string sender, string status, string text, long episode, string said)
         {
             text = (text ?? "").Trim();
             if (conversation == 0 || text.Length == 0) return false;
             if (text.Length > 2000) text = text.Substring(0, 2000);
-            string hash = Json.Sha256(conversation + "|" + IngatChat.Norm(sender) + "|" + (mine ? "1" : "0") + "|" + text).Substring(0, 20);
-            if (db.Long("SELECT COUNT(*) FROM messages WHERE hash=?", hash) > 0) return false;
-            db.Exec("INSERT INTO messages(conversation,t,sender,mine,text,hash,episode) VALUES(?,?,?,?,?,?,?)", conversation, t, sender, mine, text, hash, episode);
+            bool mine = status == "sent" || status == "draft";
+            string same = Regex.Replace(text.ToLowerInvariant(), @"\s+", " ").TrimEnd('.', '!', '?', ' ');
+            string hash = Json.Sha256(conversation + "|" + (mine ? "me" : IngatChat.Norm(sender)) + "|" + same).Substring(0, 20);
+            var known = db.Query("SELECT id, status FROM messages WHERE hash=?", hash);
+            if (known.Count > 0)
+            {
+                if (status == "sent" && IngatDb.Str(known[0][1]) == "draft") db.Exec("UPDATE messages SET status='sent', t=? WHERE id=?", t, IngatDb.Num(known[0][0]));
+                if (!string.IsNullOrEmpty(said)) db.Exec("UPDATE messages SET said=? WHERE id=? AND said=''", said, IngatDb.Num(known[0][0]));
+                return false;
+            }
+            db.Exec("INSERT INTO messages(conversation,t,sender,mine,text,hash,episode,status,said) VALUES(?,?,?,?,?,?,?,?,?)", conversation, t, mine ? "me" : sender, mine, text, hash, episode, status, said ?? "");
             long id = db.LastId;
             db.Exec("INSERT INTO messages_fts(rowid,sender,text,conv) SELECT ?, ?, ?, name FROM conversations WHERE id=?", id, sender, text, conversation);
             return true;
@@ -377,6 +402,27 @@ namespace Deskmate
             if (string.IsNullOrEmpty(what)) return;
             string hash = Json.Sha256(conversation + "|" + IngatChat.Norm(who) + "|" + IngatChat.Norm(what)).Substring(0, 20);
             db.Exec("INSERT OR IGNORE INTO commitments(conversation,person,who,what,due,t,hash) VALUES(?,?,?,?,?,?,?)", conversation, person, who ?? "", what, due ?? "", t, hash);
+        }
+
+        // The model names a fulfilled promise in its own words: match by shared words
+        public void FulfillPromise(long conversation, string what)
+        {
+            var want = new HashSet<string>();
+            foreach (var w in Regex.Split((what ?? "").ToLowerInvariant(), @"[^\p{L}\p{N}]+")) if (w.Length >= 3) want.Add(w);
+            if (want.Count == 0) return;
+            foreach (var r in db.Query("SELECT id, what FROM commitments WHERE conversation=? AND done=0", conversation))
+            {
+                int hit = 0, total = 0;
+                foreach (var w in Regex.Split(IngatDb.Str(r[1]).ToLowerInvariant(), @"[^\p{L}\p{N}]+"))
+                {
+                    if (w.Length < 3) continue;
+                    total++;
+                    // Affixes aside: "kirim" matches "dikirim", "kirimkan"
+                    foreach (var x in want)
+                        if (x == w || (w.Length >= 4 && x.Contains(w)) || (x.Length >= 4 && w.Contains(x))) { hit++; break; }
+                }
+                if (total > 0 && hit * 2 >= total) db.Exec("UPDATE commitments SET done=1 WHERE id=?", IngatDb.Num(r[0]));
+            }
         }
 
         public void SetCommitmentDone(long id, bool done) { db.Exec("UPDATE commitments SET done=? WHERE id=?", done, id); }
@@ -427,15 +473,15 @@ namespace Deskmate
             var p = db.Query("SELECT name, about, aliases, last FROM people WHERE id=?", person);
             if (p.Count == 0) return null;
             var convs = new List<object>();
-            foreach (var r in db.Query("SELECT id, app, name, kind, digest, last FROM conversations WHERE person=? OR norm=? ORDER BY last DESC LIMIT 12", person, IngatChat.Norm(IngatDb.Str(p[0][0]))))
-                convs.Add(new Dictionary<string, object> { { "id", IngatDb.Num(r[0]) }, { "app", IngatDb.Str(r[1]) }, { "name", IngatDb.Str(r[2]) }, { "kind", IngatDb.Str(r[3]) }, { "digest", IngatDb.Str(r[4]) }, { "last", Local(r[5]) } });
-            var msgs = new List<object>();
-            var rows = db.Query("SELECT m.t, m.sender, m.mine, m.text, c.app, c.name FROM messages m JOIN conversations c ON c.id=m.conversation WHERE c.person=? ORDER BY m.t DESC, m.id DESC LIMIT ?", person, messages);
-            for (int i = rows.Count - 1; i >= 0; i--)
+            foreach (var r in db.Query("SELECT id, app, name, kind, digest, last, topic, status, last_from, open, decisions FROM conversations WHERE person=? OR norm=? ORDER BY last DESC LIMIT 12", person, IngatChat.Norm(IngatDb.Str(p[0][0]))))
             {
-                var r = rows[i];
-                msgs.Add(new Dictionary<string, object> { { "time", Local(r[0]) }, { "from", IngatDb.Num(r[2]) != 0 ? "me" : IngatDb.Str(r[1]) }, { "text", IngatDb.Str(r[3]) }, { "app", IngatDb.Str(r[4]) }, { "conversation", IngatDb.Str(r[5]) } });
+                var c = new Dictionary<string, object> { { "id", IngatDb.Num(r[0]) }, { "app", IngatDb.Str(r[1]) }, { "name", IngatDb.Str(r[2]) }, { "kind", IngatDb.Str(r[3]) }, { "digest", IngatDb.Str(r[4]) }, { "last", Local(r[5]) } };
+                foreach (var kv in State(r, 6)) c[kv.Key] = kv.Value;
+                convs.Add(c);
             }
+            var msgs = new List<object>();
+            var rows = db.Query("SELECT " + MsgCols + " FROM messages m JOIN conversations c ON c.id=m.conversation WHERE c.person=? ORDER BY m.t DESC, m.id DESC LIMIT ?", person, messages);
+            for (int i = rows.Count - 1; i >= 0; i--) msgs.Add(Message(rows[i]));
             return new Dictionary<string, object>
             {
                 { "id", person }, { "name", IngatDb.Str(p[0][0]) }, { "about", IngatDb.Str(p[0][1]) }, { "last", Local(p[0][3]) },
@@ -462,9 +508,9 @@ namespace Deskmate
             var list = new List<Dictionary<string, object>>();
             string fts = FtsQuery(q);
             if (fts.Length == 0) return list;
-            foreach (var r in db.Query("SELECT m.t, m.sender, m.mine, m.text, c.app, c.name FROM messages_fts JOIN messages m ON m.id=messages_fts.rowid JOIN conversations c ON c.id=m.conversation " +
+            foreach (var r in db.Query("SELECT " + MsgCols + " FROM messages_fts JOIN messages m ON m.id=messages_fts.rowid JOIN conversations c ON c.id=m.conversation " +
                 "WHERE messages_fts MATCH ? AND m.t>=? AND m.t<=? ORDER BY bm25(messages_fts) LIMIT ?", fts, fromUtc, toUtc, limit))
-                list.Add(new Dictionary<string, object> { { "time", Local(r[0]) }, { "from", IngatDb.Num(r[2]) != 0 ? "me" : IngatDb.Str(r[1]) }, { "text", IngatDb.Str(r[3]) }, { "app", IngatDb.Str(r[4]) }, { "conversation", IngatDb.Str(r[5]) } });
+                list.Add(Message(r));
             return list;
         }
 
@@ -479,6 +525,85 @@ namespace Deskmate
         }
 
         public string ConversationDigest(long conversation) { return IngatDb.Str(db.Scalar("SELECT digest FROM conversations WHERE id=?", conversation)); }
+
+        public void SetState(long conversation, string digest, string topic, string status, string lastFrom, string[] open, string[] decisions)
+        {
+            db.Exec("UPDATE conversations SET digest=?, digest_t=?, topic=?, status=?, last_from=?, open=?, decisions=? WHERE id=?",
+                digest ?? "", DateTime.UtcNow, topic ?? "", status ?? "", lastFrom ?? "", string.Join("\n", open ?? new string[0]), string.Join("\n", decisions ?? new string[0]), conversation);
+        }
+
+        static Dictionary<string, object> Message(object[] r)
+        {
+            // r: t, sender, mine, text, status, said, app, conversation name
+            string status = IngatDb.Str(r[4]);
+            if (status.Length == 0) status = IngatDb.Num(r[2]) != 0 ? "sent" : "received";
+            var d = new Dictionary<string, object>
+            {
+                { "time", Local(r[0]) }, { "from", IngatDb.Num(r[2]) != 0 ? "me" : IngatDb.Str(r[1]) }, { "status", status }, { "text", IngatDb.Str(r[3]) },
+            };
+            if (IngatDb.Str(r[5]).Length > 0) d["shown"] = IngatDb.Str(r[5]);
+            if (r.Length > 6) { d["app"] = IngatDb.Str(r[6]); d["conversation"] = IngatDb.Str(r[7]); }
+            return d;
+        }
+
+        const string MsgCols = "m.t, m.sender, m.mine, m.text, m.status, m.said, c.app, c.name";
+
+        // Latest lines of one conversation, oldest first
+        public List<Dictionary<string, object>> Messages(long conversation, int limit)
+        {
+            var rows = db.Query("SELECT " + MsgCols + " FROM messages m JOIN conversations c ON c.id=m.conversation WHERE m.conversation=? ORDER BY m.t DESC, m.id DESC LIMIT ?", conversation, limit);
+            var list = new List<Dictionary<string, object>>();
+            for (int i = rows.Count - 1; i >= 0; i--) list.Add(Message(rows[i]));
+            return list;
+        }
+
+        static Dictionary<string, object> State(object[] r, int at)
+        {
+            // r[at..]: topic, status, last_from, open, decisions
+            var d = new Dictionary<string, object>();
+            if (IngatDb.Str(r[at]).Length > 0) d["topic"] = IngatDb.Str(r[at]);
+            if (IngatDb.Str(r[at + 1]).Length > 0) d["status"] = IngatDb.Str(r[at + 1]);
+            if (IngatDb.Str(r[at + 2]).Length > 0) d["lastFrom"] = IngatDb.Str(r[at + 2]);
+            var open = IngatDb.Str(r[at + 3]).Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            if (open.Length > 0) d["openQuestions"] = open;
+            var dec = IngatDb.Str(r[at + 4]).Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            if (dec.Length > 0) d["decisions"] = dec;
+            return d;
+        }
+
+        // One conversation in full: where it stands, its story so far, and the latest lines
+        public Dictionary<string, object> ConversationView(long conversation, int messages)
+        {
+            var r = db.Query("SELECT c.id, c.app, c.name, c.kind, c.digest, c.last, p.name, c.topic, c.status, c.last_from, c.open, c.decisions FROM conversations c LEFT JOIN people p ON p.id=c.person WHERE c.id=?", conversation);
+            if (r.Count == 0) return null;
+            var d = new Dictionary<string, object>
+            {
+                { "id", IngatDb.Num(r[0][0]) }, { "app", IngatDb.Str(r[0][1]) }, { "name", IngatDb.Str(r[0][2]) }, { "kind", IngatDb.Str(r[0][3]) },
+                { "summary", IngatDb.Str(r[0][4]) }, { "last", Local(r[0][5]) }, { "person", IngatDb.Str(r[0][6]) },
+            };
+            foreach (var kv in State(r[0], 7)) d[kv.Key] = kv.Value;
+            d["messages"] = Messages(conversation, messages).ToArray();
+            var proms = new List<object>();
+            foreach (var k in db.Query("SELECT who, what, due FROM commitments WHERE conversation=? AND done=0 ORDER BY t DESC LIMIT 10", conversation))
+                proms.Add(new Dictionary<string, object> { { "who", IngatDb.Str(k[0]) }, { "what", IngatDb.Str(k[1]) }, { "due", IngatDb.Str(k[2]) } });
+            d["promises"] = proms.ToArray();
+            return d;
+        }
+
+        // Conversations waiting for the user's reply, newest first
+        public List<Dictionary<string, object>> Inbox(int limit)
+        {
+            var list = new List<Dictionary<string, object>>();
+            foreach (var r in db.Query("SELECT c.id, c.app, c.name, c.last, c.topic, c.status, c.last_from, c.open, c.decisions FROM conversations c WHERE c.status='awaiting_me' ORDER BY c.last DESC LIMIT ?", limit))
+            {
+                var d = new Dictionary<string, object> { { "id", IngatDb.Num(r[0]) }, { "app", IngatDb.Str(r[1]) }, { "name", IngatDb.Str(r[2]) }, { "last", Local(r[3]) } };
+                foreach (var kv in State(r, 4)) d[kv.Key] = kv.Value;
+                list.Add(d);
+            }
+            return list;
+        }
+
+        public void SetConversationStatus(long conversation, string status) { db.Exec("UPDATE conversations SET status=? WHERE id=?", status, conversation); }
 
         // Meetings come from Rapat's transcript files
 

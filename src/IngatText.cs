@@ -117,27 +117,140 @@ namespace Deskmate
             return dot > 0 && dot < v.Length - 2;
         }
 
+        // Chats: every line with its horizontal place in the window, "[62-95] text", top to bottom.
+        // In most chat apps the user's own bubbles hug the right edge and a chat list fills the far left;
+        // the position lets the model tell sent from received and previews from the open chat.
+        public static string ReadChat(IntPtr hwnd, string exe, out string url, out bool secret)
+        {
+            url = "";
+            secret = false;
+            RECT wr;
+            if (!GetWindowRect(hwnd, out wr) || wr.R - wr.L < 200) return "";
+            double left = wr.L, width = Math.Max(1, wr.R - wr.L);
+            AutomationElement root;
+            try { root = AutomationElement.FromHandle(hwnd); }
+            catch (Exception) { return ""; }
+            if (root == null) return "";
+            bool browser = IsBrowser(exe);
+            var lines = new List<KeyValuePair<System.Windows.Rect, string>>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var sw = Stopwatch.StartNew();
+            var queue = new Queue<AutomationElement>();
+            queue.Enqueue(root);
+            var walker = TreeWalker.ControlViewWalker;
+            int nodes = 0, chars = 0;
+            // Web-based chats nest deep: a larger budget than the plain read
+            while (queue.Count > 0 && nodes < 1600 && sw.ElapsedMilliseconds < 1600 && chars < 9000)
+            {
+                var el = queue.Dequeue();
+                nodes++;
+                try
+                {
+                    var c = el.Current;
+                    if (c.IsPassword) { secret = true; continue; }
+                    var type = c.ControlType;
+                    if (type == ControlType.ScrollBar || type == ControlType.TitleBar || type == ControlType.MenuBar) continue;
+                    if (type == ControlType.Edit)
+                    {
+                        string v = Value(el);
+                        if (browser && url.Length == 0 && LooksLikeUrl(v)) { url = v; continue; }
+                    }
+                    else if (type == ControlType.Text || type == ControlType.Hyperlink || type == ControlType.ListItem && walker.GetFirstChild(el) == null)
+                    {
+                        string s = (c.Name ?? "").Trim();
+                        var r = c.BoundingRectangle;
+                        if (s.Length >= 1 && !r.IsEmpty && r.Width > 0 && seen.Add(s + "@" + (int)r.Top))
+                        {
+                            lines.Add(new KeyValuePair<System.Windows.Rect, string>(r, s.Length > 1500 ? s.Substring(0, 1500) : s));
+                            chars += s.Length;
+                        }
+                        if (type == ControlType.Text) continue;
+                    }
+                    var child = walker.GetFirstChild(el);
+                    while (child != null && queue.Count < 4000)
+                    {
+                        queue.Enqueue(child);
+                        child = walker.GetNextSibling(child);
+                    }
+                }
+                catch (ElementNotAvailableException) { }
+                catch (InvalidOperationException) { }
+                catch (COMException) { }
+            }
+            if (browser && url.Length > 0 && !url.Contains("://")) url = "https://" + url;
+            lines.Sort((a, b) => a.Key.Top != b.Key.Top ? a.Key.Top.CompareTo(b.Key.Top) : a.Key.Left.CompareTo(b.Key.Left));
+            var sb = new StringBuilder();
+            foreach (var l in lines)
+            {
+                int x0 = (int)Math.Max(0, Math.Min(100, (l.Key.Left - left) * 100 / width));
+                int x1 = (int)Math.Max(0, Math.Min(100, (l.Key.Right - left) * 100 / width));
+                sb.Append('[').Append(x0).Append('-').Append(x1).Append("] ").Append(l.Value.Replace("\r", " ").Replace("\n", " / ")).Append('\n');
+            }
+            return sb.ToString().TrimEnd();
+        }
+
         // OCR fallback
 
         [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
         [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
         [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+        [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
 
-        // Picture of the window as it is on screen; null when off screen or tiny
+        // Picture of the window's own content, even where other windows cover it; null when minimized or tiny
         public static Bitmap Snap(IntPtr hwnd)
         {
             RECT r;
             if (IsIconic(hwnd) || !GetWindowRect(hwnd, out r)) return null;
-            var bounds = Rectangle.FromLTRB(r.L, r.T, r.R, r.B);
-            bounds.Intersect(System.Windows.Forms.SystemInformation.VirtualScreen);
-            if (bounds.Width < 200 || bounds.Height < 120) return null;
-            var bmp = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
+            int w = r.R - r.L, h = r.B - r.T;
+            if (w < 200 || h < 120 || w > 10000 || h > 10000) return null;
+            var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
             try
             {
-                using (var g = Graphics.FromImage(bmp)) g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
+                bool ok;
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    IntPtr dc = g.GetHdc();
+                    // PW_RENDERFULLCONTENT: GPU-drawn content too (WebView2, Chromium, UWP)
+                    try { ok = PrintWindow(hwnd, dc, 2); }
+                    finally { g.ReleaseHdc(dc); }
+                }
+                if (ok && !Blank(bmp)) return bmp;
+                // Some windows refuse: fall back to what the screen shows
+                var bounds = Rectangle.FromLTRB(r.L, r.T, r.R, r.B);
+                bounds.Intersect(System.Windows.Forms.SystemInformation.VirtualScreen);
+                if (bounds.Width < 200 || bounds.Height < 120) { bmp.Dispose(); return null; }
+                using (var g = Graphics.FromImage(bmp)) { g.Clear(Color.Black); g.CopyFromScreen(bounds.Location, new Point(bounds.X - r.L, bounds.Y - r.T), bounds.Size); }
                 return bmp;
             }
             catch (Exception) { bmp.Dispose(); return null; }
+        }
+
+        // All one color (black from a refused PrintWindow)
+        static bool Blank(Bitmap b)
+        {
+            var first = b.GetPixel(b.Width / 2, b.Height / 2);
+            for (int i = 1; i < 9; i++)
+            {
+                var p = b.GetPixel(b.Width * i / 10, b.Height * ((i * 7) % 10) / 10);
+                if (p.ToArgb() != first.ToArgb()) return false;
+            }
+            return true;
+        }
+
+        // OCR with positions, for chats
+        public static string OcrPlaced(Bitmap b)
+        {
+            if (!Deskmate.Ocr.Available) return "";
+            string tmp = Path.Combine(IngatStore.Dir, "ocr-" + Guid.NewGuid().ToString("N") + ".png");
+            try
+            {
+                Directory.CreateDirectory(IngatStore.Dir);
+                b.Save(tmp, ImageFormat.Png);
+                string text = Deskmate.Ocr.ReadPlaced(tmp) ?? "";
+                return text.Length > 9000 ? text.Substring(text.Length - 9000) : text;
+            }
+            catch (Exception ex) { Log.Write("ingat ocr: " + ex.Message); return ""; }
+            finally { try { File.Delete(tmp); } catch (Exception) { } }
         }
 
         // 64-bit difference hash: rows of 9 greys, each bit "brighter than the next"

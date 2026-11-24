@@ -42,7 +42,7 @@ Deskmate.exe --mcp (stdio)        ──┼──► API lokal 127.0.0.1 + token
 claude mcp add deskmate -- "C:\path\Deskmate.exe" --mcp
 ```
 
-  Tool yang tersedia: `search_activity`, `ask_memory`, `get_timeline`, `current_context`, `get_episode`, `list_meetings`, `get_meeting_transcript`, `get_facts`, `list_people`, `get_person`, `search_messages`, `get_promises`. Semuanya hanya membaca.
+  Tool yang tersedia: `search_activity`, `ask_memory`, `get_timeline`, `current_context`, `get_episode`, `list_meetings`, `get_meeting_transcript`, `get_facts`, `list_people`, `get_person`, `search_messages`, `get_promises`, `get_inbox`, `get_conversation`. Semuanya hanya membaca.
 
 Pencarian menggabungkan BM25 (SQLite FTS5) dengan kemiripan makna (embedding) memakai *reciprocal rank fusion*. Kata waktu seperti "tadi pagi", "kemarin", "minggu lalu", "3 jam terakhir", atau "yesterday afternoon" otomatis menjadi rentang waktu.
 
@@ -53,6 +53,11 @@ Ingatan mengenali aplikasi chat dan email: WhatsApp, Telegram, Discord, Slack, T
 - **Yang dicatat:** isi obrolan yang terlihat di layar, draf yang sedang kamu tulis, dan pesan yang kamu kirim. Kalau judul jendela menyebut nama lawan bicara (Discord, Telegram, Teams), tiap percakapan menjadi episode sendiri.
 - **Dipilah AI:** setelah episode chat selesai, AI memilah isinya menjadi percakapan (orang, grup, kanal, atau utas email), pesan per pengirim, ringkasan, dan **janji**. Janji mencakup apa yang kamu janjikan dan apa yang diminta orang lain darimu, termasuk tenggatnya.
 - **Satu orang lintas aplikasi:** orang yang sama di WhatsApp, Discord, dan email digabung lewat namanya, tanpa membedakan huruf besar, gelar (Pak, Bu, Mas, Kak), atau emoji. AI juga mencatat siapa dia bagimu kalau itu jelas dari obrolan (klien, teman kuliah, atasan).
+- **Terkirim, diterima, atau draf:** setiap baris obrolan dibaca beserta posisinya di jendela, misalnya `[58-96]`, yang berarti dari 58% sampai 96% lebar jendela. Di WhatsApp, Telegram, Signal, Messenger, dan LINE, gelembungmu menempel ke kanan dan gelembung lawan bicara ke kiri. Daftar obrolan di sisi kiri (beserta pratinjaunya) tidak dianggap pesan. Di Discord, Slack, Teams, dan email, pengirim dikenali dari nama di atas pesan. Draf yang tidak pernah terkirim disimpan sebagai *draf*. Kalau isi draf yang sama kemudian terlihat terkirim, statusnya berubah menjadi *terkirim*.
+- **Jam pesan:** jam yang tertera di gelembung ("09.13", "9:13 PM") dan pemisah hari ("Kemarin", tanggal) dipakai sebagai waktu pesan, sehingga urutannya benar walau kamu membuka obrolannya belakangan.
+- **Potret jendela, bukan layar:** kalau perlu OCR, jendela chat dipotret dari isinya sendiri (`PrintWindow`), jadi jendela lain yang menutupinya tidak ikut terbaca.
+- **Kesimpulan yang jelas per percakapan:** setiap kali ada pesan baru, AI menulis ulang ringkasan berjalan dari seluruh riwayat. Isinya: topik, siapa yang meminta atau mengirim apa, apa yang sudah kamu balas, keputusan, dan posisi terakhir. Status percakapan juga diperbarui: *menunggu balasanmu*, *menunggu mereka*, *berjalan*, atau *selesai*. Pertanyaan yang belum kamu jawab dan janji yang sudah ditepati dicatat terpisah.
+- **Belum dibalas:** pet sesekali mengingatkan obrolan yang menunggu balasanmu, misalnya "2 obrolan menunggu balasanmu: Budi (proposal Mainra), Rina (invoice)". Pengingat ini muncul lagi hanya kalau daftarnya berubah, atau setelah 2 jam.
 - **Bertanya tentang orang:** pertanyaan yang menyebut nama ("Budi minta apa ke aku?", "apa janjiku ke Rina?") otomatis membawa obrolan, pesan terakhir, dan janji dengan orang itu ke pet, Suruh, dan MCP.
 
 ## Isi kolom yang kamu tulis
@@ -120,6 +125,9 @@ Semua request wajib membawa header `X-Deskmate-Token`.
 | GET | `/messages?q=&from=&to=` | Cari pesan di semua chat dan email |
 | GET | `/promises?person=&all=1` | Janji yang masih terbuka (atau semuanya) |
 | POST | `/promise` `{"id": 1, "done": true}` | Menandai janji selesai |
+| GET | `/inbox?limit=` | Percakapan yang menunggu balasanmu |
+| GET | `/conversation?name=&app=` atau `?id=` | Satu percakapan: ringkasan, topik, status, pertanyaan terbuka, keputusan, janji, dan pesan (terkirim/diterima/draf) |
+| POST | `/conversation/status` `{"id": 1, "status": "done"}` | Mengubah status percakapan |
 | GET | `/composing` | Kolom chat yang sedang kamu tulis (aplikasi, percakapan, panjang draf) |
 | GET | `/brief` | Ringkasan konteks untuk pesan yang sedang ditulis |
 | POST | `/ask` `{"q": "..."}` | Jawaban beserta momen sumbernya |

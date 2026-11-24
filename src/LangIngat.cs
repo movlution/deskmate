@@ -83,6 +83,7 @@ namespace Deskmate
                 new[] { "Dibaca dari kolomnya, bukan dari keyboard; kolom kata sandi dilewati", "Read from the field, not the keyboard; password fields are skipped" },
                 new[] { "Konteks saat menulis pesan", "Context while writing a message" },
                 new[] { "Pet merangkum obrolan dan janji dengan orang itu saat kamu mulai mengetik", "The pet sums up the chat and promises with that person as you start typing" },
+                new[] { "{0} obrolan menunggu balasanmu: {1}", "{0} chats are waiting for your reply: {1}" },
                 new[] { "Tanya", "Ask" },
                 new[] { "Tanya pet", "Ask your pet" },
                 new[] { "Tanya apa saja, termasuk yang tadi kamu kerjakan…", "Ask anything, even what you worked on earlier…" },

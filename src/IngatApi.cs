@@ -194,6 +194,31 @@ namespace Deskmate
                     Span(q, out from, out to);
                     return new Dictionary<string, object> { { "messages", store.SearchMessages(Get(q, "q"), from, to, Clamp(Get(q, "limit"), 20, 1, 100)).ToArray() } };
                 }
+                case "GET /inbox":
+                    return new Dictionary<string, object> { { "waiting", store.Inbox(Clamp(Get(q, "limit"), 20, 1, 100)).ToArray() } };
+                case "GET /conversation":
+                {
+                    long id;
+                    if (!long.TryParse(Get(q, "id"), out id) || id == 0) id = store.FindConversation(Get(q, "app"), Get(q, "name"));
+                    if (id == 0)
+                    {
+                        // A person's name: their latest conversation
+                        long pid = store.FindPerson(Get(q, "name"));
+                        if (pid == 0) { var found = store.PeopleIn(Get(q, "name")); if (found.Count > 0) pid = found[0]; }
+                        var pv = pid == 0 ? null : store.PersonView(pid, 1);
+                        var convs = pv == null ? new object[0] : Json.Arr(pv, "conversations");
+                        if (convs.Length > 0) id = (long)Json.Num(convs[0], "id", 0);
+                    }
+                    var view = id == 0 ? null : store.ConversationView(id, Clamp(Get(q, "messages"), 40, 1, 300));
+                    return view ?? new Dictionary<string, object> { { "error", "unknown conversation" } };
+                }
+                case "POST /conversation/status":
+                {
+                    string want = Json.Str(body, "status");
+                    if (want != "awaiting_me" && want != "awaiting_them" && want != "ongoing" && want != "done") return new Dictionary<string, object> { { "error", "status" } };
+                    store.SetConversationStatus((long)Json.Num(body, "id", 0), want);
+                    return new Dictionary<string, object> { { "ok", true } };
+                }
                 case "POST /promise":
                     store.SetCommitmentDone((long)Json.Num(body, "id", 0), Json.Str(body, "done").ToLowerInvariant() != "false");
                     return new Dictionary<string, object> { { "ok", true } };

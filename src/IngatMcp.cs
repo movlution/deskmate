@@ -122,6 +122,14 @@ namespace Deskmate
                     new Dictionary<string, object> { { "name", P("string", "Name or nickname as the user says it") }, { "messages", P("integer", "How many latest messages (default 30)") } }, new[] { "name" }),
                 Tool("search_messages", "Search chat and mail messages across every app by words; time words narrow the range.",
                     new Dictionary<string, object> { { "query", P("string", "Words to find") }, { "limit", P("integer", "Maximum messages (default 20)") } }, new[] { "query" }),
+                Tool("get_inbox", "Conversations waiting for the user's reply: who asked what and when, across chat and mail apps.",
+                    new Dictionary<string, object> { { "limit", P("integer", "Maximum conversations (default 20)") } }, new string[0]),
+                Tool("get_conversation", "One conversation in full: a clear running summary, topic, who is waiting for whom, unanswered questions, decisions, open promises, and the latest messages marked sent, received, or draft.",
+                    new Dictionary<string, object>
+                    {
+                        { "name", P("string", "Person, group, or channel name") }, { "app", P("string", "Optional app, e.g. WhatsApp") },
+                        { "messages", P("integer", "How many latest messages (default 40)") },
+                    }, new[] { "name" }),
                 Tool("get_promises", "Open promises and requests from conversations: what the user promised others and what others promised the user.",
                     new Dictionary<string, object> { { "person", P("string", "Optional person name") }, { "include_done", P("boolean", "Include finished ones") } }, new string[0]),
             };
@@ -165,6 +173,13 @@ namespace Deskmate
                     break;
                 case "search_messages":
                     r = IngatClient.Get("/messages?q=" + IngatClient.Q(Json.Str(a, "query")) + "&limit=" + ((int)Json.Num(a, "limit", 20)).ToString(CultureInfo.InvariantCulture), 15000);
+                    break;
+                case "get_inbox":
+                    r = IngatClient.Get("/inbox?limit=" + ((int)Json.Num(a, "limit", 20)).ToString(CultureInfo.InvariantCulture), 10000);
+                    break;
+                case "get_conversation":
+                    r = IngatClient.Get("/conversation?name=" + IngatClient.Q(Json.Str(a, "name")) + "&app=" + IngatClient.Q(Json.Str(a, "app")) +
+                        "&messages=" + ((int)Json.Num(a, "messages", 40)).ToString(CultureInfo.InvariantCulture), 10000);
                     break;
                 case "get_promises":
                     r = IngatClient.Get("/promises?person=" + IngatClient.Q(Json.Str(a, "person")) + (Json.Str(a, "include_done").ToLowerInvariant() == "true" ? "&all=1" : ""), 10000);

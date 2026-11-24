@@ -18,7 +18,8 @@ namespace Deskmate
         bool ingatRapat;
         DateTime micQuietUtc = DateTime.MinValue;
         // Pet lines: once per streak, once per morning
-        DateTime petStreakSaidUtc = DateTime.MinValue;
+        DateTime petStreakSaidUtc = DateTime.MinValue, petInboxSaidUtc = DateTime.MinValue;
+        string petInboxKey = "";
         string petRecapDay = "";
         volatile bool ingatAsking;
 
@@ -123,6 +124,20 @@ namespace Deskmate
                         if (what.Length == 0) what = Json.Str(ep, "app");
                         line = Lang.F("Sudah {0} jam di {1}. Istirahat sebentar?", (streak / 60).ToString(CultureInfo.InvariantCulture), what);
                         Post(delegate { petStreakSaidUtc = DateTime.UtcNow; });
+                    }
+                    // Replies still owed, said again only when the list changes or after two hours
+                    if (line == null && settings.GetBool("ingat.chat", true) && (DateTime.UtcNow - petInboxSaidUtc).TotalHours >= 2 && IngatService.IdleSeconds() < 60)
+                    {
+                        var inbox = IngatClient.Get("/inbox?limit=3", 5000);
+                        var waiting = inbox == null ? new object[0] : Json.Arr(inbox, "waiting");
+                        var names = new List<string>();
+                        foreach (var w in waiting) names.Add(Json.Str(w, "name") + (Json.Str(w, "topic").Length > 0 ? " (" + Json.Str(w, "topic") + ")" : ""));
+                        string key = string.Join("|", names.ToArray());
+                        if (names.Count > 0 && key != petInboxKey)
+                        {
+                            line = Lang.F("{0} obrolan menunggu balasanmu: {1}", names.Count.ToString(CultureInfo.InvariantCulture), string.Join(", ", names.ToArray()));
+                            Post(delegate { petInboxSaidUtc = DateTime.UtcNow; petInboxKey = key; });
+                        }
                     }
                 }
                 catch (Exception ex) { Log.Write("ingat pet: " + ex.Message); }

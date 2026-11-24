@@ -220,11 +220,29 @@ namespace Deskmate
             try
             {
                 bool read = settings.GetBool("ingat.text", true) && (newWindow || titleChanged || due);
-                if (!read && look)
+                if (!read && look && !Fullscreen(hwnd))
                 {
                     lastLookUtc = now;
                     shot = IngatText.Snap(hwnd);
                     if (shot != null && IngatText.Distance(IngatText.Hash(shot), lastHash) > 10) read = true;
+                }
+                // Chats are read with each line's position, so sent and received can be told apart
+                string guess = settings.GetBool("ingat.chat", true) ? IngatChat.Kind(exe, current != null && !newWindow ? current.Url : "", title) : "";
+                if (read && guess == "chat")
+                {
+                    bool secret;
+                    text = IngatText.ReadChat(hwnd, exe, out url, out secret);
+                    source = "chat";
+                    if (secret) { text = ""; source = "window"; }
+                    else if (text.Length < 200 && settings.GetBool("ingat.ocr", true) && !LowPower())
+                    {
+                        if (shot == null) shot = IngatText.Snap(hwnd);
+                        if (shot != null) { string seen = IngatText.OcrPlaced(shot); if (seen.Length > text.Length) text = seen; }
+                    }
+                    if (shot == null) shot = IngatText.Snap(hwnd);
+                    if (shot != null) lastHash = IngatText.Hash(shot);
+                    lastReadUtc = lastLookUtc = now;
+                    read = false;
                 }
                 if (read)
                 {

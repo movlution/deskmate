@@ -24,7 +24,45 @@ namespace Deskmate
             TestMcpWithoutService();
             TestChatDetection();
             TestPeopleAndMessages();
+            TestDirectionAndState();
             return "Ingatan checks passed";
+        }
+
+        static void TestDirectionAndState()
+        {
+            // Times read against the day the chat was seen
+            var seen = new IngatEpisode { StartUtc = new DateTime(2026, 11, 24, 9, 0, 0, DateTimeKind.Local).ToUniversalTime(), EndUtc = new DateTime(2026, 11, 24, 10, 0, 0, DateTimeKind.Local).ToUniversalTime() };
+            Assert(IngatBrain.When("09.13", "", seen).ToLocalTime() == new DateTime(2026, 11, 24, 9, 13, 0), "dot time today");
+            Assert(IngatBrain.When("9:13 PM", "", seen).ToLocalTime() == new DateTime(2026, 11, 23, 21, 13, 0), "later than seen: yesterday");
+            Assert(IngatBrain.When("08:00", "kemarin", seen).ToLocalTime() == new DateTime(2026, 11, 23, 8, 0, 0), "yesterday word");
+            Assert(IngatBrain.When("", "", seen) == DateTime.MinValue && IngatBrain.When("Read", "", seen) == DateTime.MinValue, "no time");
+            Assert(IngatBrain.Me("Aku") && IngatBrain.Me("me") && !IngatBrain.Me("Budi"), "who is me");
+
+            using (var store = new IngatStore(TempDb()))
+            {
+                var t = DateTime.UtcNow.AddMinutes(-30);
+                long rina = store.Person("Rina", t);
+                long conv = store.Conversation("WhatsApp", "Rina", "person", rina, t);
+                Assert(store.AddMessage(conv, t, "Rina", "received", "Invoice bulan ini sudah ada?", 0, "09.10"), "received");
+                Assert(store.AddMessage(conv, t.AddMinutes(1), "me", "draft", "Sudah, aku kirim sore ini", 0, ""), "draft");
+                Assert(!store.AddMessage(conv, t.AddMinutes(2), "me", "sent", "sudah,  aku kirim sore ini.", 0, "09.12"), "the draft, sent: same line");
+                var msgs = store.Messages(conv, 10);
+                Assert(msgs.Count == 2 && Json.Str(msgs[0], "status") == "received" && Json.Str(msgs[1], "status") == "sent", "draft became sent");
+                Assert(Json.Str(msgs[0], "from") == "Rina" && Json.Str(msgs[1], "from") == "me" && Json.Str(msgs[0], "shown") == "09.10", "senders and shown time");
+
+                store.SetState(conv, "Rina menanyakan invoice; aku janji kirim sore ini.", "invoice", "awaiting_me", "Rina", new[] { "Kapan invoice dikirim?" }, new[] { "Invoice dikirim sore" });
+                var view = store.ConversationView(conv, 10);
+                Assert(Json.Str(view, "status") == "awaiting_me" && Json.Arr(view, "openQuestions").Length == 1 && Json.Arr(view, "decisions").Length == 1, "state kept");
+                Assert(store.Inbox(5).Count == 1 && Json.Str(store.Inbox(5)[0], "name") == "Rina", "inbox lists chats waiting for me");
+                store.SetConversationStatus(conv, "done");
+                Assert(store.Inbox(5).Count == 0, "settled chats leave the inbox");
+
+                store.AddCommitment(conv, rina, "me", "kirim invoice bulan ini ke Rina", "sore ini", t);
+                store.FulfillPromise(conv, "invoice sudah dikirim ke Rina");
+                Assert(store.Commitments(rina, false, 5).Count == 0, "promise fulfilled by meaning-alike words");
+                var person = store.PersonView(rina, 10);
+                Assert(Json.Str(Json.Arr(person, "conversations")[0], "status") == "done", "person view carries conversation state");
+            }
         }
 
         static void TestChatDetection()
