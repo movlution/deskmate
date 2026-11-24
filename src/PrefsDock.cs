@@ -23,7 +23,7 @@ namespace Deskmate
                 add(dock);
                 var replace = Switch("dockbar.replace", false, v => { island.SetFlag("dockbar.replace", v); Relayout(); });
                 replace.Enabled = on;
-                var replaceRow = Row(Lang.T("Ganti taskbar Windows"), Lang.T("Start, tray, dan jam pindah ke dock; taskbar kembali saat dimatikan"), replace);
+                var replaceRow = Row(Lang.T("Ganti taskbar Windows"), Lang.T("Ikon tray tersembunyi bisa dibuka dari setiap Dock"), replace);
                 replaceRow.Glyph = (char)0xE75B;
                 add(replaceRow);
 

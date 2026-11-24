@@ -35,7 +35,7 @@ namespace Deskmate
             // Pilot: a fixed picture instead of the user's screen
             public static Func<Rectangle, Bitmap> Backdrop { get; set; }
 
-            sealed class Job { public Rectangle Rect; public Color Bg; public bool Light, Liquid, NeedImage; public int Div; }
+            sealed class Job { public Rectangle Rect, CoreBar; public Color Bg; public bool Light, NeedImage, Core; public GlassKind Kind; public float CoreRadius; public int Div; }
 
             readonly Action<DockPlate> deliver;
             readonly AutoResetEvent wake = new AutoResetEvent(false);
@@ -53,8 +53,10 @@ namespace Deskmate
             {
                 if (thread != null) return;
                 run = true;
-                thread = new Thread(Prof.Wrap(Loop)) { IsBackground = true, Name = "dock frost", Priority = ThreadPriority.BelowNormal };
-                thread.Start();
+                var t = new Thread(Prof.Wrap(Loop)) { IsBackground = true, Name = "dock frost", Priority = ThreadPriority.BelowNormal };
+                thread = t;
+                // Thread.Start waits for the new thread to be scheduled, which stalls the UI under CPU load
+                ThreadPool.QueueUserWorkItem(delegate { t.Start(); });
             }
 
             public void Stop()
@@ -69,14 +71,22 @@ namespace Deskmate
                 Request(rect, bg, light, liquid, true);
             }
 
-            public void Request(Rectangle rect, Color bg, bool light, bool liquid, bool needImage)
+            public void Request(Rectangle rect, Color bg, bool light, bool liquid, bool needImage, bool clear = false,
+                bool core = false, Rectangle coreBar = default(Rectangle), float coreRadius = 0f)
             {
+                Request(rect, bg, light, GlassRecipe.FromFlags(liquid, clear), needImage, core, coreBar, coreRadius);
+            }
+
+            public void Request(Rectangle rect, Color bg, bool light, GlassKind kind, bool needImage,
+                bool core = false, Rectangle coreBar = default(Rectangle), float coreRadius = 0f)
+            {
+                if (kind == GlassKind.Solid) kind = GlassKind.Frost;
                 bool fastSheet = !needImage;
-                int div = fastSheet ? 6 : (liquid ? 2 : 5);
-                var j = new Job { Rect = rect, Bg = bg, Light = light, Liquid = liquid, Div = div, NeedImage = needImage };
+                int div = fastSheet ? 6 : (kind == GlassKind.Frost ? 5 : 2);
+                var j = new Job { Rect = rect, Bg = bg, Light = light, Kind = kind, Div = div, NeedImage = needImage, Core = core, CoreBar = coreBar, CoreRadius = coreRadius };
                 var last = Volatile.Read(ref job);
                 Volatile.Write(ref job, j);
-                if (last == null || last.Rect != rect || last.Bg != bg || last.Liquid != liquid || last.Light != light || last.NeedImage != needImage) wake.Set();
+                if (last == null || last.Rect != rect || last.Bg != bg || last.Kind != kind || last.Light != light || last.NeedImage != needImage || last.Core != core || last.CoreBar != coreBar || last.CoreRadius != coreRadius) wake.Set();
             }
 
             // Windows moved: look again once they settle
@@ -105,7 +115,7 @@ namespace Deskmate
                         j = Volatile.Read(ref job);
                         if (j == null || j.Rect.Width < 8 || j.Rect.Height < 8) { wait = 1000; continue; }
                     }
-                    bool same = last != null && last.Rect == j.Rect && last.Bg == j.Bg && last.Liquid == j.Liquid && last.Light == j.Light && last.NeedImage == j.NeedImage;
+                    bool same = last != null && last.Rect == j.Rect && last.Bg == j.Bg && last.Kind == j.Kind && last.Light == j.Light && last.NeedImage == j.NeedImage && last.Core == j.Core && last.CoreBar == j.CoreBar && last.CoreRadius == j.CoreRadius;
                     try
                     {
                         var frameSw = Stopwatch.StartNew();
@@ -136,7 +146,7 @@ namespace Deskmate
                         cur = swap;
                         var pl = new DockPlate { Rect = j.Rect };
                         if (work == null || work.Length != len) work = new byte[len];
-                        if (j.Liquid)
+                        if (j.Kind == GlassKind.Liquid)
                         {
                             if (j.NeedImage)
                             {
@@ -144,6 +154,28 @@ namespace Deskmate
                                 pl.Image = Upscale(tiny, work, j);
                             }
                             Liquid(sig, stride, tw, th, j.Bg, true, work);
+                            if (j.NeedImage) pl.Text = Upscale(tiny, work, j);
+                            else { pl.Text = UpscaleSheet(tiny, work, stride, tw, th, j); pl.ReturnText = Return; }
+                        }
+                        else if (j.Kind == GlassKind.Calm)
+                        {
+                            if (j.NeedImage)
+                            {
+                                Calm(sig, stride, tw, th, j.Bg, false, work);
+                                pl.Image = Upscale(tiny, work, j);
+                            }
+                            Calm(sig, stride, tw, th, j.Bg, true, work);
+                            if (j.NeedImage) pl.Text = Upscale(tiny, work, j);
+                            else { pl.Text = UpscaleSheet(tiny, work, stride, tw, th, j); pl.ReturnText = Return; }
+                        }
+                        else if (j.Kind == GlassKind.Clear)
+                        {
+                            if (j.NeedImage)
+                            {
+                                Clear(sig, stride, tw, th, j.Bg, false, work);
+                                pl.Image = Upscale(tiny, work, j);
+                            }
+                            Clear(sig, stride, tw, th, j.Bg, true, work);
                             if (j.NeedImage) pl.Text = Upscale(tiny, work, j);
                             else { pl.Text = UpscaleSheet(tiny, work, stride, tw, th, j); pl.ReturnText = Return; }
                         }
@@ -198,6 +230,73 @@ namespace Deskmate
                     }
             }
 
+            // Calm: the backdrop's hue, a touch muted, under an even veil in the
+            // wallpaper tint. The veil only thickens where text would lose contrast.
+            static void Calm(byte[] raw, int stride, int w, int h, Color veil, bool text, byte[] dst)
+            {
+                CalmVeil(raw, stride, w, h, GlassRecipe.CalmTint(veil, Luma(veil) > 0.2f), text, dst);
+            }
+
+            // Shared with the island; bg is already the Calm tint
+            internal static void CalmVeil(byte[] raw, int stride, int w, int h, Color bg, bool text, byte[] dst)
+            {
+                float lt = Luma(bg);
+                bool light = lt > 0.2f;
+                float limit = text ? (light ? 0.62f : 0.09f) : (light ? 0.5f : 0.2f);
+                float aMin = text ? (light ? 0.5f : 0.46f) : (light ? 0.36f : 0.32f), aMax = 0.9f, sat = GlassRecipe.Saturation(GlassKind.Calm);
+                Buffer.BlockCopy(raw, 0, dst, 0, raw.Length);
+                BoxBlur(dst, stride, w, h, 2);
+                BoxBlur(dst, stride, w, h, 2);
+                float linBgB = Linear[bg.B], linBgG = Linear[bg.G], linBgR = Linear[bg.R];
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                    {
+                        int i = y * stride + x * 4;
+                        float b = dst[i], gr = dst[i + 1], r = dst[i + 2];
+                        float grey = 0.2126f * r + 0.7152f * gr + 0.0722f * b;
+                        r = Sat(grey, r, sat); gr = Sat(grey, gr, sat); b = Sat(grey, b, sat);
+                        int ir = (int)Math.Max(0, Math.Min(255, r));
+                        int igr = (int)Math.Max(0, Math.Min(255, gr));
+                        int ib = (int)Math.Max(0, Math.Min(255, b));
+                        float linR = Linear[ir], linG = Linear[igr], linB = Linear[ib];
+                        float lum = 0.2126f * linR + 0.7152f * linG + 0.0722f * linB;
+                        float a = light ? (lum < limit ? (limit - lum) / Math.Max(0.001f, lt - lum) : 0)
+                                        : (lum > limit ? (lum - limit) / Math.Max(0.001f, lum - lt) : 0);
+                        a = a < aMin ? aMin : a > aMax ? aMax : a;
+                        dst[i] = ToSrgb(linB + (linBgB - linB) * a);
+                        dst[i + 1] = ToSrgb(linG + (linBgG - linG) * a);
+                        dst[i + 2] = ToSrgb(linR + (linBgR - linR) * a);
+                        dst[i + 3] = 255;
+                    }
+            }
+
+            // Clear for the dock: preserve the backdrop's colour, with a thin veil under text only.
+            static void Clear(byte[] raw, int stride, int w, int h, Color bg, bool text, byte[] dst)
+            {
+                Buffer.BlockCopy(raw, 0, dst, 0, raw.Length);
+                BoxBlur(dst, stride, w, h, text ? 2 : 1);
+                float lt = Luma(bg);
+                bool light = lt > 0.2f;
+                float veil = text ? (light ? 0.2f : 0.24f) : (light ? 0.1f : 0.14f);
+                float linBgB = Linear[bg.B], linBgG = Linear[bg.G], linBgR = Linear[bg.R];
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                    {
+                        int i = y * stride + x * 4;
+                        float b = dst[i], gr = dst[i + 1], r = dst[i + 2];
+                        float grey = 0.2126f * r + 0.7152f * gr + 0.0722f * b;
+                        r = Sat(grey, r, 1.22f); gr = Sat(grey, gr, 1.22f); b = Sat(grey, b, 1.22f);
+                        int ir = (int)Math.Max(0, Math.Min(255, r));
+                        int igr = (int)Math.Max(0, Math.Min(255, gr));
+                        int ib = (int)Math.Max(0, Math.Min(255, b));
+                        float linR = Linear[ir], linG = Linear[igr], linB = Linear[ib];
+                        dst[i] = ToSrgb(linB + (linBgB - linB) * veil);
+                        dst[i + 1] = ToSrgb(linG + (linBgG - linG) * veil);
+                        dst[i + 2] = ToSrgb(linR + (linBgR - linR) * veil);
+                        dst[i + 3] = 255;
+                    }
+            }
+
             static Bitmap Upscale(Bitmap tiny, byte[] px, Job j)
             {
                 var data = tiny.LockBits(new Rectangle(0, 0, tiny.Width, tiny.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
@@ -212,8 +311,17 @@ namespace Deskmate
                     float f = j.Div / 2f;
                     pg.DrawImage(tiny, new RectangleF(-f, -f, j.Rect.Width + f * 2, j.Rect.Height + f * 2));
                     pg.CompositingMode = CompositingMode.SourceOver;
-                    if (!j.Liquid) using (var tint = new SolidBrush(Ink.A(j.Bg, BaseTint))) pg.FillRectangle(tint, 0, 0, j.Rect.Width, j.Rect.Height);
+                    if (j.Kind == GlassKind.Frost)
+                    {
+                        int len = Math.Min(px.Length, tiny.Width * 4 * tiny.Height);
+                        float a = ComputeFrostTint(px, len, j.Bg, j.Light) + GlassRecipe.FrostExtra;
+                        if (a > 0.92f) a = 0.92f;
+                        Color frost = GlassRecipe.FrostTint(j.Bg, j.Light);
+                        using (var tint = new SolidBrush(Ink.A(frost, a))) pg.FillRectangle(tint, 0, 0, j.Rect.Width, j.Rect.Height);
+                    }
                 }
+                if (j.Core) WallBackdrop.FadeCore(img, j.CoreBar, j.CoreRadius);
+                else WallBackdrop.Fade(img, GlassRecipe.WallOpacity(j.Kind, true, j.NeedImage));
                 return img;
             }
 
@@ -249,11 +357,14 @@ namespace Deskmate
             Bitmap UpscaleSheet(Bitmap tiny, byte[] px, int stride, int tw, int th, Job j)
             {
                 int dw = j.Rect.Width, dh = j.Rect.Height;
-                if (!j.Liquid)
+                if (j.Kind == GlassKind.Frost)
                 {
                     BoxBlur(px, stride, tw, th, 1);
-                    int a = (int)Math.Round(BaseTint * 256f), ia = 256 - a;
-                    int tb = j.Bg.B * a, tg = j.Bg.G * a, tr = j.Bg.R * a;
+                    float af = ComputeFrostTint(px, stride * th, j.Bg, j.Light) + GlassRecipe.FrostExtra;
+                    if (af > 0.92f) af = 0.92f;
+                    Color frost = GlassRecipe.FrostTint(j.Bg, j.Light);
+                    int a = (int)Math.Round(af * 256f), ia = 256 - a;
+                    int tb = frost.B * a, tg = frost.G * a, tr = frost.R * a;
                     int total = th * stride;
                     for (int p = 0; p < total; p += 4)
                     {
@@ -274,6 +385,8 @@ namespace Deskmate
                     float f = j.Div / 2f;
                     pg.DrawImage(tiny, new RectangleF(-f, -f, dw + f * 2, dh + f * 2));
                 }
+                if (j.Core) WallBackdrop.FadeCore(img, j.CoreBar, j.CoreRadius);
+                else WallBackdrop.Fade(img, GlassRecipe.WallOpacity(j.Kind, true, j.NeedImage));
                 return img;
             }
 
@@ -291,6 +404,7 @@ namespace Deskmate
                         }
                         return;
                     }
+                    if (WallBackdrop.Draw(tg, r, tiny.Size)) return;
                     IntPtr hdc = tg.GetHdc(), screen = Native.GetDC(IntPtr.Zero);
                     Native.SetStretchBltMode(hdc, fast ? 3 : 4);
                     if (!fast) Native.SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);

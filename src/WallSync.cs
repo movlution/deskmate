@@ -9,29 +9,44 @@ using Microsoft.Win32;
 
 namespace Deskmate
 {
-    // wall.sync: glass veil and accent follow the desktop wallpaper; blur stays
+    // wall.sync: glass gets a tint from the desktop wallpaper; blur stays
     partial class Island
     {
         [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SystemParametersInfoW")]
         static extern bool SpiGetString(uint action, uint size, StringBuilder buf, uint ini);
 
         readonly System.Windows.Forms.Timer wallDebounce = new System.Windows.Forms.Timer { Interval = 800 };
+        readonly System.Windows.Forms.Timer wallPoll = new System.Windows.Forms.Timer { Interval = 5000 };
         bool wallHooked;
-        int wallBusy;
+        int wallBusy, wallGlassGen;
         // Dominant wallpaper hue, as read; null for greys
         Color? wallPick;
+        // Last file read; Spotlight changes the path, so polling is cheap
+        string wallSeenPath;
+        DateTime wallSeenAt;
+        long wallSeenLen;
+        bool wallSeen;
         // Accent we set ourselves, so it can be given back
         string wallAccent;
 
         bool WallSyncOn { get { return settings.GetBool("wall.sync", false) && !CustomOn; } }
+        // Calm reads the wallpaper hue for window canvases even without wall.sync
+        bool WallWanted { get { return settings.GetBool("wall.sync", false) || MaterialName == "calm"; } }
+        // Software glass uses the wallpaper tint, never the window behind it
+        bool WallGlassOn { get { return WallSyncOn && WallBackdrop.Ready; } }
 
         void StartWallSync()
         {
             if (wallHooked) return;
             wallHooked = true;
             wallDebounce.Tick += delegate { wallDebounce.Stop(); WallRead(); };
+            wallPoll.Tick += delegate { WallRead(); };
             SystemEvents.UserPreferenceChanged += OnWallPrefs;
-            if (settings.GetBool("wall.sync", false)) WallRead();
+            if (WallWanted)
+            {
+                wallPoll.Start();
+                WallRead();
+            }
         }
 
         void StopWallSync()
@@ -40,41 +55,84 @@ namespace Deskmate
             wallHooked = false;
             SystemEvents.UserPreferenceChanged -= OnWallPrefs;
             wallDebounce.Stop();
+            wallPoll.Stop();
         }
 
         // Wallpaper or slideshow moved on: look again once it settles
         void OnWallPrefs(object sender, UserPreferenceChangedEventArgs e)
         {
             if (e.Category != UserPreferenceCategory.Desktop && e.Category != UserPreferenceCategory.Color) return;
-            Post(delegate { if (settings.GetBool("wall.sync", false)) { wallDebounce.Stop(); wallDebounce.Start(); } });
+            Post(delegate { if (WallWanted) { wallDebounce.Stop(); wallDebounce.Start(); } });
         }
 
         // Switch flipped in settings
         void WallToggle(bool on)
         {
-            if (on) WallRead(); else WallApply();
+            if (on)
+            {
+                wallPoll.Start();
+                WallRead();
+            }
+            else
+            {
+                if (!WallWanted) wallPoll.Stop();
+                WallBackdrop.Clear();
+                WallApply();
+            }
+        }
+
+        // Material changed: Calm needs the hue, others only if wall.sync does
+        void WallMaterial()
+        {
+            if (WallWanted) { wallPoll.Start(); WallRead(); }
+            else wallPoll.Stop();
+            WallApply();
         }
 
         // Decode off the UI thread; a big wallpaper takes a moment
         void WallRead()
         {
-            if (!settings.GetBool("wall.sync", false)) return;
+            if (!WallWanted) return;
+            string path = WallpaperPath();
+            DateTime at = DateTime.MinValue;
+            long len = 0;
+            bool seen = path.Length > 0 && File.Exists(path);
+            if (seen)
+            {
+                try
+                {
+                    var info = new FileInfo(path);
+                    at = info.LastWriteTimeUtc;
+                    len = info.Length;
+                }
+                catch (Exception) { seen = false; }
+            }
+            // Spotlight swaps the file path; a still wallpaper can skip the decode
+            if (seen && wallSeen && path == wallSeenPath && at == wallSeenAt && len == wallSeenLen) return;
             if (Interlocked.Exchange(ref wallBusy, 1) != 0) { wallDebounce.Stop(); wallDebounce.Start(); return; }
             ThreadPool.QueueUserWorkItem(delegate
             {
                 Color? pick = null;
-                try { pick = WallPickNow(); }
+                bool read = false;
+                try { pick = WallPickNow(); read = true; }
                 catch (Exception ex) { Log.Write("wall sync: " + ex.Message); }
                 Post(delegate
                 {
                     Interlocked.Exchange(ref wallBusy, 0);
+                    if (read && seen)
+                    {
+                        wallSeen = true;
+                        wallSeenPath = path;
+                        wallSeenAt = at;
+                        wallSeenLen = len;
+                    }
                     wallPick = pick;
                     WallApply();
                 });
             });
         }
 
-        static Color? WallPickNow()
+        static string WallpaperPath()
         {
             var sb = new StringBuilder(520);
             string path = SpiGetString(0x73, 520, sb, 0) ? sb.ToString() : "";
@@ -84,6 +142,12 @@ namespace Deskmate
                 string cached = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Themes\TranscodedWallpaper");
                 path = File.Exists(cached) ? cached : "";
             }
+            return path;
+        }
+
+        static Color? WallPickNow()
+        {
+            string path = WallpaperPath();
             if (path.Length > 0)
             {
                 using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
@@ -118,14 +182,26 @@ namespace Deskmate
         // Applies what was read; safe to call on any look change
         void WallApply()
         {
+            bool wasWall = WallGlassOn;
             bool live = WallSyncOn && wallPick.HasValue;
             Color? veil = live ? (Color?)WallVeil(wallPick.Value, Ink.Light) : null;
+            WallBackdrop.SetTint(veil ?? Ink.Base.Bg);
+            WallBackdrop.SetActive(WallSyncOn);
+            int glassVer = WallBackdrop.Version;
+            bool glassMoved = wallGlassGen != glassVer;
+            wallGlassGen = glassVer;
+
             bool veilChanged = Ink.VeilTint != veil;
             Ink.VeilTint = veil;
 
-            // Accent follows the wallpaper only while none is chosen
-            string own = settings.Get("accent", "");
-            string want = live && own.Length == 0 ? WallAccentHex(wallPick.Value) : null;
+            // Calm windows (Settings, editors) take a quiet canvas in the wallpaper hue
+            Color? canvas = MaterialName == "calm" && !CustomOn && wallPick.HasValue ? (Color?)CalmCanvas(wallPick.Value, Ink.Light) : null;
+            bool canvasChanged = KitInk.Canvas != canvas;
+            if (canvasChanged) { KitInk.Canvas = canvas; veilChanged = true; }
+
+            // Accent follows the wallpaper only while none is chosen; unset falls back to the brand default
+            string own = settings.Get("accent", null);
+            string want = live && string.IsNullOrEmpty(own) ? WallAccentHex(wallPick.Value) : null;
             bool accentChanged = false;
             if (want != null)
             {
@@ -135,17 +211,21 @@ namespace Deskmate
             {
                 accentChanged = true;
                 wallAccent = null;
-                Ink.SetAccent(own);
+                Ink.SetAccent(own ?? Ink.DefaultAccent);
                 albumAccentFor = null;
                 albumTinted = false;
                 AlbumAccent();
             }
 
-            if (!veilChanged && !accentChanged) return;
+            bool glassChanged = wasWall != WallGlassOn || (glassMoved && WallGlassOn);
+            if (!veilChanged && !accentChanged && !glassChanged) return;
             Ink.Epoch++;
             ResetFrost();
+            if (glassChanged) ApplyGlass();
             RefreshDocks();
             if (prefs != null && !prefs.IsDisposed) prefs.Relayout();
+            // Editors and other Kit windows repaint their canvas too
+            if (canvasChanged) KitWindow.BroadcastThemeChange();
             Kick();
         }
 
@@ -156,11 +236,27 @@ namespace Deskmate
             return FromHsl(pick.GetHue(), s, light ? 0.92 : 0.15);
         }
 
-        // Vivid version of the hue, lifted to 3:1 on the island
+        // Window canvas for Calm: the wallpaper hue at low chroma, at the theme's
+        // own lightness, so ink contrast stays where the night/paper tones put it
+        static Color CalmCanvas(Color pick, bool light)
+        {
+            double s = Math.Min(pick.GetSaturation(), light ? 0.30 : 0.34);
+            var c = FromHsl(pick.GetHue(), s, light ? 0.95 : 0.13);
+            // HSL lightness is not luminance: a blue paper reads darker than the
+            // ivory one at the same L. Hold the canvas at the theme tone's
+            // luminance so every ink mix keeps the contrast measured for it.
+            // Light keeps a little headroom: the plum ink mixed into Faint drifts with the canvas hue.
+            double target = Luminance(Ink.Base.Bg) + (light ? 0.02 : 0);
+            for (int i = 0; i < 24 && (light ? Luminance(c) < target : Luminance(c) > target); i++)
+                c = MixRound(c, light ? Color.White : Color.Black, 0.08);
+            return c;
+        }
+
+        // Dusty version of the hue, in step with the calm presets, lifted to 3:1 on the island
         static string WallAccentHex(Color pick)
         {
             bool light = Ink.Light;
-            var c = FromHsl(pick.GetHue(), Math.Max(pick.GetSaturation(), 0.55), light ? 0.38 : 0.68);
+            var c = FromHsl(pick.GetHue(), Math.Max(0.28, Math.Min(pick.GetSaturation(), 0.5)), light ? 0.4 : 0.74);
             var bg = Ink.Base.Bg;
             var toward = Luminance(bg) < 0.5 ? Color.White : Color.Black;
             for (int i = 0; i < 12 && Contrast(c, bg) < 3; i++) c = MixRound(c, toward, 0.15);

@@ -43,7 +43,7 @@ namespace Deskmate
 
         void ApplyClips()
         {
-            bool want = ClipsOn || ShotsOn || ScreenTextArmed;
+            bool want = ClipsOn || ShotsOn || ScreenTextArmed || (IngatOn && settings.GetBool("ingat.clip", true));
             if (!ClipsOn)
             {
                 ClearClips(clips);
@@ -95,6 +95,7 @@ namespace Deskmate
             }
             bool hasText = data.GetDataPresent(DataFormats.UnicodeText);
             bool hasBitmap = data.GetDataPresent(DataFormats.Bitmap);
+            if (hasText) IngatClipboard(data);
             if (hasBitmap && !hasText && TakeScreenText(data)) return;
             if ((sequence == 0 || sequence != imageClipSequence) && (ClipsOn || (!hasText && ShotsOn)))
             {
@@ -386,7 +387,7 @@ namespace Deskmate
             bool image = item.Image != null;
             var shadow = card;
             shadow.Y += 3;
-            p.FillRound(shadow, 9, Color.FromArgb(36, Color.Black));
+            p.FillRound(shadow, 9, Ink.Scrim(36));
             float s = Squish(id, card, 0.96f);
             Color paper = Ink.Mix(p.T.Bg, p.T.Text, hot ? 0.19f : 0.13f);
             if (!image && p.T.IsDark) paper = Ink.Mix(paper, Color.Peru, 0.10f);

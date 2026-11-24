@@ -18,6 +18,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
     $prefsType = $islandType.GetNestedType("PrefsWindow", $flags)
     $sideListType = $islandType.GetNestedType("SideList", $flags)
     $themeCardType = $islandType.GetNestedType("ThemeCardPicker", $flags)
+    $materialType = $islandType.GetNestedType("MaterialPicker", $flags)
     $kitRowType = Get-DeskmateType "KitRow"
     $kitSwitchType = Get-DeskmateType "KitSwitch"
     $kitPaletteType = Get-DeskmateType "KitPalette"
@@ -112,22 +113,28 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         $langType.GetField("English", [System.Reflection.BindingFlags]'Public,Static').SetValue($null, $false)
     }
 
-    It "1. PrefsWindow opens on 'overview', Sections has 19 items across 5 GroupHeaders, and search TextBox is in Controls" {
+    It "1. PrefsWindow opens on 'general', Sections has the Deskmate card plus 13 tiled categories in 5 groups, and search TextBox is in Controls" {
         $isle = $null; $prefs = $null
         try {
             $isle = New-TestIsland
             $prefs = [Activator]::CreateInstance($prefsType, $flags, $null, @($isle), $null)
 
             $section = $prefsType.GetField("section", $flags).GetValue($prefs)
-            Assert-Equal "overview" $section "Default PrefsWindow section must be 'overview'"
+            Assert-Equal "general" $section "Default PrefsWindow section must be 'general'"
 
             $sections = $prefsType.GetField("Sections", $flags).GetValue($null)
-            Assert-Equal 19 $sections.Length "Sections must contain 19 flat 1-click items"
-            Assert-Equal "overview" $sections[0][0] "First section id must be 'overview'"
-            Assert-Equal "Beranda" $sections[0][1] "First section title must be 'Beranda'"
+            Assert-Equal 14 $sections.Length "Sections must contain the Deskmate card and 13 categories"
+            Assert-Equal "about" $sections[0][0] "First section must be the Deskmate card"
+            Assert-Equal ([string][char]1) $sections[0][2] "The card must carry KitRow.MarkGlyph"
 
-            $headers = $prefsType.GetField("GroupHeaders", $flags).GetValue($null)
-            Assert-Equal 5 $headers.Length "GroupHeaders must contain 5 group headers"
+            $groups = @($sections | ForEach-Object { $_[3] } | Sort-Object -Unique)
+            Assert-Equal 5 $groups.Count "Sidebar must have 5 groups"
+            $label = $inkType.GetMethod("Label", [Type[]]@([string], [bool]))
+            foreach ($s in ($sections | Select-Object -Skip 1)) {
+                $tile = $label.Invoke($null, @($s[4], $true))
+                Assert-False $tile.IsEmpty "Section '$($s[0])' must name an Ink.Labels tile color (got '$($s[4])')"
+            }
+            Assert-Null ($prefsType.GetField("GroupHeaders", $flags)) "Sidebar group headings are gone: groups are separated by space"
 
             $search = $prefsType.GetField("search", $flags).GetValue($prefs)
             Assert-NotNull $search "search TextBox field must exist"
@@ -139,27 +146,31 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         }
     }
 
-    It "2. NormalizeSection maps all legacy section IDs and cat:0..5 accurately" {
+    It "2. NormalizeSection maps legacy IDs, merged parts, and cat:0..5 to sidebar pages" {
         $norm = $prefsType.GetMethod("NormalizeSection", $flags)
         Assert-NotNull $norm "NormalizeSection must exist"
 
         $cases = @{
-            ""          = "overview"
-            "unknown"   = "overview"
-            "kulia"     = "integrasi"
+            ""          = "general"
+            "unknown"   = "general"
+            "overview"  = "general"
+            "kulia"     = "work"
+            "integrasi" = "work"
             "packs"     = "look"
             "behave"    = "island"
             "idle"      = "island"
-            "home"      = "tabs"
+            "home"      = "island"
+            "tabs"      = "island"
             "music"     = "files"
             "access"    = "keys"
-            "cat:0"     = "overview"
+            "dikte"     = "ai"
+            "phone"     = "system"
+            "cat:0"     = "general"
             "cat:1"     = "look"
             "cat:2"     = "island"
             "cat:3"     = "dock"
             "cat:4"     = "work"
             "cat:5"     = "about"
-            "tabs"      = "tabs"
             "remind"    = "remind"
         }
         foreach ($k in $cases.Keys) {
@@ -168,7 +179,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         }
     }
 
-    It "3. 'overview' page uses 'dockbar.on' switch matching settings and contains quick-jump buttons" {
+    It "3. 'dock' page owns the 'dockbar.on' switch, and 'general' carries no Beranda duplicates" {
         $isle = $null; $prefs = $null
         try {
             $isle = New-TestIsland
@@ -178,10 +189,15 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             $prefs = [Activator]::CreateInstance($prefsType, $flags, $null, @($isle), $null)
             Show-OffscreenPrefs $prefs
             $prefs.Go("overview")
+            Assert-Equal "general" ($prefsType.GetField("section", $flags).GetValue($prefs)) "Go('overview') must land on 'general'"
+            $generalTitles = @(Get-ContentRows $prefs | ForEach-Object { $_.Title })
+            Assert-False ($generalTitles -contains "Dock") "'general' must not duplicate the Dock switch"
+            Assert-False ($generalTitles -contains "Atur Notch") "'general' must not carry Beranda quick jumps"
 
+            $prefs.Go("dock")
             $rows = Get-ContentRows $prefs
             $dockRow = $rows | Where-Object { $_.Title -eq "Dock" } | Select-Object -First 1
-            Assert-NotNull $dockRow "'overview' must contain 'Dock' row"
+            Assert-NotNull $dockRow "'dock' must contain 'Dock' row"
 
             $dockSwitch = $null
             foreach ($ctrl in $dockRow.Controls) {
@@ -190,15 +206,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             Assert-NotNull $dockSwitch "'Dock' row must contain a KitSwitch"
             Assert-Equal $expectedDock $dockSwitch.Checked "'Dock' KitSwitch.Checked must match settings.GetBool('dockbar.on', false)"
 
-            $jumpBtns = 0
-            foreach ($r in $rows) {
-                if ($r.Title -in @("Atur Notch", "Atur Dock", "Integrasi", "Gamifikasi Ketikan")) {
-                    foreach ($ctrl in $r.Controls) {
-                        if ($ctrl -is $kitButtonType) { $jumpBtns++ }
-                    }
-                }
-            }
-            Assert-Equal 4 $jumpBtns "'overview' must contain 4 quick-jump KitButtons"
+
         }
         finally {
             if ($prefs) { $prefs.Dispose() }
@@ -246,14 +254,55 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         }
     }
 
-    It "5. 'tabs' includes Tab rows and Kartu Ringkasan, while 'dock' does not duplicate Kartu Ringkasan" {
+    It "4b. MaterialPicker paints five visibly different material previews and exposes one choice per material" {
+        $isle = $null; $prefs = $null; $bmps = @()
+        try {
+            $isle = New-TestIsland
+            $prefs = [Activator]::CreateInstance($prefsType, $flags, $null, @($isle), $null)
+            Show-OffscreenPrefs $prefs
+            $prefs.Go("look")
+
+            $picker = $null
+            foreach ($r in (Get-ContentRows $prefs)) {
+                foreach ($ctrl in $r.Controls) {
+                    if ($ctrl -is $materialType) { $picker = $ctrl }
+                }
+            }
+            Assert-NotNull $picker "'look' page must construct MaterialPicker"
+            Assert-True ($picker.Width -ge 290) "MaterialPicker must leave room for five labelled previews"
+            Assert-True ($picker.Height -ge 60) "MaterialPicker must leave room for a preview and a label"
+            Assert-Equal 5 $picker.AccessibilityObject.GetChildCount() "MaterialPicker must expose five material choices"
+
+            $bg = $kitInkType.GetProperty("Group", [System.Reflection.BindingFlags]'Public,Static').GetValue($null)
+            for ($i = 0; $i -lt 5; $i++) {
+                $picker.SelectedIndex = $i
+                $bmp = New-Object System.Drawing.Bitmap($picker.Width, $picker.Height)
+                $picker.DrawToBitmap($bmp, (New-Object System.Drawing.Rectangle(0, 0, $picker.Width, $picker.Height)))
+                $bmps += $bmp
+                Assert-True ((Count-NonBgPixels $bmp $bg) -gt 50) "MaterialPicker $i must paint visible pixels"
+            }
+            for ($i = 1; $i -lt 5; $i++) {
+                Assert-True ((Count-DiffPixels $bmps[$i - 1] $bmps[$i]) -gt 25) "Material previews $($i - 1) and $i must look different"
+            }
+        }
+        finally {
+            foreach ($bmp in $bmps) { $bmp.Dispose() }
+            if ($prefs) { $prefs.Dispose() }
+            if ($isle) { $isle.Dispose() }
+        }
+    }
+
+    It "5. 'tabs' opens the merged Island page with its part title, Tab rows and Kartu Ringkasan, while 'dock' does not duplicate Kartu Ringkasan" {
         $isle = $null; $prefs = $null
         try {
             $isle = New-TestIsland
             $prefs = [Activator]::CreateInstance($prefsType, $flags, $null, @($isle), $null)
             Show-OffscreenPrefs $prefs
             $prefs.Go("tabs")
+            Assert-Equal "island" ($prefsType.GetField("section", $flags).GetValue($prefs)) "Go('tabs') must land on the Island page"
             $tabTexts = Get-ContentTexts $prefs
+            Assert-True ($tabTexts -contains "Tab dan kartu") "Merged Island page must title its tab part"
+            Assert-True ($tabTexts -contains "Posisi") "Merged Island page must keep the island part"
             Assert-True ($tabTexts -contains "Tab yang tampil") "'tabs' must include 'Tab yang tampil'"
             Assert-True ($tabTexts -contains "Kartu Ringkasan") "'tabs' must include 'Kartu Ringkasan'"
             Assert-True ($tabTexts -contains "Urutan kartu") "'tabs' must include 'Urutan kartu'"
@@ -278,7 +327,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             Show-OffscreenPrefs $prefs
             $prefs.Go("island")
             $islandTexts = Get-ContentTexts $prefs
-            Assert-True ($islandTexts -contains "Letak & Ukuran") "'island' must include 'Letak & Ukuran'"
+            Assert-True ($islandTexts -contains "Posisi") "'island' must include 'Posisi'"
             Assert-True ($islandTexts -contains "Perilaku & Fokus") "'island' must include 'Perilaku & Fokus'"
             Assert-True ($islandTexts -contains "Saat Diam") "'island' must include 'Saat Diam'"
 
@@ -308,16 +357,14 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         $side = $null; $bmpA = $null; $bmpB = $null
         try {
             $sections = $prefsType.GetField("Sections", $flags).GetValue($null)
-            $headers = $prefsType.GetField("GroupHeaders", $flags).GetValue($null)
 
             $side = [Activator]::CreateInstance($sideListType, $flags, $null, $null, $null)
             $itemsList = $sideListType.GetField("Items", $flags).GetValue($side)
             foreach ($s in $sections) { [void]$itemsList.Add($s) }
-            $sideListType.GetField("Headers", $flags).SetValue($side, $headers)
             $side.Size = New-Object System.Drawing.Size(220, 620)
             $side.CreateControl()
 
-            $sideListType.GetField("Selected", $flags).SetValue($side, "overview")
+            $sideListType.GetField("Selected", $flags).SetValue($side, "general")
             $bmpA = New-Object System.Drawing.Bitmap(220, 620)
             $side.DrawToBitmap($bmpA, (New-Object System.Drawing.Rectangle(0, 0, 220, 620)))
             $bg = $kitInkType.GetProperty("Side", [System.Reflection.BindingFlags]'Public,Static').GetValue($null)
@@ -343,13 +390,13 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             Assert-NotNull $openForPage "Island.OpenPrefsForPage must exist"
 
             $pageMap = @{
-                "PageHome"     = "tabs"
-                "PageClass"    = "integrasi"
+                "PageHome"     = "island"
+                "PageClass"    = "work"
                 "PageRemind"   = "remind"
                 "PageAgents"   = "agents"
                 "PageMessages" = "messages"
-                "PagePhone"    = "phone"
-                "PageVoice"    = "dikte"
+                "PagePhone"    = "system"
+                "PageVoice"    = "ai"
             }
 
             foreach ($pgFieldName in $pageMap.Keys) {
@@ -375,26 +422,24 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         $langType.GetField("English", [System.Reflection.BindingFlags]'Public,Static').SetValue($null, $true)
         $tMethod = $langType.GetMethod("T", [System.Reflection.BindingFlags]'Public,Static')
         $expectedLang = @{
-            "Tampilan & Ruang Kerja"    = "Appearance & Workspace"
-            "Produktivitas"             = "Productivity"
-            "Perangkat & Media"         = "Devices & Media"
-            "Aplikasi"                  = "Apps"
-            "Tema & Gaya"               = "Theme & Style"
-            "Notch & Perilaku"          = "Notch & Behavior"
-            "Tab & Kartu Notch"         = "Notch Tabs & Cards"
+            "Umum"                      = "General"
+            "Tampilan"                  = "Appearance"
+            "Island"                    = "Island"
             "Dock & Taskbar"            = "Dock & Taskbar"
-            "Integrasi & Kalender"      = "Integrations & Calendar"
-            "Tugas & Fokus"             = "Tasks & Focus"
-            "Layanan AI"                = "AI Services"
-            "Agen Coding"               = "Coding Agents"
-            "Dikte & Rapat"             = "Dictation & Meetings"
-            "Notifikasi & Pesan"        = "Notifications & Messages"
-            "Musik & Berkas"            = "Music & Files"
-            "Gamifikasi Ketikan"        = "Typing Gamification"
-            "Sistem & Perangkat"        = "System & Devices"
+            "Notifikasi"                = "Notifications"
+            "Tugas & Kalender"          = "Tasks & Calendar"
             "Cuaca & Pengingat"         = "Weather & Reminders"
-            "Umum & Data"               = "General & Data"
+            "AI & Dikte"                = "AI & Dictation"
+            "Agen Coding"               = "Coding Agents"
+            "Musik & Berkas"            = "Music & Files"
+            "Perangkat & HP"            = "Devices & Phone"
+            "Gamifikasi Ketikan"        = "Typing Gamification"
             "Pintasan & Aksesibilitas"  = "Shortcuts & Accessibility"
+            "Tab dan kartu"             = "Tabs and cards"
+            "Integrasi dan kalender"    = "Integrations and calendar"
+            "Dikte dan rapat"           = "Dictation and calls"
+            "HP Android"                = "Android phone"
+            "Versi {0}"                 = "Version {0}"
         }
         foreach ($k in $expectedLang.Keys) {
             $actual = $tMethod.Invoke($null, @($k))
@@ -402,7 +447,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         }
     }
 
-    It "9. Display selection clears malformed values, preserves unavailable displays, and explains a single display" {
+    It "9. Display selection preserves monitor fallback and offers all displays" {
         $isle = $null; $prefs = $null
         try {
             $isle = New-TestIsland
@@ -437,17 +482,59 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             Assert-NotNull $displayRow "Island settings must include a display selector"
             $displayPicker = $displayRow.Controls | Where-Object { $_ -is $kitPopupType } | Select-Object -First 1
             Assert-NotNull $displayPicker "Display row must contain a popup selector"
-            if ([System.Windows.Forms.Screen]::AllScreens.Length -eq 1) {
-                Assert-False $displayPicker.Enabled "Single display selector must be disabled"
-                Assert-Equal $displayRow.Detail "Sambungkan layar lain untuk memilihnya" "Single display selector must explain how to enable it"
-            }
-            else {
-                Assert-True $displayPicker.Enabled "Multiple displays must enable the selector"
-                Assert-Equal $displayRow.Detail "Pilih layar tempat island tampil" "Multiple display selector must explain its target"
-            }
+            $count = [System.Windows.Forms.Screen]::AllScreens.Length
+            Assert-Equal ($count + 1) $displayPicker.Items.Length "Selector must list All displays and every detected display"
+            Assert-Equal "Semua layar" $displayPicker.Items[0] "All displays must be the first option"
+            if ($count -gt 0) { Assert-True $displayPicker.Enabled "All displays can be selected before a second screen is connected" }
+            Assert-True ($displayPicker.Selected -gt 0) "Existing profiles must open in single-display mode"
+
+            $settings.Set("monitor.all", $true)
+            $prefs.Go("island")
+            $displayRow = Get-ContentRows $prefs | Where-Object { $_.Title -eq "Layar" } | Select-Object -First 1
+            $displayPicker = $displayRow.Controls | Where-Object { $_ -is $kitPopupType } | Select-Object -First 1
+            Assert-Equal 0 $displayPicker.Selected "All displays should be selected when the preference is enabled"
+            Assert-Equal $unavailable ($settings.Get("monitor", "")) "All-display mode must preserve the single-display preference"
         }
         finally {
             if ($prefs) { $prefs.Dispose() }
+            if ($isle) { $isle.Dispose() }
+        }
+    }
+
+    It "Island replica bounds follow placement, DPI, and screen edges without spilling onto a neighbor" {
+        $bounds = $islandType.GetMethod("IslandReplicaBounds", $flags)
+        $left = New-Object System.Drawing.Rectangle(-1920, -200, 1920, 1080)
+        $right = New-Object System.Drawing.Rectangle(0, 0, 2560, 1440)
+        $centered = $bounds.Invoke($null, @($left, [single]1, 0, $true, [single]16, [single]0.22, 0))
+        Assert-Equal -200 $centered.Top "Docked replica must touch its display's top"
+        Assert-Equal -960 ($centered.Left + $centered.Width / 2) "Negative-coordinate screens must center correctly"
+        $corner = $bounds.Invoke($null, @($right, [single]1.5, 2, $false, [single]16, [single]0.22, 0))
+        Assert-Equal 84 $corner.Width "Mini launcher width must scale with DPI"
+        Assert-Equal 9 $corner.Height "Mini launcher thickness must scale with DPI"
+        Assert-Equal ($right.Right - 24) $corner.Right "Corner inset must scale with DPI"
+        $side = $bounds.Invoke($null, @($left, [single]1.5, 3, $true, [single]16, [single]1, 0))
+        Assert-Equal 9 $side.Width "Vertical Mini launcher must use the same thickness"
+        Assert-Equal 84 $side.Height "Vertical Mini launcher must rotate the horizontal dimensions"
+        Assert-Equal $left.Left $side.Left "Side replica must stick to its own edge"
+        Assert-True ($left.Contains($side)) "Side replica must stay within its monitor even at 100% vertical offset"
+        $portable = $islandType.GetMethod("IsPortable", $flags)
+        Assert-True ($portable.Invoke($null, @("monitor.all"))) "Export and import must preserve the display mode"
+    }
+
+    It "Island replica can paint a layered surface without showing or activating a window" {
+        $isle = $null; $replica = $null
+        try {
+            $isle = New-TestIsland
+            $type = $islandType.GetNestedType("IslandReplica", $flags)
+            $replica = [Activator]::CreateInstance($type, $flags, $null, @($isle, 'headless'), $null)
+            $type.GetField("DpiScale", $flags).SetValue($replica, [single]1.25)
+            $at = New-Object System.Drawing.Rectangle(-32000, -32000, 110, 30)
+            $draw = $type.GetMethod("DrawReplica", $flags)
+            Assert-True ($draw.Invoke($replica, @($at, [Drawing.Color]::Black, [Drawing.Color]::White, 0, $true))) "UpdateLayeredWindow must accept the replica surface"
+            Assert-False $replica.Visible "Preparing a replica surface must not show its window"
+        }
+        finally {
+            if ($replica) { $replica.Dispose() }
             if ($isle) { $isle.Dispose() }
         }
     }
@@ -462,7 +549,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             $refresh = $prefsType.GetMethod("RefreshDisplayPicker", $flags)
             Assert-NotNull $refresh "Preferences must expose a display refresh"
 
-            $prefs.Go("tabs")
+            $prefs.Go("dock")
             $tabsFirst = $content.Controls[0]
             [void]$refresh.Invoke($prefs, $null)
             Assert-True ([object]::ReferenceEquals($tabsFirst, $content.Controls[0])) "Display refresh must leave other settings pages intact"
@@ -476,6 +563,65 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         }
         finally {
             if ($prefs) { $prefs.Dispose() }
+            if ($isle) { $isle.Dispose() }
+        }
+    }
+
+    It "Pet choices update in place without resetting the Settings scroll position" {
+        Assert-IsolatedSettings
+        $isle = $null; $prefs = $null; $pet = $null
+        try {
+            $isle = New-TestIsland
+            $cfg = $islandType.GetField("settings", $flags).GetValue($isle)
+            $cfg.Set("pet.on", $true)
+            $cfg.Set("pet.kind", "cat")
+            $custom = Join-Path $f30Tmp "pets\QA Incomplete"
+            [void][IO.Directory]::CreateDirectory($custom)
+            [IO.File]::WriteAllText((Join-Path $custom "pet.json"), "{}")
+
+            # Reuse a hidden pet so ApplyPet never shows a window on the active desktop.
+            $petType = $islandType.GetNestedType("PetWindow", $flags)
+            $pet = [Activator]::CreateInstance($petType, $flags, $null,
+                @([Drawing.Rectangle]::new(-32000, -32000, 1000, 600), [single]1, [IntPtr]::Zero, $null), $null)
+            $petType.GetField("hidden", $flags).SetValue($pet, $true)
+            [void]$pet.Handle
+            $islandType.GetField("pet", $flags).SetValue($isle, $pet)
+
+            $prefs = [Activator]::CreateInstance($prefsType, $flags, $null, @($isle), $null)
+            # Create the hidden controls as in render_prefs.ps1; Handle alone does not mark them Created.
+            $create = [Windows.Forms.Control].GetMethod("CreateControl", [Reflection.BindingFlags]'NonPublic,Instance', $null, [Type[]]@([bool]), $null)
+            [void]$create.Invoke($prefs, @($true))
+            $prefs.Go("pet")
+            $content = $prefsType.GetField("content", $flags).GetValue($prefs)
+            # Give the hidden panel a known scroll range.
+            $content.AutoScrollMinSize = [Drawing.Size]::new(0, 2000)
+            $content.AutoScrollPosition = [Drawing.Point]::new(0, 800)
+            $baseline = $content.AutoScrollPosition
+            Assert-True ($baseline.Y -lt 0) "The pet section must be scrolled into view first"
+            $rows = @(Get-ContentRows $prefs)
+            $animal = ($rows | Where-Object Title -eq "Hewan").Field
+            $fur = ($rows | Where-Object Title -eq "Warna bulu").Field
+            $toggle = ($rows | Where-Object Title -eq "Pet di dock").Field
+
+            $animal.Pick(1)
+            Assert-Equal "dog" $cfg.Get("pet.kind", "") "Choosing Dog must persist the new value"
+            Assert-False $animal.IsDisposed "Changing the animal must not replace the picker"
+            Assert-Equal $baseline.Y $content.AutoScrollPosition.Y "Changing Cat to Dog must preserve scroll"
+
+            $animal.Pick([Array]::IndexOf($animal.Items, "QA Incomplete"))
+            Assert-False $fur.Enabled "A custom pet must disable the fur picker"
+            Assert-True ($animal.Parent.Detail -like "*sheet.png*") "Invalid custom pet must explain the fallback"
+            $animal.Pick(0)
+            Assert-True $fur.Enabled "The fur picker must be re-enabled for Cat"
+            Assert-Equal "" $animal.Parent.Detail "A valid pet must clear the error"
+            $toggle.Checked = $false
+            Assert-False $animal.Enabled "Turning Pet off must disable the animal picker"
+            Assert-False $toggle.IsDisposed "Turning Pet off must not replace the toggle"
+            Assert-Equal $baseline.Y $content.AutoScrollPosition.Y "Custom pet and toggle updates must preserve scroll"
+        }
+        finally {
+            if ($prefs) { $prefs.Dispose() }
+            if ($pet -and -not $pet.IsDisposed) { $pet.Close(); $pet.Dispose() }
             if ($isle) { $isle.Dispose() }
         }
     }

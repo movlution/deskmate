@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -164,16 +165,17 @@ namespace Deskmate
                 var r = h.Rect;
                 r.Inflate(2, 2);
                 float radius = Math.Min(12, r.Height / 2);
-                // Two-tone ring: the outer band contrasts with the surface, the inner
-                // hairline contrasts with whatever fill sits under the focus. An
-                // accent-on-accent ring vanished on active tabs and primary buttons.
-                // Pick the tone opposite the surface actually being drawn (the approval
-                // card renders on Ink.Flip), not the global one.
-                var ring = ReferenceEquals(p.T, Ink.Flip) ? Ink.Base : Ink.Flip;
-                p.StrokeRound(r, radius, ring.Bg, 3f);
+                // DESIGN.md ring: 2px in the accent (or ink when the accent is under 3:1 on
+                // this surface) with a hairline of the surface just inside, so it reads on
+                // the shell and on accent-filled pills alike. p.T is the tone being drawn,
+                // including the Flip-toned approval card.
+                var t = p.T;
+                var bg = Color.FromArgb(255, t.Bg);
+                var focus = Island.Contrast(Color.FromArgb(255, t.Accent), bg) >= 3 ? t.Accent : t.Text;
                 var inner = r;
                 inner.Inflate(-1.5f, -1.5f);
-                p.StrokeRound(inner, Math.Max(2, radius - 1.5f), ring.Text, 1.2f);
+                p.StrokeRound(inner, Math.Max(2, radius - 1.5f), bg, 1.25f);
+                p.StrokeRound(r, radius, focus, 2f);
                 return;
             }
         }

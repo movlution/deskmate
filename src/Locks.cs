@@ -12,7 +12,6 @@ namespace Deskmate
         [DllImport("user32.dll")] static extern short GetKeyState(int vk);
         [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
         [DllImport("user32.dll")] static extern int GetKeyboardLayoutList(int n, IntPtr[] list);
-        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr pid);
 
         System.Windows.Forms.Timer locksTimer;
         bool capsOn, numOn, scrollOn, locksRead, capsPref = true;
@@ -64,7 +63,7 @@ namespace Deskmate
             }
             if (!manyLayouts || !settings.GetBool("keys.lang", true)) return;
             IntPtr win = Native.GetForegroundWindow();
-            IntPtr hkl = GetKeyboardLayout(GetWindowThreadProcessId(win, IntPtr.Zero));
+            IntPtr hkl = GetKeyboardLayout(Native.GetWindowThreadProcessId(win, IntPtr.Zero));
             if (hkl == IntPtr.Zero) return;
             // Switching windows isn't a change
             bool same = win == layoutWin;

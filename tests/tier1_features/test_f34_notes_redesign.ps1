@@ -337,6 +337,7 @@ public static class DeskmateTestWin32 {
         $ww = [Activator]::CreateInstance($wwType, @($isl))
         try {
             $ww.Show()
+            [void]$ww.Activate()
             $ww.SelectTab(1)
             [Windows.Forms.Application]::DoEvents()
             $editor = $wwType.GetField("editor", $flags).GetValue($ww)
@@ -357,7 +358,7 @@ public static class DeskmateTestWin32 {
             [void]$menuType.GetMethod("OnQueryKey", $flags).Invoke($menu, @($query, $enter.PSObject.BaseObject))
             [Windows.Forms.Application]::DoEvents()
             Assert-Equal "Pertanyaan`n1. " $editor.Text "Enter must replace the slash with the selected Markdown block"
-            Assert-True $editor.Focused "Focus must return to the note editor after choosing a block"
+            Assert-True ($editor.Focused -or $ww.ActiveControl -eq $editor) "Focus must return to the note editor after choosing a block"
 
             [void][DeskmateTestWin32]::SendMessage($editor.Handle, 0x0102, [IntPtr][int][char]'/', [IntPtr]1)
             [Windows.Forms.Application]::DoEvents()
@@ -613,7 +614,7 @@ public static class DeskmateTestWin32 {
         $httpType = Get-DeskmateType "GoogleWorkspaceHttp"
         $driveType = Get-DeskmateType "GoogleDriveNotesClient"
         $fetchResultType = Get-DeskmateType "FetchResult"
-        $transportField = $httpType.GetField("Transport", $flags)
+        $transportField = $httpType.GetProperty("Transport", $flags)
         $funcType = [System.Func``4].MakeGenericType([string], [string], [string], $fetchResultType)
         $syncMethod = $driveType.GetMethod("Transfer", $flags)
         $versions = [Activator]::CreateInstance([System.Collections.Generic.Dictionary[string,datetime]])

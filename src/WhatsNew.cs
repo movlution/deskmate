@@ -20,6 +20,88 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.11.1",
+                Items = new[]
+                {
+                    new[] { "Dock selalu di atas", "Dock, pet, dan notch di layar lain kembali ke atas dalam sedetik bila ada aplikasi yang menutupinya.", "" },
+                    new[] { "Pengaturan pet tidak melompat", "Mengganti hewan, warna bulu, atau menyalakan pet tidak lagi menggulir halaman Pengaturan ke atas.", "" },
+                },
+            },
+            new Note
+            {
+                Version = "2.11.0",
+                Items = new[]
+                {
+                    new[] { "Pet di dock", "Kucing atau anjing piksel berjalan di atas dock, ikut naik turun saat dock bersembunyi, dan menoleh atau melompat saat disentuh kursor. Nyalakan di Pengaturan › Dock & Taskbar.", "" },
+                    new[] { "Pet dari Aseprite", "Taruh sheet.png dan pet.json hasil Export Sprite Sheet di folder pet, lalu pilih di Hewan. Warna bulu, ukuran, dan kecepatan jalan juga bisa diatur.", "" },
+                },
+            },
+            new Note
+            {
+                Version = "2.10.0",
+                Items = new[]
+                {
+                    new[] { "Kaca Kalem", "Material kaca baru: warna mengikuti wallpaper, diredam, tanpa kilau, dengan garis tepi tipis yang rata.", "" },
+                    new[] { "Jam di kepala panel", "Panel terbuka menampilkan jam dan tanggal di pojok kiri atas, dan tab kini berada dalam satu kapsul yang lebih mudah dibaca.", "" },
+                    new[] { "Ikon notifikasi asli", "Notifikasi Phone Link menampilkan logo aplikasi Android-nya, dan notifikasi situs web menampilkan ikon browser.", "" },
+                    new[] { "Editor tugas dua kolom", "Editor tugas dan catatan kini dua kolom, sakelar bergerak lebih halus, dan pencarian Pengaturan lebih cepat.", "" },
+                    new[] { "Dock dan panel lebih andal", "Dock kini muncul di atas aplikasi maksimal ber-title bar kustom seperti ChatGPT, dan panel Clear tetap terbaca di atas jendela terang.", "" },
+                },
+            },
+            new Note
+            {
+                Version = "2.9.0",
+                Items = new[]
+                {
+                    new[] { "Notch di semua layar", "Pilih Semua layar di Ukuran dan layar › Layar. Monitor lain menampilkan notch ringkas, dan panel terbuka di layar yang Anda arahkan atau klik.", "" },
+                    new[] { "Ikon tersembunyi dari setiap Dock", "Saat Dock menggantikan taskbar, tombol panah di setiap monitor membuka daftar ikon tersembunyi tepat di atas Dock itu.", "" },
+                    new[] { "Pengaturan yang ditata ulang", "Pengaturan kini disusun seperti System Settings di macOS, dengan kunci settings.ini yang tetap sama.", "" },
+                    new[] { "Lebih responsif", "Deskmate berjalan pada prioritas normal, animasi notch dan panel lebih ringan, dan Start langsung menampilkan aplikasi, ikon, serta Terbaru.", "" },
+                    new[] { "Kaca dan tema", "Kaca wall.sync kini mewarnai mengikuti wallpaper, Dock naik lebih cepat dan tenang, dan tema mengikuti Windows.", "" },
+                },
+            },
+            new Note
+            {
+                Version = "2.8.0",
+                Items = new[]
+                {
+                    new[] { "Gambar di catatan tugas", "Pilih Tambah gambar atau tempel screenshot dengan Ctrl+V. Gambar disimpan sebagai PNG, ikut tersinkron ke Google Drive privat, dan tetap bisa dibuka dari cache saat offline.", "\uE8B9" },
+                    new[] { "Emoji di notifikasi", "Judul dan isi notifikasi kini menampilkan emoji dengan benar, tetap rapi saat dipotong, dan tidak lagi merusak teks di sekitarnya.", "\uE8BD" },
+                    new[] { "Mulai bersama Windows", "Sakelar autostart kini memakai scheduled task, mengikuti status sebenarnya, dan tetap punya jalur cadangan untuk Windows yang membatasi scheduled task.", "\uE7E8" },
+                    new[] { "Keterbacaan dan kaca", "Teks sekunder dan kontrol nonaktif lebih mudah dibaca, kontras chip tenggat diperkuat, dan target cahaya Liquid Glass di mode terang dikalibrasi ulang.", "\uE790" },
+                    new[] { "Stabilitas", "Suite E2E Tier 1–4 kini mencakup 385 pemeriksaan, termasuk skenario nyata untuk onboarding, tema, kaca, tugas, notifikasi, dock, dan indikator mini.", "\uE74C" },
+                },
+            },
+            new Note
+            {
+                Version = "2.7.2",
+                Items = new[]
+                {
+                    new[] { "Tugas dan catatan", "Editor catatan baru dengan Markdown, tabel, checklist, blok kode, dan menu blok.", "\uE73A" },
+                    new[] { "Google Workspace", "Tugas tersinkron dua arah dengan Google Tasks, dan catatan Markdown tersimpan di folder Deskmate Catatan pada Google Drive.", "\uE8F1" },
+                    new[] { "Dock", "Pindai dan sambungkan Wi-Fi serta Bluetooth langsung dari dock, dengan interaksi dan pratinjau yang lebih rapi.", "\uE90E" },
+                    new[] { "Aturan notifikasi aplikasi", "Atur tiap aplikasi: ikuti pengaturan umum, tampilkan di Pesan saja, sembunyikan, atau jeda banner 1 atau 8 jam.", "\uE8BD" },
+                    new[] { "Tampilan kaca", "Resep Liquid Glass kini seragam di island, dock, dan panel, dan sisa klip dari tampilan sebelumnya tidak lagi tertinggal.", "\uE790" },
+                    new[] { "Deskmate", "Ikon, nama, dan aset visual baru; aplikasi Windows ini kini sepenuhnya memakai identitas Deskmate.", "\uE737" },
+                    new[] { "Tur", "Dua langkah baru untuk dock dan ruang kerja, tombol lebih besar, dan kontrol yang lebih ramah pembaca layar.", "\uE7C1" },
+                },
+            },
+            new Note
+            {
+                Version = "2.7.0",
+                Items = new[]
+                {
+                    new[] { "Combo Ketikan", "Combo, suara mekanikal/arcade, Fever Mode, penalti, XP, dan Sprint 30 detik", "\uE7FC" },
+                    new[] { "3 Prioritas Hari Ini", "Checklist 3 target utama hari ini di Ringkasan", "\uE73A" },
+                    new[] { "Fokus & Progres", "Menit fokus, streak harian, dan grafik 7 hari", "\uE916" },
+                    new[] { "Google Calendar", "Masuk lewat browser untuk sinkron & kelola acara", "\uE787" },
+                    new[] { "Hari libur nasional (Indonesia)", "Menampilkan tanggal merah & cuti bersama Indonesia di kalender", "\uE787" },
+                    new[] { "Dock di semua layar", "Setiap monitor punya dock sendiri, lengkap dengan pratinjau jendela dan widget.", "\uE90E" },
+                    new[] { "Edit gambar", "Coret, potong, putar, balik, dan samarkan gambar sebelum dibagikan.", "\uE8B9" },
+                },
+            },
+            new Note
+            {
                 Version = "2.6.1",
                 Items = new[]
                 {
@@ -174,7 +256,7 @@ namespace Deskmate
             BackColor = KitInk.Window;
             Native.DarkFrame(Handle, !Ink.Light);
             // Settings page metrics: 28 margin, 520 group
-            int m = u(28), w = u(520), top = u(78), btnH = u(30);
+            int m = u(28), w = u(520), top = u(78), btnH = u(36);
             list.Width = w;
             list.Measure(s);
             var area = Screen.FromHandle(Handle).WorkingArea;

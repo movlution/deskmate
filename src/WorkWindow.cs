@@ -1,14 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Globalization;
-using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace Deskmate
 {
     // Tasks and notes, one window. Tasks live in Island.todos; notes are Markdown files.
-    sealed class WorkWindow : KitWindow
+    sealed partial class WorkWindow : KitWindow
     {
         readonly Island owner;
         readonly KitSegmented tabs = new KitSegmented();
@@ -149,6 +147,9 @@ namespace Deskmate
                     e.Handled = true;
                 }
             };
+            // The composer's accent edge follows focus
+            addBox.GotFocus += delegate { Invalidate(Rectangle.Inflate(wellAdd, 2, 2)); };
+            addBox.LostFocus += delegate { Invalidate(Rectangle.Inflate(wellAdd, 2, 2)); };
 
             syncStatus.Back = delegate { return KitInk.Window; };
             syncStatus.Click += delegate
@@ -219,6 +220,8 @@ namespace Deskmate
                 if (string.IsNullOrEmpty(search.Text)) RefreshNotes(current);
                 else searchTimer.Start();
             };
+            search.GotFocus += delegate { Invalidate(Rectangle.Inflate(wellSearch, 2, 2)); };
+            search.LostFocus += delegate { Invalidate(Rectangle.Inflate(wellSearch, 2, 2)); };
 
             newNoteBtn.Text = "+ " + Lang.T("Baru");
             newNoteBtn.AccessibleName = Lang.T("Buat catatan baru");
@@ -470,7 +473,8 @@ namespace Deskmate
             if (!IsHandleCreated) return;
             float s = Ui;
             int maxChipW = Math.Max((int)(80 * s), blockBtn.Left - wellEditor.X - (int)(24 * s));
-            noteTagChip.SetBounds(wellEditor.X + (int)(14 * s), wellEditor.Y + (int)(9 * s), noteTagChip.PreferredWidth(maxChipW), (int)(28 * s));
+            int chipH = (int)(28 * s);
+            noteTagChip.SetBounds(wellEditor.X + (int)(Ink.Sp12 * s), editorHeaderRect.Y + (editorHeaderRect.Height - chipH) / 2, noteTagChip.PreferredWidth(maxChipW), chipH);
         }
 
 
@@ -487,17 +491,19 @@ namespace Deskmate
             {
                 fText = UiFont(Ink.Body.Size); fSub = UiFont(Ink.Callout.Size); fSmall = UiFont(Ink.Caption.Size);
             }
-            int pad = (int)(16 * s), W = ClientSize.Width, H = ClientSize.Height;
+            int pad = (int)(Ink.Sp16 * s), W = ClientSize.Width, H = ClientSize.Height;
+            // Toolbar controls on the 32 px step; buttons and inputs below take the 36 px target
+            int bar = (int)(Ink.Sp32 * s), target = (int)(36 * s);
             tabs.Font = fSub;
             float tw = 0;
             foreach (var it in tabs.Items) tw = Math.Max(tw, TextRenderer.MeasureText(it, fSub).Width);
-            tabs.SetBounds(pad, pad, (int)((tw + 34 * s) * tabs.Items.Length), (int)(30 * s));
-            toolbarDividerY = tabs.Bottom + (int)(12 * s);
-            int y0 = contentTop = toolbarDividerY + (int)(16 * s);
+            tabs.SetBounds(pad, pad, (int)((tw + Ink.Sp32 * s) * tabs.Items.Length), bar);
+            toolbarDividerY = tabs.Bottom + (int)(Ink.Sp12 * s);
+            int y0 = contentTop = toolbarDividerY + (int)(Ink.Sp20 * s);
             int modeWidth = 2 * (Math.Max(TextRenderer.MeasureText(taskMode.Items[0], fSub).Width,
-                TextRenderer.MeasureText(taskMode.Items[1], fSub).Width) + (int)(24 * s));
+                TextRenderer.MeasureText(taskMode.Items[1], fSub).Width) + (int)(Ink.Sp24 * s));
             taskMode.SetBounds(W - pad - modeWidth, tabs.Top, modeWidth, tabs.Height);
-            int gap = (int)(12 * s), columnGap = (int)(32 * s);
+            int gap = (int)(Ink.Sp12 * s), columnGap = (int)(Ink.Sp32 * s);
 
             // Tasks
             bool compact = W < (int)(580 * s);
@@ -520,61 +526,65 @@ namespace Deskmate
 
             sidebarDividerX = compact ? 0 : rx - columnGap / 2;
 
-            int btnSz = (int)(30 * s);
+            int btnSz = bar;
             moreBtn.SetBounds(W - pad - btnSz, y0, btnSz, btnSz);
 
             int syncWidth = syncStatus.PreferredWidth();
-            syncStatus.SetBounds(moreBtn.Left - gap - syncWidth, y0, syncWidth, (int)(28 * s));
+            syncStatus.SetBounds(moreBtn.Left - gap - syncWidth, y0 + (btnSz - (int)(28 * s)) / 2, syncWidth, (int)(28 * s));
 
             int titleRight = (syncStatus.Visible ? syncStatus.Left - gap : moreBtn.Left - gap);
             int titleW = Math.Max(100, titleRight - rx);
-            title.SetBounds(rx, y0, titleW, (int)(52 * s));
+            // Title line, then the subtitle on its own line with air between them
+            title.SetBounds(rx, y0, titleW, (int)(56 * s));
 
-            wellAdd = new Rectangle(rx, y0 + (int)(56 * s), rw, (int)(38 * s));
+            // Composer: a calm input field one tone step off the canvas; the accent shows on focus
+            wellAdd = new Rectangle(rx, title.Bottom + (int)(Ink.Sp12 * s), rw, target);
             addBox.Font = fText;
             addBox.BackColor = TaskInk.Card;
             addBox.ForeColor = KitInk.Text;
-            addBox.SetBounds(wellAdd.X + (int)(38 * s), 0, wellAdd.Width - (int)(52 * s), addBox.Height);
+            addBox.SetBounds(wellAdd.X + (int)(40 * s), 0, wellAdd.Width - (int)(52 * s), addBox.Height);
             addBox.Top = wellAdd.Y + (wellAdd.Height - addBox.Height) / 2;
             addBox.Placeholder = Lang.T("Tambah tugas…");
 
-            int listTop = wellAdd.Bottom + gap;
+            int listTop = wellAdd.Bottom + (int)(Ink.Sp16 * s);
             int listHeight = H - pad - listTop;
             taskView.SetBounds(rx, listTop, rw, listHeight);
             title.Visible = Tab == 0 && (!BoardOn || compact);
             board.BackColor = KitInk.Window;
+            // The horizontal lane scrollbar follows the theme instead of staying light
+            Native.ThemeScroll(board);
             int boardTop = BoardOn && compact ? title.Bottom + gap : y0;
             board.SetBounds(rx, boardTop, rw, H - pad - boardTop);
             LayoutBoard();
             // Notes
             int lw = Math.Max((int)(240 * s), Math.Min((int)(280 * s), (int)(W * 0.31f)));
-            wellSideHead = new Rectangle(pad, y0, lw, (int)(48 * s));
+            wellSideHead = new Rectangle(pad, y0, lw, (int)(56 * s));
             newNoteBtn.Font = Ink.Semi(12.5f * s);
-            newNoteBtn.Size = new Size(TextRenderer.MeasureText(newNoteBtn.Text, newNoteBtn.Font).Width + (int)(26 * s), (int)(30 * s));
-            newNoteBtn.Location = new Point(pad + lw - newNoteBtn.Width, y0);
+            newNoteBtn.Size = new Size(TextRenderer.MeasureText(newNoteBtn.Text, newNoteBtn.Font).Width + (int)(Ink.Sp32 * s), target);
+            newNoteBtn.Location = new Point(pad + lw - newNoteBtn.Width, y0 - (int)(3 * s));
 
-            wellSearch = new Rectangle(pad, wellSideHead.Bottom + (int)(4 * s), lw, (int)(38 * s));
+            wellSearch = new Rectangle(pad, wellSideHead.Bottom + (int)(Ink.Sp12 * s), lw, target);
             search.Font = fText; search.BackColor = KitInk.Group; search.ForeColor = KitInk.Text;
             search.Placeholder = Lang.T("Cari catatan…");
-            search.SetBounds(wellSearch.X + (int)(34 * s), 0, wellSearch.Width - (int)(46 * s), search.PreferredHeight);
+            search.SetBounds(wellSearch.X + (int)(36 * s), 0, wellSearch.Width - (int)(48 * s), search.PreferredHeight);
             search.Top = wellSearch.Y + (wellSearch.Height - search.Height) / 2;
 
             int filterY = wellSearch.Bottom + gap;
             noteArchiveFilter.Font = fSmall;
             int segW = Math.Min((int)(118 * s), lw - (int)(132 * s));
-            noteArchiveFilter.SetBounds(pad, filterY, segW, (int)(30 * s));
-            colorStrip.SetBounds(noteArchiveFilter.Right + (int)(6 * s), filterY, pad + lw - (noteArchiveFilter.Right + (int)(6 * s)), (int)(30 * s));
+            noteArchiveFilter.SetBounds(pad, filterY, segW, bar);
+            colorStrip.SetBounds(noteArchiveFilter.Right + (int)(Ink.Sp8 * s), filterY, pad + lw - (noteArchiveFilter.Right + (int)(Ink.Sp8 * s)), bar);
 
             int nTop = noteArchiveFilter.Bottom + gap;
             noteList.SetBounds(pad, nTop, lw, H - nTop - pad);
 
             int ex = pad + lw + columnGap;
             wellEditor = new Rectangle(ex, y0, W - pad - ex, H - y0 - pad);
-            editorHeaderRect = new Rectangle(wellEditor.X, wellEditor.Y, wellEditor.Width, (int)(46 * s));
+            editorHeaderRect = new Rectangle(wellEditor.X, wellEditor.Y, wellEditor.Width, (int)(48 * s));
 
-            int edBtnSz = (int)(30 * s), edBtnGap = (int)(4 * s);
-            int tbY = wellEditor.Y + (int)(8 * s);
-            int bx = wellEditor.Right - (int)(12 * s) - edBtnSz;
+            int edBtnSz = bar, edBtnGap = (int)(Ink.Sp4 * s);
+            int tbY = wellEditor.Y + (editorHeaderRect.Height - edBtnSz) / 2;
+            int bx = wellEditor.Right - (int)(Ink.Sp12 * s) - edBtnSz;
             delBtn.SetBounds(bx, tbY, edBtnSz, edBtnSz);
             bx -= edBtnSz + edBtnGap; archiveBtn.SetBounds(bx, tbY, edBtnSz, edBtnSz);
             bx -= edBtnSz + edBtnGap; pinBtn.SetBounds(bx, tbY, edBtnSz, edBtnSz);
@@ -584,18 +594,19 @@ namespace Deskmate
 
             LayoutNoteTagChip();
 
+            int inset = (int)(Ink.Sp20 * s);
             noteTitleBox.Font = Ink.Display(20f * s);
             noteTitleBox.BackColor = KitInk.Group; noteTitleBox.ForeColor = KitInk.Text;
             noteTitleBox.Placeholder = Lang.T("Judul catatan…");
-            int titleTop = editorHeaderRect.Bottom + (int)(12 * s);
-            noteTitleBox.SetBounds(wellEditor.X + (int)(18 * s), titleTop, wellEditor.Width - (int)(36 * s), noteTitleBox.PreferredHeight);
+            int titleTop = editorHeaderRect.Bottom + (int)(Ink.Sp16 * s);
+            noteTitleBox.SetBounds(wellEditor.X + inset, titleTop, wellEditor.Width - 2 * inset, noteTitleBox.PreferredHeight);
 
-            editorMetaRect = new Rectangle(wellEditor.X + (int)(18 * s), noteTitleBox.Bottom + (int)(4 * s), wellEditor.Width - (int)(36 * s), (int)(20 * s));
-            editorDividerY = editorMetaRect.Bottom + (int)(8 * s);
+            editorMetaRect = new Rectangle(wellEditor.X + inset, noteTitleBox.Bottom + (int)(Ink.Sp4 * s), wellEditor.Width - 2 * inset, (int)(20 * s));
+            editorDividerY = editorMetaRect.Bottom + (int)(Ink.Sp12 * s);
 
-            int edTop = editorDividerY + (int)(10 * s);
+            int edTop = editorDividerY + (int)(Ink.Sp12 * s);
             editor.Font = fText; editor.BackColor = KitInk.Group; editor.ForeColor = KitInk.Text;
-            editor.SetBounds(wellEditor.X + (int)(18 * s), edTop, wellEditor.Width - (int)(36 * s), Math.Max((int)(40 * s), wellEditor.Bottom - edTop - (int)(14 * s)));
+            editor.SetBounds(wellEditor.X + inset, edTop, wellEditor.Width - 2 * inset, Math.Max((int)(40 * s), wellEditor.Bottom - edTop - (int)(Ink.Sp16 * s)));
             Native.ThemeScroll(editor);
             editor.RefreshFormatting();
 
@@ -609,27 +620,25 @@ namespace Deskmate
             KitInk.Smooth(g);
             float s = Ui;
             if (fSub == null) return;
-            using (var pen = new Pen(KitInk.Line))
-            {
-                int pad = (int)(16 * s);
-                g.DrawLine(pen, pad, toolbarDividerY, ClientSize.Width - pad, toolbarDividerY);
-                int split = Tab == 0 ? sidebarDividerX : (noteList.Right + wellEditor.Left) / 2;
-                if (split > 0) g.DrawLine(pen, split, contentTop, split, ClientSize.Height - pad);
-            }
+            var line = KitInk.PenOf(KitInk.Line, 1f);
+            int pad = (int)(Ink.Sp16 * s);
+            g.DrawLine(line, pad, toolbarDividerY, ClientSize.Width - pad, toolbarDividerY);
+            int split = Tab == 0 ? sidebarDividerX : (noteList.Right + wellEditor.Left) / 2;
+            if (split > 0) g.DrawLine(line, split, contentTop, split, ClientSize.Height - pad);
             if (Tab == 0)
             {
                 if (BoardOn) return;
-                Well(g, wellAdd, Ink.RadiusControl * s);
-                KitInk.Draw(g, "\uE710", Ink.Icons(14 * s), KitInk.Sub, new RectangleF(wellAdd.X + 12 * s, wellAdd.Y, 22 * s, wellAdd.Height), ContentAlignment.MiddleCenter);
+                Field(g, wellAdd, addBox.Focused, s);
+                KitInk.Draw(g, "\uE710", Ink.Icons(14 * s), addBox.Focused ? KitInk.Accent : KitInk.Sub, new RectangleF(wellAdd.X + Ink.Sp12 * s, wellAdd.Y, 22 * s, wellAdd.Height), ContentAlignment.MiddleCenter);
             }
             else
             {
-                int titleMaxW = Math.Max(40, wellSideHead.Width - newNoteBtn.Width - (int)(10 * s));
-                KitInk.Draw(g, Lang.T("Catatan"), Ink.Display(24f * s), KitInk.Text, new RectangleF(wellSideHead.X, wellSideHead.Y, titleMaxW, 30 * s), ContentAlignment.MiddleLeft);
-                KitInk.Draw(g, NoteCountText(), Ink.Text(12.5f * s), KitInk.Sub, new RectangleF(wellSideHead.X, wellSideHead.Y + 30 * s, wellSideHead.Width, 18 * s), ContentAlignment.MiddleLeft);
+                int titleMaxW = Math.Max(40, wellSideHead.Width - newNoteBtn.Width - (int)(Ink.Sp8 * s));
+                KitInk.Draw(g, Lang.T("Catatan"), Ink.Display(22f * s), KitInk.Text, new RectangleF(wellSideHead.X, wellSideHead.Y, titleMaxW, 30 * s), ContentAlignment.MiddleLeft);
+                KitInk.Draw(g, NoteCountText(), Ink.Text(12.5f * s), KitInk.Sub, new RectangleF(wellSideHead.X, wellSideHead.Y + (30 + Ink.Sp8 - 2) * s, wellSideHead.Width, 20 * s), ContentAlignment.MiddleLeft);
 
-                Well(g, wellSearch, Ink.RadiusControl * s);
-                KitInk.Draw(g, "\uE721", Ink.Icons(13.5f * s), KitInk.Sub, new RectangleF(wellSearch.X + 10 * s, wellSearch.Y, 20 * s, wellSearch.Height), ContentAlignment.MiddleCenter);
+                Field(g, wellSearch, search.Focused, s);
+                KitInk.Draw(g, "\uE721", Ink.Icons(13.5f * s), search.Focused ? KitInk.Accent : KitInk.Sub, new RectangleF(wellSearch.X + Ink.Sp12 * s, wellSearch.Y, 20 * s, wellSearch.Height), ContentAlignment.MiddleCenter);
 
                 PaintEditorWell(g, s);
             }
@@ -637,1407 +646,53 @@ namespace Deskmate
 
         void PaintEditorWell(Graphics g, float s)
         {
-            using (var cardPath = Ink.Round(wellEditor, Ink.RadiusControl * s))
+            float radius = Ink.RadiusCard * s;
+            KitInk.FillRound(g, wellEditor, radius, KitInk.Group);
+            if (current != null)
             {
-                using (var b = new SolidBrush(KitInk.Group)) g.FillPath(b, cardPath);
-                if (current != null)
+                Color noteCol = CurrentNoteColor();
+                if (noteCol != Color.Empty)
                 {
-                    Color noteCol = CurrentNoteColor();
-                    if (noteCol != Color.Empty)
-                    {
-                        var clip = g.Save();
-                        g.SetClip(cardPath, System.Drawing.Drawing2D.CombineMode.Intersect);
-                        using (var hb = new SolidBrush(EditorHeaderColor())) g.FillRectangle(hb, editorHeaderRect);
-                        using (var pen = new Pen(Ink.Mix(KitInk.Line, noteCol, 0.35f), 1f))
-                            g.DrawLine(pen, editorHeaderRect.Left, editorHeaderRect.Bottom, editorHeaderRect.Right, editorHeaderRect.Bottom);
-                        g.Restore(clip);
-                        using (var bpen = new Pen(Ink.Mix(KitInk.Line, noteCol, 0.42f), 1.5f))
-                            g.DrawPath(bpen, cardPath);
-                    }
-                    string rightStatus = saveStatusText.Length > 0 ? saveStatusText : (dirty ? Lang.T("Menyimpan…") : Lang.T("Tersimpan"));
-                    if (owner.DriveNotesLoading) rightStatus = Lang.T("Memuat…");
-                    int statusW = TextRenderer.MeasureText(rightStatus, fSmall, new Size(int.MaxValue, 1000), TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width + (int)(12 * s);
-                    KitInk.Draw(g, noteMetaLine, fSmall, KitInk.Sub, new RectangleF(editorMetaRect.X, editorMetaRect.Y, Math.Max(40, editorMetaRect.Width - statusW), editorMetaRect.Height), ContentAlignment.MiddleLeft);
-                    KitInk.Draw(g, rightStatus, fSmall, saveFailed ? Ink.Base.Negative : KitInk.Faint, new RectangleF(editorMetaRect.Right - statusW, editorMetaRect.Y, statusW, editorMetaRect.Height), ContentAlignment.MiddleRight);
-                    using (var pen = new Pen(KitInk.Line, 1f))
-                        g.DrawLine(pen, wellEditor.X + 18 * s, editorDividerY, wellEditor.Right - 18 * s, editorDividerY);
+                    // Label colour: a tinted header band and a soft edge, nothing louder
+                    var clip = g.Save();
+                    g.SetClip(KitInk.Shape(wellEditor, radius), System.Drawing.Drawing2D.CombineMode.Intersect);
+                    g.FillRectangle(KitInk.BrushOf(EditorHeaderColor()), editorHeaderRect);
+                    g.DrawLine(KitInk.PenOf(Ink.Mix(KitInk.Line, noteCol, 0.35f), 1f), editorHeaderRect.Left, editorHeaderRect.Bottom, editorHeaderRect.Right, editorHeaderRect.Bottom);
+                    g.Restore(clip);
+                    KitInk.StrokeRound(g, wellEditor, radius, Ink.Mix(KitInk.Line, noteCol, 0.42f), 1.5f);
                 }
-                else
-                {
-                    PaintNoteEmpty(g, s);
-                }
+                string rightStatus = saveStatusText.Length > 0 ? saveStatusText : (dirty ? Lang.T("Menyimpan…") : Lang.T("Tersimpan"));
+                if (owner.DriveNotesLoading) rightStatus = Lang.T("Memuat…");
+                int statusW = TextRenderer.MeasureText(rightStatus, fSmall, new Size(int.MaxValue, 1000), TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width + (int)(Ink.Sp12 * s);
+                KitInk.Draw(g, noteMetaLine, fSmall, KitInk.Sub, new RectangleF(editorMetaRect.X, editorMetaRect.Y, Math.Max(40, editorMetaRect.Width - statusW), editorMetaRect.Height), ContentAlignment.MiddleLeft);
+                KitInk.Draw(g, rightStatus, fSmall, saveFailed ? Ink.Base.Negative : KitInk.Faint, new RectangleF(editorMetaRect.Right - statusW, editorMetaRect.Y, statusW, editorMetaRect.Height), ContentAlignment.MiddleRight);
+                g.DrawLine(KitInk.PenOf(KitInk.Line, 1f), editorMetaRect.Left, editorDividerY, editorMetaRect.Right, editorDividerY);
+            }
+            else
+            {
+                PaintNoteEmpty(g, s);
             }
         }
 
         void PaintNoteEmpty(Graphics g, float s)
         {
-            float box = 40 * s;
+            float box = 44 * s;
             float cx = wellEditor.X + wellEditor.Width / 2f;
             float cy = wellEditor.Y + (wellEditor.Height - 54 * s) / 2f;
-            var tile = new RectangleF(cx - box / 2, cy - box / 2, box, box);
-            TaskInk.Pill(g, tile, box * 0.3f, KitInk.Hover);
-            KitInk.Draw(g, "\uE70B", Ink.Icons(20f * s), KitInk.Faint, tile, ContentAlignment.MiddleCenter);
+            var tile = TaskInk.EmptyTile(g, cx, cy, box, KitInk.Group, "\uE70B", s);
             string eTitle, eSub;
             NoteEmptyStrings(out eTitle, out eSub);
-            float ty = tile.Bottom + 8 * s;
-            KitInk.Draw(g, eTitle, Ink.Semi(15f * s), KitInk.Text, new RectangleF(wellEditor.X + 24 * s, ty, wellEditor.Width - 48 * s, 24 * s), ContentAlignment.MiddleCenter);
-            KitInk.Draw(g, eSub, Ink.Text(12.5f * s), KitInk.Sub, new RectangleF(wellEditor.X + 24 * s, ty + 24 * s, wellEditor.Width - 48 * s, 22 * s), ContentAlignment.MiddleCenter);
+            float ty = tile.Bottom + Ink.Sp12 * s;
+            KitInk.Draw(g, eTitle, Ink.Semi(15f * s), KitInk.Text, new RectangleF(wellEditor.X + Ink.Sp24 * s, ty, wellEditor.Width - 2 * Ink.Sp24 * s, 24 * s), ContentAlignment.MiddleCenter);
+            KitInk.Draw(g, eSub, Ink.Text(12.5f * s), KitInk.Sub, new RectangleF(wellEditor.X + Ink.Sp24 * s, ty + 24 * s, wellEditor.Width - 2 * Ink.Sp24 * s, 22 * s), ContentAlignment.MiddleCenter);
         }
 
-        static void Well(Graphics g, Rectangle r, float radius)
+        // Input field: Group one step off the canvas; focus draws the accent edge instead of a ring
+        static void Field(Graphics g, Rectangle r, bool focused, float s)
         {
-            using (var path = Ink.Round(r, radius))
-            using (var b = new SolidBrush(KitInk.Group))
-                g.FillPath(b, path);
-        }
-        // ---------- tasks ----------
-
-        void RefillRail()
-        {
-            if (owner != null && (owner.todos == null || owner.taskLists == null)) owner.EnsureWorkData();
-            if (owner != null && owner.todos != null) owner.todos.RemoveAll(t => t == null);
-            var todos = owner != null && owner.todos != null ? owner.todos : new List<TodoItem>();
-            var lists = owner != null && owner.taskLists != null ? owner.taskLists : new List<TaskListInfo>();
-            TaskLists.Ensure(lists, todos);
-            var railItems = new List<RailItem>();
-            railItems.Add(new RailItem
-            {
-                Kind = RailItem.View,
-                Key = "all",
-                Text = Lang.T("Semua tugas"),
-                Glyph = '\uE8FD',
-                Count = TaskTree.OpenCount(todos, null, false)
-            });
-            railItems.Add(new RailItem
-            {
-                Kind = RailItem.View,
-                Key = "starred",
-                Text = Lang.T("Berbintang"),
-                Glyph = '\uE735',
-                Count = TaskTree.OpenCount(todos, null, true)
-            });
-            railItems.Add(new RailItem
-            {
-                Kind = RailItem.Heading,
-                Text = Lang.T("Daftar tugas")
-            });
-            foreach (var l in lists)
-            {
-                railItems.Add(new RailItem
-                {
-                    Kind = RailItem.List,
-                    Key = l.Name,
-                    Text = l.Name,
-                    Glyph = '\uE7C3',
-                    Count = TaskTree.OpenCount(todos, l.Name, false)
-                });
-            }
-            railItems.Add(new RailItem
-            {
-                Kind = RailItem.New,
-                Key = "new",
-                Text = Lang.T("Buat daftar baru"),
-                Glyph = '\uE710'
-            });
-            rail.Items = railItems;
-            rail.Selected = activeRailKey;
-            rail.Invalidate();
-        }
-
-        void RefillTasks(string keepId)
-        {
-            if (keepId == null && taskView.Selected != null) keepId = taskView.Selected.Id;
-            if (owner != null && (owner.todos == null || owner.taskLists == null)) owner.EnsureWorkData();
-            if (owner != null && owner.todos != null) owner.todos.RemoveAll(t => t == null);
-            var todos = owner != null && owner.todos != null ? owner.todos : new List<TodoItem>();
-            var lists = owner != null && owner.taskLists != null ? owner.taskLists : new List<TaskListInfo>();
-            TaskLists.Ensure(lists, todos);
-
-            if (activeRailKey != "all" && activeRailKey != "starred")
-            {
-                if (TaskLists.Find(lists, activeRailKey) == null)
-                    activeRailKey = TaskLists.Default;
-            }
-
-            bool starred = activeRailKey == "starred";
-            string listName = (activeRailKey == "all" || activeRailKey == "starred") ? null : activeRailKey;
-
-            listOrder.Clear();
-            foreach (var l in lists) listOrder.Add(l.Name);
-
-            var openRows = TaskTree.Open(todos, listName, starred, currentSort, listOrder, collapsed);
-            var doneItems = TaskTree.Done(todos, listName, starred);
-
-            string emptyTitle, emptySub;
-            if (starred)
-            {
-                emptyTitle = Lang.T("Tidak ada tugas berbintang");
-                emptySub = Lang.T("Beri bintang pada tugas untuk melihatnya di sini");
-            }
-            else if (doneItems.Count > 0)
-            {
-                emptyTitle = Lang.T("Semua tugas selesai");
-                emptySub = Lang.T("Kerja bagus! Istirahat sejenak.");
-            }
-            else
-            {
-                emptyTitle = Lang.T("Belum ada tugas");
-                emptySub = Lang.T("Tambahkan tugas untuk memulai");
-            }
-
-            taskView.SetData(openRows, doneItems, doneOpen, listName == null, emptyTitle, emptySub);
-            if (keepId != null) taskView.Select(keepId);
-            if (BoardOn) RefillBoard(todos, lists, listName, starred, keepId);
-
-            if (activeRailKey == "all") title.Title = Lang.T("Semua tugas");
-            else if (activeRailKey == "starred") title.Title = Lang.T("Berbintang");
-            else title.Title = activeRailKey;
-
-            int openCount = TaskTree.OpenCount(todos, listName, starred);
-            title.Subtitle = openCount == 0 ? Lang.T("Tidak ada tugas aktif") : (openCount == 1 ? "1 " + Lang.T("tugas aktif") : openCount + " " + Lang.T("tugas aktif"));
-
-            RefillRail();
-            UpdateSyncStatus();
-        }
-
-        void UpdateSyncStatus()
-        {
-            bool gConn = GoogleWorkOn();
-            if (!gConn || owner == null)
-            {
-                syncStatus.Visible = false;
-                return;
-            }
-            syncStatus.Visible = Tab == 0 && !BoardOn;
-            if (owner.WorkSyncBusy)
-            {
-                syncStatus.Set(Lang.T("Menyinkronkan…"), false, true);
-            }
-            else if (!string.IsNullOrEmpty(owner.LastSyncError))
-            {
-                syncStatus.Set(owner.LastSyncError, true, false);
-            }
-            else if (owner.LastSyncUtc > DateTime.MinValue)
-            {
-                syncStatus.Set(Lang.T("Tersinkron") + " · " + Fmt.Ago(owner.LastSyncUtc), false, false);
-            }
-            else
-            {
-                syncStatus.Set(Lang.T("Tersinkron · baru saja"), false, false);
-            }
-        }
-
-        void OnWorkSyncStatusChanged()
-        {
-            if (IsDisposed || !IsHandleCreated) return;
-            if (InvokeRequired)
-            {
-                BeginInvoke((Action)OnWorkSyncStatusChanged);
-                return;
-            }
-            UpdateSyncStatus();
-        }
-
-        static List<TodoItem> CopyTasks(List<TodoItem> items)
-        {
-            if (items == null) return new List<TodoItem>();
-            var copy = new List<TodoItem>(items.Count);
-            foreach (var t in items)
-            {
-                if (t == null) continue;
-                copy.Add(new TodoItem
-                {
-                    Id = t.Id,
-                    Title = t.Title,
-                    Due = t.Due,
-                    Star = t.Star,
-                    Done = t.Done,
-                    Created = t.Created,
-                    DoneAt = t.DoneAt,
-                    ListName = t.ListName,
-                    Notes = t.Notes,
-                    GoogleTaskId = t.GoogleTaskId,
-                    GoogleListId = t.GoogleListId,
-                    UpdatedUtc = t.UpdatedUtc,
-                    Dirty = t.Dirty,
-                    ParentId = t.ParentId,
-                    Position = t.Position,
-                    Moved = t.Moved
-                });
-            }
-            return copy;
-        }
-
-        bool Changed(string keepId, bool showFailure = true)
-        {
-            if (owner == null) return false;
-            if (owner.todos == null) owner.EnsureWorkData();
-            bool saved = owner.TodosChanged();
-            if (saved) savedTasks = CopyTasks(owner.todos);
-            else
-            {
-                if (savedTasks != null) owner.todos = CopyTasks(savedTasks);
-                if (showFailure) KitAsk.Notice(this, Lang.T("Tugas gagal disimpan. Perubahan dibatalkan."));
-            }
-            RefillTasks(keepId);
-            return saved;
-        }
-
-        static bool ParseDue(string text, out string title, out DateTime? due)
-        {
-            title = text.Trim(); due = null;
-            text = text.Replace("@hari ini", "@hariini");
-            int at = text.LastIndexOf('@');
-            if (at < 0 || (at > 0 && !char.IsWhiteSpace(text[at - 1]))) return true;
-            DateTime? date = null; TimeSpan? time = null;
-            foreach (var raw in text.Substring(at + 1).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                string w = raw.ToLowerInvariant();
-                DateTime d; TimeSpan t;
-                if (w == "besok" || w == "tomorrow") date = DateTime.Today.AddDays(1);
-                else if (w == "hari" || w == "hariini" || w == "today") date = DateTime.Today;
-                else if (DateTime.TryParseExact(w, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out d)) date = d.Date;
-                else if (TimeSpan.TryParseExact(w.Replace('.', ':'), new[] { "h\\:mm", "hh\\:mm" }, CultureInfo.InvariantCulture, out t)) time = t;
-                else return true;
-            }
-            if (!date.HasValue && !time.HasValue) return true;
-            string head = text.Substring(0, at).Trim();
-            if (head.Length == 0) return true;
-            title = head;
-            var day = date ?? DateTime.Today;
-            var when = day + (time ?? new TimeSpan(9, 0, 0));
-            if (!date.HasValue && when <= DateTime.Now) when = when.AddDays(1);
-            due = when;
-            return true;
-        }
-
-        void AddTask()
-        {
-            if (owner == null) return;
-            if (owner.todos == null) owner.EnsureWorkData();
-            string text = addBox.Text.Replace('\r', ' ').Replace('\n', ' ').Trim();
-            if (text.Length == 0) return;
-            string titleStr; DateTime? due;
-            ParseDue(text, out titleStr, out due);
-            string targetList = (activeRailKey == "all" || activeRailKey == "starred") ? TaskLists.Default : activeRailKey;
-            var item = new TodoItem
-            {
-                Title = titleStr,
-                Due = due,
-                ListName = targetList,
-                Star = activeRailKey == "starred",
-                Position = TaskTree.TopPosition(owner.todos, targetList, null),
-                UpdatedUtc = DateTime.UtcNow,
-                Dirty = true
-            };
-            owner.todos.Add(item);
-            addBox.Clear();
-            Changed(item.Id);
-            addBox.Focus();
-        }
-
-        void EditTask(TodoItem item) { EditTask(item, null); }
-
-        TaskEditor taskEditor;
-
-        void EditTask(TodoItem item, string initialList)
-        {
-            if (owner == null) return;
-            if (owner.todos == null) owner.EnsureWorkData();
-            if (taskEditor != null && !taskEditor.IsDisposed) { taskEditor.Activate(); return; }
-            var dlg = new TaskEditor(item, initialList);
-            taskEditor = dlg;
-            string id = item == null ? null : item.Id;
-            string originalNotes = item == null ? "" : item.Notes ?? "";
-            dlg.FormClosed += delegate { taskEditor = null; };
-            dlg.Commit = delegate(TaskEditor draft)
-            {
-                if (IsDisposed || owner == null) return Lang.T("Buka ulang panel tugas.");
-                var t = id == null ? new TodoItem() : FindTask(id);
-                if (t == null) return Lang.T("Tugas sudah dihapus.");
-                string currentNotes = t.Notes ?? "";
-                if (id != null && draft.NotesChanged && currentNotes != originalNotes && currentNotes != draft.Notes)
-                {
-                    if (!KitAsk.Confirm(dlg, Lang.T("Catatan berubah saat sinkronisasi. Simpan versi Anda?"), "Simpan", "Lanjut mengedit"))
-                        return Lang.T("Perubahan belum disimpan.");
-                    // The dialog pumps UI messages, which can apply another sync result.
-                    t = FindTask(id);
-                    if (t == null) return Lang.T("Tugas sudah dihapus.");
-                    if ((t.Notes ?? "") != currentNotes && (t.Notes ?? "") != draft.Notes)
-                        return Lang.T("Perubahan belum disimpan.");
-                }
-
-                if (id == null || draft.TitleChanged) t.Title = draft.TaskTitle;
-                if (id == null || draft.DueChanged) t.Due = draft.Due;
-                if (id == null || draft.StarChanged) t.Star = draft.Star;
-                if (id == null || draft.DoneChanged)
-                {
-                    if (t.Done != draft.Done) t.DoneAt = draft.Done ? (DateTime?)DateTime.Now : null;
-                    t.Done = draft.Done;
-                }
-                if ((id == null || draft.ListChanged) && !TaskLists.Same(t.ListName, draft.ListName))
-                {
-                    t.ListName = draft.ListName;
-                    t.ParentId = "";
-                    t.Moved = true;
-                }
-                if (id == null || draft.NotesChanged) t.Notes = draft.Notes;
-                if (id != null && !draft.TitleChanged && !draft.DueChanged && !draft.StarChanged
-                    && !draft.DoneChanged && !draft.ListChanged && !draft.NotesChanged) return null;
-
-                t.UpdatedUtc = DateTime.UtcNow;
-                t.Dirty = true;
-                if (id == null)
-                {
-                    t.Position = TaskTree.TopPosition(owner.todos, t.ListName, null);
-                    owner.todos.Add(t);
-                }
-                return Changed(t.Id, false) ? null : Lang.T("Gagal menyimpan. Coba lagi.");
-            };
-            dlg.Show(this);
-        }
-
-        void DeleteTask(TodoItem t)
-        {
-            if (t == null || owner == null) return;
-            if (owner.todos == null) owner.EnsureWorkData();
-            int count = TaskTree.Children(owner.todos, t).Count;
-            string msg = count > 0 ? Lang.F("Hapus tugas ini beserta {0} subtugasnya?", count) : Lang.T("Hapus tugas ini?");
-            if (!KitAsk.Confirm(this, msg)) return;
-            TaskTree.Delete(owner.todos, t);
-            Changed(null);
-        }
-
-        void ClearDone()
-        {
-            if (owner == null) return;
-            if (owner.todos == null) owner.EnsureWorkData();
-            if (!KitAsk.Confirm(this, Lang.T("Hapus semua tugas yang selesai?"), Lang.T("Hapus"), Lang.T("Batal"))) return;
-            string list = (activeRailKey == "all" || activeRailKey == "starred") ? null : activeRailKey;
-            TaskTree.ClearDone(owner.todos, list);
-            Changed(null);
-        }
-
-        void ToggleTaskStar(TodoItem t)
-        {
-            t.Star = !t.Star;
-            t.UpdatedUtc = DateTime.UtcNow;
-            t.Dirty = true;
-            Changed(t.Id);
-        }
-
-        TodoItem FindTask(string id)
-        {
-            return owner == null || owner.todos == null ? null : owner.todos.Find(t => t != null && t.Id == id);
-        }
-
-        string BoardListForNewTask()
-        {
-            var lane = boardLanes.Find(l => l.ContainsFocus);
-            return lane != null ? lane.ListName : TaskLists.Find(owner.taskLists, activeRailKey) != null ? activeRailKey : TaskLists.Default;
-        }
-
-        void RefillBoard(List<TodoItem> tasks, List<TaskListInfo> lists, string listName, bool starred, string keepId)
-        {
-            var ordered = new List<TaskListInfo>();
-            foreach (string id in boardOrder)
-            {
-                var match = lists.Find(l => l.Id == id);
-                if (match != null && !ordered.Contains(match)) ordered.Add(match);
-            }
-            foreach (var list in lists)
-                if (!ordered.Contains(list)) ordered.Add(list);
-            string[] names = listName == null ? ordered.ConvertAll(l => l.Name).ToArray() : new[] { listName };
-            foreach (var lane in boardLanes.ToArray())
-                if (!Array.Exists(names, name => TaskLists.Same(name, lane.ListName)))
-                {
-                    boardLanes.Remove(lane);
-                    lane.Dispose();
-                }
-
-            for (int i = 0; i < names.Length; i++)
-            {
-                string name = names[i];
-                var lane = boardLanes.Find(l => TaskLists.Same(l.ListName, name));
-                if (lane == null)
-                {
-                    lane = new TaskBoardLane(name);
-                    lane.Edit += EditTask;
-                    lane.AddTask += list => EditTask(null, list);
-                    lane.ListMenu += ShowListItemMenu;
-                    lane.Menu += ShowTaskContextMenu;
-                    lane.ToggleDone += ToggleTaskDone;
-                    lane.CardMoved += MoveBoardCard;
-                    lane.ListMoved += MoveBoardList;
-                    lane.Resolve += FindTask;
-                    lane.DragAtScreenX += ScrollBoardAtEdge;
-                    lane.LayoutChanged += delegate { RefillTasks(null); };
-                    board.Controls.Add(lane);
-                }
-                else boardLanes.Remove(lane);
-                boardLanes.Insert(i, lane);
-                lane.TabIndex = i;
-                lane.CanMoveList = names.Length > 1;
-                var open = TaskTree.Open(tasks, name, starred, TaskTree.SortManual, null, null);
-                lane.SetCards(open.ConvertAll(row => row.Item), TaskTree.Done(tasks, name, starred), keepId);
-            }
-            LayoutBoard();
-        }
-
-        void MoveBoardList(string source, string target, bool after)
-        {
-            var from = boardLanes.Find(l => TaskLists.Same(l.ListName, source));
-            var to = boardLanes.Find(l => TaskLists.Same(l.ListName, target));
-            if (from == null || to == null || from == to) return;
-            int oldIndex = boardLanes.IndexOf(from);
-            int newIndex = boardLanes.IndexOf(to);
-            if (oldIndex < newIndex) newIndex--;
-            if (after) newIndex++;
-            if (oldIndex == newIndex) return;
-            boardLanes.RemoveAt(oldIndex);
-            boardLanes.Insert(newIndex, from);
-            boardOrder.Clear();
-            for (int i = 0; i < boardLanes.Count; i++)
-            {
-                var lane = boardLanes[i];
-                lane.TabIndex = i;
-                var list = TaskLists.Find(owner.taskLists, lane.ListName);
-                if (list != null) boardOrder.Add(list.Id);
-            }
-            if (owner.settings != null)
-            {
-                owner.settings.Set("tasks.board_order", string.Join(",", boardOrder.ToArray()));
-                owner.settings.Save();
-            }
-            LayoutBoard();
-            board.ScrollControlIntoView(from);
-            from.ShowLanding(null);
-        }
-
-        void ScrollBoardAtEdge(int screenX)
-        {
-            if (!board.HorizontalScroll.Visible) return;
-            int x = board.PointToClient(new Point(screenX, 0)).X;
-            int edge = (int)(30 * Ui);
-            int step = x < edge ? -(int)(12 * Ui) : x > board.ClientSize.Width - edge ? (int)(12 * Ui) : 0;
-            if (step != 0) board.AutoScrollPosition = new Point(Math.Max(0, -board.AutoScrollPosition.X + step), 0);
-        }
-
-        void LayoutBoard()
-        {
-            if (boardLanes.Count == 0) return;
-            int width = (int)(254 * Ui), gap = (int)(8 * Ui);
-            int totalWidth = boardLanes.Count * (width + gap) - gap;
-            int offset = Math.Min(-board.AutoScrollPosition.X, Math.Max(0, totalWidth - board.ClientSize.Width));
-            int height = board.ClientSize.Height - (totalWidth > board.ClientSize.Width ? SystemInformation.HorizontalScrollBarHeight : 0);
-            board.SuspendLayout();
-            board.AutoScrollMinSize = new Size(totalWidth, 0);
-            board.AutoScrollPosition = new Point(0, 0);
-            for (int i = 0; i < boardLanes.Count; i++)
-            {
-                var lane = boardLanes[i];
-                lane.SetBounds(i * (width + gap), 0, width, Math.Max(0, Math.Min(height, lane.PreferredLaneHeight)));
-            }
-            board.ResumeLayout();
-            board.AutoScrollPosition = new Point(offset, 0);
-        }
-
-        void ToggleTaskDone(TodoItem t)
-        {
-            t.Done = !t.Done;
-            t.DoneAt = t.Done ? (DateTime?)DateTime.Now : null;
-            t.UpdatedUtc = DateTime.UtcNow;
-            t.Dirty = true;
-            Changed(t.Id);
-        }
-
-        void MoveBoardCard(string id, string list, string anchorId, bool after)
-        {
-            var task = FindTask(id);
-            if (task == null || !TaskTree.MoveBoardCard(owner.todos, task, list, FindTask(anchorId), after)) return;
-            if (!Changed(id)) return;
-            var lane = boardLanes.Find(l => TaskLists.Same(list, l.ListName));
-            if (lane != null)
-            {
-                lane.FocusCard(id);
-                lane.ShowLanding(id);
-            }
-        }
-
-        void ShowTaskContextMenu(TodoItem t, Point screenPos)
-        {
-            if (t == null) return;
-            var menu = new ContextMenuStrip();
-            menu.Closed += delegate { BeginInvoke(new Action(menu.Dispose)); };
-            menu.Items.Add(Lang.T("Edit…"), null, delegate { EditTask(t); });
-            if (BoardOn)
-            {
-                menu.Items.Add(Lang.T(t.Done ? "Tandai belum selesai" : "Tandai selesai"), null,
-                    delegate { ToggleTaskDone(t); });
-                menu.Items.Add(Lang.T(t.Star ? "Hapus bintang" : "Beri bintang"), null, delegate { ToggleTaskStar(t); });
-            }
-            bool canIndent = TaskTree.CanIndent(owner.todos, t);
-            bool canOutdent = !string.IsNullOrEmpty(t.ParentId);
-            if (canIndent)
-            {
-                menu.Items.Add(Lang.T("Jadikan subtugas"), null, delegate
-                {
-                    if (TaskTree.Indent(owner.todos, t)) Changed(t.Id);
-                });
-            }
-            if (canOutdent)
-            {
-                menu.Items.Add(Lang.T("Keluarkan dari subtugas"), null, delegate
-                {
-                    if (TaskTree.Outdent(owner.todos, t)) Changed(t.Id);
-                });
-            }
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(Lang.T("Pindah ke atas"), null, delegate
-            {
-                if (TaskTree.Reorder(owner.todos, t, true)) Changed(t.Id);
-            });
-            menu.Items.Add(Lang.T("Pindah ke bawah"), null, delegate
-            {
-                if (TaskTree.Reorder(owner.todos, t, false)) Changed(t.Id);
-            });
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(Lang.T("Hapus"), null, delegate { DeleteTask(t); });
-            MenuLook.Apply(menu);
-            menu.Show(screenPos);
-        }
-
-        void RenameList(string listName)
-        {
-            if (string.IsNullOrEmpty(listName) || TaskLists.IsDefault(listName)) return;
-            using (var dlg = new ListNameDialog(Lang.T("Ganti nama daftar"), listName))
-            {
-                if (dlg.ShowDialog(this) == DialogResult.OK)
-                {
-                    string newName = TaskLists.Clean(dlg.Value);
-                    if (newName.Length > 0 && !TaskLists.Same(newName, listName))
-                    {
-                        if (TaskLists.Rename(owner.taskLists, owner.todos, listName, newName))
-                        {
-                            if (TaskLists.Same(activeRailKey, listName)) activeRailKey = newName;
-                            owner.ListsChanged();
-                            owner.TodosChanged();
-                            RefillRail();
-                            RefillTasks(null);
-                        }
-                    }
-                }
-            }
-        }
-
-        void DeleteList(string listName)
-        {
-            if (string.IsNullOrEmpty(listName) || TaskLists.IsDefault(listName)) return;
-            if (KitAsk.Confirm(this, Lang.F("Hapus daftar \"{0}\" beserta seluruh tugas di dalamnya?", listName)))
-            {
-                TaskLists.Delete(owner.taskLists, owner.todos, listName);
-                if (TaskLists.Same(activeRailKey, listName)) activeRailKey = TaskLists.Default;
-                owner.ListsChanged();
-                owner.TodosChanged();
-                RefillRail();
-                RefillTasks(null);
-            }
-        }
-
-        void ShowListItemMenu(string listName, Point screenPos)
-        {
-            if (string.IsNullOrEmpty(listName)) return;
-            var menu = new ContextMenuStrip();
-            menu.Closed += delegate { BeginInvoke(new Action(menu.Dispose)); };
-            bool isDefault = TaskLists.IsDefault(listName);
-            var renameItem = menu.Items.Add(Lang.T("Ganti nama daftar…"), null, delegate { RenameList(listName); });
-            renameItem.Enabled = !isDefault;
-
-            var delItem = menu.Items.Add(Lang.T("Hapus daftar"), null, delegate { DeleteList(listName); });
-            delItem.Enabled = !isDefault;
-
-            MenuLook.Apply(menu);
-            menu.Show(screenPos);
-        }
-
-        void PromptNewList()
-        {
-            using (var dlg = new ListNameDialog(Lang.T("Daftar baru"), ""))
-            {
-                if (dlg.ShowDialog(this) == DialogResult.OK)
-                {
-                    string name = TaskLists.Clean(dlg.Value);
-                    if (name.Length > 0)
-                    {
-                        var created = TaskLists.Create(owner.taskLists, name);
-                        if (created != null)
-                        {
-                            activeRailKey = created.Name;
-                            owner.ListsChanged();
-                            RefillRail();
-                            RefillTasks(null);
-                        }
-                    }
-                }
-            }
-        }
-
-        void ShowListPickerMenu()
-        {
-            var menu = new ContextMenuStrip();
-            menu.Closed += delegate { BeginInvoke(new Action(menu.Dispose)); };
-            menu.Items.Add(Lang.T("Semua tugas"), null, delegate { activeRailKey = "all"; RefillTasks(null); });
-            menu.Items.Add(Lang.T("Berbintang"), null, delegate { activeRailKey = "starred"; RefillTasks(null); });
-            menu.Items.Add(new ToolStripSeparator());
-            if (owner.taskLists != null)
-            {
-                foreach (var l in owner.taskLists)
-                {
-                    string name = l.Name;
-                    menu.Items.Add(name, null, delegate { activeRailKey = name; RefillTasks(null); });
-                }
-            }
-            MenuLook.Apply(menu);
-            menu.Items.Add(Lang.T("Buat daftar baru"), null, delegate { PromptNewList(); });
-            menu.Show(title, new Point(0, title.Height));
-        }
-
-        void ShowMoreOptionsMenu()
-        {
-            var menu = new ContextMenuStrip();
-            menu.Closed += delegate { BeginInvoke(new Action(menu.Dispose)); };
-            if (!BoardOn)
-            {
-                var mManual = new ToolStripMenuItem(Lang.T("Urutkan: Urutan saya"), null, delegate
-                {
-                    currentSort = TaskTree.SortManual;
-                    if (owner != null && owner.settings != null) { owner.settings.Set("tasks.sort", currentSort); owner.settings.Save(); }
-                    RefillTasks(null);
-                });
-                mManual.Checked = currentSort == TaskTree.SortManual;
-                menu.Items.Add(mManual);
-
-                var mDate = new ToolStripMenuItem(Lang.T("Urutkan: Tanggal"), null, delegate
-                {
-                    currentSort = TaskTree.SortDate;
-                    if (owner != null && owner.settings != null) { owner.settings.Set("tasks.sort", currentSort); owner.settings.Save(); }
-                    RefillTasks(null);
-                });
-                mDate.Checked = currentSort == TaskTree.SortDate;
-                menu.Items.Add(mDate);
-
-                var mTitle = new ToolStripMenuItem(Lang.T("Urutkan: Judul"), null, delegate
-                {
-                    currentSort = TaskTree.SortTitle;
-                    if (owner != null && owner.settings != null) { owner.settings.Set("tasks.sort", currentSort); owner.settings.Save(); }
-                    RefillTasks(null);
-                });
-                mTitle.Checked = currentSort == TaskTree.SortTitle;
-                menu.Items.Add(mTitle);
-
-                menu.Items.Add(new ToolStripSeparator());
-            }
-
-            menu.Items.Add(Lang.T("Tugas baru…"), null, delegate { EditTask(null); });
-
-            menu.Items.Add(new ToolStripSeparator());
-
-            bool isSpecial = activeRailKey == "all" || activeRailKey == "starred" || TaskLists.IsDefault(activeRailKey);
-            var mRename = menu.Items.Add(Lang.T("Ganti nama daftar…"), null, delegate { RenameList(activeRailKey); });
-            mRename.Enabled = !isSpecial;
-
-            var mDelete = menu.Items.Add(Lang.T("Hapus daftar"), null, delegate { DeleteList(activeRailKey); });
-            mDelete.Enabled = !isSpecial;
-
-            menu.Items.Add(new ToolStripSeparator());
-
-            menu.Items.Add(Lang.T("Hapus tugas selesai"), null, delegate { ClearDone(); });
-
-            MenuLook.Apply(menu);
-            menu.Show(moreBtn, new Point(0, moreBtn.Height));
-        }
-
-        sealed class ListNameDialog : KitWindow
-        {
-            readonly TaskAddBox input = new TaskAddBox();
-            readonly KitButton okBtn = new KitButton { Primary = true };
-            readonly KitButton cancelBtn = new KitButton();
-            readonly bool allowEmpty;
-            Rectangle inputWell;
-            public string Value { get { return input.Text.Trim(); } }
-
-            public ListNameDialog(string title, string initial) : this(title, initial, false, "") { }
-
-            public ListNameDialog(string title, string initial, bool allowEmpty, string placeholder)
-            {
-                this.allowEmpty = allowEmpty;
-                Text = title;
-                FormBorderStyle = FormBorderStyle.FixedDialog;
-                MaximizeBox = false; MinimizeBox = false;
-                StartPosition = FormStartPosition.CenterParent;
-                ShowInTaskbar = false;
-                float s = Ui;
-                ClientSize = new Size((int)(360 * s), (int)(136 * s));
-                inputWell = new Rectangle((int)(20 * s), (int)(18 * s), (int)(320 * s), (int)(36 * s));
-                input.BorderStyle = BorderStyle.None;
-                input.Text = initial ?? "";
-                input.Placeholder = placeholder ?? "";
-                input.Font = UiFont(Ink.Body.Size);
-                input.BackColor = KitInk.Group;
-                input.ForeColor = KitInk.Text;
-                input.SetBounds(inputWell.X + (int)(12 * s), 0, inputWell.Width - (int)(24 * s), input.PreferredHeight);
-                input.Top = inputWell.Y + (inputWell.Height - input.Height) / 2;
-                okBtn.Text = Lang.T("Simpan");
-                cancelBtn.Text = Lang.T("Batal");
-                okBtn.Font = cancelBtn.Font = UiFont(Ink.Callout.Size);
-                cancelBtn.SetBounds((int)(150 * s), (int)(78 * s), (int)(85 * s), (int)(34 * s));
-                okBtn.SetBounds((int)(245 * s), (int)(78 * s), (int)(95 * s), (int)(34 * s));
-                okBtn.Click += delegate
-                {
-                    if (!this.allowEmpty && Value.Length == 0) return;
-                    DialogResult = DialogResult.OK;
-                    Close();
-                };
-                cancelBtn.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
-                input.KeyDown += delegate(object sender, KeyEventArgs e)
-                {
-                    if (e.KeyCode == Keys.Enter && (this.allowEmpty || Value.Length > 0)) { DialogResult = DialogResult.OK; Close(); }
-                };
-                Controls.AddRange(new Control[] { input, cancelBtn, okBtn });
-                Shown += delegate { input.Focus(); input.SelectAll(); };
-            }
-
-            protected override void OnPaintBackground(PaintEventArgs e)
-            {
-                base.OnPaintBackground(e);
-                KitInk.Smooth(e.Graphics);
-                Well(e.Graphics, inputWell, Ink.RadiusControl * Ui);
-            }
-        }
-
-        // ---------- notes ----------
-
-        string NoteCountText()
-        {
-            int count = notes != null ? notes.Count : 0;
-            if (count == 0)
-            {
-                if (current == null) return "";
-                if (!string.IsNullOrWhiteSpace(search.Text) || !string.IsNullOrEmpty(colorFilter))
-                    return Lang.T("Tidak ada catatan yang cocok");
-                return Lang.T("Tidak ada catatan");
-            }
-            if (count == 1) return Lang.T("1 catatan");
-            return Lang.F("{0} catatan", count);
-        }
-
-        void NoteEmptyStrings(out string eTitle, out string eSub)
-        {
-            if (noteArchiveFilter.Selected == 1)
-            {
-                eTitle = Lang.T("Arsip catatan kosong");
-                eSub = Lang.T("Catatan yang diarsipkan akan muncul di sini");
-            }
-            else if (!string.IsNullOrWhiteSpace(search.Text) || !string.IsNullOrEmpty(colorFilter))
-            {
-                eTitle = Lang.T("Tidak ada catatan yang cocok");
-                eSub = Lang.T("Coba kata kunci atau filter warna lain");
-            }
-            else
-            {
-                eTitle = Lang.T("Belum ada catatan");
-                eSub = Lang.T("Buat catatan baru untuk menyimpan ide atau checklist");
-            }
-        }
-
-        Color CurrentNoteColor()
-        {
-            NoteMeta m = GetMeta(current, false);
-            return m != null ? NotePalette.ColorOf(m.Color) : Color.Empty;
-        }
-
-        Color EditorHeaderColor()
-        {
-            Color c = CurrentNoteColor();
-            if (c == Color.Empty) return KitInk.Group;
-            return Ink.Mix(KitInk.Group, c, Ink.Light ? 0.11f : 0.15f);
-        }
-
-        static int CountWords(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text)) return 0;
-            int count = 0;
-            bool inWord = false;
-            for (int i = 0; i < text.Length; i++)
-            {
-                if (char.IsWhiteSpace(text[i])) inWord = false;
-                else if (!inWord) { inWord = true; count++; }
-            }
-            return count;
-        }
-
-        static void CountChecklist(string text, out int done, out int total)
-        {
-            done = 0; total = 0;
-            if (string.IsNullOrEmpty(text)) return;
-            foreach (var raw in text.Split('\n'))
-            {
-                string tr = raw.Trim();
-                if (tr.StartsWith("- [ ] ", StringComparison.Ordinal)) total++;
-                else if (tr.StartsWith("- [x] ", StringComparison.OrdinalIgnoreCase)) { total++; done++; }
-            }
-        }
-
-        void UpdateNoteStats()
-        {
-            noteStatsTimer.Stop();
-            if (current == null) { noteMetaLine = ""; return; }
-            string body = editor.Text;
-            noteMetaLine = noteModified.ToString("d MMM", CultureInfo.CurrentCulture) + "  \u00B7  " + Lang.F("{0} kata", CountWords(body));
-            int done, total;
-            CountChecklist(body, out done, out total);
-            if (total > 0) noteMetaLine += "  \u00B7  " + Lang.F("{0}/{1} selesai", done, total);
-            if (IsHandleCreated && !editorMetaRect.IsEmpty) Invalidate(editorMetaRect);
-        }
-
-        void OnNoteInputChanged()
-        {
-            if (loading || current == null) return;
-            bool statusChanged = !dirty || saveFailed || saveStatusText.Length > 0;
-            dirty = true;
-            saveFailed = false;
-            saveStatusText = "";
-            saveTimer.Stop();
-            saveTimer.Start();
-            noteStatsTimer.Start();
-            if (statusChanged && IsHandleCreated && !editorMetaRect.IsEmpty) Invalidate(editorMetaRect);
-        }
-
-        void RefreshNotes(string keepPath)
-        {
-            if (!IsHandleCreated) return;
-            loading = true;
-            try
-            {
-                notes = NoteFiles.List(search.Text, pins, noteMeta, noteArchiveFilter.Selected == 1, colorFilter);
-                noteList.SetData(notes, keepPath);
-            }
-            finally { loading = false; }
-            ApplyNoteEditorVisibility();
-            // Filtering the sidebar never clears the current editor.
-            Invalidate();
-        }
-
-        void OnArchiveFilterChanged()
-        {
-            if (!SaveCurrent(true))
-            {
-                noteArchiveFilter.Selected = noteArchiveFilter.Selected == 0 ? 1 : 0;
-                return;
-            }
-            RefreshNotes(current);
-            bool hasCurrent = false;
-            if (current != null)
-                for (int i = 0; i < notes.Count; i++)
-                    if (string.Equals(notes[i].Path, current, StringComparison.OrdinalIgnoreCase)) { hasCurrent = true; break; }
-            if (!hasCurrent)
-                ShowNote(notes.Count > 0 ? notes[0].Path : null);
-        }
-
-        void OpenNote(string path)
-        {
-            if (string.Equals(path, current, StringComparison.OrdinalIgnoreCase)) return;
-            if (!SaveCurrent(true)) { RefreshNotes(current); return; }
-            ShowNote(path);
-        }
-
-        void ShowNote(string path)
-        {
-            string text = "";
-            if (path != null && !NoteFiles.TryRead(path, out text))
-            {
-                KitAsk.Notice(this, Lang.T("Catatan tidak dapat dibaca."));
-                RefreshNotes(current);
-                return;
-            }
-            current = path;
-            baseline = text;
-            loading = true;
-            bool isQuick = path != null && string.Equals(path, NoteFiles.QuickPath, StringComparison.OrdinalIgnoreCase);
-            if (path == null)
-            {
-                noteTitleBox.ReadOnly = false;
-                noteTitleBox.BackColor = KitInk.Group;
-                noteTitleBox.Text = "";
-                editor.Text = "";
-                noteTitleBox.Enabled = false;
-                editor.Enabled = false;
-            }
-            else if (isQuick)
-            {
-                noteTitleBox.Text = Lang.T("Catatan kilat");
-                noteTitleBox.ReadOnly = true;
-                noteTitleBox.BackColor = KitInk.Group;
-                editor.Text = NoteFiles.NormalizeNewlines(text);
-                noteTitleBox.Enabled = true;
-                editor.Enabled = true;
-            }
-            else
-            {
-                string nTitle, nBody;
-                NoteFiles.SplitNote(text, out nTitle, out nBody);
-                noteTitleBox.ReadOnly = false;
-                noteTitleBox.BackColor = KitInk.Group;
-                noteTitleBox.Text = nTitle;
-                editor.Text = NoteFiles.NormalizeNewlines(nBody);
-                noteTitleBox.Enabled = true;
-                editor.Enabled = true;
-            }
-            saveStatusText = "";
-            saveFailed = false;
-            noteTitleBox.SelectionStart = 0;
-            noteTitleBox.SelectionLength = 0;
-            editor.SelectionStart = 0;
-            editor.SelectionLength = 0;
-            loading = false;
-            dirty = false;
-            noteModified = DateTime.Now;
-            if (path != null)
-            {
-                try { noteModified = System.IO.File.GetLastWriteTime(path); }
-                catch (Exception) { }
-            }
-            UpdateNoteStats();
-
-            NoteMeta m = GetMeta(path, false);
-            noteTagChip.Tags = m != null ? (m.Labels ?? "") : "";
-            string curCol = m != null ? (m.Color ?? "") : "";
-            colorBtn.DotColor = NotePalette.ColorOf(curCol);
-            bool pinned = path != null && NoteFiles.IsPinned(pins, path);
-            pinBtn.Active = pinned;
-            noteTips.SetToolTip(pinBtn, pinned ? Lang.T("Lepas sematan") : Lang.T("Sematkan"));
-            bool archived = m != null && m.Archived;
-            archiveBtn.Active = archived;
-            noteTips.SetToolTip(archiveBtn, archived ? Lang.T("Pulihkan") : Lang.T("Arsipkan"));
-
-            ApplyNoteEditorVisibility();
-            if (IsHandleCreated) LayoutNoteTagChip();
-            editor.RefreshFormatting();
-            Invalidate(true);
-        }
-
-        string SerializeCurrentNote()
-        {
-            if (current != null && string.Equals(current, NoteFiles.QuickPath, StringComparison.OrdinalIgnoreCase))
-                return NoteFiles.NormalizeNewlines(editor.Text);
-            return NoteFiles.JoinNote(noteTitleBox.Text, NoteFiles.NormalizeNewlines(editor.Text));
-        }
-
-        void SetSaveState(string text)
-        {
-            saveStatusText = text ?? "";
-            if (IsHandleCreated && !editorMetaRect.IsEmpty) Invalidate(editorMetaRect);
-        }
-
-        bool SaveCurrent() { return SaveCurrent(true); }
-        bool SaveCurrent(bool notify)
-        {
-            if (current == null || !dirty) return true;
-            saveTimer.Stop();
-            string disk;
-            string payload = SerializeCurrentNote();
-            if (payload == baseline)
-            {
-                dirty = false; saveFailed = false;
-                SetSaveState("");
-                return true;
-            }
-            // Compare content, not timestamps: quick-note append and external edits
-            // must never be silently overwritten by an old editor buffer.
-            if (!NoteFiles.TryRead(current, out disk) || disk != baseline)
-            {
-                saveFailed = true; SetSaveState(Lang.T("Konflik"));
-                if (!notify) return false;
-                saveTimer.Stop();
-                if (!KitAsk.Confirm(this, Lang.T("Catatan berubah di luar aplikasi. Timpa draf ini?"), Lang.T("Timpa"))) return false;
-                if (!NoteFiles.Write(current, payload)) return SaveError(notify);
-            }
-            else if (!NoteFiles.Write(current, payload)) return SaveError(notify);
-            saveTimer.Stop();
-            baseline = payload; dirty = false; saveFailed = false;
-            noteModified = DateTime.Now;
-            UpdateNoteStats();
-            SetSaveState("");
-            owner.ScheduleDriveNotesUpload();
-            RefreshNotes(current);
-            return true;
-        }
-
-        bool SaveError(bool notify)
-        {
-            saveFailed = true; SetSaveState(Lang.T("Gagal menyimpan"));
-            if (notify) KitAsk.Notice(this, Lang.T("Gagal menyimpan."));
-            return false;
-        }
-
-        void NewNote()
-        {
-            if (owner.DriveNotesLoading) return;
-            if (!SaveCurrent(true)) return;
-            string path;
-            try { path = NoteFiles.NewPath(); }
-            catch (Exception ex) { KitAsk.Notice(this, ex.Message); return; }
-            if (!NoteFiles.Write(path, "")) { SaveError(true); return; }
-            owner.ScheduleDriveNotesUpload();
-            search.Text = "";
-            colorFilter = "";
-            colorStrip.Selected = "";
-            colorStrip.Invalidate();
-            if (noteArchiveFilter.Selected != 0) noteArchiveFilter.Selected = 0;
-            ShowNote(path);
-            RefreshNotes(path);
-            noteTitleBox.Focus();
-        }
-
-        void TogglePin() { TogglePin(current); }
-        void TogglePin(string path)
-        {
-            if (owner.DriveNotesLoading) return;
-            if (string.IsNullOrEmpty(path)) return;
-            if (!SaveCurrent(true)) return;
-            NoteMeta meta = GetMeta(path, true);
-            DateTime previous = meta.UpdatedUtc;
-            meta.UpdatedUtc = DateTime.UtcNow;
-            if (!NoteFiles.SaveMeta(noteMeta))
-            {
-                meta.UpdatedUtc = previous;
-                KitAsk.Notice(this, Lang.T("Gagal menyimpan."));
-                return;
-            }
-            NoteFiles.SetPin(pins, path, !NoteFiles.IsPinned(pins, path));
-            RefreshNotes(current);
-            owner.ScheduleDriveNotesUpload();
-            if (string.Equals(path, current, StringComparison.OrdinalIgnoreCase)) ShowNote(current);
-        }
-
-        void DeleteNote() { DeleteNote(null); }
-
-        void DeleteNote(string path)
-        {
-            if (owner.DriveNotesLoading) return;
-            // A pinned draft is saved first; deleting another row must not drop it
-            if (!SaveCurrent(true)) return;
-            string target = path ?? current;
-            if (target == null) return;
-            if (!KitAsk.Confirm(this, Lang.T("Hapus catatan ini?")) || owner.DriveNotesLoading) return;
-            saveTimer.Stop();
-            string deleted = target;
-            string delKey = NoteFiles.KeyOf(deleted);
-            NoteMeta delMeta = GetMeta(deleted, false);
-            if (delMeta == null || string.IsNullOrEmpty(delMeta.DriveId))
-            {
-                NoteMeta freshMeta;
-                if (NoteFiles.LoadMeta().TryGetValue(delKey, out freshMeta) && freshMeta != null && !string.IsNullOrEmpty(freshMeta.DriveId))
-                    delMeta = freshMeta;
-            }
-            var prevDeletes = NoteFiles.LoadDeletedDrive();
-            if (delMeta != null && !string.IsNullOrEmpty(delMeta.DriveId)) NoteFiles.AddDeletedDrive(delMeta.DriveId);
-            NoteFiles.AddDeletedKey(delKey);
-            if (!NoteFiles.Remove(deleted))
-            {
-                NoteFiles.SaveDeletedDrive(prevDeletes);
-                KitAsk.Notice(this, Lang.T("Catatan gagal dihapus."));
-                return;
-            }
-            if (NoteFiles.IsPinned(pins, deleted)) NoteFiles.SetPin(pins, deleted, false);
-            if (noteMeta.Remove(delKey)) NoteFiles.SaveMeta(noteMeta);
-            owner.ScheduleDriveNotesUpload();
-            bool wasOpen = string.Equals(deleted, current, StringComparison.OrdinalIgnoreCase);
-            if (wasOpen) { dirty = false; current = null; }
-            RefreshNotes(deleted);
-            if (wasOpen) { if (notes.Count > 0) ShowNote(notes[0].Path); else ShowNote(null); }
-            else if (current != null) ShowNote(current);
-        }
-
-        void ShowNoteContextMenu(NoteInfo n, Point screenPos)
-        {
-            if (n == null) return;
-            var menu = new ContextMenuStrip();
-            menu.Closed += delegate { BeginInvoke(new Action(menu.Dispose)); };
-            bool pinned = NoteFiles.IsPinned(pins, n.Path);
-            NoteMeta m = GetMeta(n.Path, false);
-            bool archived = m != null && m.Archived;
-            menu.Items.Add(pinned ? Lang.T("Lepas sematan") : Lang.T("Sematkan"), null, delegate { TogglePin(n.Path); });
-            menu.Items.Add(archived ? Lang.T("Pulihkan") : Lang.T("Arsipkan"), null, delegate { ToggleArchive(n.Path); });
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(Lang.T("Hapus"), null, delegate { DeleteNote(n.Path); });
-            MenuLook.Apply(menu);
-            menu.Show(screenPos);
-        }
-
-        void OpenTagDialog()
-        {
-            if (owner.DriveNotesLoading) return;
-            if (current == null) return;
-            NoteMeta m = GetMeta(current, false);
-            string initial = m != null ? (m.Labels ?? "") : "";
-            using (var dlg = new ListNameDialog(Lang.T("Tag catatan"), initial, true, Lang.T("Pisahkan dengan koma, mis. kerja, ide")))
-            {
-                if (dlg.ShowDialog(this) != DialogResult.OK || owner.DriveNotesLoading) return;
-                NoteMeta target = GetMeta(current, true);
-                string prevLabels = target.Labels;
-                DateTime prevUtc = target.UpdatedUtc;
-                target.Labels = NotePalette.CleanTags(dlg.Value);
-                target.UpdatedUtc = DateTime.UtcNow;
-                if (!NoteFiles.SaveMeta(noteMeta))
-                {
-                    target.Labels = prevLabels;
-                    target.UpdatedUtc = prevUtc;
-                    KitAsk.Notice(this, Lang.T("Gagal menyimpan."));
-                    return;
-                }
-                noteTagChip.Tags = target.Labels;
-                noteTagChip.Invalidate();
-                LayoutNoteTagChip();
-                RefreshNotes(current);
-                owner.ScheduleDriveNotesUpload();
-            }
-        }
-
-        void ShowNoteColorMenu()
-        {
-            if (owner.DriveNotesLoading) return;
-            if (current == null) return;
-            NoteMeta cm = GetMeta(current, false);
-            string curCol = cm != null ? (cm.Color ?? "") : "";
-            var menu = new ContextMenuStrip();
-            var imgs = new List<Image>();
-            menu.Closed += delegate
-            {
-                BeginInvoke(new Action(delegate
-                {
-                    foreach (var img in imgs) img.Dispose();
-                    menu.Dispose();
-                }));
-            };
-            for (int i = 0; i < NotePalette.Keys.Length; i++)
-            {
-                string key = NotePalette.Keys[i];
-                var item = new ToolStripMenuItem(NotePalette.NameOf(key, false));
-                item.Checked = string.Equals(curCol, key, StringComparison.OrdinalIgnoreCase);
-                var bmp = new Bitmap(14, 14);
-                using (var g = Graphics.FromImage(bmp))
-                {
-                    KitInk.Smooth(g);
-                    Color sw = NotePalette.ColorOf(key);
-                    if (sw == Color.Empty)
-                    {
-                        using (var b = new SolidBrush(KitInk.Group)) g.FillEllipse(b, 1, 1, 11, 11);
-                        using (var p = new Pen(KitInk.Sub, 1.3f)) g.DrawEllipse(p, 1, 1, 11, 11);
-                    }
-                    else
-                    {
-                        using (var b = new SolidBrush(sw)) g.FillEllipse(b, 1, 1, 11, 11);
-                    }
-                }
-                imgs.Add(bmp);
-                item.Image = bmp;
-                item.Click += delegate
-                {
-                    if (owner.DriveNotesLoading || current == null) return;
-                    NoteMeta m = GetMeta(current, true);
-                    string prevColor = m.Color;
-                    DateTime prevUtc = m.UpdatedUtc;
-                    m.Color = key;
-                    m.UpdatedUtc = DateTime.UtcNow;
-                    if (!NoteFiles.SaveMeta(noteMeta))
-                    {
-                        m.Color = prevColor;
-                        m.UpdatedUtc = prevUtc;
-                        KitAsk.Notice(this, Lang.T("Gagal menyimpan."));
-                        return;
-                    }
-                    colorBtn.DotColor = NotePalette.ColorOf(key);
-                    RefreshNotes(current);
-                    Invalidate(true);
-                    owner.ScheduleDriveNotesUpload();
-                };
-                menu.Items.Add(item);
-            }
-            MenuLook.Apply(menu);
-            menu.Show(colorBtn, new Point(0, colorBtn.Height));
-        }
-
-        internal void ReloadFromSync()
-        {
-            ReloadTasksFromSync();
-            ReloadNotesFromDisk();
-        }
-
-        internal void ReloadTasksFromSync()
-        {
-            if (IsDisposed || !IsHandleCreated) return;
-            if (owner != null && (owner.todos == null || owner.taskLists == null)) owner.EnsureWorkData();
-            if (owner != null && owner.todos != null) owner.todos.RemoveAll(t => t == null);
-            savedTasks = CopyTasks(owner != null ? owner.todos : null);
-            RefillTasks(null);
-        }
-
-        internal void RefreshNoteDriveIds(Dictionary<string, NoteMeta> fresh)
-        {
-            foreach (var entry in fresh)
-            {
-                NoteMeta local;
-                if (noteMeta.TryGetValue(entry.Key, out local)) local.DriveId = entry.Value.DriveId;
-                else noteMeta[entry.Key] = entry.Value;
-            }
-        }
-
-        internal void ReloadNotesFromDisk()
-        {
-            if (IsDisposed || !IsHandleCreated) return;
-            pins = NoteFiles.LoadPins();
-            noteMeta = NoteFiles.LoadMeta();
-            RefreshNotes(current);
-            if (!dirty) ShowNote(current ?? (notes.Count > 0 ? notes[0].Path : null));
-        }
-
-        NoteMeta GetMeta(string path, bool create)
-        {
-            if (string.IsNullOrEmpty(path)) return null;
-            string key = NoteFiles.KeyOf(path);
-            NoteMeta m;
-            if (!noteMeta.TryGetValue(key, out m) && create)
-            {
-                m = new NoteMeta { Key = key };
-                noteMeta[key] = m;
-            }
-            return m;
-        }
-
-        void ToggleArchive() { ToggleArchive(current); }
-        void ToggleArchive(string path)
-        {
-            if (owner.DriveNotesLoading) return;
-            if (string.IsNullOrEmpty(path)) return;
-            if (!SaveCurrent(true)) return;
-            NoteMeta m = GetMeta(path, true);
-            bool prevArchived = m.Archived;
-            DateTime prevUtc = m.UpdatedUtc;
-            m.Archived = !m.Archived;
-            m.UpdatedUtc = DateTime.UtcNow;
-            if (!NoteFiles.SaveMeta(noteMeta))
-            {
-                m.Archived = prevArchived;
-                m.UpdatedUtc = prevUtc;
-                KitAsk.Notice(this, Lang.T("Gagal menyimpan."));
-                return;
-            }
-            RefreshNotes(current);
-            if (string.Equals(path, current, StringComparison.OrdinalIgnoreCase))
-                ShowNote(notes.Count > 0 ? notes[0].Path : null);
-            owner.ScheduleDriveNotesUpload();
-        }
-
-        void ShowBlockMenu(bool fromSlash)
-        {
-            if (current == null || editor.ReadOnly || blockMenu != null) return;
-            string note = current;
-            int caret = editor.SelectionStart;
-            var menu = new NoteBlockMenu(Ui, delegate(string prefix)
-            {
-                if (!Visible || current != note || editor.ReadOnly) return;
-                editor.Focus();
-                editor.Select(caret, 0);
-                editor.ApplyBlock(prefix, fromSlash);
-                editor.RefreshFormatting();
-            });
-            blockMenu = menu;
-            menu.Closed += delegate(object sender, ToolStripDropDownClosedEventArgs e)
-            {
-                blockMenu = null;
-                if (e.CloseReason == ToolStripDropDownCloseReason.Keyboard && editor.Visible) editor.Focus();
-                if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(menu.Dispose));
-                else menu.Dispose();
-            };
-            if (fromSlash)
-            {
-                Point point = editor.GetPositionFromCharIndex(caret);
-                point.Y += Math.Max(editor.Font.Height, editor.SelectionFont != null ? editor.SelectionFont.Height : 0) + 3;
-                menu.Show(editor, point);
-            }
-            else menu.Show(blockBtn, new Point(0, blockBtn.Height + 3));
-        }
-
-        static readonly Regex MarkdownList = new Regex(
-            @"^([ 	]*)([-+*] \[[ xX]\]|[-+*]|([0-9]+)[.)])([ 	]+)(.*)$");
-
-        void ContinueMarkdownList(object sender, KeyEventArgs e)
-        {
-            if (e.KeyData != Keys.Enter || editor.ReadOnly || editor.SelectionLength != 0) return;
-            string text = editor.Text;
-            int pos = editor.SelectionStart;
-            if (pos == 0 || (pos < text.Length && text[pos] != '\r' && text[pos] != '\n')) return;
-            int start = NoteEditor.LineStart(text, pos);
-            if (NoteEditor.InCodeBlock(text, start)) return;
-            Match item = MarkdownList.Match(text.Substring(start, pos - start));
-            if (!item.Success) return;
-
-            string marker = item.Groups[2].Value;
-            if (item.Groups[3].Success)
-            {
-                int number;
-                if (!int.TryParse(item.Groups[3].Value, out number) || number == int.MaxValue) return;
-                marker = (number + 1).ToString(CultureInfo.InvariantCulture) + marker[marker.Length - 1];
-            }
-            else if (marker.Length > 1) marker = marker[0] + " [ ]";
-
-            e.SuppressKeyPress = true;
-            if (string.IsNullOrWhiteSpace(item.Groups[5].Value))
-            {
-                editor.Select(start, pos - start);
-                editor.SelectedText = "";
-            }
-            else editor.SelectedText = "\n" + item.Groups[1].Value + marker + item.Groups[4].Value;
-        }
-
-        void ToggleChecklistLine()
-        {
-            if (current == null || !editor.Enabled || editor.ReadOnly) return;
-            int pos = editor.SelectionStart;
-            string text = editor.Text;
-            int lineStart = NoteEditor.LineStart(text, pos);
-            int lineEnd = text.IndexOf('\n', pos);
-            if (lineEnd < 0) lineEnd = text.Length;
-            string line = text.Substring(lineStart, lineEnd - lineStart);
-            string next;
-            if (line.StartsWith("- [ ] ", StringComparison.Ordinal)) next = "- [x] " + line.Substring(6);
-            else if (line.StartsWith("- [x] ", StringComparison.OrdinalIgnoreCase)) next = line.Substring(6);
-            else next = "- [ ] " + line;
-            editor.Select(lineStart, lineEnd - lineStart);
-            editor.SelectedText = next;
-            editor.Focus();
-        }
-
-        void EditorMouseDown(object sender, MouseEventArgs e)
-        {
-            if (e.Button != MouseButtons.Left || !editor.Enabled || editor.ReadOnly) return;
-            int idx = editor.GetCharIndexFromPosition(e.Location);
-            string text = editor.Text;
-            int lineStart = NoteEditor.LineStart(text, idx);
-            int lineEnd = text.IndexOf('\n', lineStart);
-            if (lineEnd < 0) lineEnd = text.Length;
-            if (NoteEditor.InCodeBlock(text, lineStart)) return;
-            Match block = NoteEditor.Block.Match(text.Substring(lineStart, lineEnd - lineStart));
-            string marker = block.Groups[2].Value;
-            if (marker.Length != 5 || marker[2] != '[') return;
-
-            int box = lineStart + block.Groups[2].Index + 2;
-            Point left = editor.GetPositionFromCharIndex(box);
-            Point right = editor.GetPositionFromCharIndex(box + 3);
-            if (e.X < left.X || e.X >= right.X || e.Y < left.Y || e.Y >= left.Y + editor.Font.Height) return;
-            editor.Select(box + 1, 1);
-            editor.SelectedText = marker[3] == ' ' ? "x" : " ";
+            float radius = Ink.RadiusControl * s;
+            KitInk.FillRound(g, r, radius, KitInk.Group);
+            if (focused) KitInk.StrokeRound(g, RectangleF.Inflate(r, -0.75f * s, -0.75f * s), radius - 0.75f * s, KitInk.Accent, 1.5f * s);
         }
     }
 }

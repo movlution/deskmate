@@ -55,6 +55,11 @@ Describe "Smoke Test Suite: Core Reflection & Type Resolution" {
         Assert-Equal $sp32 32 "Sp32 spacing token must equal 32"
     }
 
+    It "Keeps memory leak guard threshold at or below 100 MB" {
+        $leakMb = [double](Get-DeskmateStaticField "Island" "LeakMb")
+        Assert-True ($leakMb -gt 0 -and $leakMb -le 100) "LeakMb must be > 0 and <= 100 (actual: $leakMb)"
+    }
+
     It "Verifies Typography Scale properties on Deskmate.Ink" {
         Invoke-DeskmateStaticMethod "Ink" "Init" @()
 
@@ -182,6 +187,35 @@ Describe "Smoke Test Suite: Theme State Management & Isolation" {
 
         $baseTone = Get-DeskmateStaticField "Ink" "Base"
         Assert-NotNull $baseTone "Base tone must be set"
+    }
+}
+
+Describe "Smoke Test Suite: Release Notes" {
+    It "Keeps a release note for the current version and resolves unseen notes" {
+        $appVersion = Get-DeskmateStaticField "Island" "AppVersion"
+        $notes = Get-DeskmateStaticField "WhatsNew" "Notes"
+
+        Assert-True ($notes.Length -gt 0) "WhatsNew.Notes must contain at least one release note"
+        Assert-Equal $notes[0].Version $appVersion "Newest release note must match Island.AppVersion"
+
+        $current = Invoke-DeskmateStaticMethod "WhatsNew" "For" @($appVersion)
+        Assert-NotNull $current "WhatsNew.For($appVersion) must return the current note"
+
+        foreach ($note in $notes) {
+            Assert-True ($note.Items.Length -gt 0) "Release note $($note.Version) must have at least one item"
+            foreach ($item in $note.Items) {
+                Assert-True ($item.Length -ge 2) "Release note $($note.Version) item needs a title and detail"
+                Assert-True (-not [string]::IsNullOrWhiteSpace($item[0])) "Release note $($note.Version) title must not be empty"
+                Assert-True (-not [string]::IsNullOrWhiteSpace($item[1])) "Release note $($note.Version) detail must not be empty"
+            }
+        }
+
+        $alreadySeen = Invoke-DeskmateStaticMethod "WhatsNew" "Since" @($appVersion, $appVersion)
+        Assert-Equal $alreadySeen.Count 0 "No notes should show when already on $appVersion"
+
+        $all = Invoke-DeskmateStaticMethod "WhatsNew" "Since" @("0.0", $appVersion)
+        Assert-True ($all.Count -ge 1) "A fresh install should resolve at least one note"
+        Assert-Equal $all[0].Version $appVersion "Newest note must come first"
     }
 }
 

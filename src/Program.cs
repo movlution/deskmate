@@ -16,6 +16,9 @@ namespace Deskmate
             if (args.Length > 0 && args[0] == "--notify") return NotifyCommand.Run(args);
             if (args.Length > 0 && args[0] == "--run") return RunCommand.Run(args);
             if (args.Length > 0 && args[0] == "--statusline") return StatusLine.Run(args);
+            // Ingatan: the memory service, and its MCP face for other assistants
+            if (args.Length > 0 && args[0] == "--ingat") return IngatService.Run(args);
+            if (args.Length > 0 && args[0] == "--mcp") return IngatMcp.Run(args);
             return RunIsland();
         }
 
@@ -50,6 +53,14 @@ namespace Deskmate
                     MessageBox.Show(ex.Message, "Deskmate", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return 1;
                 }
+                // Task Scheduler launches at BelowNormal; a UI shell must not lose the CPU to normal apps
+                try
+                {
+                    using (var self = System.Diagnostics.Process.GetCurrentProcess())
+                        if (self.PriorityClass == System.Diagnostics.ProcessPriorityClass.BelowNormal || self.PriorityClass == System.Diagnostics.ProcessPriorityClass.Idle)
+                            self.PriorityClass = System.Diagnostics.ProcessPriorityClass.Normal;
+                }
+                catch (Exception) { }
                 // Full collections must not block a frame
                 System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
                 try { Native.SetProcessDpiAwarenessContext(new IntPtr(-4)); }

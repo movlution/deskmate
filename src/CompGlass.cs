@@ -32,31 +32,31 @@ namespace Deskmate
             public float Opacity;
         }
 
-        // Dark liquid pills sat at alpha 138, which let roughly 45% of whatever sits behind them through. That is
-        // fine for the island, which mostly floats over wallpaper, but the dock bar sits against arbitrary window
-        // content: over a white page the bar measured ~100 luma and the page's table lines came through as a pale
-        // stripe across its middle. The bar therefore gets a denser tint of its own.
+        // All surfaces read the same material recipe. The bar is the exception:
+        // it floats over arbitrary window content, so every material gets a
+        // denser tint there than it does on the island.
         public static Color TintFor(Color veil, bool light, bool liquid, bool panelOrSheet, bool bar = false)
         {
-            int a;
-            if (light) a = bar ? (liquid ? 212 : 220) : panelOrSheet ? (liquid ? 184 : 198) : (liquid ? 168 : 186);
-            else if (bar) a = liquid ? 214 : 220;
-            else a = panelOrSheet ? (liquid ? 164 : 178) : (liquid ? 138 : 160);
-            return Color.FromArgb(a, veil.R, veil.G, veil.B);
+            return GlassRecipe.Tint(liquid ? GlassKind.Liquid : GlassKind.Frost, veil, light, panelOrSheet, bar);
         }
 
-        // One glass recipe for every surface: island, dock bar, cards and sheets share these numbers. The bar is
-        // the exception: it floats over window content rather than wallpaper, so it gets a heavier blur so nothing
-        // behind it stays legible as a shape, and a denser tint. A conventionally frosted dock, not a clear pane.
-        public static GlassSpec Spec(bool liquid, bool panelOrSheet, float scale, float opacity, bool bar = false)
+        public static GlassSpec Spec(GlassKind kind, bool panelOrSheet, float scale, float opacity, bool bar = false)
         {
             return new GlassSpec
             {
-                Tint = TintFor(Ink.Veil, Ink.Light, liquid, panelOrSheet, bar),
-                Blur = (bar ? 34f : panelOrSheet ? 24f : liquid ? 18f : 22f) * scale,
-                Saturation = liquid ? 1.38f : 1.12f,
+                Tint = GlassRecipe.Tint(kind, Ink.Veil, Ink.Light, panelOrSheet, bar),
+                Blur = GlassRecipe.Blur(kind, panelOrSheet, bar, scale),
+                Saturation = GlassRecipe.Saturation(kind),
                 Opacity = opacity
             };
+        }
+
+        // Clear glass: the backdrop carries the colour. A blue reference is blue because the wallpaper behind
+        // it is blue, not because the pane has a blue material; only a thin veil and a strong blur sit on top.
+        // The veil stays slightly denser on the bar and panels, where small text lives.
+        public static GlassSpec SpecClear(bool panelOrSheet, float scale, float opacity, bool bar = false)
+        {
+            return Spec(GlassKind.Clear, panelOrSheet, scale, opacity, bar);
         }
 
         public static bool Available { get { return EnsureInit(); } }

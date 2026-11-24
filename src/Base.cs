@@ -194,26 +194,85 @@ namespace Deskmate
         }
     }
 
+    // One startup path: a per-user logon task starts without the Run-key startup delay and needs no elevation.
+    // Legacy Run values are only read as a fallback and are removed whenever the switch is changed.
     static class AutoStart
     {
         const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        const string TaskName = "Deskmate-AtLogon";
 
         public static bool Enabled
         {
             get
             {
+                string xml, err;
+                if (Schtasks("/Query /TN " + TaskName + " /XML", out xml, out err) == 0
+                    && (xml ?? "").IndexOf("<Enabled>false</Enabled>", StringComparison.OrdinalIgnoreCase) < 0)
+                    return true;
                 using (var k = Registry.CurrentUser.OpenSubKey(RunKey))
                     return k != null && (k.GetValue("Deskmate") != null || k.GetValue("Tepi") != null);
             }
             set
             {
                 if (Settings.TestMode) { Log.Write("test mode: autostart untouched"); return; }
+                string output, err;
+                if (value)
+                {
+                    string file = Path.Combine(Path.GetTempPath(), "deskmate-task-" + Guid.NewGuid().ToString("N") + ".xml");
+                    try
+                    {
+                        File.WriteAllText(file, TaskXml(), Encoding.Unicode);
+                        if (Schtasks("/Create /TN " + TaskName + " /XML \"" + file + "\" /F", out output, out err) != 0)
+                            throw new InvalidOperationException("task create failed: " + err.Trim());
+                    }
+                    finally { try { File.Delete(file); } catch (Exception) { } }
+                }
+                else if (Schtasks("/Query /TN " + TaskName, out output, out err) == 0
+                    && Schtasks("/Delete /TN " + TaskName + " /F", out output, out err) != 0)
+                    throw new InvalidOperationException("task delete failed: " + err.Trim());
                 using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
                 {
-                    if (value) k.SetValue("Deskmate", "\"" + System.Windows.Forms.Application.ExecutablePath + "\"");
-                    else k.DeleteValue("Deskmate", false);
+                    k.DeleteValue("Deskmate", false);
                     k.DeleteValue("Tepi", false);
                 }
+            }
+        }
+
+        static string TaskXml()
+        {
+            var id = System.Security.Principal.WindowsIdentity.GetCurrent();
+            string exe = System.Windows.Forms.Application.ExecutablePath;
+            Func<string, string> x = System.Security.SecurityElement.Escape;
+            return "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n"
+                + "<Task version=\"1.3\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\r\n"
+                + "  <RegistrationInfo><Description>Start Deskmate at sign-in without delay for this user.</Description></RegistrationInfo>\r\n"
+                + "  <Principals><Principal id=\"Author\"><UserId>" + x(id.User.Value) + "</UserId><LogonType>InteractiveToken</LogonType></Principal></Principals>\r\n"
+                + "  <Settings><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"
+                + "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><Priority>4</Priority></Settings>\r\n"
+                + "  <Triggers><LogonTrigger><UserId>" + x(id.Name) + "</UserId></LogonTrigger></Triggers>\r\n"
+                + "  <Actions Context=\"Author\"><Exec><Command>" + x(exe) + "</Command><WorkingDirectory>" + x(Path.GetDirectoryName(exe)) + "</WorkingDirectory></Exec></Actions>\r\n"
+                + "</Task>\r\n";
+        }
+
+        static int Schtasks(string args, out string output, out string error)
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "schtasks.exe"), args)
+            { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+            using (var p = System.Diagnostics.Process.Start(psi))
+            {
+                var stdout = p.StandardOutput.ReadToEndAsync();
+                var stderr = p.StandardError.ReadToEndAsync();
+                if (!p.WaitForExit(10000))
+                {
+                    try { p.Kill(); } catch (Exception) { }
+                    try { p.WaitForExit(2000); } catch (Exception) { }
+                    output = "";
+                    error = "schtasks timed out";
+                    return -1;
+                }
+                output = stdout.Result;
+                error = stderr.Result;
+                return p.ExitCode;
             }
         }
     }
@@ -720,9 +779,29 @@ namespace Deskmate
         public static string OneLine(string s, int max)
         {
             if (string.IsNullOrEmpty(s)) return "";
-            s = s.Replace("\r", " ").Replace("\n", " ").Replace("\t", " ").Trim();
+            s = s.Replace("\r", " ").Replace("\n", " ").Replace("\t", " ");
+            var clean = new StringBuilder(s.Length);
+            // Keep joiners used by emoji sequences and connected scripts.
+            foreach (char c in s) if (!Hidden(c) || c == '\u200C' || c == '\u200D') clean.Append(c);
+            s = clean.ToString();
+            s = s.Trim();
             while (s.Contains("  ")) s = s.Replace("  ", " ");
-            return s.Length > max ? s.Substring(0, max) : s;
+            if (max <= 0) return "";
+            if (s.Length <= max) return s;
+            int cut = max;
+            if (cut > 0 && char.IsHighSurrogate(s[cut - 1]) && char.IsLowSurrogate(s[cut])) cut--;
+            // Stop on a whole text element; a bare surrogate or trailing joiner renders as garbage.
+            int end = 0;
+            var elements = System.Globalization.StringInfo.GetTextElementEnumerator(s);
+            while (elements.MoveNext())
+            {
+                int next = elements.ElementIndex + elements.GetTextElement().Length;
+                if (next > cut) break;
+                end = next;
+            }
+            if (end == 0) end = cut;
+            while (end > 0 && (s[end - 1] == '\u200C' || s[end - 1] == '\u200D')) end--;
+            return s.Substring(0, end);
         }
     }
 }

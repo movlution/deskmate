@@ -46,7 +46,8 @@ namespace Deskmate
                 g.ResetClip();
                 g.ScaleTransform(scale, scale);
                 Compose();
-                if (reveal.Value < 0.02f && reveal.Target == 0) DrawSensor();
+                bool atEdge = reveal.Value < 0.02f && reveal.Target == 0;
+                if (atEdge) DrawSensor();
                 else
                 {
                     Hit(centerPill, "pill", null, null);
@@ -60,6 +61,10 @@ namespace Deskmate
                     DrawCenter();
                     DrawTop();
                 }
+                // Keep the transparent strip below a floating bar in the hover target.
+                // Otherwise the bar rises, the pointer is no longer over an opaque
+                // pixel, and auto-hide pulls it down while the pointer has not moved.
+                if (!atEdge && HideMode != "never") DrawEdgeHit();
                 Present();
             }
 
@@ -74,6 +79,7 @@ namespace Deskmate
                 Native.UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, memDC, ref src, 0, ref blend, Native.ULW_ALPHA);
                 Bounds = new Rectangle(at.X, at.Y, cw, ch);
                 SyncDockBackdrop(at.X, at.Y);
+                if (isle != null) isle.PetFollow(this);
                 if (dumpDir != null) DumpDock();
             }
 
@@ -85,10 +91,10 @@ namespace Deskmate
                     return;
                 }
                 if (dockBackdrop == null) dockBackdrop = new CompGlass.CompBackdrop();
-                bool liquid = isle != null && isle.LiquidOn;
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
                 // bar: true asks for the denser tint. The bar spans whatever window is behind it, so it needs to
                 // hide background detail that the island can safely let through over wallpaper.
-                var spec = CompGlass.Spec(liquid, gpuBarText, scale, 1f, true);
+                var spec = CompGlass.Spec(kind, gpuBarText, scale, 1f, true);
                 dockBackdrop.Sync(Handle, new Rectangle(winX, winY, cw, ch), true, spec, gpuBarPills, gpuBarCount, null, null, scale, "", clipToPill: true);
             }
 
@@ -111,6 +117,15 @@ namespace Deskmate
                 Hit(new RectangleF(0, ch / scale - h, cw / scale, h), "sensor", null, null);
             }
 
+            // Shown: the gap under the bar points at the desktop, but it is still
+            // dock. A 1-alpha strip keeps it hit-testable without being visible.
+            void DrawEdgeHit()
+            {
+                float h = EdgeHitH;
+                g.FillRectangle(p.B(Color.FromArgb(1, 0, 0, 0)), 0, ch / scale - h, cw / scale, h);
+                Hit(new RectangleF(0, ch / scale - h, cw / scale, h), "sensor", null, null);
+            }
+
             void DrawBar(RectangleF r, float radius, bool text)
             {
                 if (r.IsEmpty) return;
@@ -126,15 +141,23 @@ namespace Deskmate
                         gpuBarCount = 1;
                         gpuBarText |= text;
                     }
+                    GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
                     var img = glass ? (text ? plate.Text : plate.Image) : null;
+                    // Wallpaper tint is a flat colour, not a live scene: magnifying
+                    // it only adds seams near the rim. Keep the tint smooth.
+                    bool tinted = glass && isle != null && isle.WallGlassOn;
                     if (glass) Backdrop(img, r, 1f);
-                    if (glass && isle.LiquidOn && radius > 0) Lens(img, r, radius);
+                    // Only Liquid bends the backdrop at its rim; Clear stays a flat
+                    // pane and Frost stays matte.
+                    if (glass && !tinted && kind == GlassKind.Liquid && radius > 0) Lens(img, r, radius, kind);
                     // Solid until glass arrives; over glass only a light veil (alpha >= 10 keeps hit-testing active)
-                    float veilA = (gpu || glass) ? (isle != null && isle.LiquidOn ? 0.05f : 0.08f) : 0.9f;
+                    float veilA = (gpu || glass) ? GlassRecipe.Overlay(kind, false, true) : 0.9f;
                     g.FillPath(p.B(Ink.A(Ink.Veil, veilA)), path);
-                    Sheen(r);
+                    Sheen(r, kind);
                     g.Restore(st);
-                    RimLight(r, path);
+                    // The tinted dock has a feathered edge; a crisp rim would draw
+                    // a second, harder outline over it.
+                    if (!tinted) RimLight(r, path, kind);
                     Rim(r, radius);
                 }
             }
@@ -157,15 +180,15 @@ namespace Deskmate
 
             // Thick glass bends light at its rim: along the top and bottom edges
             // the backdrop shows a little magnified, as through a lens
-            void Lens(Bitmap img, RectangleF r, float radius)
+            void Lens(Bitmap img, RectangleF r, float radius, GlassKind kind)
             {
                 float rim = Math.Min(7f, r.Height * 0.13f), x0 = r.X + radius * 0.55f, x1 = r.Right - radius * 0.55f;
                 if (x1 - x0 < 4) return;
-                LensStrip(img, r, new RectangleF(x0, r.Y, x1 - x0, rim));
-                LensStrip(img, r, new RectangleF(x0, r.Bottom - rim, x1 - x0, rim));
+                LensStrip(img, r, new RectangleF(x0, r.Y, x1 - x0, rim), kind);
+                LensStrip(img, r, new RectangleF(x0, r.Bottom - rim, x1 - x0, rim), kind);
             }
 
-            void LensStrip(Bitmap img, RectangleF bar, RectangleF strip)
+            void LensStrip(Bitmap img, RectangleF bar, RectangleF strip, GlassKind kind)
             {
                 const float s = 1.14f;
                 var o = WindowOrigin();
@@ -178,18 +201,18 @@ namespace Deskmate
                 g.PixelOffsetMode = PixelOffsetMode.Half;
                 dst.Offset(-offX, -offY);
                 g.DrawImage(img, dst, src.X, src.Y, src.Width, src.Height, GraphicsUnit.Pixel);
-                g.FillRectangle(p.B(Ink.A(Ink.Veil, 0.08f)), dst);
+                g.FillRectangle(p.B(Ink.A(Ink.Veil, GlassRecipe.Overlay(kind, false, true))), dst);
                 g.Restore(st);
             }
 
             // One specular line: clear along the top edge, softer along the bottom. Two stops only, because a
             // bright stop in the middle lit the bar's waist and read as a seam across the dock.
-            void RimLight(RectangleF r, GraphicsPath path)
+            void RimLight(RectangleF r, GraphicsPath path, GlassKind kind)
             {
                 using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y, r.Width, Math.Max(1f, r.Height)), p.T.Highlight, p.T.Highlight, 90f))
                 {
                     var cb = new ColorBlend(2);
-                    cb.Colors = new[] { Color.FromArgb(Ink.Light ? 150 : 92, p.T.Highlight), Color.FromArgb(Ink.Light ? 44 : 30, p.T.Highlight) };
+                    cb.Colors = new[] { Color.FromArgb(GlassRecipe.DockRimTop(kind, Ink.Light), p.T.Highlight), Color.FromArgb(GlassRecipe.DockRimBottom(kind, Ink.Light), p.T.Highlight) };
                     cb.Positions = new[] { 0f, 1f };
                     lg.InterpolationColors = cb;
                     using (var pen = new Pen(lg, 1f)) g.DrawPath(pen, path);
@@ -207,16 +230,16 @@ namespace Deskmate
             // There is deliberately no glow tracking the pointer: that lobe was centred on the bar's waist with a
             // radius taller than the bar, so it painted a pale seam across the dock wherever the cursor sat. The
             // per-icon plate already marks the pointer, which is what a dock is supposed to do.
-            void Sheen(RectangleF r)
+            void Sheen(RectangleF r, GlassKind kind)
             {
-                using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, r.Height + 2), Color.FromArgb(Ink.Light ? 60 : 17, p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
+                using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, r.Height + 2), Color.FromArgb(GlassRecipe.Sheen(kind, Ink.Light), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
                     g.FillRectangle(lg, r.X, r.Y, r.Width, r.Height);
             }
 
             // Top edge catches the light near the pointer
             void Rim(RectangleF r, float radius)
             {
-                if (hover.Value < 0.01f || mouseX < r.Left || mouseX > r.Right) return;
+                if (!RevealReady || hover.Value < 0.01f || mouseX < r.Left || mouseX > r.Right) return;
                 float span = Math.Max(60, r.Height * 1.5f);
                 float a = Math.Max(r.Left + radius * 0.7f, mouseX - span), b = Math.Min(r.Right - radius * 0.7f, mouseX + span);
                 if (b - a < 2) return;
@@ -274,7 +297,7 @@ namespace Deskmate
                 var plateRect = OnBar(s.Icon, 0, press);
                 Color baseFill = startOpen ? Ink.Mix(p.T.FillHover, Ink.A(p.T.Accent, 0.32f), 0.4f) : hot ? p.T.FillHover : p.T.Fill;
                 Color tileFill = press > 0.001f ? Ink.Mix(baseFill, p.T.FillPressed, press) : baseFill;
-                p.FillRound(plateRect, Math.Min(plateRect.Width, plateRect.Height) * 0.3f, tileFill);
+                p.FillRound(plateRect, Math.Min(plateRect.Width, plateRect.Height) * PlateK, tileFill);
                 if (keyMode && keySel == id) FocusRing(s.Icon);
                 if (s.Id == "start" && !Anim.Reduced && startPulseUtc > DateTime.MinValue)
                 {
@@ -354,7 +377,7 @@ namespace Deskmate
             void Plate(RectangleF plate, bool hot, bool down, float alpha)
             {
                 p.Alpha = Ease.Clamp01(alpha);
-                p.FillRound(plate, Math.Min(plate.Width, plate.Height) * 0.3f, down ? p.T.FillPressed : hot ? p.T.FillHover : p.T.Fill);
+                p.FillRound(plate, Math.Min(plate.Width, plate.Height) * PlateK, down ? p.T.FillPressed : hot ? p.T.FillHover : p.T.Fill);
                 p.Alpha = 1;
             }
 
@@ -470,663 +493,6 @@ namespace Deskmate
                 return bmp;
             }
 
-            // A capsule drawn once into its own bitmap, with its hit spots
-            sealed class SideCache
-            {
-                public Bitmap Bmp;
-                public string Sig = "";
-                public readonly List<KeyValuePair<RectangleF, string>> Hits = new List<KeyValuePair<RectangleF, string>>();
-                public readonly Dictionary<string, Action> Acts = new Dictionary<string, Action>(), Menus = new Dictionary<string, Action>();
-
-                public void Drop()
-                {
-                    if (Bmp != null) Bmp.Dispose();
-                    Bmp = null;
-                    Sig = "";
-                }
-            }
-
-            readonly SideCache leftSide = new SideCache(), rightSide = new SideCache();
-            const int SpanPad = 4;
-            // Pixel origin of the surface being drawn; zero for the canvas
-            int offX, offY;
-
-            // Widgets or tray, drawn once onto a clear bitmap and reused while
-            // only their position changes (the bar grows under the pointer)
-            void DrawSpan(RectangleF span, bool left)
-            {
-                if (span.IsEmpty && left) DropGhosts();
-                if (span.IsEmpty) return;
-                var c = left ? leftSide : rightSide;
-                const int pad = SpanPad;
-                int w = (int)Math.Ceiling(span.Width * scale) + pad * 2, h = (int)Math.Ceiling(span.Height * scale) + pad * 2;
-                int px = (int)Math.Round(span.X * scale) - pad, py = (int)Math.Round(span.Y * scale) - pad;
-                string sig = SpanSig(left) + "@" + w + "x" + h;
-                if (sig != c.Sig || c.Bmp == null)
-                {
-                    if (left && c.Bmp != null) KeepGhosts(c.Bmp);
-                    if (c.Bmp == null || c.Bmp.Width != w || c.Bmp.Height != h)
-                    {
-                        if (c.Bmp != null) c.Bmp.Dispose();
-                        c.Bmp = new Bitmap(w, h, PixelFormat.Format32bppPArgb);
-                    }
-                    var main = g;
-                    int from = hits.Count;
-                    using (var sg = Graphics.FromImage(c.Bmp))
-                    {
-                        sg.Clear(Color.Transparent);
-                        sg.SmoothingMode = SmoothingMode.AntiAlias;
-                        sg.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
-                        sg.InterpolationMode = InterpolationMode.HighQualityBilinear;
-                        sg.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                        // The span lands exactly on (pad, pad)
-                        sg.TranslateTransform(pad - span.X * scale, pad - span.Y * scale);
-                        sg.ScaleTransform(scale, scale);
-                        g = sg;
-                        p.G = sg;
-                        offX = px;
-                        offY = py;
-                        try { if (left) DrawLeft(); else DrawRight(); }
-                        finally
-                        {
-                            g = main;
-                            p.G = main;
-                            offX = offY = 0;
-                        }
-                    }
-                    c.Sig = sig;
-                    c.Hits.Clear();
-                    c.Acts.Clear();
-                    c.Menus.Clear();
-                    for (int i = from; i < hits.Count; i++)
-                    {
-                        string id = hits[i].Value;
-                        var r = hits[i].Key;
-                        r.Offset(-span.X, -span.Y);
-                        c.Hits.Add(new KeyValuePair<RectangleF, string>(r, id));
-                        Action a;
-                        if (acts.TryGetValue(id, out a)) c.Acts[id] = a;
-                        if (menus.TryGetValue(id, out a)) c.Menus[id] = a;
-                    }
-                    hits.RemoveRange(from, hits.Count - from);
-                }
-                // Hit spots and tray anchors follow the span
-                foreach (var kv in c.Hits)
-                {
-                    var r = kv.Key;
-                    r.Offset(span.X, span.Y);
-                    hits.Add(new KeyValuePair<RectangleF, string>(r, kv.Value));
-                    if (!left && kv.Value.StartsWith("tray:", StringComparison.Ordinal))
-                    {
-                        var ic = TrayById(kv.Value);
-                        if (ic != null) ic.Spot = ToScreen(r);
-                    }
-                }
-                foreach (var kv in c.Acts) acts[kv.Key] = kv.Value;
-                foreach (var kv in c.Menus) menus[kv.Key] = kv.Value;
-                var st = g.Save();
-                g.ResetTransform();
-                g.InterpolationMode = InterpolationMode.NearestNeighbor;
-                g.PixelOffsetMode = PixelOffsetMode.Half;
-                g.DrawImage(c.Bmp, px, py, w, h);
-                g.Restore(st);
-            }
-
-            // Thin lines between widgets, apps and the tray
-            void Dividers()
-            {
-                if (!float.IsNaN(sepA)) g.DrawLine(p.P(Ink.A(p.T.Line, 1.6f * leftPresence), 1f), sepA, barTop + 12, sepA, barBottom - 12);
-                if (!float.IsNaN(sepB)) g.DrawLine(p.P(Ink.A(p.T.Line, 1.6f), 1f), sepB, barTop + 12, sepB, barBottom - 12);
-            }
-
-            // Everything a span shows, apart from where it sits
-            string SpanSig(bool left)
-            {
-                var sb = new System.Text.StringBuilder();
-                sb.Append(Ink.Epoch).Append(scale).Append(Lang.English).Append('|');
-                if (hoverId != null && Owns(hoverId, left)) sb.Append('h').Append(hoverId);
-                if (pressId != null && Owns(pressId, left)) sb.Append('p').Append(pressId);
-                var now = DateTime.Now;
-                if (left)
-                {
-                    foreach (var id in LeftWidgets()) sb.Append(id).Append(',');
-                    foreach (var id in DockWidgetIds) sb.Append((int)(WidgetShown(id) * 1000)).Append(',');
-                    sb.Append(Fmt.Clock(now)).Append(now.Day);
-                    var mi = isle.mediaInfo;
-                    if (mi.Present) sb.Append(mi.Title).Append(mi.Artist).Append(mi.App).Append(mi.Playing).Append(mi.Cover != null ? mi.Cover.GetHashCode() : 0);
-                    sb.Append(isle.quotaVersion).Append(isle.BusyCount());
-                    if (isle.TimerOn) sb.Append(isle.TimerClock()).Append(isle.timerPaused).Append(isle.TimerLabel()).Append((int)(isle.TimerFraction() * 300));
-                    if (isle.weather != null) sb.Append(isle.weather.Temp).Append(isle.weather.Code);
-                    sb.Append(isle.battery).Append(isle.onAc).Append(cpuPct).Append(ramPct);
-                }
-                else
-                {
-                    foreach (var ic in InlineTray()) sb.Append(ic.Key).Append(ic.Stamp).Append(',');
-                    sb.Append(OverflowTray().Count > 0).Append(TrayExpanded);
-                    sb.Append(isle.net.Current.Sig).Append(Math.Round(isle.vol, 2)).Append(isle.muted);
-                    sb.Append(isle.hasBattery).Append(isle.battery).Append(isle.onAc);
-                    sb.Append(Fmt.Clock(now)).Append(now.Day).Append(isle.unread);
-                }
-                return sb.ToString();
-            }
-
-            static bool Owns(string id, bool left)
-            {
-                if (left) return id.StartsWith("w_", StringComparison.Ordinal);
-                return id.StartsWith("tray:", StringComparison.Ordinal) || id == "chev" || id == "status" || id == "vol" || id == "clock" || id == "desk";
-            }
-
-            public void FreeCaches()
-            {
-                foreach (var b in restIcons.Values) if (b != null) b.Dispose();
-                foreach (var b in bigIcons.Values) if (b != null) b.Dispose();
-                restIcons.Clear();
-                bigIcons.Clear();
-                DropGhosts();
-                leftSide.Drop();
-                rightSide.Drop();
-            }
-
-            void DrawExact(Bitmap bmp, RectangleF r)
-            {
-                var st = g.Save();
-                g.ResetTransform();
-                g.InterpolationMode = InterpolationMode.NearestNeighbor;
-                g.PixelOffsetMode = PixelOffsetMode.Half;
-                g.DrawImage(bmp, (int)Math.Round(r.X * scale) - offX, (int)Math.Round(r.Y * scale) - offY, bmp.Width, bmp.Height);
-                g.Restore(st);
-            }
-
-            // Dot when running, a wider bar for the front app; accent when it calls for you
-            void Indicator(DockApp a, RectangleF r) { Indicator(a.Dot.Value, a.Attention, r); }
-
-            void Indicator(float v, bool attention, RectangleF r)
-            {
-                if (v < 0.02f) return;
-                float focus = Ease.Clamp01(v - 1), cx = r.X + r.Width / 2, cy = barBottom - 4.6f;
-                float w = 4 + 10 * focus, h = 3.2f;
-                Color c = attention ? p.T.Accent : Ink.Mix(Ink.A(p.T.Text, 0.68f), p.T.Text, focus);
-                p.FillRound(new RectangleF(cx - w / 2, cy - h / 2, w, h), h / 2, Ink.A(c, Ease.Clamp01(v)));
-            }
-
-            // Unread count from Windows notifications
-            void Badge(RectangleF r, int n)
-            {
-                string s = n > 99 ? "99+" : n.ToString();
-                var f = Ink.SmallSemi(11f);
-                float h = 17, w = Math.Max(h, p.Measure(s, f) + 9);
-                var b = new RectangleF(r.Right - w * 0.7f, r.Top - h * 0.28f, w, h);
-                p.FillRound(Inset(b, -1.2f), (h + 2.4f) / 2, Ink.A(p.T.Bg, 0.55f));
-                p.FillRound(b, h / 2, p.T.Negative);
-                p.TextCenter(s, f, p.T.IsDark ? p.T.Bg : Color.White, b.X + b.Width / 2, b.Y + h / 2);
-            }
-
-            sealed class DockFlyer
-            {
-                public Bitmap Img;
-                public Rectangle Src;
-                public RectangleF From;
-                public float Vx, Vy, Spin, Delay;
-            }
-
-            readonly List<DockFlyer> dockFlyers = new List<DockFlyer>();
-            readonly List<Bitmap> dockFlyerImgs = new List<Bitmap>();
-            DateTime dockFlyUtc = DateTime.MinValue;
-            const double DockScatterSecs = 0.44;
-
-            bool DockFlyersMoving(DateTime now)
-            {
-                if (dockFlyers.Count == 0) return false;
-                if ((now - dockFlyUtc).TotalSeconds < DockScatterSecs + 0.12) return true;
-                ClearDockFlyers();
-                return false;
-            }
-
-            void ClearDockFlyers()
-            {
-                dockFlyers.Clear();
-                foreach (var b in dockFlyerImgs) b.Dispose();
-                dockFlyerImgs.Clear();
-            }
-
-            void ShatterDockIcon(DockApp a, RectangleF r)
-            {
-                if (Anim.Reduced || a == null || r.Width < 8 || r.Height < 8) return;
-                Bitmap src = IconFor(a.Key);
-                Bitmap bmp;
-                if (src != null) bmp = new Bitmap(src);
-                else
-                {
-                    bmp = new Bitmap(48, 48, PixelFormat.Format32bppPArgb);
-                    using (var bg = Graphics.FromImage(bmp))
-                    {
-                        var bp = new Painter { G = bg, T = p.T };
-                        bg.SmoothingMode = SmoothingMode.AntiAlias;
-                        bp.FillRound(new RectangleF(2, 2, 44, 44), 12, p.T.FillHover);
-                        bp.TextCenter(a.Name.Length > 0 ? a.Name.Substring(0, 1).ToUpperInvariant() : "?", Ink.Semi(22f), p.T.Text, 24, 24);
-                    }
-                }
-                dockFlyerImgs.Add(bmp);
-                const int cols = 4, rows = 4;
-                float dw = r.Width / cols, dh = r.Height / rows;
-                float sw = (float)bmp.Width / cols, sh = (float)bmp.Height / rows;
-                for (int y = 0; y < rows; y++)
-                {
-                    for (int x = 0; x < cols; x++)
-                    {
-                        float nx = (x + 0.5f) / cols - 0.5f;
-                        float ny = (y + 0.5f) / rows - 0.5f;
-                        float hash = ((x * 7 + y * 13) % 9) / 9f - 0.5f;
-                        dockFlyers.Add(new DockFlyer
-                        {
-                            Img = bmp,
-                            Src = Rectangle.Round(new RectangleF(x * sw, y * sh, sw, sh)),
-                            From = new RectangleF(r.X + x * dw, r.Y + y * dh, dw, dh),
-                            Vx = nx * 170 + hash * 45,
-                            Vy = ny * 110 - 115 - Math.Abs(hash) * 55,
-                            Spin = nx * 300 + hash * 120,
-                            Delay = Math.Abs(nx) * 0.035f
-                        });
-                    }
-                }
-                dockFlyUtc = DateTime.UtcNow;
-            }
-
-            void DrawDockFlyers(DateTime now)
-            {
-                if (dockFlyers.Count == 0) return;
-                double t0 = (now - dockFlyUtc).TotalSeconds;
-                bool alive = false;
-                var keepMode = g.InterpolationMode;
-                g.InterpolationMode = InterpolationMode.Bilinear;
-                using (var ia = new ImageAttributes())
-                {
-                    var cm = new ColorMatrix();
-                    foreach (var f in dockFlyers)
-                    {
-                        float t = (float)((t0 - f.Delay) / DockScatterSecs);
-                        if (t >= 1) continue;
-                        alive = true;
-                        t = Math.Max(0, t);
-                        float x = f.From.X + f.Vx * t * (float)DockScatterSecs;
-                        float y = f.From.Y + (f.Vy * t + 420 * t * t) * (float)DockScatterSecs;
-                        float alpha = (1 - t) * (1 - t);
-                        cm.Matrix33 = alpha;
-                        ia.SetColorMatrix(cm);
-                        var dst = new RectangleF(x, y, f.From.Width, f.From.Height);
-                        var st = g.Save();
-                        g.TranslateTransform(dst.X + dst.Width / 2, dst.Y + dst.Height / 2);
-                        g.RotateTransform(f.Spin * t);
-                        var pts = new[] { new PointF(-dst.Width / 2, -dst.Height / 2), new PointF(dst.Width / 2, -dst.Height / 2), new PointF(-dst.Width / 2, dst.Height / 2) };
-                        g.DrawImage(f.Img, pts, f.Src, GraphicsUnit.Pixel, ia);
-                        g.Restore(st);
-                    }
-                }
-                g.InterpolationMode = keepMode;
-                if (!alive) ClearDockFlyers();
-            }
-
-            void DrawTop()
-            {
-                RectangleF anchor;
-                string text = LabelFor(keyMode ? keySel : hoverId, out anchor);
-                if (text.Length > 0) labelText = text;
-                float t = labelShow.Value;
-                if (t > 0.01f && labelText.Length > 0 && !anchor.IsEmpty) DrawLabel(labelText, anchor, t);
-                if (dragApp != null) DrawDragGhost();
-                DrawDockFlyers(DateTime.UtcNow);
-            }
-
-            string LabelFor(string id, out RectangleF anchor)
-            {
-                anchor = RectangleF.Empty;
-                if (string.IsNullOrEmpty(id) || dragApp != null) return "";
-                foreach (var s in slots)
-                    if (s.Id == id && s.App != null) { anchor = s.Icon; return s.App.Name; }
-                    else if (s.Id == id.Replace("sys:", "") && id.StartsWith("sys:", StringComparison.Ordinal))
-                    {
-                        anchor = s.Icon;
-                        return s.Id == "work" ? Lang.T("Tugas dan catatan") : s.Id == "start" ? "Start" : Lang.T("Semua jendela");
-                    }
-                foreach (var kv in hits)
-                    if (kv.Value == id && id.StartsWith("tray:", StringComparison.Ordinal))
-                    {
-                        var ic = trayIcons.Find(x => "tray:" + x.Key == id);
-                        if (ic != null && (ic.Version < 4 || ic.ShowTip)) { anchor = kv.Key; return FirstLine(ic.Tip); }
-                    }
-                return "";
-            }
-
-            static string FirstLine(string s)
-            {
-                int n = s.IndexOfAny(new[] { '\r', '\n' });
-                return (n >= 0 ? s.Substring(0, n) : s).Trim();
-            }
-
-            void DrawLabel(string text, RectangleF anchor, float t)
-            {
-                var f = Ink.Semi(12f);
-                float w = Math.Min(300, p.Measure(text, f) + 22), h = 26;
-                float cx = Math.Max(w / 2 + 4, Math.Min(cw / scale - w / 2 - 4, anchor.X + anchor.Width / 2));
-                float bottom = anchor.Y - 9 + (1 - t) * 5;
-                var r = new RectangleF(cx - w / 2, bottom - h, w, h);
-                p.Alpha = t;
-                p.FillRound(r, 9, Ink.A(Ink.Base.Bg, 0.9f));
-                p.StrokeRound(r, 9, p.T.Line, 1f);
-                p.Text(text, f, p.T.Text, cx, r.Y + h / 2, w - 22, StringAlignment.Center);
-                p.Alpha = 1;
-            }
-
-            bool StepLabel(float dt)
-            {
-                labelShow.Step(dt);
-                return !labelShow.Settled;
-            }
-
-            // Tray, network and sound, battery, clock, the desktop sliver
-            void DrawRight()
-            {
-                if (rightPill.IsEmpty) return;
-                var r = rightPill;
-                float x = r.X, top = PlateCy(r) - PlateH / 2;
-                foreach (var ic in InlineTray())
-                {
-                    DrawTrayIcon(ic, new RectangleF(x, top, 26, PlateH));
-                    x += 26;
-                }
-                if (OverflowTray().Count > 0)
-                {
-                    var cr = new RectangleF(x, top, 24, PlateH);
-                    bool hot = hoverId == "chev" || TrayExpanded;
-                    Hit(cr, "chev", ToggleTrayCard, null);
-                    if (hot) p.FillRound(cr, PlateR, pressId == "chev" ? p.T.FillPressed : p.T.FillHover);
-                    // Points up while closed, down while the grid is open
-                    p.Icon(TrayExpanded ? '\uE70D' : '\uE70E', 10f, hot ? p.T.Text : p.T.Sub, cr.X + cr.Width / 2, cr.Y + cr.Height / 2);
-                    x += 24;
-                }
-                DrawStatus(new RectangleF(x, top, StatusWidth(), PlateH));
-                x += StatusWidth() + 4;
-                DrawClock(new RectangleF(x, top, ClockWidth(), PlateH));
-                // Show desktop: the bar's far end, padding included
-                var desk = new RectangleF(r.Right - 10, r.Y, 10 + PadX, r.Height);
-                Hit(desk, "desk", ShowDesktop, null);
-                if (hoverId == "desk") g.DrawLine(p.P(p.T.Sub, 1.2f), desk.X + 4.5f, r.Y + 13, desk.X + 4.5f, r.Bottom - 13);
-            }
-
-            void DrawTrayIcon(TrayIcon ic, RectangleF cell)
-            {
-                string id = "tray:" + ic.Key;
-                Hit(cell, id, null, null);
-                ic.Spot = ToScreen(cell);
-                if (hoverId == id) p.FillRound(cell, PlateR, pressId == id ? p.T.FillPressed : p.T.FillHover);
-                var bmp = tray != null ? tray.Picture(ic) : null;
-                if (bmp == null) return;
-                float s = 16;
-                var dst = new RectangleF(cell.X + (cell.Width - s) / 2, cell.Y + (cell.Height - s) / 2, s, s);
-                g.DrawImage(bmp, dst);
-            }
-
-            void DrawStatus(RectangleF r)
-            {
-                bool hot = hoverId == "status";
-                Hit(r, "status", delegate { ToggleSheet("quick"); }, null);
-                if (hot) p.FillRound(r, PlateR, pressId == "status" ? p.T.FillPressed : p.T.FillHover);
-                // The icon group, centred: Wi-Fi to the battery's cap
-                float span = isle.hasBattery ? 66 : 36.5f;
-                float cx = r.X + (r.Width - span) / 2 + 7.25f, cy = r.Y + r.Height / 2;
-                var net = isle.net.Current;
-                char netGlyph = !net.Any ? Ink.IcoNoNet : net.Wifi ? Ink.IcoWifi : '\uE839';
-                p.Icon(netGlyph, 14.5f, net.Online || !net.Any ? p.T.Text : p.T.Sub, cx, cy);
-                cx += 22;
-                char volGlyph = isle.muted ? Ink.IcoMute : isle.vol < 0.01f ? Ink.IcoVol0 : isle.vol < 0.34f ? Ink.IcoVol1 : isle.vol < 0.67f ? Ink.IcoVol2 : Ink.IcoVol3;
-                p.Icon(volGlyph, 14.5f, p.T.Text, cx, cy);
-                if (isle.hasBattery)
-                {
-                    cx += 24;
-                    p.Battery(cx - 9, cy, isle.battery / 100f, isle.battery <= 20 && !isle.onAc ? p.T.Negative : p.T.Text, isle.onAc);
-                }
-            }
-
-            void DrawClock(RectangleF r)
-            {
-                bool hot = hoverId == "clock";
-                Hit(r, "clock", delegate { ToggleSheet("cal"); }, ClockMenu);
-                if (hot) p.FillRound(r, PlateR, pressId == "clock" ? p.T.FillPressed : p.T.FillHover);
-                var now = DateTime.Now;
-                float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
-                p.TextCenter(Fmt.Clock(now), Ink.Semi(12.5f), p.T.Text, cx, cy - 7);
-                p.TextCenter(now.ToString("d MMM yyyy", Fmt.Id), Ink.Small(11f), p.T.Sub, cx, cy + 8);
-                // Messages waiting: a count, like the app badges
-                if (isle.unread > 0) Badge(r, isle.unread);
-            }
-
-            static void ShowDesktop() { ShellVerb("ToggleDesktop"); }
-
-            // Explorer's own commands, no simulated keys
-            static void ShellVerb(string verb)
-            {
-                try
-                {
-                    var t = Type.GetTypeFromProgID("Shell.Application");
-                    object sh = Activator.CreateInstance(t);
-                    t.InvokeMember(verb, BindingFlags.InvokeMethod, null, sh, null);
-                    Marshal.ReleaseComObject(sh);
-                }
-                catch (Exception ex) { Log.Write("dock " + verb + ": " + ex.Message); }
-            }
-
-            // Live widgets in the left capsule
-            void DrawLeft()
-            {
-                if (leftPill.IsEmpty) return;
-                float x = leftPill.X;
-                var want = LeftWidgets();
-                foreach (var id in DockWidgetIds)
-                {
-                    float s = WidgetShown(id);
-                    if (s < 0.01f) { DropGhost(id); continue; }
-                    bool here = want.Contains(id);
-                    var r = new RectangleF(x, leftPill.Y + 6, WidgetW(id), leftPill.Height - 12);
-                    x += (WidgetW(id) + 6) * s;
-                    if (here && s > 0.995f)
-                    {
-                        DrawWidget(id, r);
-                        widgetPx[id] = new Point((int)Math.Floor((r.X - 1 - leftPill.X) * scale) + SpanPad, (int)Math.Ceiling((r.Right + 1 - leftPill.X) * scale) + SpanPad);
-                        continue;
-                    }
-                    // Arriving or leaving: fades while resizing
-                    widgetPx.Remove(id);
-                    var st = g.Save();
-                    g.SetClip(new RectangleF(r.X - 1, leftPill.Y, (r.Width + 2) * s, leftPill.Height), CombineMode.Intersect);
-                    if (here) { p.Alpha = s * s; DrawWidget(id, r); p.Alpha = 1; }
-                    else DrawGhost(id, r, s * s);
-                    g.Restore(st);
-                }
-            }
-
-            // Leavers' last picture and bitmap columns
-            readonly Dictionary<string, Bitmap> ghosts = new Dictionary<string, Bitmap>();
-            readonly Dictionary<string, Point> widgetPx = new Dictionary<string, Point>();
-
-            // Before a redraw, leavers keep their look
-            void KeepGhosts(Bitmap old)
-            {
-                var want = LeftWidgets();
-                foreach (var id in DockWidgetIds)
-                {
-                    Point cols;
-                    if (want.Contains(id)) { DropGhost(id); continue; }
-                    if (ghosts.ContainsKey(id) || !widgetPx.TryGetValue(id, out cols)) continue;
-                    widgetPx.Remove(id);
-                    var at = Rectangle.Intersect(Rectangle.FromLTRB(cols.X, 0, cols.Y, old.Height), new Rectangle(0, 0, old.Width, old.Height));
-                    if (at.Width > 0 && at.Height > 0) ghosts[id] = old.Clone(at, PixelFormat.Format32bppPArgb);
-                }
-            }
-
-            void DropGhost(string id)
-            {
-                Bitmap b;
-                if (!ghosts.TryGetValue(id, out b)) return;
-                b.Dispose();
-                ghosts.Remove(id);
-            }
-
-            void DropGhosts()
-            {
-                foreach (var b in ghosts.Values) b.Dispose();
-                ghosts.Clear();
-                widgetPx.Clear();
-            }
-
-            void DrawGhost(string id, RectangleF r, float alpha)
-            {
-                Bitmap b;
-                if (!ghosts.TryGetValue(id, out b)) return;
-                using (var ia = new ImageAttributes())
-                {
-                    ia.SetColorMatrix(new ColorMatrix { Matrix33 = Ease.Clamp01(alpha) });
-                    var st = g.Save();
-                    g.ResetTransform();
-                    int dx = (int)Math.Floor((r.X - 1 - leftPill.X) * scale) + SpanPad;
-                    g.DrawImage(b, new Rectangle(dx, 0, b.Width, b.Height), 0, 0, b.Width, b.Height, GraphicsUnit.Pixel, ia);
-                    g.Restore(st);
-                }
-            }
-
-            void DrawWidget(string id, RectangleF r)
-            {
-                string hid = "w_" + id;
-                bool hot = hoverId == hid;
-                Action open = null;
-                switch (id)
-                {
-                    case "clock": open = delegate { isle.OpenFromDock(PageHome); }; break;
-                    case "media": open = delegate { isle.OpenFromDock(PageMusic); }; break;
-                    case "ai": open = delegate { isle.OpenFromDock(PageAgents); }; break;
-                    case "timer": open = delegate { isle.OpenFromDock(PageControl); }; break;
-                    case "weather": open = delegate { ToggleSheet("weather"); }; break;
-                    case "battery": open = delegate { isle.OpenFromDock(PageControl); }; break;
-                    case "system": open = delegate { Open("taskmgr.exe"); }; break;
-                }
-                Hit(r, hid, open, null);
-                if (hot && open != null) p.FillRound(r, 12, pressId == hid ? p.T.FillPressed : p.T.Fill);
-                float cy = r.Y + r.Height / 2;
-                switch (id)
-                {
-                    case "clock":
-                        p.Text(Fmt.Clock(DateTime.Now), Ink.Display(18f), p.T.Text, r.X + 10, cy - 7, r.Width - 14, StringAlignment.Near);
-                        p.Text(DateTime.Now.ToString("ddd, d MMM", Fmt.Id), Ink.Small(11f), p.T.Sub, r.X + 10, cy + 11, r.Width - 14, StringAlignment.Near);
-                        break;
-                    case "media": DrawMedia(r, cy); break;
-                    case "ai": DrawAi(r, cy); break;
-                    case "timer":
-                        Ring(r.X + 20, cy, 11, isle.TimerFraction(), isle.timerPaused);
-                        p.Text(isle.TimerClock(), Ink.Semi(13.5f), isle.timerPaused ? p.T.Sub : p.T.Text, r.X + 38, cy - 6, r.Width - 42, StringAlignment.Near);
-                        p.Text(isle.TimerLabel(), Ink.Small(11f), p.T.Sub, r.X + 38, cy + 10, r.Width - 42, StringAlignment.Near);
-                        break;
-                    case "weather":
-                        WeatherIcon(p, isle.weather.Code, r.X + 19, cy, 17f, p.T.Text);
-                        p.Text(isle.weather.Temp + "°", Ink.Semi(14f), p.T.Text, r.X + 35, cy - 6, r.Width - 37, StringAlignment.Near);
-                        p.Text(WeatherWord(isle.weather.Code), Ink.Small(11f), p.T.Sub, r.X + 35, cy + 10, r.Width - 37, StringAlignment.Near);
-                        break;
-                    case "battery":
-                        p.Battery(r.X + 9, cy, isle.battery / 100f, isle.battery <= 20 && !isle.onAc ? p.T.Negative : p.T.Text, isle.onAc);
-                        p.Text(Ink.Percent(isle.battery), Ink.Semi(14f), isle.battery <= 20 && !isle.onAc ? p.T.Negative : p.T.Text, r.X + 44, cy - 6, r.Width - 46, StringAlignment.Near);
-                        p.Text(isle.onAc ? Lang.T("mengisi daya") : Lang.T("Baterai"), Ink.Small(11f), p.T.Sub, r.X + 44, cy + 10, r.Width - 46, StringAlignment.Near);
-                        break;
-                    case "system":
-                        Meter(r.X + 10, cy - 8, r.Width - 18, "CPU", cpuPct);
-                        Meter(r.X + 10, cy + 10, r.Width - 18, "RAM", ramPct);
-                        break;
-                }
-            }
-
-            // Font has sun and cloud only
-            public static void WeatherIcon(Painter p, int code, float cx, float cy, float size, Color c)
-            {
-                if (code == 0) { p.Icon('\uE706', size, c, cx, cy); return; }
-                if (code == 45 || code == 48)
-                {
-                    var fog = p.P(c, Math.Max(1.2f, size / 13));
-                    for (int i = 0; i < 3; i++)
-                    {
-                        float half = size * (i == 1 ? 0.42f : 0.32f), y = cy - size * 0.24f + i * size * 0.24f;
-                        p.G.DrawLine(fog, cx - half, y, cx + half, y);
-                    }
-                    return;
-                }
-                bool storm = code >= 95, drizzle = code >= 51 && code <= 57, wet = storm || IsRain(code) || drizzle;
-                if (!wet) { p.Icon('\uE753', size, c, cx, cy); return; }
-                p.Icon('\uE753', size, c, cx, cy - size * 0.16f);
-                var pen = p.P(c, Math.Max(1.2f, size / 13));
-                float top = cy + size * 0.16f, bottom = cy + size * 0.42f;
-                if (storm)
-                {
-                    float s = size;
-                    p.G.DrawLines(pen, new[] { new PointF(cx + s * 0.06f, top), new PointF(cx - s * 0.08f, cy + s * 0.31f), new PointF(cx + s * 0.06f, cy + s * 0.31f), new PointF(cx - s * 0.08f, bottom + s * 0.04f) });
-                    return;
-                }
-                for (int i = -1; i <= 1; i++)
-                {
-                    float x = cx + i * size * 0.22f;
-                    if (drizzle) p.Circle(x, top + size * 0.12f, size / 18, c);
-                    else p.G.DrawLine(pen, x + size * 0.05f, top, x - size * 0.05f, bottom);
-                }
-            }
-
-            // Cover, title, and a play button that stays put
-            void DrawMedia(RectangleF r, float cy)
-            {
-                var mi = isle.mediaInfo;
-                var cover = new RectangleF(r.X + 6, cy - 18, 36, 36);
-                if (mi.Cover != null) p.Image(mi.Cover, cover, 9);
-                else p.FillRound(cover, 9, p.T.FillHover);
-                float tx = cover.Right + 9, play = r.Right - 18;
-                p.Text(mi.Title, Ink.Semi(12.5f), p.T.Text, tx, cy - 7, play - 18 - tx, StringAlignment.Near);
-                p.Text(mi.Artist.Length > 0 ? mi.Artist : mi.App, Ink.Small(11f), p.T.Sub, tx, cy + 9, play - 18 - tx, StringAlignment.Near);
-                var btn = new RectangleF(play - 14, cy - 14, 28, 28);
-                Hit(btn, "w_play", delegate { isle.media.TogglePlay(); }, null);
-                p.Circle(play, cy, hoverId == "w_play" ? 14 : 13, p.T.Text);
-                if (mi.Playing) p.Pause(play, cy, 9.5f, p.T.Bg);
-                else p.Play(play, cy, 10f, p.T.Bg);
-            }
-
-            // Highest quota as a ring; a busy agent fills its centre
-            void DrawAi(RectangleF r, float cy)
-            {
-                float top = 0;
-                string label = "";
-                foreach (var q in isle.quotas)
-                {
-                    if (!QuotaShown(q)) continue;
-                    for (int i = 0; i < q.W.Length; i++)
-                        if (q.W[i].Has && q.W[i].Pct >= top) { top = q.W[i].Pct; label = WindowLabel(q.W[i], i); }
-                }
-                int busy = isle.BusyCount();
-                Ring(r.X + 20, cy, 12, top / 100f, false);
-                if (busy > 0) p.Circle(r.X + 20, cy, 4f, p.T.Accent);
-                string big = label.Length > 0 ? Ink.Percent((int)Math.Floor(top)) : Lang.F("{0} agen", busy);
-                p.Text(big, Ink.Semi(13.5f), p.T.Text, r.X + 40, cy - 6, r.Width - 44, StringAlignment.Near);
-                string small = busy > 0 ? Lang.F("{0} bekerja", busy) : label;
-                p.Text(small, Ink.Small(11f), p.T.Sub, r.X + 40, cy + 10, r.Width - 44, StringAlignment.Near);
-            }
-
-            void Ring(float cx, float cy, float rad, float f, bool quiet)
-            {
-                var rect = new RectangleF(cx - rad, cy - rad, rad * 2, rad * 2);
-                g.DrawEllipse(p.P(p.T.Line, 2.4f), rect);
-                float sweep = 360f * Ease.Clamp01(f);
-                if (sweep > 0.5f) g.DrawArc(p.P(quiet ? p.T.Faint : p.T.Progress, 2.4f), rect, -90, sweep);
-            }
-
-            void Meter(float x, float cy, float w, string name, int pct)
-            {
-                p.Text(name, Ink.SmallSemi(11f), p.T.Sub, x, cy, 30, StringAlignment.Near);
-                p.TextRight(pct < 0 ? "–" : Ink.Percent(pct), Ink.SmallSemi(11f), p.T.Text, x + w, cy);
-                var track = new RectangleF(x + 30, cy - 1.5f, w - 30 - 34, 3);
-                p.FillRound(track, 1.5f, p.T.Line);
-                if (pct > 0) p.FillRound(new RectangleF(track.X, track.Y, Math.Max(3, track.Width * pct / 100f), 3), 1.5f, pct >= 90 ? p.T.Negative : p.T.Progress);
-            }
         }
     }
 }

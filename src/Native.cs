@@ -13,8 +13,28 @@ namespace Deskmate
         public const int WM_DISPLAYCHANGE = 0x7E, WM_DPICHANGED = 0x2E0, WM_APP = 0x8000;
         public const int ULW_ALPHA = 2, SW_HIDE = 0, SW_SHOWNOACTIVATE = 4;
         public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOACTIVATE = 0x10, SWP_SHOWWINDOW = 0x40, SWP_HIDEWINDOW = 0x80;
-        public const uint GW_HWNDNEXT = 2;
+        public const uint GW_HWNDNEXT = 2, GW_HWNDPREV = 3;
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+
+        [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+
+        // A topmost window can sink below ordinary apps while its WS_EX_TOPMOST bit stays set.
+        // Topmost windows always sit above ordinary ones, so one visible ordinary window
+        // above us means the band was lost: climb back. Healthy order costs no z-order change.
+        public static bool KeepTopmost(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd)) return false;
+            IntPtr h = hwnd;
+            for (int i = 0; i < 1024; i++)
+            {
+                h = GetWindow(h, GW_HWNDPREV);
+                if (h == IntPtr.Zero) return false;
+                if (!IsWindowVisible(h) || (GetWindowLong(h, -20) & WS_EX_TOPMOST) != 0) continue;
+                SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                return true;
+            }
+            return false;
+        }
 
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT { public int X, Y; public POINT(int x, int y) { X = x; Y = y; } }
@@ -97,6 +117,9 @@ namespace Deskmate
         [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
         [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+        [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+        [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out int pid);
+        [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr pid);
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, StringBuilder name, int max);
         [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hwnd, int index);
@@ -171,14 +194,17 @@ namespace Deskmate
             return PeekMessage(out m, IntPtr.Zero, 0, 0, 0);
         }
 
-        // Fullscreen app on the primary monitor
-        // Foreground app covering the island's monitor
-        public static bool IsFullscreenOn(IntPtr monitor)
-        {
-            int quns;
-            if (SHQueryUserNotificationState(out quns) == 0 && (quns == 3 || quns == 4)) return true;
+        public static bool IsFullscreenOn(IntPtr monitor) { return IsFullscreenForDisplay(monitor, false); }
 
-            return IsFullscreenWindow(GetForegroundWindow(), monitor);
+        // Presentation mode is global; a fullscreen game can be isolated to its own display.
+        public static bool IsFullscreenForDisplay(IntPtr monitor, bool perDisplay)
+        {
+            IntPtr fg = GetForegroundWindow();
+            int quns;
+            if (SHQueryUserNotificationState(out quns) == 0 &&
+                (quns == 4 || (quns == 3 && (!perDisplay || MonitorFromWindow(fg, 2) == monitor)))) return true;
+
+            return IsFullscreenWindow(fg, monitor);
         }
 
         public static bool IsFullscreenWindow(IntPtr hwnd, IntPtr monitor)
@@ -188,8 +214,13 @@ namespace Deskmate
             GetClassName(hwnd, cls, 256);
             string c = cls.ToString();
             if (c == "Progman" || c == "WorkerW" || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd") return false;
-            const int WS_CAPTION = 0x00C00000;
-            if ((GetWindowLong(hwnd, -16) & WS_CAPTION) == WS_CAPTION) return false;
+            const int WS_CAPTION = 0x00C00000, WS_THICKFRAME = 0x00040000, WS_MAXIMIZE = 0x01000000;
+            int style = GetWindowLong(hwnd, -16);
+            if ((style & WS_CAPTION) == WS_CAPTION) return false;
+            // Custom-titlebar apps (ChatGPT, Electron) drop the caption but keep the sizing frame;
+            // maximized over a hidden taskbar they fill the monitor yet are not fullscreen.
+            // Real fullscreen (games, F11) drops WS_THICKFRAME too.
+            if ((style & (WS_THICKFRAME | WS_MAXIMIZE)) == (WS_THICKFRAME | WS_MAXIMIZE)) return false;
 
             RECT r;
             if (!GetWindowRect(hwnd, out r)) return false;

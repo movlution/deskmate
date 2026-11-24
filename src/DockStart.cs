@@ -146,10 +146,76 @@ namespace Deskmate
                 }
                 iconThread = new Thread(IconLoop) { IsBackground = true, Name = "start icons" };
                 iconThread.SetApartmentState(ApartmentState.STA);
-                iconThread.Start();
+                var it = iconThread;
+                // Thread.Start waits until the thread is scheduled; under load that stalled the open
+                ThreadPool.QueueUserWorkItem(delegate { it.Start(); });
                 LoadCatalog();
                 LoadPins();
                 LoadRecent();
+            }
+
+            static int prewarmed;
+
+            // Once per process, a few seconds after the dock is up: catalog, then pin and first-page icons
+            public static void Prewarm(Control owner, string pinsRaw, int px)
+            {
+                if (Interlocked.Exchange(ref prewarmed, 1) != 0) return;
+                var t = new Thread(delegate ()
+                {
+                    try
+                    {
+                        Thread.Sleep(5000);
+                        var sw = Stopwatch.StartNew();
+                        var list = catalog;
+                        if (list == null)
+                        {
+                            list = new List<AppEntry>();
+                            foreach (var kv in ShellApp.AllApps()) list.Add(new AppEntry { Name = kv.Key, Id = kv.Value, Target = ShellApp.AppsFolderOf(kv.Value) });
+                            list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase));
+                            var ready = list;
+                            try
+                            {
+                                owner.BeginInvoke(new Action(delegate
+                                {
+                                    if (catalog != null) return;
+                                    catalog = ready;
+                                    catalogUtc = DateTime.UtcNow;
+                                    cachedPinsRaw = null;
+                                }));
+                            }
+                            catch (Exception) { }
+                        }
+                        var warm = new List<string>();
+                        if (!string.IsNullOrEmpty(pinsRaw)) foreach (var e in BuildPins(pinsRaw, list)) warm.Add(e.Target);
+                        for (int i = 0; i < list.Count && i < 36; i++) warm.Add(list[i].Target);
+                        int n = 0;
+                        foreach (var target in warm)
+                        {
+                            bool have;
+                            lock (iconGate) have = iconCache.ContainsKey(target);
+                            if (have) continue;
+                            var bmp = ShellApp.Icon(target, px);
+                            if (bmp != null) lock (iconGate) if (!iconCache.ContainsKey(target)) { iconCache[target] = bmp; n++; }
+                        }
+                        if (cachedRecent == null)
+                        {
+                            var rec = ScanRecent();
+                            cachedRecent = rec;
+                            foreach (var e in rec)
+                            {
+                                bool have;
+                                lock (iconGate) have = iconCache.ContainsKey(e.Target);
+                                if (have) continue;
+                                var bmp = ShellApp.Icon(e.Target, px);
+                                if (bmp != null) lock (iconGate) if (!iconCache.ContainsKey(e.Target)) { iconCache[e.Target] = bmp; n++; }
+                            }
+                        }
+                        if (StartFps) Log.Write("start prewarm " + list.Count + " apps, " + n + " icons in " + sw.ElapsedMilliseconds + "ms");
+                    }
+                    catch (Exception ex) { Log.Write("start prewarm: " + ex.Message); }
+                }) { IsBackground = true, Name = "start prewarm", Priority = ThreadPriority.BelowNormal };
+                t.SetApartmentState(ApartmentState.STA);
+                ThreadPool.QueueUserWorkItem(delegate { t.Start(); });
             }
 
             static string UserName()
@@ -191,9 +257,11 @@ namespace Deskmate
                 loading = catalog == null;
                 Background(delegate
                 {
+                    var csw = Stopwatch.StartNew();
                     var list = new List<AppEntry>();
                     foreach (var kv in ShellApp.AllApps()) list.Add(new AppEntry { Name = kv.Key, Id = kv.Value, Target = ShellApp.AppsFolderOf(kv.Value) });
                     list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase));
+                    if (StartFps) Log.Write("start catalog " + list.Count + " apps in " + csw.ElapsedMilliseconds + "ms");
                     Post(delegate
                     {
                         catalog = list;
@@ -211,7 +279,7 @@ namespace Deskmate
             {
                 var t = new Thread(delegate () { try { work(); } catch (Exception ex) { Log.Write("start: " + ex.Message); } }) { IsBackground = true, Name = "start load" };
                 t.SetApartmentState(ApartmentState.STA);
-                t.Start();
+                ThreadPool.QueueUserWorkItem(delegate { t.Start(); });
             }
 
             void Post(Action a)
@@ -329,9 +397,23 @@ namespace Deskmate
             }
 
             // Recent files and newly added apps, newest first
+            // Last scan shows at once; the rescan replaces it quietly
+            static volatile List<AppEntry> cachedRecent;
+
             void LoadRecent()
             {
+                var had = cachedRecent;
+                if (had != null) recent = new List<AppEntry>(had);
                 Background(delegate
+                {
+                    var list = ScanRecent();
+                    cachedRecent = list;
+                    Post(delegate { recent = new List<AppEntry>(list); RequestRender(); });
+                });
+            }
+
+            static List<AppEntry> ScanRecent()
+            {
                 {
                     var list = new List<AppEntry>();
                     try
@@ -371,8 +453,8 @@ namespace Deskmate
                     list.AddRange(added);
                     list.Sort((a, b) => b.When.CompareTo(a.When));
                     if (list.Count > 6) list.RemoveRange(6, list.Count - 6);
-                    Post(delegate { recent = list; RequestRender(); });
-                });
+                    return list;
+                }
             }
 
             // Uninstallers, help and readme links that installers drop next to the app
@@ -383,6 +465,10 @@ namespace Deskmate
                     if (n.Contains(w)) return true;
                 return false;
             }
+
+            static readonly bool StartFps = Environment.GetEnvironmentVariable("DESKMATE_FPS") == "1";
+            int iconN, iconFail;
+            long iconMs;
 
             void IconLoop()
             {
@@ -401,6 +487,7 @@ namespace Deskmate
                             lastPostMs = sw.ElapsedMilliseconds;
                             PostIconRender();
                         }
+                        if (StartFps && iconN > 0) { Log.Write("start icons " + iconN + " loaded in " + iconMs + "ms, failed " + iconFail); iconN = iconFail = 0; iconMs = 0; }
                         iconWake.WaitOne(500);
                         continue;
                     }
@@ -408,8 +495,10 @@ namespace Deskmate
                     lock (iconGate) iconCache.TryGetValue(e.Target, out bmp);
                     if (bmp == null)
                     {
+                        long i0 = sw.ElapsedMilliseconds;
                         bmp = ShellApp.Icon(e.Target, iconPx);
                         lock (iconGate) if (bmp != null) iconCache[e.Target] = bmp;
+                        if (StartFps) { iconN++; iconMs += sw.ElapsedMilliseconds - i0; if (bmp == null) iconFail++; }
                     }
                     lock (iconGate) e.Icon = bmp;
                     dirty = true;
@@ -600,14 +689,14 @@ namespace Deskmate
                     if (t.Row)
                     {
                         var ir = new RectangleF(r.X + 14, r.Y + (RowH - 32) / 2, 32, 32);
-                        if (icon != null) g.DrawImage(icon, ir); else p.FillRound(ir, 8, p.T.Fill);
+                        if (icon != null) Img(icon, ir); else p.FillRound(ir, 8, p.T.Fill);
                         p.Text(t.Entry.Name, Ink.Semi(12.5f), p.T.Text, r.X + 58, r.Y + RowH / 2 - 8, r.Width - 70, StringAlignment.Near);
                         p.Text(t.Entry.Sub, Ink.Small(11f), p.T.Sub, r.X + 58, r.Y + RowH / 2 + 9, r.Width - 70, StringAlignment.Near);
                     }
                     else
                     {
                         var ir = new RectangleF(r.X + (CellW - 40) / 2, r.Y + 12, 40, 40);
-                        if (icon != null) g.DrawImage(icon, ir); else p.FillRound(ir, 10, p.T.Fill);
+                        if (icon != null) Img(icon, ir); else p.FillRound(ir, 10, p.T.Fill);
                         p.Text(t.Entry.Name, Ink.Small(11.5f), p.T.Text, r.X + CellW / 2, r.Y + 68, CellW - 10, StringAlignment.Center);
                     }
                     Unsquish(r, sq);
@@ -627,6 +716,21 @@ namespace Deskmate
 
             static RectangleF Inset(RectangleF r, float d) { return new RectangleF(r.X + d, r.Y + d, r.Width - d * 2, r.Height - d * 2); }
 
+            // Images fade with the sheet; plain DrawImage ignored p.Alpha and showed icons before the panel
+            readonly ImageAttributes imgFade = new ImageAttributes();
+            readonly ColorMatrix imgMatrix = new ColorMatrix();
+
+            void Img(Image img, RectangleF r)
+            {
+                float a = p.Alpha;
+                if (a >= 0.995f) { g.DrawImage(img, r); return; }
+                if (a <= 0.01f) return;
+                imgMatrix.Matrix33 = a;
+                imgFade.SetColorMatrix(imgMatrix);
+                g.DrawImage(img, new[] { new PointF(r.Left, r.Top), new PointF(r.Right, r.Top), new PointF(r.Left, r.Bottom) },
+                    new RectangleF(0, 0, img.Width, img.Height), GraphicsUnit.Pixel, imgFade);
+            }
+
             void DrawFoot()
             {
                 float cy = H - Foot / 2;
@@ -642,7 +746,7 @@ namespace Deskmate
                         gp.AddEllipse(face);
                         var s = g.Save();
                         g.SetClip(gp, CombineMode.Intersect);
-                        g.DrawImage(avatar, face);
+                        Img(avatar, face);
                         g.Restore(s);
                     }
                 else

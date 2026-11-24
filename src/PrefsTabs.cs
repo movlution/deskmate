@@ -51,13 +51,12 @@ namespace Deskmate
             KitInk.Smooth(g);
             var box = new RectangleF(4 * s, 3 * s, Width - 8 * s, Height - 6 * s);
             // The whole row is the target: it lights as one
-            if (hovered) using (var path = Ink.Round(box, 9 * s)) using (var b = new SolidBrush(KitInk.Hover)) g.FillPath(b, path);
+            if (hovered) KitInk.FillRound(g, box, 9 * s, KitInk.Hover);
             base.OnPaint(e);
             KitInk.Smooth(g);
-            using (var icons = new Font(Ink.IconFamily, 12f * s, GraphicsUnit.Pixel))
-                KitInk.Draw(g, "", icons, hovered ? KitInk.Text : KitInk.Sub, new RectangleF(Width - 40 * s, 0, 24 * s, Height), ContentAlignment.MiddleCenter);
+            KitInk.Draw(g, "", Ink.Icons(12f * s), hovered ? KitInk.Text : KitInk.Sub, new RectangleF(Width - 40 * s, 0, 24 * s, Height), ContentAlignment.MiddleCenter);
             if (Focused && ShowFocusCues && !KitInk.ByMouse)
-                using (var path = Ink.Round(box, 9 * s)) using (var pen = new Pen(KitInk.Text, 2f)) g.DrawPath(pen, path);
+                KitInk.FocusRing(g, box, 9 * s, KitInk.Under(this), s);
         }
     }
 }

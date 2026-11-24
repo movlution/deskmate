@@ -20,6 +20,7 @@ if not "%~2"=="" set EXTRA="%~2"
   /r:System.Numerics.dll /r:"%FW%\System.Numerics.Vectors.dll" ^
   /r:"%FW%\System.Xaml.dll" /r:"%FW%\WPF\WindowsBase.dll" /r:"%FW%\WPF\PresentationCore.dll" ^
   /r:"%FW%\WPF\PresentationFramework.dll" /r:"%FW%\WPF\WindowsFormsIntegration.dll" ^
+  /r:"%FW%\WPF\UIAutomationClient.dll" /r:"%FW%\WPF\UIAutomationTypes.dll" ^
   "%ROOT%src\*.cs" %EXTRA%
 if errorlevel 1 (
   echo Build gagal.

@@ -188,7 +188,7 @@ namespace Deskmate
             try
             {
                 uint pid;
-                WindowPid(hwnd, out pid);
+                Native.GetWindowThreadProcessId(hwnd, out pid);
                 using (var p = Process.GetProcessById((int)pid)) return p.ProcessName;
             }
             catch (Exception) { return ""; }
@@ -329,7 +329,7 @@ namespace Deskmate
         static bool Elevated(IntPtr hwnd)
         {
             uint pid;
-            WindowPid(hwnd, out pid);
+            Native.GetWindowThreadProcessId(hwnd, out pid);
             IntPtr proc = OpenProcess(0x1000, false, pid);
             if (proc == IntPtr.Zero) return false;
             try

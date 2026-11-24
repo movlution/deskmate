@@ -145,8 +145,9 @@ namespace Deskmate
             if (s.Plan != null && s.Plan.Count > 0) planOpen = s.Id;
             float y = 0;
             foreach (var x in SortedSessions()) { if (x == s) break; y += AgentRowH(x); }
-            float view = AgentsHeight() - PanelTop - 14 - QuotaBlockH();
-            agentScroll.Snap(Math.Max(0, Math.Min(y, AgentsContentH() - view)));
+            float view = AgentsHeight() - PanelTop - 14;
+            y += AgentSessionOffset();
+            agentScroll.Snap(Clamp(y, 0, Math.Max(0, AgentsPageContentH() - view)));
             agentFocus = s.Id;
             agentFocusUtc = DateTime.UtcNow;
             Kick();
@@ -167,27 +168,32 @@ namespace Deskmate
             return h;
         }
 
+        const float AgentHookH = 44, AgentEmptyH = 110;
+
+        bool AgentHookFailed { get { return hub != null && hub.Error != null; } }
+        float AgentSessionOffset() { return QuotaBlockH() + (AgentHookFailed ? AgentHookH : 0); }
+        float AgentsPageContentH() { return AgentSessionOffset() + (sessions.Count == 0 ? AgentEmptyH : AgentsContentH()); }
+
         void DrawAgentsPage(float w, float h, DateTime now)
         {
-            if (hub != null && hub.Error != null)
+            var area = new RectangleF(10, PanelTop + 4, w - 20, Math.Max(0, h - PanelTop - 14));
+            if (area.Height <= 0) return;
+            var st = g.Save();
+            g.IntersectClip(area);
+            float maxScroll = Math.Max(0, AgentsPageContentH() - (AgentsHeight() - PanelTop - 14));
+            float y = area.Y - Clamp(agentScroll.Value, 0, maxScroll);
+            y += DrawQuotaBlock(w, y);
+            if (AgentHookFailed)
             {
-                EmptyState(new RectangleF(0, PanelTop, w, h - PanelTop), Ink.IcoTerminal, Lang.T("Server hook mati"), hub.Error + Lang.T(" · agent.port di settings.ini"));
-                return;
+                p.Text(Lang.T("Server hook mati"), Ink.SmallSemi(12), p.T.Warning, 26, y + 12, w - 52, StringAlignment.Near);
+                p.Text(hub.Error, Ink.Caption, p.T.Sub, 26, y + 29, w - 52, StringAlignment.Near);
+                y += AgentHookH;
             }
-            float qh = DrawQuotaBlock(w, PanelTop + 2);
             var list = SortedSessions();
             if (list.Count == 0)
             {
-                var keep = g.Save();
-                g.TranslateTransform(0, Math.Max(0, qh - 8));
-                EmptyState(new RectangleF(0, PanelTop, w, h - PanelTop - Math.Max(0, qh - 8)), Ink.IcoTerminal, Lang.T("Belum ada sesi agen"), linked.Length > 0 ? Lang.T("Terhubung: ") + linked : Lang.T("Belum terhubung · tray > Hubungkan agen"));
-                g.Restore(keep);
-                return;
+                EmptyState(new RectangleF(0, y, w, AgentEmptyH), Ink.IcoTerminal, Lang.T("Belum ada sesi agen"), linked.Length > 0 ? Lang.T("Terhubung: ") + linked : Lang.T("Belum terhubung · tray > Hubungkan agen"));
             }
-            var area = new RectangleF(10, PanelTop + 4 + qh, w - 20, h - PanelTop - 14 - qh);
-            var st = g.Save();
-            g.IntersectClip(area);
-            float y = area.Y - agentScroll.Value;
             for (int i = 0; i < list.Count; i++)
             {
                 var s = list[i];
@@ -447,8 +453,8 @@ namespace Deskmate
                 float cy = row.Y + row.Height / 2;
                 DrawAppBadge(item, new RectangleF(row.X + 8, cy - 16, 32, 32));
                 float tx = row.X + 50;
-                p.Text(NotifTitle(item), Ink.Callout, p.T.Text, tx, cy - 9, row.Right - tx - 80, StringAlignment.Near);
-                p.Text(NotifBody(item), Ink.Caption, p.T.Sub, tx, cy + 9, row.Right - tx - 44, StringAlignment.Near);
+                p.NotifText(NotifTitle(item), Ink.Callout, p.T.Text, tx, cy - 9, row.Right - tx - 80, StringAlignment.Near);
+                p.NotifText(NotifBody(item), Ink.Caption, p.T.Sub, tx, cy + 9, row.Right - tx - 44, StringAlignment.Near);
                 var x = new RectangleF(row.Right - 36, cy - 14, 28, 28);
                 if (hover)
                 {

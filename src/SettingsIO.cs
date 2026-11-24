@@ -14,7 +14,7 @@ namespace Deskmate
         static readonly HashSet<string> Portable = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "material", "theme", "lyrics", "lyrics.online", "visualizer", "music.view", "notif", "notif.content", "notif.apps", "notif.vip",
-            "agent.wait", "agent.quota", "update.check", "accent", "monitor", "focus.break", "focus.hold", "dock", "position", "panel.width", "panel.tabs",
+            "agent.wait", "agent.quota", "update.check", "accent", "monitor", AllIslandScreensKey, "focus.break", "focus.hold", "dock", "position", "panel.width", "panel.tabs",
             "google.tasks", "google.drive.notes", "tasks.sort",
             "place", "place.inset", "place.y", "home.cards", "home.sort", "tabs.trigger",
             "dockbar.on", "dockbar.replace", "dockbar.reserve", "dockbar.magnify", "dockbar.pins", "dockbar.work",
@@ -27,6 +27,7 @@ namespace Deskmate
             "theme.voice", "weather", "clock.24", "look.custom", "look.bg", "look.text", "look.accent", "wall.sync", "sound.agent", "phone.notifs", "phone.otp",
             "sound.drink", "sound.eyes", "sound.stretch", "sound.pray", "sound.pray.before", "ibadah.count",
             "notif.banner", NotifAppRulesKey, "share.mode", "idle.left", "idle.right", "tidy", "tidy.layout", "tidy.nudge", "ai.text", "ai.stt", "calendar.holidays",
+            "ingat", "ingat.text", "ingat.ocr", "ingat.clip", "ingat.rapat", "ingat.pet", "ingat.ai", "ingat.embed", "ingat.block.apps", "ingat.block.sites", "ingat.keep.events", "ingat.keep.days", "ingat.chat", "ingat.typed", "ingat.assist",
         };
 
         // Kept on reset: identity, links, internal state

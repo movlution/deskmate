@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 
 namespace Deskmate
 {
-    // Monochrome tokens; Base/Flip swap inverts
+    // Calm tinted neutrals: violet-charcoal night, ivory paper; Base/Flip swap inverts
     class Tone
     {
         // Labels: primary, secondary, tertiary; fills and separator
@@ -19,31 +19,37 @@ namespace Deskmate
         public Color Highlight, Lip;
         // Accent: pill, bars, progress; ink on top of it
         public Color Accent, OnAccent, Progress;
-        // Semantic: diff lines only
-        public Color Positive, Negative;
+        // Semantic: mint positive, soft coral negative, amber warning
+        public Color Positive, Negative, Warning;
 
         public bool IsDark { get { return Bg.R + Bg.G + Bg.B < 384; } }
 
-        // Glass can sit on a bright wallpaper: secondary text at 74% keeps 4.5:1
+        // Glass can sit on a bright wallpaper: raise secondary ink so the
+        // violet-charcoal canvas still keeps 4.5:1 after the wallpaper tint,
+        // and lift night ink nearly to white where a white desktop bleeds through.
         public Tone OnGlass()
         {
             var t = (Tone)MemberwiseClone();
-            t.Sub = Color.FromArgb(Math.Max((int)Sub.A, 189), Sub);
+            if (IsDark) t.Text = Ink.Mix(Text, Color.White, 0.6f);
+            t.Sub = Color.FromArgb(Math.Max((int)Sub.A, 240), Sub);
             return t;
         }
+
+        // Ivory on violet charcoal: brand plum calmed to a near-neutral night
+        public static readonly Color Night = Color.FromArgb(255, 0x1C, 0x1A, 0x22), Ivory = Color.FromArgb(255, 0xF5, 0xF2, 0xEC), Plum = Color.FromArgb(255, 0x21, 0x1C, 0x2A);
 
         public static Tone Dark()
         {
             return Defaults(new Tone
             {
-                Bg = Color.FromArgb(255, 0, 0, 0),
-                Text = Color.FromArgb(255, 245, 245, 247),
-                Sub = Color.FromArgb(158, 245, 245, 247),
-                // 148/255 keeps tertiary text at 4.5:1 on the surface (was 2.96:1)
-                Faint = Color.FromArgb(148, 245, 245, 247),
-                Fill = Color.FromArgb(18, 255, 255, 255),
-                FillHover = Color.FromArgb(28, 255, 255, 255),
-                Line = Color.FromArgb(23, 255, 255, 255),
+                Bg = Night,
+                Text = Ivory,
+                Sub = Color.FromArgb(158, Ivory),
+                // 148/255 keeps tertiary text at 4.5:1 on the surface
+                Faint = Color.FromArgb(148, Ivory),
+                Fill = Color.FromArgb(18, Ivory),
+                FillHover = Color.FromArgb(28, Ivory),
+                Line = Color.FromArgb(23, Ivory),
             });
         }
 
@@ -53,8 +59,9 @@ namespace Deskmate
             t.OnAccent = t.Bg;
             t.Progress = t.Sub;
             bool dark = t.IsDark;
-            t.Positive = dark ? Color.FromArgb(255, 110, 200, 140) : Color.FromArgb(255, 28, 128, 70);
-            t.Negative = dark ? Color.FromArgb(255, 240, 120, 120) : Color.FromArgb(255, 190, 50, 50);
+            t.Positive = dark ? Color.FromArgb(255, 0x80, 0xD0, 0xA8) : Color.FromArgb(255, 0x2B, 0x75, 0x52);
+            t.Negative = dark ? Color.FromArgb(255, 0xF0, 0xA0, 0x90) : Color.FromArgb(255, 0xAE, 0x46, 0x39);
+            t.Warning = dark ? Color.FromArgb(255, 0xE5, 0xC0, 0x70) : Color.FromArgb(255, 0x7F, 0x5F, 0x14);
             Derive(t);
             return t;
         }
@@ -73,13 +80,13 @@ namespace Deskmate
         {
             return Defaults(new Tone
             {
-                Bg = Color.FromArgb(255, 245, 245, 245),
-                Text = Color.FromArgb(255, 12, 12, 14),
-                Sub = Color.FromArgb(158, 12, 12, 14),
-                Faint = Color.FromArgb(148, 12, 12, 14),
-                Fill = Color.FromArgb(14, 0, 0, 0),
-                FillHover = Color.FromArgb(24, 0, 0, 0),
-                Line = Color.FromArgb(24, 0, 0, 0),
+                Bg = Ivory,
+                Text = Plum,
+                Sub = Color.FromArgb(170, Plum),
+                Faint = Color.FromArgb(158, Plum),
+                Fill = Color.FromArgb(14, Plum),
+                FillHover = Color.FromArgb(24, Plum),
+                Line = Color.FromArgb(24, Plum),
             });
         }
     }
@@ -104,55 +111,116 @@ namespace Deskmate
         // Theme pack colors; "card." keys style the light cards
         static Dictionary<string, string> pack = new Dictionary<string, string>();
 
+        // Calm presets: dusty pastels on the night canvas, deep inks on paper. Same slot = same name.
         public static readonly string[][] DarkAccents =
         {
-            new[] { "Monokrom", "" },
-            new[] { "Biru", "#4C8DFF" },
-            new[] { "Hijau", "#3DD68C" },
-            new[] { "Kuning", "#FFD24A" },
-            new[] { "Oranye", "#FF9F43" },
-            new[] { "Merah muda", "#FF6B9A" },
-            new[] { "Ungu", "#A78BFA" },
-            new[] { "Navy", "#7F8DC6" },
+            new[] { "Biru", "#8FB1E6" },
+            new[] { "Ungu", "#AE9DEB" },
+            new[] { "Merah muda", "#E59CBC" },
+            new[] { "Merah", "#EC9488" },
+            new[] { "Oranye", "#E8A877" },
+            new[] { "Kuning", "#E2C67A" },
+            new[] { "Hijau", "#7ECDA5" },
+            new[] { "Grafit", "" },
         };
 
         public static readonly string[][] LightAccents =
         {
-            new[] { "Monokrom", "" },
-            new[] { "Biru", "#1668E8" },
-            new[] { "Hijau", "#107C41" },
-            new[] { "Kuning", "#855E00" },
-            new[] { "Oranye", "#A84B00" },
-            new[] { "Merah muda", "#C2185B" },
-            new[] { "Ungu", "#6C3CE0" },
-            new[] { "Navy", "#4D5F9E" },
+            new[] { "Biru", "#3B66AD" },
+            new[] { "Ungu", "#6650B8" },
+            new[] { "Merah muda", "#A3456E" },
+            new[] { "Merah", "#AE4639" },
+            new[] { "Oranye", "#975323" },
+            new[] { "Kuning", "#78601A" },
+            new[] { "Hijau", "#2C7552" },
+            new[] { "Grafit", "" },
         };
 
-        static bool SameRgb(Color c, byte r, byte g, byte b) { return c.R == r && c.G == g && c.B == b; }
+        // New installs start on the brand's calm violet; a saved pick, Grafit included, always wins
+        public const string DefaultAccent = "#AE9DEB";
 
-        static Color GetLightAccent(Color c)
+        // Saturated presets from before the calm palette, same slots as above
+        static readonly string[] legacyDark = { "#4C8DFF", "#A78BFA", "#FF6B9A", "#FF5252", "#FF9F43", "#FFD24A", "#3DD68C" };
+        static readonly string[] legacyLight = { "#1668E8", "#6C3CE0", "#C2185B", "#C5221F", "#A84B00", "#855E00", "#107C41" };
+
+        // A saved legacy preset keeps its slot in the calm palette; anything else is returned as is
+        public static string UpgradeAccent(string hex)
         {
-            if (SameRgb(c, 0x4C, 0x8D, 0xFF)) return Color.FromArgb(255, 0x16, 0x68, 0xE8); // Biru
-            if (SameRgb(c, 0x3D, 0xD6, 0x8C)) return Color.FromArgb(255, 0x10, 0x7C, 0x41); // Hijau
-            if (SameRgb(c, 0xFF, 0xD2, 0x4A)) return Color.FromArgb(255, 0x85, 0x5E, 0x00); // Kuning
-            if (SameRgb(c, 0xFF, 0x9F, 0x43)) return Color.FromArgb(255, 0xA8, 0x4B, 0x00); // Oranye
-            if (SameRgb(c, 0xFF, 0x6B, 0x9A)) return Color.FromArgb(255, 0xC2, 0x18, 0x5B); // Merah muda
-            if (SameRgb(c, 0xA7, 0x8B, 0xFA)) return Color.FromArgb(255, 0x6C, 0x3C, 0xE0); // Ungu
-            if (SameRgb(c, 0x7F, 0x8D, 0xC6)) return Color.FromArgb(255, 0x4D, 0x5F, 0x9E); // Navy
+            for (int i = 0; i < legacyDark.Length; i++)
+            {
+                if (string.Equals(hex, legacyDark[i], StringComparison.OrdinalIgnoreCase)) return DarkAccents[i][1];
+                if (string.Equals(hex, legacyLight[i], StringComparison.OrdinalIgnoreCase)) return LightAccents[i][1];
+            }
+            return hex;
+        }
+
+        // A preset's twin in the other theme; custom colours pass through
+        static Color Counterpart(Color c, string[][] from, string[][] to)
+        {
+            Color p;
+            for (int i = 0; i < from.Length; i++)
+                if (ParseRgb(from[i][1], out p) && p.ToArgb() == c.ToArgb() && ParseRgb(to[i][1], out p)) return p;
             return c;
         }
 
-        static Color GetDarkAccent(Color c)
+        static bool ParseRgb(string hex, out Color c)
         {
-            if (SameRgb(c, 0x16, 0x68, 0xE8)) return Color.FromArgb(255, 0x4C, 0x8D, 0xFF); // Biru
-            if (SameRgb(c, 0x10, 0x7C, 0x41)) return Color.FromArgb(255, 0x3D, 0xD6, 0x8C); // Hijau
-            if (SameRgb(c, 0x85, 0x5E, 0x00)) return Color.FromArgb(255, 0xFF, 0xD2, 0x4A); // Kuning
-            if (SameRgb(c, 0xA8, 0x4B, 0x00)) return Color.FromArgb(255, 0xFF, 0x9F, 0x43); // Oranye
-            if (SameRgb(c, 0xC2, 0x18, 0x5B)) return Color.FromArgb(255, 0xFF, 0x6B, 0x9A); // Merah muda
-            if (SameRgb(c, 0x6C, 0x3C, 0xE0)) return Color.FromArgb(255, 0xA7, 0x8B, 0xFA); // Ungu
-            if (SameRgb(c, 0x4D, 0x5F, 0x9E)) return Color.FromArgb(255, 0x7F, 0x8D, 0xC6); // Navy
-            return c;
+            c = Color.Empty;
+            int v;
+            if (hex == null || hex.Length != 7 || hex[0] != '#' || !int.TryParse(hex.Substring(1), System.Globalization.NumberStyles.HexNumber, null, out v)) return false;
+            c = Color.FromArgb(255, (v >> 16) & 255, (v >> 8) & 255, v & 255);
+            return true;
         }
+
+        // Categorical labels for user-chosen tags: key (stored), name (Lang key), night twin, paper twin.
+        // Same dusty family as the accents; every twin is >= 4.9:1 on Window and Group.
+        public static readonly string[][] Labels =
+        {
+            new[] { "amber", "Amber", "#E6BF6E", "#86621A" },
+            new[] { "emerald", "Zamrud", "#7ECDA5", "#2C7552" },
+            new[] { "sky", "Biru", "#8CC4E0", "#2D6C8C" },
+            new[] { "violet", "Ungu", "#AE9DEB", "#6650B8" },
+            new[] { "rose", "Mawar", "#E59CBC", "#A3456E" },
+            new[] { "coral", "Merah", "#EC9488", "#AE4639" },
+            new[] { "slate", "Grafit", "#ABA8BC", "#5B5770" },
+        };
+
+        // A label's colour in the current theme; Empty for "" or an unknown key
+        public static Color Label(string key) { return Label(key, Light); }
+
+        public static Color Label(string key, bool light)
+        {
+            Color c;
+            foreach (var row in Labels)
+                if (string.Equals(row[0], key, StringComparison.OrdinalIgnoreCase) && ParseRgb(row[light ? 3 : 2], out c)) return c;
+            return Color.Empty;
+        }
+
+        // Whichever brand ink wins on a filled swatch: tinted night or ivory, by WCAG contrast
+        public static Color On(Color fill) { return Island.Contrast(fill, Tone.Night) >= Island.Contrast(fill, Tone.Ivory) ? Tone.Night : Tone.Ivory; }
+
+        // Markers drawn onto user images (screenshots, photos): theme-independent, vivid but not neon,
+        // so a stroke survives both white documents and dark apps. Name (Lang key), hex.
+        public static readonly string[][] Markers =
+        {
+            new[] { "Merah", "#E5484D" }, new[] { "Kuning", "#F5C451" }, new[] { "Hijau", "#3FB27F" }, new[] { "Biru", "#3E7BDB" },
+            new[] { "Oranye", "#F0883E" }, new[] { "Ungu", "#8C6CE0" }, new[] { "Putih", "#FFFFFF" }, new[] { "Hitam", "#17141D" },
+        };
+
+        // Shade laid over content: night black on the dark theme, plum on paper
+        public static Color Scrim(int alpha) { return Color.FromArgb(Math.Max(0, Math.Min(255, alpha)), Light ? Tone.Plum : Color.FromArgb(0x0B, 0x0A, 0x0E)); }
+
+        // Light laid over content: ivory on the dark theme, paper white on light
+        public static Color Sheen(int alpha) { return Color.FromArgb(Math.Max(0, Math.Min(255, alpha)), Light ? Color.White : Color.FromArgb(0xFB, 0xF9, 0xF5)); }
+
+        // Celebration effects (combo, edge light): joyful but softened to sit beside the calm palette
+        public static readonly Color FxSky = Color.FromArgb(255, 0x6E, 0xC6, 0xEA), FxMint = Color.FromArgb(255, 0x6B, 0xD6, 0x9C),
+            FxGold = Color.FromArgb(255, 0xF4, 0xCD, 0x5C), FxApricot = Color.FromArgb(255, 0xF4, 0xA3, 0x61),
+            FxRose = Color.FromArgb(255, 0xF0, 0x7A, 0x98), FxCoral = Color.FromArgb(255, 0xF0, 0x80, 0x7F),
+            FxLavender = Color.FromArgb(255, 0xB5, 0x95, 0xEC), FxCream = Color.FromArgb(255, 0xFB, 0xF3, 0xDE);
+
+        // Confetti mix, cool to warm
+        public static readonly Color[] FxConfetti = { FxSky, FxMint, FxGold, FxApricot, FxRose, FxLavender, FxCream };
 
         public static void SetPack(Dictionary<string, string> colors) { pack = colors ?? new Dictionary<string, string>(); }
 
@@ -171,6 +239,7 @@ namespace Deskmate
             if (Hex(prefix + "progress", out c)) t.Progress = c;
             if (Hex(prefix + "positive", out c)) t.Positive = c;
             if (Hex(prefix + "negative", out c)) t.Negative = c;
+            if (Hex(prefix + "warning", out c)) t.Warning = c;
             Tone.Derive(t);
             if (Hex(prefix + "quaternary", out c)) t.Quaternary = c;
             if (Hex(prefix + "fillPressed", out c)) t.FillPressed = c;
@@ -199,18 +268,15 @@ namespace Deskmate
             Light = light;
             Base = light ? Tone.Paper() : Tone.Dark();
             Flip = light ? Tone.Dark() : Tone.Paper();
-            foreach (var t in new[] { Base, Flip }) { t.Accent = t.Text; t.OnAccent = t.Bg; t.Progress = t.Sub; }
             if (accent.HasValue)
             {
-                var c = light ? GetLightAccent(accent.Value) : GetDarkAccent(accent.Value);
+                var c = light ? Counterpart(accent.Value, DarkAccents, LightAccents) : Counterpart(accent.Value, LightAccents, DarkAccents);
                 if (light && Island.Contrast(c, Base.Bg) < 3.5)
                     c = Island.EnforceContrast(c, Base.Bg, 3.5);
                 Base.Accent = Base.Progress = c;
-                // Ink on the accent: pick whichever actually wins on WCAG contrast,
-                // not a luma guess. Blue and navy presets used to land at ~3.07:1.
-                var darkInk = Color.FromArgb(255, 10, 10, 10);
-                var lightInk = Color.FromArgb(255, 250, 250, 250);
-                Base.OnAccent = Island.Contrast(c, darkInk) >= Island.Contrast(c, lightInk) ? darkInk : lightInk;
+                // Ink on the accent: the tinted night or ivory, whichever wins on WCAG contrast;
+                // mid-tone customs that neither carries to 4.5:1 are pushed further out.
+                Base.OnAccent = Island.EnforceContrast(On(c), c, 4.5);
             }
             Override(Base, "");
             Override(Flip, "card.");
@@ -219,13 +285,8 @@ namespace Deskmate
         // "#RRGGBB", or empty for monochrome
         public static void SetAccent(string hex)
         {
-            accent = null;
-            if (hex != null && hex.Length == 7 && hex[0] == '#')
-            {
-                int v;
-                if (int.TryParse(hex.Substring(1), System.Globalization.NumberStyles.HexNumber, null, out v))
-                    accent = Color.FromArgb(255, (v >> 16) & 255, (v >> 8) & 255, v & 255);
-            }
+            Color c;
+            accent = ParseRgb(hex, out c) ? c : (Color?)null;
             Apply(Light);
         }
 
@@ -243,8 +304,11 @@ namespace Deskmate
 
         // Spacing scale, 1x px
         public const float Sp4 = 4, Sp8 = 8, Sp12 = 12, Sp16 = 16, Sp20 = 20, Sp24 = 24, Sp32 = 32;
-        // Concentric radii: shell, module, control
-        public const float RadiusShell = 32, RadiusModule = 20, RadiusControl = 12;
+        // Concentric radii: shell, module, card, control; nested thumbs subtract their inset
+        public const float RadiusShell = 32, RadiusModule = 20, RadiusCard = 16, RadiusControl = 12;
+        // Settings groups and the page hero card; 14 reads soft beside 12 px controls without
+        // out-rounding the 25 px nest limit of the hero tile (11 + 14 inset)
+        public const float RadiusList = 14;
         // Module grid: shell inset, gap, inner padding
         public const float ModuleInset = 12, ModuleGap = 10, ModulePad = 16;
 
@@ -258,9 +322,8 @@ namespace Deskmate
 
         public static void Init()
         {
-            var have = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            using (var fc = new InstalledFontCollection())
-                foreach (var f in fc.Families) have.Add(f.Name);
+            // Ask for the few families we use; enumerating every installed font costs seconds on a cold logon
+            var have = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             families[FDisplay] = Pick(have, "Segoe UI Variable Display Semibold", "Segoe UI Variable Display Semib", "Segoe UI Semibold", "Segoe UI");
             families[FText] = Pick(have, "Segoe UI Variable Text", "Segoe UI");
             families[FSemi] = Pick(have, "Segoe UI Variable Text Semibold", "Segoe UI Semibold", "Segoe UI");
@@ -270,14 +333,28 @@ namespace Deskmate
             families[FSmallSemi] = Pick(have, "Segoe UI Variable Small Semibold", "Segoe UI Variable Small Semibol", "Segoe UI Semibold", "Segoe UI");
         }
 
-        static string Pick(HashSet<string> have, params string[] names)
+        static string Pick(Dictionary<string, bool> have, params string[] names)
         {
             foreach (var n in names)
             {
-                if (have.Contains(n)) return n;
-                if (n.Length > 31 && have.Contains(n.Substring(0, 31))) return n.Substring(0, 31);
+                if (Installed(have, n)) return n;
+                if (n.Length > 31 && Installed(have, n.Substring(0, 31))) return n.Substring(0, 31);
             }
             return System.Drawing.SystemFonts.MessageBoxFont.FontFamily.Name;
+        }
+
+        // Exact family match only: GDI+ throws for a name it does not have
+        static bool Installed(Dictionary<string, bool> have, string name)
+        {
+            bool ok;
+            if (have.TryGetValue(name, out ok)) return ok;
+            try
+            {
+                using (var f = new FontFamily(name)) ok = string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (ArgumentException) { ok = false; }
+            have[name] = ok;
+            return ok;
         }
 
         public static Font Display(float px) { return Get(FDisplay, px); }
@@ -714,415 +791,6 @@ namespace Deskmate
             if (h < 1) { rr = q; gg = x; } else if (h < 2) { rr = x; gg = q; } else if (h < 3) { gg = q; bb = x; }
             else if (h < 4) { gg = x; bb = q; } else if (h < 5) { rr = x; bb = q; } else { rr = q; bb = x; }
             return Color.FromArgb(255, (int)((rr + m) * 255 + 0.5f), (int)((gg + m) * 255 + 0.5f), (int)((bb + m) * 255 + 0.5f));
-        }
-    }
-
-    // Spring presets: response seconds, damping ratio
-    static class Springs
-    {
-        public const float SnappyResponse = 0.26f, SnappyDamping = 0.86f;
-        public const float SmoothResponse = 0.42f, SmoothDamping = 1f;
-        public const float BouncyResponse = 0.42f, BouncyDamping = 0.75f;
-        public const float InteractiveResponse = 0.16f, InteractiveDamping = 0.86f;
-
-        public static void Tune(Spring s, float response, float damping)
-        {
-            float w = (float)(2 * Math.PI / Math.Max(0.05f, Anim.Response(response)));
-            s.K = w * w;
-            s.D = 2 * Anim.Damping(damping) * w;
-        }
-
-        public static void Snappy(Spring s) { Tune(s, SnappyResponse, SnappyDamping); }
-        public static void Smooth(Spring s) { Tune(s, SmoothResponse, SmoothDamping); }
-        public static void Bouncy(Spring s) { Tune(s, BouncyResponse, BouncyDamping); }
-        public static void Interactive(Spring s) { Tune(s, InteractiveResponse, InteractiveDamping); }
-
-        // Step response after t seconds
-        public static float Progress(float t, float response, float damping)
-        {
-            if (t <= 0) return 0;
-            damping = Anim.Damping(damping);
-            double w = 2 * Math.PI / Math.Max(0.05f, Anim.Response(response));
-            if (damping >= 1) return (float)(1 - (1 + w * t) * Math.Exp(-w * t));
-            double wd = w * Math.Sqrt(1 - damping * damping), e = Math.Exp(-damping * w * t);
-            return (float)(1 - e * (Math.Cos(wd * t) + damping * w / wd * Math.Sin(wd * t)));
-        }
-
-        // Settled within a hair
-        public static bool Done(float t, float response) { return t > response * 1.6f; }
-    }
-
-    // Drawing helpers: global alpha, active tone
-    class Painter : IDisposable
-    {
-        public Graphics G;
-        // Text and glyphs snap to whole pixels; shapes sit half a pixel off
-        public float HalfPx;
-        public float Alpha = 1f;
-        public Tone T = Ink.Base;
-        public bool Shadow; // legibility on see-through glass
-        readonly SolidBrush brush = new SolidBrush(Color.White);
-        readonly Pen pen = new Pen(Color.White, 1f);
-        readonly StringFormat line, wrap;
-        readonly ImageAttributes imageAttr = new ImageAttributes();
-        readonly ColorMatrix matrix = new ColorMatrix();
-        // One path reset per shape
-        readonly GraphicsPath shape = new GraphicsPath();
-        // Gradients remapped per use, never rebuilt
-        readonly LinearGradientBrush glow, lip, split;
-        readonly Blend glowBlend = new Blend(3), lipBlend = new Blend(4), splitBlend = new Blend(4);
-        readonly Color[] pair = new Color[2];
-        // Widths per font, cleared when G changes
-        readonly Dictionary<Font, Dictionary<string, float>> widths = new Dictionary<Font, Dictionary<string, float>>(new Ink.SameFont());
-        Graphics widthsFor;
-        int widthCount;
-
-        public void Dispose()
-        {
-            brush.Dispose();
-            pen.Dispose();
-            line.Dispose();
-            wrap.Dispose();
-            imageAttr.Dispose();
-            shape.Dispose();
-            glow.Dispose();
-            lip.Dispose();
-            split.Dispose();
-        }
-
-        public Painter()
-        {
-            pen.StartCap = LineCap.Round;
-            pen.EndCap = LineCap.Round;
-            pen.LineJoin = LineJoin.Round;
-            line = (StringFormat)StringFormat.GenericTypographic.Clone();
-            line.FormatFlags |= StringFormatFlags.NoWrap | StringFormatFlags.MeasureTrailingSpaces;
-            line.Trimming = StringTrimming.EllipsisCharacter;
-            line.LineAlignment = StringAlignment.Center;
-            wrap = (StringFormat)StringFormat.GenericTypographic.Clone();
-            wrap.FormatFlags |= StringFormatFlags.LineLimit;
-            wrap.Trimming = StringTrimming.EllipsisCharacter;
-            var unit = new RectangleF(0, 0, Ink.GradientSpan, Ink.GradientSpan);
-            glow = new LinearGradientBrush(unit, Color.White, Color.White, LinearGradientMode.Horizontal) { WrapMode = WrapMode.TileFlipXY };
-            lip = new LinearGradientBrush(unit, Color.White, Color.White, LinearGradientMode.Horizontal) { WrapMode = WrapMode.TileFlipXY };
-            split = new LinearGradientBrush(unit, Color.White, Color.White, LinearGradientMode.Horizontal) { WrapMode = WrapMode.TileFlipXY };
-            glowBlend.Positions = new[] { 0f, 0.45f, 1f };
-            glowBlend.Factors = new[] { 0f, 1f, 1f };
-            glow.Blend = glowBlend;
-            lipBlend.Positions = new[] { 0f, 0.3f, 0.7f, 1f };
-            lipBlend.Factors = new[] { 1f, 0f, 0f, 1f };
-            lip.Blend = lipBlend;
-            splitBlend.Positions = new[] { 0f, 0.5f, 0.51f, 1f };
-            splitBlend.Factors = new[] { 0f, 0f, 1f, 1f };
-        }
-
-        public Brush B(Color c) { brush.Color = Ink.A(c, Alpha); return brush; }
-
-        public Pen P(Color c, float width)
-        {
-            pen.Color = Ink.A(c, Alpha);
-            pen.Width = width;
-            return pen;
-        }
-
-        public void FillRound(RectangleF r, float radius, Color c)
-        {
-            shape.Reset();
-            Ink.AddRound(shape, r, radius);
-            G.FillPath(B(c), shape);
-        }
-
-        public void FillRound(RectangleF r, float radius, Brush b)
-        {
-            shape.Reset();
-            Ink.AddRound(shape, r, radius);
-            G.FillPath(b, shape);
-        }
-
-        public void StrokeRound(RectangleF r, float radius, Color c, float width)
-        {
-            shape.Reset();
-            Ink.AddRound(shape, r, radius);
-            G.DrawPath(P(c, width), shape);
-        }
-
-        public void Circle(float cx, float cy, float r, Color c) { G.FillEllipse(B(c), cx - r, cy - r, r * 2, r * 2); }
-
-        static void MapV(LinearGradientBrush b, float y, float h)
-        {
-            b.ResetTransform();
-            b.TranslateTransform(0, y);
-            b.ScaleTransform(1, Math.Max(0.01f, h) / Ink.GradientSpan);
-            b.RotateTransform(90);
-        }
-
-        static void MapH(LinearGradientBrush b, float x, float w)
-        {
-            b.ResetTransform();
-            b.TranslateTransform(x, 0);
-            b.ScaleTransform(Math.Max(0.01f, w) / Ink.GradientSpan, 1);
-        }
-
-        // Module: fill, top inner light, faint lip
-        public void Module(RectangleF r, float radius, Color fill)
-        {
-            shape.Reset();
-            Ink.AddRound(shape, r, radius);
-            pair[0] = Ink.A(Ink.Over(T.Highlight, fill), Alpha);
-            pair[1] = Ink.A(fill, Alpha);
-            glow.LinearColors = pair;
-            MapV(glow, r.Y, r.Height);
-            G.FillPath(glow, shape);
-            if (T.Lip.A == 0) return;
-            float e = Ink.CornerExtent(Math.Min(radius, Math.Min(r.Width, r.Height) / 2)), w = r.Width - 2 * e;
-            if (w < 8) return;
-            pair[0] = Ink.A(T.Lip, Alpha);
-            pair[1] = Color.FromArgb(0, T.Lip);
-            lip.LinearColors = pair;
-            MapH(lip, r.X + e, w);
-            G.FillRectangle(lip, r.X + e, r.Bottom - 1.4f, w, 0.9f);
-        }
-
-        // Hard colour step at x, no clip
-        public Brush Split(float x, float w, float at, Color left, Color right)
-        {
-            if (at <= x + 0.05f) return B(right);
-            if (at >= x + w - 0.05f) return B(left);
-            float e = Math.Min(0.02f, 0.9f / Math.Max(1, w));
-            float f = Math.Max(0.001f, Math.Min(0.998f - e, (at - x) / w));
-            splitBlend.Positions[1] = f;
-            splitBlend.Positions[2] = f + e;
-            split.Blend = splitBlend;
-            pair[0] = Ink.A(left, Alpha);
-            pair[1] = Ink.A(right, Alpha);
-            split.LinearColors = pair;
-            MapH(split, x, w);
-            return split;
-        }
-
-        public float Measure(string s, Font f)
-        {
-            if (string.IsNullOrEmpty(s)) return 0;
-            if (G == null || f == null) return s.Length * (f != null ? f.Size * 0.6f : 7.5f);
-            if (!ReferenceEquals(widthsFor, G) || widthCount > 4096) { widths.Clear(); widthsFor = G; widthCount = 0; }
-            Dictionary<string, float> byText;
-            if (!widths.TryGetValue(f, out byText)) widths[f] = byText = new Dictionary<string, float>();
-            float w;
-            if (byText.TryGetValue(s, out w)) return w;
-            try { w = G.MeasureString(s, f, PointF.Empty, line).Width; }
-            catch (ArgumentException) { return s.Length * (f.Size * 0.6f); }
-            byText[s] = w;
-            widthCount++;
-            return w;
-        }
-
-        // Capital height centred on cy
-        RectangleF LineBox(Font f, float x, float cy, float maxWidth, StringAlignment align)
-        {
-            float h = f.Size * 2f;
-            float left = align == StringAlignment.Near ? x : align == StringAlignment.Far ? x - maxWidth : x - maxWidth / 2;
-            return new RectangleF(left + HalfPx, cy - h / 2 + Ink.CapShift(f) + HalfPx, maxWidth, h);
-        }
-
-        // One line, centred on cy, ellipsized
-        public void Text(string s, Font f, Color c, float x, float cy, float maxWidth, StringAlignment align)
-        {
-            if (string.IsNullOrEmpty(s) || maxWidth < 4) return;
-            line.Alignment = align;
-            var box = LineBox(f, x, cy, maxWidth, align);
-            if (Shadow && c.R > 128 && c.A > 60)
-                G.DrawString(s, f, B(Color.FromArgb((int)(90 * c.A / 255f), 0, 0, 0)), new RectangleF(box.X, box.Y + 1f, box.Width, box.Height), line);
-            G.DrawString(s, f, B(c), box, line);
-        }
-
-        // Same line with any brush, like Split
-        public void Text(string s, Font f, Brush b, float x, float cy, float maxWidth, StringAlignment align)
-        {
-            if (string.IsNullOrEmpty(s) || maxWidth < 4) return;
-            line.Alignment = align;
-            G.DrawString(s, f, b, LineBox(f, x, cy, maxWidth, align), line);
-        }
-
-        public void Text(string s, Font f, Color c, float x, float cy) { Text(s, f, c, x, cy, 2000, StringAlignment.Near); }
-        public void TextRight(string s, Font f, Color c, float right, float cy) { Text(s, f, c, right, cy, 2000, StringAlignment.Far); }
-        public void TextCenter(string s, Font f, Color c, float cx, float cy) { Text(s, f, c, cx, cy, 2000, StringAlignment.Center); }
-
-        public void TextBox(string s, Font f, Color c, RectangleF r) { TextBox(s, f, c, r, StringAlignment.Near); }
-
-        // Height of s wrapped to width
-        public float WrapHeight(string s, Font f, float width)
-        {
-            if (string.IsNullOrEmpty(s) || G == null) return 0;
-            wrap.Alignment = StringAlignment.Near;
-            return G.MeasureString(s, f, new SizeF(Math.Max(10, width), 100000), wrap).Height;
-        }
-
-        public void TextBox(string s, Font f, Color c, RectangleF r, StringAlignment align)
-        {
-            if (string.IsNullOrEmpty(s)) return;
-            wrap.Alignment = align;
-            G.DrawString(s, f, B(c), r, wrap);
-        }
-
-        // Wrapped text centred both ways in r
-        public void TextBoxCenter(string s, Font f, Color c, RectangleF r)
-        {
-            if (string.IsNullOrEmpty(s)) return;
-            wrap.Alignment = StringAlignment.Center;
-            wrap.LineAlignment = StringAlignment.Center;
-            G.DrawString(s, f, B(c), new RectangleF(r.X, r.Y - f.Size * Ink.CapLift, r.Width, r.Height), wrap);
-            wrap.LineAlignment = StringAlignment.Near;
-        }
-
-        public void Icon(char glyph, float px, Color c, float cx, float cy) { Icon(glyph, px, B(c), cx, cy); }
-
-        public void Icon(char glyph, float px, Brush b, float cx, float cy)
-        {
-            line.Alignment = StringAlignment.Center;
-            var n = Ink.IconNudge(glyph, px);
-            G.DrawString(Ink.Str(glyph), Ink.Icons(px), b, new RectangleF(cx - px + n.X + HalfPx, cy - px + n.Y + HalfPx, px * 2, px * 2), line);
-        }
-
-        // Cached vector symbol at cx, cy
-        public void Symbol(Sym kind, float cx, float cy, float size, Color c)
-        {
-            float stroke;
-            var path = Ink.SymbolPath(kind, size, out stroke);
-            G.TranslateTransform(cx, cy);
-            if (stroke > 0) G.DrawPath(P(c, stroke), path);
-            else G.FillPath(B(c), path);
-            G.TranslateTransform(-cx, -cy);
-        }
-
-        public void Image(Image img, RectangleF r, float radius)
-        {
-            matrix.Matrix33 = Alpha;
-            imageAttr.SetColorMatrix(matrix);
-            shape.Reset();
-            Ink.AddRound(shape, r, radius);
-            using (var tb = new TextureBrush(img, new Rectangle(0, 0, img.Width, img.Height), imageAttr))
-            {
-                tb.WrapMode = WrapMode.Clamp;
-                tb.TranslateTransform(r.X, r.Y);
-                tb.ScaleTransform(r.Width / img.Width, r.Height / img.Height);
-                G.FillPath(tb, shape);
-            }
-        }
-
-        // Orbit: track plus comet-tail arc
-        public void Orbit(float cx, float cy, float r, float phase, Color c)
-        {
-            var rect = new RectangleF(cx - r, cy - r, r * 2, r * 2);
-            G.DrawEllipse(P(Ink.A(c, 0.22f), 1.8f), rect);
-            float start = phase * 360f - 90;
-            for (int i = 0; i < 6; i++)
-            {
-                float a = 1f - i / 6f;
-                G.DrawArc(P(Ink.A(c, a), 2.2f), rect, start - i * 14, 16);
-            }
-        }
-
-        public void Check(float cx, float cy, float s, Color c, float progress)
-        {
-            var a = new PointF(cx - s * 0.42f, cy + s * 0.02f);
-            var b = new PointF(cx - s * 0.12f, cy + s * 0.32f);
-            var d = new PointF(cx + s * 0.46f, cy - s * 0.32f);
-            float p1 = Ease.Clamp01(progress / 0.4f), p2 = Ease.Clamp01((progress - 0.4f) / 0.6f);
-            var pen = P(c, s * 0.16f);
-            G.DrawLine(pen, a, new PointF(a.X + (b.X - a.X) * p1, a.Y + (b.Y - a.Y) * p1));
-            if (p2 > 0) G.DrawLine(pen, b, new PointF(b.X + (d.X - b.X) * p2, b.Y + (d.Y - b.Y) * p2));
-        }
-
-        public void Cross(float cx, float cy, float s, Color c)
-        {
-            var pen = P(c, s * 0.15f);
-            G.DrawLine(pen, cx - s * 0.36f, cy - s * 0.36f, cx + s * 0.36f, cy + s * 0.36f);
-            G.DrawLine(pen, cx + s * 0.36f, cy - s * 0.36f, cx - s * 0.36f, cy + s * 0.36f);
-        }
-
-        // Legacy sizes mapped onto the symbols
-        public void Play(float cx, float cy, float s, Color c) { Symbol(Sym.Play, cx, cy, 1.22f * s, c); }
-
-        public void Pause(float cx, float cy, float s, Color c) { Symbol(Sym.Pause, cx, cy, 1.19f * s, c); }
-
-        public void Skip(float cx, float cy, float s, Color c, bool forward) { Symbol(forward ? Sym.Next : Sym.Prev, cx, cy, 1.1f * s, c); }
-
-        public void Battery(float x, float cy, float level, Color c, bool charging)
-        {
-            var body = new RectangleF(x, cy - 7f, 28, 14);
-            StrokeRound(body, 4f, Ink.A(c, 0.55f), 1.4f);
-            FillRound(new RectangleF(body.Right + 1.6f, cy - 2.6f, 2.2f, 5.2f), 1f, Ink.A(c, 0.55f));
-            float w = Math.Max(2f, (body.Width - 5) * Ease.Clamp01(level));
-            FillRound(new RectangleF(body.X + 2.5f, body.Y + 2.5f, w, body.Height - 5), 2f, c);
-            if (charging) Icon(Ink.IcoBolt, 10f, T.Bg, body.X + body.Width / 2, cy);
-        }
-    }
-
-    // Odometer digits that roll on change
-    class Roller
-    {
-        string shown = "", prev = "";
-        DateTime changedUtc = DateTime.MinValue;
-        const double Duration = 0.42;
-
-        public void Set(string s)
-        {
-            if (s == shown) return;
-            prev = shown;
-            shown = s;
-            changedUtc = DateTime.UtcNow;
-        }
-
-        public string Value { get { return shown; } }
-
-        public bool Moving(DateTime now) { return (now - changedUtc).TotalSeconds < Duration; }
-
-        public float Width(Painter p, Font f) { return CharsWidth(p, f, shown); }
-
-        static float CharW(Painter p, Font f, char c)
-        {
-            return char.IsDigit(c) ? p.Measure("0", f) : p.Measure(Ink.Str(c), f);
-        }
-
-        static float CharsWidth(Painter p, Font f, string s)
-        {
-            float w = 0;
-            foreach (char c in s) w += CharW(p, f, c);
-            return w;
-        }
-
-        public void Draw(Painter p, Font f, Color c, float x, float cy, StringAlignment align, DateTime now)
-        {
-            float total = CharsWidth(p, f, shown);
-            float left = align == StringAlignment.Near ? x : align == StringAlignment.Far ? x - total : x - total / 2;
-            float raw = (float)((now - changedUtc).TotalSeconds / Duration);
-            float t = Anim.Reduced ? Ease.OutCubic(raw) : Ease.OutBack(raw);
-            float lineH = f.Size * 1.05f;
-            int offset = prev.Length - shown.Length;
-            float cx = left;
-            bool rolling = raw < 1;
-            var state = rolling ? p.G.Save() : null;
-            if (rolling) p.G.IntersectClip(new RectangleF(left - 2, cy - lineH * 0.62f, total + 4, lineH * 1.24f));
-            float alpha = p.Alpha;
-            for (int i = 0; i < shown.Length; i++)
-            {
-                char now_c = shown[i];
-                int j = i + offset;
-                char old_c = j >= 0 && j < prev.Length ? prev[j] : ' ';
-                float cw = CharW(p, f, now_c);
-                string s = Ink.Str(now_c);
-                if (old_c != now_c && t < 1f)
-                {
-                    p.Alpha = alpha * Ease.Clamp01(t * 1.4f);
-                    p.Text(s, f, c, cx, cy + (1 - t) * lineH, cw + 6, StringAlignment.Near);
-                    p.Alpha = alpha * Ease.Clamp01(1 - t * 1.6f);
-                    p.Text(Ink.Str(old_c), f, c, cx, cy - t * lineH, cw + 6, StringAlignment.Near);
-                    p.Alpha = alpha;
-                }
-                else p.Text(s, f, c, cx, cy, cw + 6, StringAlignment.Near);
-                cx += cw;
-            }
-            if (rolling) p.G.Restore(state);
         }
     }
 }

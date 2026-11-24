@@ -103,7 +103,6 @@ namespace Deskmate
         [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr h, uint key, byte alpha, uint flags);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder sb, int n);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
-        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
         [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiInfo info);
         [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr p, int flags, StringBuilder path, ref int size);
@@ -348,7 +347,7 @@ namespace Deskmate
             var fg = GetForegroundWindow();
             if (keeper == null || handedBack || IsExternalWinActive() || !IsDesktop(fg)) return;
             // Menu, drag or rename on the desktop: wait
-            uint pid, tid = GetWindowThreadProcessId(fg, out pid);
+            uint pid, tid = Native.GetWindowThreadProcessId(fg, out pid);
             var gi = new GuiInfo { Size = Marshal.SizeOf(typeof(GuiInfo)) };
             bool busy = GetGUIThreadInfo(tid, ref gi) && ((gi.Flags & 0x1E) != 0 || gi.Capture != IntPtr.Zero || gi.Caret != IntPtr.Zero);
             if (busy || Held(0x01) || Held(0x02)) { keeper.Later(ParkTimer, 500); return; }
@@ -368,7 +367,7 @@ namespace Deskmate
             SetForegroundWindow(desk);
             keeper.Rest();
             if (vk == VkShift || vk == VkCtrl || vk == VkAlt) return true;
-            uint pid, tid = GetWindowThreadProcessId(desk, out pid);
+            uint pid, tid = Native.GetWindowThreadProcessId(desk, out pid);
             var gi = new GuiInfo { Size = Marshal.SizeOf(typeof(GuiInfo)) };
             IntPtr target = GetGUIThreadInfo(tid, ref gi) && gi.Focus != IntPtr.Zero ? gi.Focus : DesktopList(desk);
             PostMessage(target, msg, w, l);
@@ -404,7 +403,7 @@ namespace Deskmate
         static string ProcessName(IntPtr h)
         {
             uint pid;
-            GetWindowThreadProcessId(h, out pid);
+            Native.GetWindowThreadProcessId(h, out pid);
             IntPtr p = OpenProcess(0x1000, false, pid);
             if (p == IntPtr.Zero) return "";
             try
@@ -420,7 +419,7 @@ namespace Deskmate
         static bool Elevated(IntPtr h)
         {
             uint pid;
-            GetWindowThreadProcessId(h, out pid);
+            Native.GetWindowThreadProcessId(h, out pid);
             IntPtr p = OpenProcess(0x1000, false, pid), token;
             if (p == IntPtr.Zero) return false;
             try
@@ -465,7 +464,7 @@ namespace Deskmate
                 return;
             }
             uint fgPid;
-            GetWindowThreadProcessId(hwnd, out fgPid);
+            Native.GetWindowThreadProcessId(hwnd, out fgPid);
             if (fgPid != 0 && seenPids.Add(fgPid) && keeper != null) keeper.Later(CheckTimer, 100);
             lastFront = hwnd;
             parked = false;
@@ -700,7 +699,7 @@ namespace Deskmate
             EnumWindows((h, l) =>
             {
                 uint wp;
-                GetWindowThreadProcessId(h, out wp);
+                Native.GetWindowThreadProcessId(h, out wp);
                 if (wp != pid || GetWindow(h, 4) != IntPtr.Zero) return true;
                 if (ClassOf(h) == "IME") return true;
                 if (IsWindowVisible(h)) { visible = h; return false; }

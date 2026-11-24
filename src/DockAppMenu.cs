@@ -624,7 +624,7 @@ namespace Deskmate
                 if (app.Running && app.Wins.Count == 1)
                 {
                     IntPtr h = app.Wins[0].H;
-                    if (id == "winFocus") { ShellApp.Activate(h); Done(); return; }
+                    if (id == "winFocus") { ShellApp.FocusDockApp(h); Done(); return; }
                     if (id == "winMin") { if (!ShellApp.IsMinimized(h)) { ShellApp.Minimize(h); Done(); } return; }
                     if (id == "winMax") { if (ShellApp.IsMaximized(h)) ShellApp.Restore(h); else ShellApp.Maximize(h); Done(); return; }
                 }
@@ -634,7 +634,7 @@ namespace Deskmate
                     int idx;
                     if (int.TryParse(id.Substring(4), out idx) && idx >= 0 && idx < app.Wins.Count)
                     {
-                        ShellApp.Activate(app.Wins[idx].H);
+                        ShellApp.FocusDockApp(app.Wins[idx].H);
                         Done();
                     }
                     return;
@@ -645,8 +645,7 @@ namespace Deskmate
                     int idx;
                     if (int.TryParse(id.Substring(8), out idx) && idx >= 0 && idx < app.Wins.Count)
                     {
-                        ShellApp.Close(app.Wins[idx].H);
-                        Done();
+                        if (ShellApp.Close(app.Wins[idx].H)) Done();
                     }
                     return;
                 }

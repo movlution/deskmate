@@ -44,7 +44,6 @@ namespace Deskmate
         [DllImport("user32.dll", EntryPoint = "SetWindowLongW")] static extern int SetExStyle(IntPtr hwnd, int index, int value);
         [DllImport("user32.dll", EntryPoint = "GetAsyncKeyState")] static extern short KeyState(int vk);
         [DllImport("user32.dll")] static extern IntPtr GetShellWindow();
-        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
         [DllImport("kernel32.dll")] static extern uint GetCurrentProcessId();
 
         // Test builds steer pointer and input here
@@ -339,7 +338,7 @@ namespace Deskmate
                 // Class and owner read once per window
                 fgSeen = fg;
                 uint pid;
-                GetWindowThreadProcessId(fg, out pid);
+                Native.GetWindowThreadProcessId(fg, out pid);
                 fgClass.Length = 0;
                 Native.GetClassName(fg, fgClass, fgClass.Capacity);
                 string cls = fgClass.ToString();

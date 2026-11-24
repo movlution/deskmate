@@ -761,8 +761,8 @@ namespace Deskmate
             string meta = notifBurst > 1 ? notifBurst + Lang.T(" pesan · ") + item.AppName : item.AppName;
             float mw = Math.Min(w * 0.35f, p.Measure(meta, Ink.Caption));
             p.Text(meta, Ink.Caption, p.T.Sub, w - 22, cy - 10, mw, StringAlignment.Far);
-            p.Text(NotifTitle(item), Ink.Headline, p.T.Text, 66, cy - 10, Math.Max(40, w - 66 - 22 - mw - 12), StringAlignment.Near);
-            p.Text(NotifBody(item), Ink.Callout, p.T.Sub, 66, cy + 10, w - 66 - 22, StringAlignment.Near);
+            p.NotifText(NotifTitle(item), Ink.Headline, p.T.Text, 66, cy - 10, Math.Max(40, w - 66 - 22 - mw - 12), StringAlignment.Near);
+            p.NotifText(NotifBody(item), Ink.Callout, p.T.Sub, 66, cy + 10, w - 66 - 22, StringAlignment.Near);
             AddHit(new RectangleF(0, 0, w, h), "notifOpen", delegate { OpenNotifApp(item); }, null, NotifAppMenuAction(item));
         }
 
@@ -801,7 +801,7 @@ namespace Deskmate
             var semi = Ink.Semi(13.5f);
             string pct = battery + "%";
             float x = CenterStart(w, 44, title, semi, pct, semi, 60);
-            p.Battery(x, cy, batteryFill.Value, p.T.Text, onAc);
+            p.Battery(x, cy, batteryFill.Value, onAc ? p.T.Positive : p.T.Text, onAc);
             p.Text(title, semi, p.T.Text, x + 44, cy, w - x - 60, StringAlignment.Near);
             p.Text(pct, semi, p.T.Sub, x + 44 + p.Measure(title, semi) + 14, cy, 60, StringAlignment.Near);
         }

@@ -38,17 +38,30 @@ namespace Deskmate
         public static bool Open(NotifItem item)
         {
             string launch, activation;
-            if (!Payload(item.Id, out launch, out activation) || string.IsNullOrEmpty(launch)) return false;
-            if (activation == "protocol") return OpenUri(launch);
-            var clsid = ActivatorFor(item.AppId);
-            if (clsid == null) return false;
+            if (Payload(item.Id, out launch, out activation) && !string.IsNullOrEmpty(launch))
+            {
+                if (activation == "protocol") return OpenUri(launch);
+                var clsid = ActivatorFor(item.AppId);
+                return clsid != null && Activate(clsid.Value, item.AppId, launch);
+            }
+            // Discord builds Electron toasts without a launch attribute. Its
+            // activator still routes a click by the toast tag, which is the
+            // Electron notification id stored beside the payload.
+            string args = DiscordArgs(item.Tag);
+            if (args == null || !IsDiscord(item.AppId)) return false;
+            var activator = ActivatorFor(item.AppId);
+            return activator != null && Activate(activator.Value, item.AppId, args);
+        }
+
+        static bool Activate(Guid clsid, string appId, string args)
+        {
             object obj = null;
             try
             {
-                obj = Activator.CreateInstance(Type.GetTypeFromCLSID(clsid.Value));
+                obj = Activator.CreateInstance(Type.GetTypeFromCLSID(clsid));
                 // The app may take the foreground, as from the Action Center
                 AllowSetForegroundWindow(-1);
-                ((INotificationActivationCallback)obj).Activate(item.AppId, launch, IntPtr.Zero, 0);
+                ((INotificationActivationCallback)obj).Activate(appId, args, IntPtr.Zero, 0);
                 return true;
             }
             catch (Exception ex) { Log.Write("notif activate: " + ex.Message); return false; }
@@ -116,11 +129,70 @@ namespace Deskmate
                         if (k != null && Guid.TryParse(Convert.ToString(k.GetValue("CustomActivator")), out g)) found = g;
                     }
                     if (found == null && aumid.Contains("!")) found = FromManifest(aumid.Substring(0, aumid.IndexOf('!')));
+                    // Discord's Electron build registers its toast activator as
+                    // a LocalServer32 CLSID instead of putting it on the app id.
+                    if (found == null && IsDiscord(aumid)) found = FromClsidServer(aumid);
                 }
                 catch (Exception ex) { Log.Write("notif activator: " + ex.Message); }
                 activators[aumid] = found;
                 return found;
             }
+        }
+
+        static bool IsDiscord(string aumid)
+        {
+            return !string.IsNullOrEmpty(aumid) && aumid.IndexOf("discord", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // Electron's WindowsToastActivator parses type=click&tag=<notification id>
+        static string DiscordArgs(string tag)
+        {
+            if (string.IsNullOrEmpty(tag) || tag.Length > 128) return null;
+            for (int i = 0; i < tag.Length; i++)
+            {
+                char c = tag[i];
+                if (!(char.IsLetterOrDigit(c) || c == '-' || c == '_')) return null;
+            }
+            return "type=click&tag=" + tag;
+        }
+
+        // com.squirrel.Discord.Discord -> Discord.exe
+        static Guid? FromClsidServer(string aumid)
+        {
+            int dot = aumid.LastIndexOf('.');
+            string name = dot >= 0 && dot + 1 < aumid.Length ? aumid.Substring(dot + 1) : aumid;
+            if (name.Length == 0) return null;
+            string exe = name + ".exe";
+            Guid? found = ClsidForServer(Registry.CurrentUser, exe);
+            return found ?? ClsidForServer(Registry.LocalMachine, exe);
+        }
+
+        static Guid? ClsidForServer(RegistryKey root, string exe)
+        {
+            try
+            {
+                using (var classes = root.OpenSubKey(@"Software\Classes\CLSID"))
+                {
+                    if (classes == null) return null;
+                    foreach (var name in classes.GetSubKeyNames())
+                    {
+                        Guid g;
+                        if (!Guid.TryParse(name, out g)) continue;
+                        using (var key = classes.OpenSubKey(name))
+                        {
+                            if (key == null || Convert.ToInt32(key.GetValue("CustomActivator", 0)) == 0) continue;
+                            using (var server = key.OpenSubKey("LocalServer32"))
+                            {
+                                if (server == null) continue;
+                                string path = Convert.ToString(server.GetValue("")).Trim().Trim('"');
+                                if (path.Length > 0 && string.Equals(Path.GetFileName(path), exe, StringComparison.OrdinalIgnoreCase)) return g;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) { Log.Write("notif clsid: " + ex.Message); }
+            return null;
         }
 
         // Family Name_PublisherId; the main package ends in "__PublisherId"

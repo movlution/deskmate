@@ -202,7 +202,7 @@ namespace Deskmate
                 if (isle.hasBattery)
                 {
                     bool low = isle.battery <= 20 && !isle.onAc;
-                    p.Battery(Pad + 4, cy, isle.battery / 100f, low ? p.T.Negative : p.T.Text, isle.onAc);
+                    p.Battery(Pad + 4, cy, isle.battery / 100f, low ? p.T.Negative : isle.onAc ? p.T.Positive : p.T.Text, isle.onAc);
                     p.Text(Ink.Percent(isle.battery), Ink.Semi(13f), low ? p.T.Negative : p.T.Text, Pad + 40, cy, 60, StringAlignment.Near);
                     p.Text(isle.onAc ? Lang.T("mengisi daya") : Lang.T("Baterai"), Ink.Small(11.5f), p.T.Sub, Pad + 84, cy, 120, StringAlignment.Near);
                 }
@@ -346,7 +346,7 @@ namespace Deskmate
                 var pill = new RectangleF(Pad + 4, ListTop + 46, pw, 32);
                 Hit(pill, actionId);
                 bool hover = hotId == actionId, down = pressId == actionId;
-                p.FillRound(pill, 16, down ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.22f) : hover ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent);
+                p.FillRound(pill, 16, down ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.22f) : hover ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent);
                 p.TextCenter(actionLabel, Ink.Semi(12f), p.T.OnAccent, pill.X + pill.Width / 2, pill.Y + pill.Height / 2);
             }
 
@@ -365,7 +365,7 @@ namespace Deskmate
                 var join = new RectangleF(box.Right + 8, box.Y, 100, box.Height);
                 bool ready = password.Length >= 8;
                 if (ready) Hit(join, "join");
-                p.FillRound(join, box.Height / 2, ready ? (hotId == "join" ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent) : p.T.Fill);
+                p.FillRound(join, box.Height / 2, ready ? (hotId == "join" ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent) : p.T.Fill);
                 p.TextCenter(Lang.T("Sambungkan"), Ink.Semi(12f), ready ? p.T.OnAccent : p.T.Faint, join.X + join.Width / 2, cy);
             }
 

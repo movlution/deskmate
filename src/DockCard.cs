@@ -120,7 +120,7 @@ namespace Deskmate
                 int none = unchecked((int)0xFFFFFFFE), square = 1;
                 DwmSetWindowAttribute(Handle, 34, ref none, 4);
                 DwmSetWindowAttribute(Handle, 33, ref square, 4);
-                if (dock.Glass && !CompGlass.Available) Native.SetWindowDisplayAffinity(Handle, Native.WDA_EXCLUDEFROMCAPTURE);
+                if (dock.Glass && !CompGlass.Available && !(isle != null && isle.WallGlassOn)) Native.SetWindowDisplayAffinity(Handle, Native.WDA_EXCLUDEFROMCAPTURE);
             }
 
             protected override void WndProc(ref Message m)
@@ -295,19 +295,46 @@ namespace Deskmate
                 baseY = top;
                 if (pw2 != cw || ph2 != ch) MakeCanvas(pw2, ph2);
                 Bounds = new Rectangle(left, top + Rise(), pw2, ph2);
-                if (dock.Glass && !CompGlass.Available)
+                if (dock.Glass && (!CompGlass.Available || (isle != null && isle.WallGlassOn)))
                 {
                     if (frost == null)
                     {
                         frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
                         frost.Start();
                     }
-                    frost.Request(new Rectangle(left, top, pw2, ph2), Ink.Veil, Ink.Light, isle.LiquidOn);
+                    frost.Request(new Rectangle(left, top, pw2, ph2), Ink.Veil, Ink.Light, isle != null ? isle.Kind : GlassKind.Frost, true);
                 }
                 Render();
             }
 
             int Rise() { return (int)Math.Round((1 - open.Value) * 12 * scale); }
+
+            // wall.sync or the GPU path changed while the card was open
+            public void GlassChanged()
+            {
+                if (IsDisposed || !Visible || cw <= 0 || ch <= 0) return;
+                bool software = dock.Glass && (!CompGlass.Available || (isle != null && isle.WallGlassOn));
+                bool live = software && !(isle != null && isle.WallGlassOn);
+                if (Handle != IntPtr.Zero)
+                    Native.SetWindowDisplayAffinity(Handle, live ? Native.WDA_EXCLUDEFROMCAPTURE : 0);
+                if (software)
+                {
+                    if (frost == null)
+                    {
+                        frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
+                        frost.Start();
+                    }
+                    frost.Request(new Rectangle(Location.X, baseY, cw, ch), Ink.Veil, Ink.Light, isle != null ? isle.Kind : GlassKind.Frost, true);
+                }
+                else if (frost != null)
+                {
+                    frost.Stop();
+                    frost = null;
+                    if (plate != null) { plate.Dispose(); plate = null; }
+                }
+                if (cardBackdrop != null) cardBackdrop.HideBackdrop();
+                Render();
+            }
 
             void TakePlate(DockPlate pl)
             {
@@ -370,6 +397,7 @@ namespace Deskmate
                 if (g == null || IsDisposed) return;
                 hits.Clear();
                 p.T = dock.Glass ? Ink.Base.OnGlass() : Ink.Base;
+                p.Shadow = dock.Glass && isle != null && GlassRecipe.NeedsShadow(isle.Kind);
                 p.HalfPx = 0.5f / scale;
                 float fade = Ease.Clamp01(open.Value);
                 p.Alpha = fade;
@@ -378,7 +406,8 @@ namespace Deskmate
                 g.ScaleTransform(scale, scale);
                 var r = new RectangleF(0.5f, 0.5f, cw / scale - 1, ch / scale - 1);
                 float radius = 16;
-                bool gpu = dock.Glass && CompGlass.Available;
+                bool gpu = dock.Glass && CompGlass.Available && !(isle != null && isle.WallGlassOn);
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
                 using (var path = Ink.Round(r, radius))
                 {
                     var st = g.Save();
@@ -395,11 +424,17 @@ namespace Deskmate
                         }
                         g.Restore(inner);
                     }
-                    g.FillPath(p.B(Ink.A(Ink.Veil, gpu ? 0.14f * fade : (plate != null && dock.Glass ? 0.3f : 0.94f))), path);
-                    using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 40), Color.FromArgb((int)(fade * (Ink.Light ? 80 : 22)), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
+                    float veil;
+                    if (gpu) veil = GlassRecipe.Overlay(kind, true, false) * fade;
+                    else if (plate != null && dock.Glass) veil = GlassRecipe.PlateVeil(kind);
+                    else veil = 0.94f;
+                    g.FillPath(p.B(Ink.A(Ink.Veil, veil)), path);
+                    int topWash = dock.Glass ? GlassRecipe.TopWash(kind, Ink.Light) : (Ink.Light ? 0 : 22);
+                    using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 40), Color.FromArgb((int)(fade * topWash), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
                         g.FillRectangle(lg, r.X, r.Y, r.Width, 39);
                     g.Restore(st);
-                    g.DrawPath(p.P(Color.FromArgb(Ink.Light ? 70 : 40, p.T.Highlight), 1f), path);
+                    int borderA = dock.Glass ? GlassRecipe.Border(kind, Ink.Light) : (Ink.Light ? 70 : 40);
+                    g.DrawPath(p.P(Color.FromArgb(borderA, p.T.Highlight), 1f), path);
                 }
                 if (Kind == WindowsKind) DrawWindows(fade);
                 else DrawTray(fade);
@@ -423,14 +458,14 @@ namespace Deskmate
 
             void SyncCardBackdrop(float fade)
             {
-                if (!dock.Glass || !CompGlass.Available || !Visible || fade <= 0.01f)
+                if (!dock.Glass || !CompGlass.Available || (isle != null && isle.WallGlassOn) || !Visible || fade <= 0.01f)
                 {
                     if (cardBackdrop != null) cardBackdrop.HideBackdrop();
                     return;
                 }
                 if (cardBackdrop == null) cardBackdrop = new CompGlass.CompBackdrop();
-                bool liquid = isle != null && isle.LiquidOn;
-                var spec = CompGlass.Spec(liquid, true, scale, fade);
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
+                var spec = CompGlass.Spec(kind, true, scale, fade);
                 cardPills[0] = new CompGlass.PillSpec(0.5f * scale, 0.5f * scale, cw - scale, ch - scale, 16f * scale);
                 cardBackdrop.Sync(Handle, new Rectangle(Location.X, Location.Y, cw, ch), true, spec, cardPills, 1, null, null, scale, "");
             }
@@ -552,7 +587,7 @@ namespace Deskmate
                     {
                         hits.Add(new KeyValuePair<RectangleF, string>(close, "x" + id));
                         if (hot == "x" + id) p.FillRound(close, 6, p.T.Negative);
-                        p.Icon('\uE711', 9.5f, hot == "x" + id ? (p.T.IsDark ? p.T.Bg : Color.White) : p.T.Sub, close.X + close.Width / 2, close.Y + close.Height / 2);
+                        p.Icon('\uE711', 9.5f, hot == "x" + id ? (p.T.IsDark ? p.T.Bg : Ink.Sheen(255)) : p.T.Sub, close.X + close.Width / 2, close.Y + close.Height / 2);
                     }
                     // Seen only when Windows has no live picture of the window
                     p.FillRound(pic, 8, p.T.Fill);
@@ -689,6 +724,7 @@ namespace Deskmate
                 if (t == null) return;
                 if (id.StartsWith("x", StringComparison.Ordinal) || e.Button == MouseButtons.Middle)
                 {
+                    if (!ShellApp.Close(t.Win.H)) return;
                     int idx = thumbs.IndexOf(t);
                     var closedBox = t.Box;
                     ShatterCardBox(closedBox);
@@ -704,10 +740,9 @@ namespace Deskmate
                         frames.Start();
                     }
                     else dock.CardDone(this);
-                    ShellApp.Close(t.Win.H);
                     return;
                 }
-                if (e.Button == MouseButtons.Left) { ShellApp.Activate(t.Win.H); dock.CardDone(this); }
+                if (e.Button == MouseButtons.Left) { ShellApp.FocusDockApp(t.Win.H); dock.CardDone(this); }
             }
 
             TrayIcon TrayAt(string id)

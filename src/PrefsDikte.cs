@@ -228,12 +228,12 @@ namespace Deskmate
         {
             BackColor = KitInk.Window;
             Native.DarkFrame(Handle, !Ink.Light);
-            foreach (var b in boxes) { b.Font = new Font(Ink.MenuFamily, 13f * Ui, GraphicsUnit.Pixel); b.BackColor = KitInk.Group; b.ForeColor = KitInk.Text; Native.ThemeScroll(b); }
-            hint.Font = UiFont(12f);
+            foreach (var b in boxes) { b.Font = Ink.Text(13f * Ui); b.BackColor = KitInk.Group; b.ForeColor = KitInk.Text; Native.ThemeScroll(b); }
+            hint.Font = Ink.Text(12f * Ui);
             hint.ForeColor = KitInk.Sub;
             hint.BackColor = KitInk.Window;
-            tabs.Font = UiFont(12.5f);
-            foreach (var b in new[] { save, close }) b.Font = UiFont(12.5f);
+            tabs.Font = Ink.Text(12.5f * Ui);
+            foreach (var b in new[] { save, close }) b.Font = Ink.Text(12.5f * Ui);
             Place();
             Invalidate(true);
         }
@@ -246,9 +246,9 @@ namespace Deskmate
             float s = Ui;
             Func<float, int> u = v => (int)Math.Round(v * s);
             int m = u(24), w = ClientSize.Width - m * 2;
-            tabs.SetBounds(m, u(20), u(330), u(30));
+            tabs.SetBounds(m, u(20), u(330), u(36));
             hint.SetBounds(m + u(2), tabs.Bottom + u(10), w, u(36));
-            int btnH = u(30), bottom = ClientSize.Height - u(16) - btnH;
+            int btnH = u(36), bottom = ClientSize.Height - u(16) - btnH;
             well = new RectangleF(m, hint.Bottom + u(6), w, bottom - hint.Bottom - u(22));
             foreach (var b in boxes) b.SetBounds((int)well.X + u(14), (int)well.Y + u(12), (int)well.Width - u(20), (int)well.Height - u(20));
             save.Size = new Size(TextRenderer.MeasureText(save.Text, save.Font).Width + u(32), btnH);
@@ -258,7 +258,7 @@ namespace Deskmate
             Invalidate();
         }
 
-        // Text well with a quiet focus ring
+        // Text well; keyboard focus inside it draws the accent edge
         protected override void OnPaintBackground(PaintEventArgs e)
         {
             var g = e.Graphics;
@@ -266,11 +266,8 @@ namespace Deskmate
             if (well.Width <= 0) return;
             KitInk.Smooth(g);
             bool focused = Array.Exists(boxes, b => b.Focused);
-            using (var path = Ink.Round(well, 12 * Ui))
-            {
-                using (var b = new SolidBrush(KitInk.Group)) g.FillPath(b, path);
-                using (var pen = new Pen(focused ? KitInk.Faint : KitInk.Line, 1.2f)) g.DrawPath(pen, path);
-            }
+            KitInk.FillRound(g, well, Ink.RadiusControl * Ui, KitInk.Group);
+            KitInk.StrokeRound(g, well, Ink.RadiusControl * Ui, focused ? KitInk.Focus : KitInk.Line, focused ? 1.5f * Ui : 1f);
         }
 
         void Save()

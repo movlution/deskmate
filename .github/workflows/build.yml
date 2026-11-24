@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -12,15 +14,22 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build Deskmate.exe from source
         shell: cmd
         run: build.cmd
+      - name: Smoke test
+        shell: powershell
+        run: .\tests\run_e2e.ps1 -TestFile .\tests\smoke_test.ps1
+      - name: Feature regression checks
+        shell: powershell
+        run: .\tests\run_feature_checks.ps1
       - name: SHA-256
         shell: pwsh
         run: (Get-FileHash Deskmate.exe -Algorithm SHA256).Hash
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Deskmate
           path: Deskmate.exe

@@ -15,23 +15,82 @@ namespace Deskmate
         public static bool ByMouse;
 
         static Color O(Color c) { return Color.FromArgb(255, c.R, c.G, c.B); }
-        public static Color Window { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.0f : 0.04f)); } }
-        public static Color Side { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.05f : 0.07f)); } }
-        public static Color Group { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.035f : 0.09f)); } }
-        public static Color Line { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.12f : 0.15f)); } }
-        public static Color Hover { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.09f : 0.16f)); } }
+        // Calm material: a canvas in the wallpaper hue at the theme's lightness; null keeps the theme tone
+        public static Color? Canvas;
+        static Color Bg { get { return Canvas ?? Ink.Base.Bg; } }
+        // Calm surfaces from the tinted tones: canvas, navigation, cards, separators, hover.
+        public static Color Window { get { return O(Bg); } }
+        public static Color Side { get { return O(Ink.Mix(Bg, Color.Black, Ink.Light ? 0.035f : 0.055f)); } }
+        public static Color Group { get { return O(Ink.Light ? Ink.Mix(Bg, Color.White, 0.85f) : Ink.Mix(Bg, Ink.Base.Text, 0.07f)); } }
+        public static Color Line { get { return O(Ink.Light ? Ink.Mix(Bg, Color.Black, 0.10f) : Ink.Mix(Bg, Ink.Base.Text, 0.12f)); } }
+        public static Color Hover { get { return O(Ink.Light ? Ink.Mix(Bg, Color.Black, 0.06f) : Ink.Mix(Bg, Ink.Base.Text, 0.09f)); } }
         // Selected segment, lifted above its track
-        public static Color Raised { get { return Ink.Light ? Color.White : O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.3f)); } }
+        public static Color Raised { get { return Ink.Light ? Color.White : O(Ink.Mix(Bg, Ink.Base.Text, 0.22f)); } }
         public static Color Text { get { return O(Ink.Base.Text); } }
-        public static Color Sub { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.62f)); } }
-        // 0.65 in light mode guarantees >= 4.5:1 across Window, Side, Group, Hover, and Line
-        public static Color Faint { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.65f : 0.57f)); } }
+        // Light Sub sits above Faint so secondary text keeps hierarchy and >= 4.5:1 on Line
+        public static Color Sub { get { return O(Ink.Mix(Bg, Ink.Base.Text, Ink.Light ? 0.74f : 0.72f)); } }
+        // 0.69 light / 0.66 dark guarantee >= 4.5:1 across Window, Side, Group, Hover, and Line
+        public static Color Faint { get { return O(Ink.Mix(Bg, Ink.Base.Text, Ink.Light ? 0.69f : 0.66f)); } }
         // Disabled chrome (switch knob, slider fill): dimmer than tertiary text so
         // raising Faint for readability does not make disabled controls look enabled
-        public static Color Disabled { get { return O(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.30f)); } }
-        // Monochrome accent: switches use text colour
+        public static Color Disabled { get { return O(Ink.Mix(Bg, Ink.Base.Text, 0.30f)); } }
+        // Grafit accent: switches and primary buttons use text colour
         public static Color Accent { get { return O(Ink.Base.Accent); } }
         public static Color OnAccent { get { return O(Ink.Base.OnAccent); } }
+        // Keyboard focus: the accent where it reads on the canvas (>= 3:1), else primary ink
+        public static Color Focus { get { var a = Accent; return Island.Contrast(a, Window) >= 3 ? a : Text; } }
+        // Thumbs and knobs: paper white on light, ivory on night
+        public static Color Knob { get { return Ink.Light ? Color.White : Text; } }
+        // Canvas mixed toward primary ink: control fills that step evenly in both themes
+        public static Color Tint(float k) { return O(Ink.Mix(Bg, Ink.Base.Text, k)); }
+        // A colour pushed away from the ink drawn on it, so hover and press only gain contrast
+        public static Color Deepen(Color fill, Color ink, float k) { return Ink.Mix(fill, ink.GetBrightness() < 0.5f ? Color.White : Color.Black, k); }
+
+        // One brush, pen and path per UI thread: Kit paints allocate nothing
+        [ThreadStatic] static SolidBrush brush;
+        [ThreadStatic] static Pen pen;
+        [ThreadStatic] static GraphicsPath shape;
+
+        public static SolidBrush BrushOf(Color c)
+        {
+            if (brush == null) brush = new SolidBrush(c); else brush.Color = c;
+            return brush;
+        }
+
+        public static Pen PenOf(Color c, float width)
+        {
+            if (pen == null) pen = new Pen(c, width) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            else { pen.Color = c; pen.Width = width; }
+            return pen;
+        }
+
+        public static GraphicsPath Shape(RectangleF r, float radius)
+        {
+            if (shape == null) shape = new GraphicsPath(); else shape.Reset();
+            Ink.AddRound(shape, r, radius);
+            return shape;
+        }
+
+        public static void FillRound(Graphics g, RectangleF r, float radius, Color c) { g.FillPath(BrushOf(c), Shape(r, radius)); }
+        public static void StrokeRound(Graphics g, RectangleF r, float radius, Color c, float width) { g.DrawPath(PenOf(c, width), Shape(r, radius)); }
+
+        // Elevation 1: contact shadow plus a short falloff below, never a halo
+        public static void Lift(Graphics g, RectangleF r, float radius, float s)
+        {
+            var ink = Ink.Light ? Color.FromArgb(255, 0x2A, 0x20, 0x38) : Color.Black;
+            int a = Ink.Light ? 26 : 90;
+            FillRound(g, new RectangleF(r.X - 0.5f * s, r.Y + 1.5f * s, r.Width + s, r.Height + 0.5f * s), radius + 0.5f * s, Color.FromArgb(a / 2, ink));
+            FillRound(g, new RectangleF(r.X, r.Y + 0.75f * s, r.Width, r.Height), radius, Color.FromArgb(a, ink));
+        }
+
+        // Keyboard focus: 2px ring in Focus with a hairline of the surface inside it,
+        // so the ring reads against the canvas and against whatever fill it hugs
+        public static void FocusRing(Graphics g, RectangleF ring, float radius, Color surface, float s)
+        {
+            float inset = 1.5f * s;
+            StrokeRound(g, RectangleF.Inflate(ring, -inset, -inset), Math.Max(0, radius - inset), surface, 1.25f * s);
+            StrokeRound(g, ring, radius, Focus, 2f * s);
+        }
 
         // First opaque colour behind a control
         public static Color Under(Control c)
@@ -68,7 +127,7 @@ namespace Deskmate
                 var n = Ink.IconNudge(s[0], f.Size);
                 float half = g.PixelOffsetMode == PixelOffsetMode.HighQuality || g.PixelOffsetMode == PixelOffsetMode.Half ? 0.5f : 0;
                 float cx = r.X + r.Width / 2 + n.X + half, cy = r.Y + r.Height / 2 + n.Y + half;
-                using (var b = new SolidBrush(c)) g.DrawString(s, f, b, new RectangleF(cx - f.Size, cy - f.Size, f.Size * 2, f.Size * 2), glyphFormat);
+                g.DrawString(s, f, KitInk.BrushOf(c), new RectangleF(cx - f.Size, cy - f.Size, f.Size * 2, f.Size * 2), glyphFormat);
                 return;
             }
             var flags = TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
@@ -141,13 +200,13 @@ namespace Deskmate
         protected override void OnKeyUp(KeyEventArgs e) { if (KitInk.ByMouse) { KitInk.ByMouse = false; Invalidate(); } base.OnKeyUp(e); }
         protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
 
-        // Focus ring only for keyboard use
+        // Focus ring only for keyboard use, kept clear of the fill by a hairline of the surface
         protected void Ring(Graphics g, RectangleF r, float radius)
         {
             if (!Focused || !ShowFocusCues || KitInk.ByMouse) return;
-            var ring = Inside(RectangleF.Inflate(r, 2, 2), Width, Height);
-            using (var path = Ink.Round(ring, Math.Min(radius + 2, ring.Height / 2)))
-            using (var pen = new Pen(KitInk.Text, 2f)) g.DrawPath(pen, path);
+            float s = Ui, grow = 2.5f * s;
+            var ring = Inside(RectangleF.Inflate(r, grow, grow), Width, Height);
+            KitInk.FocusRing(g, ring, Math.Min(radius + grow, ring.Height / 2), KitInk.Under(this), s);
         }
 
         // Rings stay whole inside the control
@@ -157,10 +216,21 @@ namespace Deskmate
             return RectangleF.FromLTRB(x0, y0, Math.Max(x0 + 1, x1), Math.Max(y0 + 1, y1));
         }
 
-        protected void Fill(Graphics g, RectangleF r, float radius, Color c)
+        protected void Fill(Graphics g, RectangleF r, float radius, Color c) { KitInk.FillRound(g, r, radius, c); }
+    }
+
+    // Timers only request frames. Late frames sample the current time, not the next step.
+    struct KitGlide
+    {
+        float from;
+        int start;
+        public void Begin(float position) { from = position; start = Environment.TickCount; }
+
+        public float Sample(float target, float seconds)
         {
-            using (var path = Ink.Round(r, radius))
-            using (var b = new SolidBrush(c)) g.FillPath(b, path);
+            float t = unchecked((uint)(Environment.TickCount - start)) / (1000f * Anim.Response(seconds));
+            if (Anim.Reduced || t >= 1f) return target;
+            return from + (target - from) * Ease.OutCubic(t);
         }
     }
 
@@ -174,6 +244,7 @@ namespace Deskmate
         protected override void OnKeyUp(KeyEventArgs e) { if (KitInk.ByMouse) { KitInk.ByMouse = false; Invalidate(); } base.OnKeyUp(e); }
 
         float knob;
+        KitGlide travel;
         readonly Timer anim = new Timer { Interval = 15 };
 
         public KitSwitch()
@@ -184,11 +255,21 @@ namespace Deskmate
             anim.Tick += delegate
             {
                 float want = Checked ? 1 : 0;
-                knob += (want - knob) * (Anim.Reduced ? 1f : 0.35f);
-                if (Math.Abs(want - knob) < 0.01f) { knob = want; anim.Stop(); }
+                knob = travel.Sample(want, 0.15f);
+                if (knob == want) anim.Stop();
                 Invalidate();
             };
-            CheckedChanged += delegate { anim.Start(); };
+            CheckedChanged += delegate
+            {
+                float target = Checked ? 1 : 0;
+                if (!IsHandleCreated || !Visible || Anim.Reduced || knob == target)
+                {
+                    knob = target;
+                    anim.Stop();
+                }
+                else { travel.Begin(knob); anim.Start(); }
+                Invalidate();
+            };
         }
 
         protected override void OnCreateControl() { base.OnCreateControl(); knob = Checked ? 1 : 0; }
@@ -197,50 +278,91 @@ namespace Deskmate
         {
             var g = e.Graphics;
             KitInk.Smooth(g);
-            g.Clear(KitInk.Under(this));
+            var under = KitInk.Under(this);
+            g.Clear(under);
             float s = Height / 24f;
             var track = new RectangleF(1, (Height - 22 * s) / 2, 40 * s, 22 * s);
-            Color trackBg = Enabled ? Ink.Mix(KitInk.Line, KitInk.Accent, knob) : KitInk.Line;
-            if (hovered && Enabled) trackBg = Ink.Mix(trackBg, KitInk.Text, 0.06f);
-            using (var path = Ink.Round(track, 11 * s))
-            using (var b = new SolidBrush(trackBg)) g.FillPath(b, path);
+            bool live = Enabled;
+            // Off: quiet tinted track; on: accent. Disabled keeps a trace of the state.
+            Color trackBg = live ? Ink.Mix(KitInk.Line, KitInk.Accent, knob) : Ink.Mix(KitInk.Line, KitInk.Accent, 0.3f * knob);
+            if (hovered && live) trackBg = knob > 0.5f ? KitInk.Deepen(trackBg, KitInk.OnAccent, 0.08f) : Ink.Mix(trackBg, KitInk.Text, 0.07f);
+            KitInk.FillRound(g, track, track.Height / 2, trackBg);
 
-            float r = (hovered && Enabled ? 9.5f : 9f) * s;
+            float r = (hovered && live ? 8.5f : 8f) * s;
             float cx = track.X + 11 * s + knob * 18 * s, cy = track.Y + 11 * s;
-            Color knobColor = Enabled ? Ink.Mix(KitInk.Text, KitInk.OnAccent, knob) : KitInk.Disabled;
-            if (hovered && Enabled && knob == 0) knobColor = Ink.Mix(knobColor, KitInk.Window, 0.08f);
-            using (var b = new SolidBrush(knobColor)) g.FillEllipse(b, cx - r, cy - r, r * 2, r * 2);
+            var dot = new RectangleF(cx - r, cy - r, r * 2, r * 2);
+            // A small stretch in transit, round again at both stops.
+            if (live && !Anim.Reduced) dot.Inflate(6f * s * knob * (1f - knob), 0);
+            Color knobColor = live ? Ink.Mix(hovered ? Ink.Mix(KitInk.Sub, KitInk.Text, 0.35f) : KitInk.Sub, KitInk.OnAccent, knob) : KitInk.Disabled;
+            if (live) KitInk.Lift(g, dot, r, s * 0.6f);
+            KitInk.FillRound(g, dot, r, knobColor);
 
             if (Focused && ShowFocusCues && !KitInk.ByMouse)
             {
-                var ring = KitControl.Inside(RectangleF.Inflate(track, 2, 2), Width, Height);
-                using (var path = Ink.Round(ring, ring.Height / 2))
-                using (var pen = new Pen(KitInk.Text, 1.6f)) g.DrawPath(pen, path);
+                var ring = KitControl.Inside(RectangleF.Inflate(track, 2.5f * s, 2.5f * s), Width, Height);
+                KitInk.FocusRing(g, ring, ring.Height / 2, under, Math.Max(1f, s));
             }
         }
 
         protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
     }
 
-    // Pill choices; arrows move between
+    // Soft segmented choices; the thumb glides, arrows move between
     class KitSegmented : KitControl
     {
         public string[] Items = new string[0];
-        int selected;
+        int selected, hot = -1;
+        // Thumb position in segments, gliding toward the pick; -1 until first paint
+        float glide = -1;
+        KitGlide travel;
+        readonly Timer anim = new Timer { Interval = 15 };
         public event Action<int> Changed;
+
+        public KitSegmented()
+        {
+            anim.Tick += delegate
+            {
+                glide = travel.Sample(selected, 0.18f);
+                if (glide == selected) anim.Stop();
+                Invalidate();
+            };
+        }
 
         public int Selected
         {
             get { return selected; }
-            set { if (value == selected) return; selected = value; Invalidate(); AccessibilityNotifyClients(AccessibleEvents.Selection, selected); }
+            set
+            {
+                if (value == selected) return;
+                selected = value;
+                if (IsHandleCreated && Visible && glide >= 0 && glide != selected && !Anim.Reduced)
+                { travel.Begin(glide); anim.Start(); }
+                else { glide = selected; anim.Stop(); }
+                Invalidate();
+                AccessibilityNotifyClients(AccessibleEvents.Selection, selected);
+            }
         }
 
         RectangleF Cell(int i)
         {
-            // Active pill fills its segment fully
             float w = (Width - 1f) / Math.Max(1, Items.Length);
             return new RectangleF(i * w, 0, w, Height - 1);
         }
+
+        int HitCell(Point pt)
+        {
+            for (int i = 0; i < Items.Length; i++) if (Cell(i).Contains(pt)) return i;
+            return -1;
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            int at = HitCell(e.Location);
+            if (at != hot) { hot = at; Invalidate(); }
+        }
+
+        protected override void OnMouseLeave(EventArgs e) { hot = -1; base.OnMouseLeave(e); }
 
         void Pick(int i)
         {
@@ -255,7 +377,8 @@ namespace Deskmate
             base.OnMouseUp(e);
             if (!Enabled || e.Button != MouseButtons.Left) return;
             Focus();
-            for (int i = 0; i < Items.Length; i++) if (Cell(i).Contains(e.Location)) { Pick(i); return; }
+            int at = HitCell(e.Location);
+            if (at >= 0) Pick(at);
         }
 
         protected override bool IsInputKey(Keys key) { return key == Keys.Left || key == Keys.Right || key == Keys.Home || key == Keys.End || base.IsInputKey(key); }
@@ -279,20 +402,24 @@ namespace Deskmate
             var g = e.Graphics;
             KitInk.Smooth(g);
             g.Clear(KitInk.Under(this));
-            var box = new RectangleF(0, 0, Width - 1, Height - 1);
-            Fill(g, box, Height / 2f, KitInk.Line);
-            var f = new Font(Ink.MenuFamily, 12.5f * Ui, FontStyle.Regular, GraphicsUnit.Pixel);
-            var fs = new Font(Ink.MenuFamily, 12.5f * Ui, FontStyle.Regular, GraphicsUnit.Pixel);
-            for (int i = 0; i < Items.Length; i++)
+            float s = Ui, radius = Math.Min(Ink.RadiusControl * s, (Height - 1) * 0.35f), inset = 3 * s;
+            var box = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
+            Fill(g, box, radius, KitInk.Line);
+            if (glide < 0) glide = selected;
+            if (selected >= 0 && selected < Items.Length)
             {
-                var c = Cell(i);
-                if (i == selected) Fill(g, c, c.Height / 2, Enabled ? KitInk.Raised : KitInk.Group);
-                KitInk.Draw(g, Items[i], i == selected ? fs : f, !Enabled ? KitInk.Faint : i == selected ? KitInk.Text : KitInk.Sub, c, ContentAlignment.MiddleCenter);
+                float w = (Width - 1f) / Items.Length;
+                var thumb = new RectangleF(glide * w + inset, inset, w - 2 * inset, Height - 1 - 2 * inset);
+                if (Enabled) KitInk.Lift(g, thumb, radius - inset, s);
+                Fill(g, thumb, radius - inset, Enabled ? KitInk.Raised : KitInk.Group);
             }
-            f.Dispose();
-            fs.Dispose();
-            Ring(g, box, Height / 2f);
+            Font f = Ink.Text(12.5f * s), fs = Ink.Semi(12.5f * s);
+            for (int i = 0; i < Items.Length; i++)
+                KitInk.Draw(g, Items[i], i == selected ? fs : f, !Enabled ? KitInk.Faint : i == selected || i == hot ? KitInk.Text : KitInk.Sub, Cell(i), ContentAlignment.MiddleCenter);
+            Ring(g, box, radius);
         }
+
+        protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
 
         protected override AccessibleObject CreateAccessibilityInstance() { return new Access(this); }
 
@@ -325,781 +452,4 @@ namespace Deskmate
         }
     }
 
-    // Curated accent swatch picker ala macOS System Settings
-    class KitPalette : KitControl
-    {
-        public string[][] Presets = new string[0][];
-        public string[][] PresetsLight = new string[0][];
-        int selected = -1;
-        int hovered = -1;
-        public event Action<int, string> Picked;
-
-        public KitPalette()
-        {
-            SetStyle(ControlStyles.Selectable | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
-            TabStop = true;
-            Cursor = Cursors.Hand;
-        }
-
-        public int SelectedIndex
-        {
-            get { return selected; }
-            set { if (selected == value) return; selected = value; Invalidate(); }
-        }
-
-        public string SelectedHex
-        {
-            get { return selected >= 0 && selected < Presets.Length ? Presets[selected][1] : ""; }
-            set
-            {
-                selected = -1;
-                for (int i = 0; i < Presets.Length; i++)
-                {
-                    if (Presets[i][1] == value || (PresetsLight != null && i < PresetsLight.Length && PresetsLight[i][1] == value))
-                    {
-                        selected = i;
-                        break;
-                    }
-                }
-                Invalidate();
-            }
-        }
-
-        float ItemStep { get { return Presets.Length > 0 ? Math.Min(30f * Ui, (Width - 4f * Ui) / Presets.Length) : 30f * Ui; } }
-
-        PointF Center(int i)
-        {
-            float step = ItemStep;
-            float totalW = step * Presets.Length;
-            float startX = (Width - totalW) / 2f + step / 2f;
-            return new PointF(startX + i * step, Height / 2f);
-        }
-
-        int HitTest(Point pt)
-        {
-            float r = 12f * Ui;
-            for (int i = 0; i < Presets.Length; i++)
-            {
-                var c = Center(i);
-                float dx = pt.X - c.X, dy = pt.Y - c.Y;
-                if (dx * dx + dy * dy <= r * r) return i;
-            }
-            return -1;
-        }
-
-        protected override void OnMouseMove(MouseEventArgs e)
-        {
-            base.OnMouseMove(e);
-            int hit = HitTest(e.Location);
-            if (hit != hovered) { hovered = hit; Invalidate(); }
-        }
-
-        protected override void OnMouseLeave(EventArgs e)
-        {
-            base.OnMouseLeave(e);
-            hovered = -1;
-            Invalidate();
-        }
-
-        protected override void OnMouseUp(MouseEventArgs e)
-        {
-            base.OnMouseUp(e);
-            if (e.Button == MouseButtons.Left)
-            {
-                int hit = HitTest(e.Location);
-                if (hit >= 0) Pick(hit);
-            }
-        }
-
-        void Pick(int i)
-        {
-            if (i < 0 || i >= Presets.Length) return;
-            selected = i;
-            Invalidate();
-            var table = Ink.Light && PresetsLight != null && PresetsLight.Length == Presets.Length ? PresetsLight : Presets;
-            var h = Picked;
-            if (h != null) h(i, table[i][1]);
-        }
-
-        protected override bool IsInputKey(Keys key) { return key == Keys.Left || key == Keys.Right || base.IsInputKey(key); }
-
-        protected override void OnKeyDown(KeyEventArgs e)
-        {
-            base.OnKeyDown(e);
-            if (e.KeyCode == Keys.Left) Pick(Math.Max(0, (selected >= 0 ? selected : 0) - 1));
-            else if (e.KeyCode == Keys.Right) Pick(Math.Min(Presets.Length - 1, (selected >= 0 ? selected : 0) + 1));
-            else if (e.KeyCode == Keys.Space || e.KeyCode == Keys.Enter) { if (selected >= 0) Pick(selected); }
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            KitInk.Smooth(g);
-            g.Clear(KitInk.Under(this));
-            var table = Ink.Light && PresetsLight != null && PresetsLight.Length == Presets.Length ? PresetsLight : Presets;
-            float r = 7.5f * Ui;
-
-            for (int i = 0; i < Presets.Length; i++)
-            {
-                var pt = Center(i);
-                Color dotColor;
-                string hex = table[i][1];
-                if (string.IsNullOrEmpty(hex))
-                {
-                    dotColor = Ink.Light ? Color.FromArgb(255, 142, 142, 147) : Color.FromArgb(255, 160, 160, 165);
-                }
-                else
-                {
-                    try { dotColor = ColorTranslator.FromHtml(hex); }
-                    catch { dotColor = KitInk.Text; }
-                }
-
-                if (i == selected)
-                {
-                    float ringR = r + 3.5f * Ui;
-                    using (var pen = new Pen(dotColor, 2f * Ui))
-                        g.DrawEllipse(pen, pt.X - ringR, pt.Y - ringR, ringR * 2, ringR * 2);
-                }
-                else if (i == hovered)
-                {
-                    float ringR = r + 3f * Ui;
-                    using (var pen = new Pen(Color.FromArgb(90, dotColor), 1.5f * Ui))
-                        g.DrawEllipse(pen, pt.X - ringR, pt.Y - ringR, ringR * 2, ringR * 2);
-                }
-
-                using (var b = new SolidBrush(dotColor))
-                    g.FillEllipse(b, pt.X - r, pt.Y - r, r * 2, r * 2);
-            }
-
-            if (Focused && ShowFocusCues && !KitInk.ByMouse)
-            {
-                var ring = KitControl.Inside(new RectangleF(0, 0, Width, Height), Width, Height);
-                using (var path = Ink.Round(ring, 8 * Ui))
-                using (var pen = new Pen(KitInk.Text, 1.5f)) g.DrawPath(pen, path);
-            }
-        }
-    }
-
-    // Slider: arrows, Home/End, drag
-    class KitSlider : KitControl
-    {
-        public int Minimum, Maximum = 100, Step = 1, Value;
-        public Func<int, string> Format = v => v.ToString();
-        // Value text left of the track
-        public bool ShowValue;
-        public event Action<int> Changed;
-        bool dragging;
-
-        void Set(int v)
-        {
-            v = Math.Max(Minimum, Math.Min(Maximum, (int)Math.Round((double)(v - Minimum) / Step) * Step + Minimum));
-            if (v == Value) return;
-            Value = v;
-            Invalidate();
-            AccessibilityNotifyClients(AccessibleEvents.ValueChange, -1);
-            var h = Changed;
-            if (h != null) h(v);
-        }
-
-        float LabelW { get { return ShowValue ? 84 * Ui : 0; } }
-
-        RectangleF Track { get { float s = Ui, l = LabelW; return new RectangleF(l + 10 * s, Height / 2f - 3 * s, Width - l - 20 * s, 6 * s); } }
-
-        int At(int x) { var t = Track; return Minimum + (int)Math.Round((Maximum - Minimum) * Ease.Clamp01((x - t.X) / Math.Max(1, t.Width))); }
-
-        protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); Focus(); dragging = true; Capture = true; Set(At(e.X)); }
-        protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); if (dragging) Set(At(e.X)); }
-        protected override void OnMouseUp(MouseEventArgs e) { base.OnMouseUp(e); dragging = false; Capture = false; Invalidate(); }
-
-        protected override bool IsInputKey(Keys key) { return key == Keys.Left || key == Keys.Right || key == Keys.Home || key == Keys.End || base.IsInputKey(key); }
-
-        protected override void OnKeyDown(KeyEventArgs e)
-        {
-            base.OnKeyDown(e);
-            if (e.KeyCode == Keys.Left) Set(Value - Step);
-            else if (e.KeyCode == Keys.Right) Set(Value + Step);
-            else if (e.KeyCode == Keys.Home) Set(Minimum);
-            else if (e.KeyCode == Keys.End) Set(Maximum);
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            KitInk.Smooth(g);
-            g.Clear(KitInk.Under(this));
-            float s = Ui, f = (float)(Value - Minimum) / Math.Max(1, Maximum - Minimum);
-            var t = Track;
-            Fill(g, t, t.Height / 2, KitInk.Line);
-            Fill(g, new RectangleF(t.X, t.Y, Math.Max(t.Height, t.Width * f), t.Height), t.Height / 2, Enabled ? KitInk.Text : KitInk.Disabled);
-            float r = ((dragging || Hovered) && Enabled ? 9 : 8) * s, cx = t.X + t.Width * f, cy = t.Y + t.Height / 2;
-            using (var b = new SolidBrush(Enabled ? KitInk.Text : KitInk.Disabled)) g.FillEllipse(b, cx - r, cy - r, r * 2, r * 2);
-            using (var pen = new Pen(Enabled ? KitInk.Line : KitInk.Disabled, 1f)) g.DrawEllipse(pen, cx - r, cy - r, r * 2, r * 2);
-            if (ShowValue)
-                using (var f2 = new Font(Ink.MenuFamily, 12f * s, GraphicsUnit.Pixel))
-                    TextRenderer.DrawText(g, Format(Value), f2, new Rectangle(0, 0, (int)LabelW, Height), Enabled ? KitInk.Sub : KitInk.Faint,
-                        TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
-            Ring(g, new RectangleF(1, 1, Width - 3, Height - 3), Height / 2f);
-        }
-
-        protected override AccessibleObject CreateAccessibilityInstance() { return new Access(this); }
-
-        class Access : ControlAccessibleObject
-        {
-            readonly KitSlider owner;
-            public Access(KitSlider owner) : base(owner) { this.owner = owner; }
-            public override AccessibleRole Role { get { return AccessibleRole.Slider; } }
-            public override string Value { get { return owner.Format(owner.Value); } set { int v; if (int.TryParse(value, out v)) owner.Set(v); } }
-        }
-    }
-
-    // Pill-drawn real Button for focus, readers
-    class KitButton : Button
-    {
-        public bool Primary;
-        bool hovered, pressed;
-
-        public KitButton()
-        {
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
-            FlatStyle = FlatStyle.Flat;
-            FlatAppearance.BorderSize = 0;
-            BackColor = Color.Transparent;
-            UseVisualStyleBackColor = false;
-        }
-
-        protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); hovered = true; Invalidate(); }
-        protected override void OnMouseDown(MouseEventArgs e)
-        {
-            KitInk.ByMouse = true;
-            if (e.Button == MouseButtons.Left) { pressed = true; Invalidate(); }
-            base.OnMouseDown(e);
-        }
-        protected override void OnMouseUp(MouseEventArgs e)
-        {
-            base.OnMouseUp(e);
-            if (pressed) { pressed = false; Invalidate(); }
-        }
-        protected override void OnKeyUp(KeyEventArgs e) { if (KitInk.ByMouse) { KitInk.ByMouse = false; Invalidate(); } base.OnKeyUp(e); }
-        protected override void OnMouseLeave(EventArgs e)
-        {
-            base.OnMouseLeave(e);
-            hovered = false;
-            if (pressed) { pressed = false; }
-            Invalidate();
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            KitInk.Smooth(g);
-            g.Clear(KitInk.Under(this));
-            bool ringOn = Focused && ShowFocusCues && !KitInk.ByMouse;
-            var kw = FindForm() as KitWindow;
-            float s = kw != null ? kw.Ui : (Height > 0 ? Height / 32f : 1f);
-            if (s <= 0) s = 1f;
-
-            // Focused pill shrinks so its ring fits
-            var r = ringOn ? new RectangleF(3.5f * s, 3.5f * s, Width - 7 * s, Height - 7 * s) : new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-            Color bg;
-            if (!Enabled)
-            {
-                bg = KitInk.Line;
-            }
-            else if (Primary)
-            {
-                bg = pressed ? (Ink.Light ? Color.FromArgb(255, 0, 0, 0) : Ink.Mix(KitInk.Text, KitInk.Window, 0.30f))
-                             : (hovered ? Ink.Mix(KitInk.Text, KitInk.Window, 0.15f) : KitInk.Text);
-            }
-            else
-            {
-                bg = pressed ? (Ink.Light ? Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.20f) : Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.25f))
-                             : (hovered ? KitInk.Hover : KitInk.Line);
-            }
-
-            if (pressed && Enabled) r.Offset(0, 0.75f * s);
-
-            using (var path = Ink.Round(r, r.Height / 2f))
-            using (var b = new SolidBrush(bg)) g.FillPath(b, path);
-
-            KitInk.Draw(g, Text, Font, !Enabled ? KitInk.Faint : Primary ? KitInk.Window : KitInk.Text, r, ContentAlignment.MiddleCenter);
-            if (ringOn)
-            {
-                var ring = new RectangleF(1, 1, Width - 2.5f, Height - 2.5f);
-                Color ringColor = KitInk.Accent;
-                if (Island.Contrast(ringColor, bg) < 3.0 || (Primary && (ringColor == KitInk.Text || ringColor == bg)))
-                    ringColor = Ink.Light ? Color.FromArgb(255, 22, 104, 232) : Color.FromArgb(255, 59, 130, 246);
-                using (var path = Ink.Round(ring, ring.Height / 2f))
-                using (var pen = new Pen(ringColor, 1.8f)) g.DrawPath(pen, path);
-            }
-        }
-    }
-
-    // Check row: pill with a drawn tick, so no native CheckBox box leaks in
-    class KitCheck : KitButton
-    {
-        bool on, hovered;
-
-        public event EventHandler CheckedChanged;
-
-        protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); hovered = true; Invalidate(); }
-        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hovered = false; Invalidate(); }
-
-        public bool Checked { get { return on; } set { if (on == value) return; on = value; var h = CheckedChanged; if (h != null) h(this, EventArgs.Empty); Invalidate(); } }
-
-        protected override void OnClick(EventArgs e) { base.OnClick(e); Checked = !on; }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            KitInk.Smooth(g);
-            g.Clear(KitInk.Under(this));
-            bool ringOn = Focused && ShowFocusCues && !KitInk.ByMouse;
-            var r = ringOn ? new RectangleF(3.5f, 3.5f, Width - 7, Height - 7) : new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-            using (var path = Ink.Round(r, r.Height / 2f))
-            using (var b = new SolidBrush(hovered ? KitInk.Hover : KitInk.Line)) g.FillPath(b, path);
-            float box = Math.Min(16f, r.Height - 8f), cy = r.Y + r.Height / 2f, cx = r.X + 7f + box / 2f;
-            var tick = new RectangleF(cx - box / 2, cy - box / 2, box, box);
-            using (var pen = new Pen(on ? KitInk.Text : KitInk.Faint, 1.4f))
-                using (var path = Ink.Round(tick, 4)) g.DrawPath(pen, path);
-            if (on)
-                using (var pen = new Pen(KitInk.Text, 1.8f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
-                    g.DrawLines(pen, new[] { new PointF(cx - box * 0.3f, cy), new PointF(cx - box * 0.06f, cy + box * 0.22f), new PointF(cx + box * 0.32f, cy - box * 0.22f) });
-            KitInk.Draw(g, Text, Font, KitInk.Text, new RectangleF(r.X + 7f + box + 8f, r.Y, r.Width - box - 22f, r.Height), ContentAlignment.MiddleLeft);
-            if (ringOn)
-            {
-                var ring = new RectangleF(1, 1, Width - 2.5f, Height - 2.5f);
-                using (var path = Ink.Round(ring, ring.Height / 2f))
-                using (var pen = new Pen(KitInk.Text, 1.6f)) g.DrawPath(pen, path);
-            }
-        }
-    }
-
-    // List choice: button opening styled menu
-    class KitPopup : KitButton
-    {
-        public string[] Items = new string[0];
-        int selected;
-        public event Action<int> Changed;
-
-        public int Selected { get { return selected; } set { selected = value; Text = (value >= 0 && value < Items.Length ? Items[value] : "") + "  ▾"; } }
-
-        public void Pick(int i)
-        {
-            if (i < 0 || i >= Items.Length || i == selected) return;
-            Selected = i;
-            var h = Changed;
-            if (h != null) h(i);
-        }
-
-        protected override void OnClick(EventArgs e)
-        {
-            base.OnClick(e);
-            var m = new ContextMenuStrip();
-            for (int i = 0; i < Items.Length; i++)
-            {
-                int at = i;
-                m.Items.Add(new ToolStripMenuItem(Items[i], null, delegate
-                {
-                    Selected = at;
-                    var h = Changed;
-                    if (h != null) h(at);
-                }) { Checked = i == selected });
-            }
-            MenuLook.Apply(m);
-            m.Closed += delegate { BeginInvoke(new Action(m.Dispose)); };
-            m.Show(this, new Point(0, Height));
-        }
-    }
-
-    // Rounded group of rows with hairline separators
-    class KitGroup : Panel
-    {
-        public KitGroup()
-        {
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            BackColor = KitInk.Group;
-        }
-
-        protected override void OnPaintBackground(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            KitInk.Smooth(g);
-            g.Clear(Parent != null ? Parent.BackColor : KitInk.Window);
-            var w = FindForm() as KitWindow;
-            float s = w != null ? w.Ui : 1;
-            using (var path = Ink.Round(new RectangleF(0, 0, Width - 1, Height - 1), 12 * s))
-            using (var b = new SolidBrush(KitInk.Group)) g.FillPath(b, path);
-            using (var pen = new Pen(KitInk.Line, 1f))
-                for (int i = 1; i < Controls.Count; i++)
-                {
-                    int y = Controls[i].Top;
-                    var row = Controls[i] as KitRow;
-                    float from = row != null && row.Glyph != '\0' ? (56 + row.Lead) * s : 16 * s;
-                    g.DrawLine(pen, from, y, Width - 16 * s, y);
-                }
-        }
-    }
-
-    // Setting row: title, detail, control right
-    class KitRow : Panel
-    {
-        public string Title = "", Detail = "";
-        // Tiny tail after the title, e.g. ".0.2"
-        public string Suffix = "";
-        public Control Field;
-        // Icon tile before the title
-        public char Glyph;
-        public const char MarkGlyph = '\u0001';
-        // Room left of the icon, e.g. a grip
-        public float Lead;
-        // Room kept right of the text, e.g. a chevron
-        public float Trail;
-        public bool Divider;
-
-        public KitRow()
-        {
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
-            BackColor = Color.Transparent;
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            var w = FindForm() as KitWindow;
-            float s = w != null ? w.Ui : 1;
-            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-            float right = Field != null ? Field.Left - 12 * s : Width - (16 + Trail) * s;
-            float x = (Glyph != '\0' ? 56 : 16) * s + Lead * s;
-            if (Glyph != '\0') DrawGlyph(g, s);
-            // Hairline between grip and icon
-            if (Divider)
-                using (var pen = new Pen(Ink.Mix(KitInk.Line, KitInk.Sub, 0.45f), Math.Max(1f, s)))
-                    g.DrawLine(pen, (Lead - 2) * s, Height * 0.3f, (Lead - 2) * s, Height * 0.7f);
-            using (var f = new Font(Ink.MenuFamily, 13.5f * s, GraphicsUnit.Pixel))
-            using (var d = new Font(Ink.MenuFamily, 12f * s, GraphicsUnit.Pixel))
-            {
-                bool two = Detail.Length > 0;
-                var tr = new RectangleF(x, two ? 7 * s : 0, right - x, two ? 22 * s : Height);
-                KitInk.Draw(g, Title, f, Enabled ? KitInk.Text : KitInk.Faint, tr, ContentAlignment.MiddleLeft);
-                if (Suffix.Length > 0) DrawSuffix(g, f, tr, s);
-                if (two) KitInk.Draw(g, Detail, d, KitInk.Sub, new RectangleF(x, 28 * s, right - x, 20 * s), ContentAlignment.MiddleLeft);
-            }
-        }
-
-        void DrawGlyph(Graphics g, float s)
-        {
-            KitInk.Smooth(g);
-            // Tall rows keep the tile beside the title
-            var tile = new RectangleF((14 + Lead) * s, Height > 80 * s ? 16 * s : (Height - 30 * s) / 2, 30 * s, 30 * s);
-            if (Glyph == MarkGlyph)
-            {
-                g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(tile));
-                return;
-            }
-            using (var path = Ink.Round(tile, 8 * s))
-            using (var b = new SolidBrush(KitInk.Hover)) g.FillPath(b, path);
-            using (var icons = new Font(Ink.IconFamily, 15f * s, GraphicsUnit.Pixel))
-                KitInk.Draw(g, Glyph.ToString(), icons, Enabled ? KitInk.Text : KitInk.Faint, tile, ContentAlignment.MiddleCenter);
-        }
-
-        // Small text on the title's baseline
-        void DrawSuffix(Graphics g, Font f, RectangleF tr, float s)
-        {
-            const TextFormatFlags tight = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
-            using (var small = new Font(Ink.MenuFamily, 9.5f * s, GraphicsUnit.Pixel))
-            {
-                int padded = TextRenderer.MeasureText(g, Title, f, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
-                int bare = TextRenderer.MeasureText(g, Title, f, Size.Empty, tight).Width;
-                float x = tr.X + (padded - bare) / 2f + bare + 1 * s;
-                float baseline = tr.Y + (tr.Height - f.Height) / 2f + Ascent(f);
-                TextRenderer.DrawText(g, Suffix, small, new Point((int)Math.Round(x), (int)Math.Round(baseline - Ascent(small))), KitInk.Sub, tight);
-            }
-        }
-
-        static float Ascent(Font f) { return f.Size * f.FontFamily.GetCellAscent(f.Style) / f.FontFamily.GetEmHeight(f.Style); }
-    }
-
-    // Window: theme colours, dark caption, manual DPI
-    class KitWindow : Form
-    {
-        public float Ui = 1f;
-        Timer fadeTimer;
-
-        [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
-
-        static readonly List<WeakReference> openWindows = new List<WeakReference>();
-
-        public KitWindow()
-        {
-            AutoScaleMode = AutoScaleMode.None;
-            BackColor = KitInk.Window;
-            ForeColor = KitInk.Text;
-            KeyPreview = true;
-            ShowInTaskbar = true;
-            Icon = AppIcon;
-            lock (openWindows) openWindows.Add(new WeakReference(this));
-        }
-
-        protected override void OnClosed(EventArgs e)
-        {
-            StopFade();
-            base.OnClosed(e);
-            lock (openWindows)
-            {
-                for (int i = openWindows.Count - 1; i >= 0; i--)
-                {
-                    if (openWindows[i].Target == this) openWindows.RemoveAt(i);
-                }
-            }
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                StopFade();
-                lock (openWindows)
-                {
-                    for (int i = openWindows.Count - 1; i >= 0; i--)
-                    {
-                        if (openWindows[i].Target == this) openWindows.RemoveAt(i);
-                    }
-                }
-            }
-            base.Dispose(disposing);
-        }
-
-        public static void BroadcastThemeChange()
-        {
-            var targets = new List<KitWindow>();
-            lock (openWindows)
-            {
-                for (int i = openWindows.Count - 1; i >= 0; i--)
-                {
-                    var target = openWindows[i].Target as KitWindow;
-                    if (target == null || target.IsDisposed)
-                        openWindows.RemoveAt(i);
-                    else if (!targets.Contains(target))
-                        targets.Add(target);
-                }
-            }
-            foreach (Form f in Application.OpenForms)
-            {
-                var kw = f as KitWindow;
-                if (kw != null && !kw.IsDisposed && !targets.Contains(kw))
-                    targets.Add(kw);
-            }
-            foreach (var w in targets)
-            {
-                if (w.IsDisposed) continue;
-                Action act = () =>
-                {
-                    if (w.IsDisposed) return;
-                    if (w.IsHandleCreated) Native.DarkFrame(w.Handle, !Ink.Light);
-                    w.BackColor = KitInk.Window;
-                    w.ForeColor = KitInk.Text;
-                    w.Relayout();
-                    RefreshTree(w);
-                    w.Invalidate(true);
-                };
-                if (w.InvokeRequired) w.BeginInvoke(act);
-                else act();
-            }
-        }
-
-        static void RefreshTree(Control parent)
-        {
-            if (parent is KitGroup) parent.BackColor = KitInk.Group;
-            foreach (Control c in parent.Controls)
-            {
-                if (c is KitGroup) c.BackColor = KitInk.Group;
-                c.Invalidate();
-                RefreshTree(c);
-            }
-        }
-
-        internal static readonly Icon AppIcon = LoadAppIcon(SystemInformation.IconSize);
-
-        internal static Icon LoadAppIcon(Size size)
-        {
-            try
-            {
-                using (var stream = typeof(KitWindow).Assembly.GetManifestResourceStream("Deskmate.ico"))
-                    if (stream != null) return new Icon(stream, size);
-            }
-            catch (Exception ex) { Log.Write("app icon: " + ex.Message); }
-            return (Icon)SystemIcons.Application.Clone();
-        }
-
-        protected override void OnHandleCreated(EventArgs e)
-        {
-            base.OnHandleCreated(e);
-            try { Ui = GetDpiForWindow(Handle) / 96f; } catch (EntryPointNotFoundException) { }
-            Native.DarkFrame(Handle, !Ink.Light);
-            Native.RoundCorners(Handle);
-        }
-
-        // Soft arrival unless motion is reduced
-        protected override void OnLoad(EventArgs e)
-        {
-            if (!Anim.Reduced) Opacity = 0;
-            base.OnLoad(e);
-        }
-
-        void StopFade()
-        {
-            if (fadeTimer != null)
-            {
-                fadeTimer.Stop();
-                fadeTimer.Dispose();
-                fadeTimer = null;
-            }
-        }
-
-        protected override void OnShown(EventArgs e)
-        {
-            base.OnShown(e);
-            if (Opacity >= 1) return;
-            StopFade();
-            var start = DateTime.UtcNow;
-            fadeTimer = new Timer { Interval = 15 };
-            fadeTimer.Tick += delegate
-            {
-                if (IsDisposed || Disposing || !IsHandleCreated) { StopFade(); return; }
-                double k = Math.Min(1, (DateTime.UtcNow - start).TotalMilliseconds / 160);
-                Opacity = 1 - (1 - k) * (1 - k);
-                if (k >= 1) StopFade();
-            };
-            fadeTimer.Start();
-        }
-
-        protected override bool ProcessDialogKey(Keys key)
-        {
-            if (key == Keys.Escape) { Close(); return true; }
-            return base.ProcessDialogKey(key);
-        }
-
-        protected override void WndProc(ref Message m)
-        {
-            if (m.Msg == Native.WM_DPICHANGED)
-            {
-                Ui = ((int)m.WParam & 0xFFFF) / 96f;
-                var r = (Native.RECT)Marshal.PtrToStructure(m.LParam, typeof(Native.RECT));
-                Bounds = Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom);
-                Relayout();
-                return;
-            }
-            base.WndProc(ref m);
-        }
-
-        // Rebuild on scale, language, theme change
-        public virtual void Relayout() { }
-
-        public Font UiFont(float px) { return new Font(Ink.MenuFamily, px * Ui, GraphicsUnit.Pixel); }
-
-        [DllImport("user32.dll")] static extern uint GetDpiForSystem();
-
-        // Scale pixel-laid dialogs to system DPI
-        public static void ScaleToDpi(Form f)
-        {
-            float s = 1f;
-            try { s = GetDpiForSystem() / 96f; } catch (EntryPointNotFoundException) { }
-            if (s < 1.01f) return;
-            f.AutoScaleMode = AutoScaleMode.None;
-            f.ClientSize = new Size((int)(f.ClientSize.Width * s), (int)(f.ClientSize.Height * s));
-            ScaleTree(f, s);
-            if (f.MinimumSize.Width > 0) f.MinimumSize = new Size((int)(f.MinimumSize.Width * s), (int)(f.MinimumSize.Height * s));
-        }
-
-        static void ScaleTree(Control parent, float s)
-        {
-            parent.Font = new Font(parent.Font.FontFamily, parent.Font.Size * s, parent.Font.Style, parent.Font.Unit);
-            foreach (Control c in parent.Controls)
-            {
-                if (!(c.Parent is Form) || c.Dock == DockStyle.None)
-                    c.Bounds = new Rectangle((int)(c.Left * s), (int)(c.Top * s), (int)(c.Width * s), (int)(c.Height * s));
-                ScaleTree(c, s);
-            }
-        }
-    }
-
-    // Confirmation or notice in the app's own colours, never a native MessageBox
-    sealed class KitAsk : KitWindow
-    {
-        readonly Label text = new Label { AutoSize = false };
-        readonly KitButton yes = new KitButton { Primary = true };
-        readonly KitButton no = new KitButton { Text = "Batal" };
-        readonly KitButton ok = new KitButton { Text = "Tutup", Visible = false };
-        bool two;
-        Font uiFont;
-
-        // Esc and the close box mean no; only an explicit confirm proceeds
-        public static bool Confirm(Form owner, string message, string confirm = "Hapus", string dismiss = "Batal", string title = null)
-        {
-            using (var d = new KitAsk(message, true, confirm, dismiss, title))
-                return d.ShowDialog(owner ?? Form.ActiveForm) == DialogResult.Yes;
-        }
-
-        public static void Notice(Form owner, string message, string title = null, string close = "Tutup")
-        {
-            using (var d = new KitAsk(message, false, "", "", title, close))
-                d.ShowDialog(owner ?? Form.ActiveForm);
-        }
-
-        KitAsk(string message, bool question, string confirm, string dismiss)
-            : this(message, question, confirm, dismiss, null, "Tutup")
-        {
-        }
-
-        KitAsk(string message, bool question, string confirm, string dismiss, string title, string close = "Tutup")
-        {
-            two = question;
-            Text = string.IsNullOrEmpty(title) ? Lang.T(question ? "Konfirmasi" : "Pemberitahuan") : title;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = MinimizeBox = false;
-            StartPosition = FormStartPosition.CenterParent;
-            ShowInTaskbar = false;
-            text.Text = message;
-            text.AccessibleName = message;
-            yes.Text = Lang.T(string.IsNullOrEmpty(confirm) ? "Ya" : confirm);
-            no.Text = Lang.T(string.IsNullOrEmpty(dismiss) ? "Batal" : dismiss);
-            ok.Text = Lang.T(string.IsNullOrEmpty(close) ? "Tutup" : close);
-            yes.Click += delegate { DialogResult = DialogResult.Yes; Close(); };
-            no.Click += delegate { DialogResult = DialogResult.No; Close(); };
-            ok.Click += delegate { DialogResult = DialogResult.OK; Close(); };
-            Controls.AddRange(new Control[] { text, yes, no, ok });
-            // Visibility is a post-parenting property; set it once the buttons are in the tree
-            yes.Visible = two;
-            no.Visible = two;
-            ok.Visible = !two;
-        }
-
-        protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); Relayout(); }
-
-        public override void Relayout()
-        {
-            if (!IsHandleCreated) return;
-            if (uiFont == null) { uiFont = UiFont(14f); text.Font = UiFont(14f); yes.Font = no.Font = ok.Font = UiFont(13f); }
-            Font = uiFont; BackColor = KitInk.Window; ForeColor = KitInk.Text;
-            float s = Ui;
-            int w = (int)(420 * s);
-            int textW = w - (int)(40 * s);
-            var size = TextRenderer.MeasureText(text.Text, text.Font, new Size(textW, 0), TextFormatFlags.WordBreak);
-            int textH = Math.Max((int)(24 * s), size.Height);
-            int rowY = textH + (int)(58 * s);
-            text.SetBounds((int)(20 * s), (int)(22 * s), textW, textH);
-            no.Visible = two;
-            int right = w - (int)(20 * s) - (int)(96 * s);
-            if (two)
-            {
-                no.SetBounds(right, rowY, (int)(96 * s), (int)(34 * s));
-                yes.SetBounds(right - (int)(108 * s), rowY, (int)(96 * s), (int)(34 * s));
-            }
-            ok.SetBounds(right, rowY, (int)(96 * s), (int)(34 * s));
-            ClientSize = new Size(w, rowY + (int)(34 * s) + (int)(20 * s));
-            ActiveControl = two ? (Control)yes : ok;
-        }
-
-        protected override void Dispose(bool disposing) { base.Dispose(disposing); if (disposing && uiFont != null) uiFont.Dispose(); }
-    }
 }

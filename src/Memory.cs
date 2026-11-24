@@ -16,11 +16,16 @@ namespace Deskmate
 
         [DllImport("psapi.dll")] static extern bool GetProcessMemoryInfo(IntPtr process, ref MemCounters c, uint size);
 
-        const double LeakMb = 150;
+        // Floor of the leak line; above it, only growth past the settled size counts
+        const double LeakMb = 90;
+        const double LeakGrowMb = 60;
+        double settledMb;
+        const int LeakTrimCooldownSec = 300;
         // Quiet this long after motion, then trim
         const int RestMs = 3000;
         readonly WinTimer trimTimer = new WinTimer { Interval = RestMs };
         DateTime leakCheckUtc;
+        DateTime lastLeakTrimUtc;
         bool trimWanted;
 
         // Private bytes, what the process really holds
@@ -37,10 +42,12 @@ namespace Deskmate
             if ((DateTime.UtcNow - leakCheckUtc).TotalSeconds < 60) return;
             leakCheckUtc = DateTime.UtcNow;
             double mb = PrivateMb();
-            if (mb > LeakMb)
+            if (mb > Math.Max(LeakMb, settledMb + LeakGrowMb))
             {
-                Log.Write("memory " + mb.ToString("0") + " MB private, collecting");
-                Trim();
+                if ((DateTime.UtcNow - lastLeakTrimUtc).TotalSeconds < LeakTrimCooldownSec) return;
+                lastLeakTrimUtc = DateTime.UtcNow;
+                Log.Write("memory " + mb.ToString("0") + " MB private, trim scheduled");
+                TrimSoon();
                 return;
             }
             // Pages crept back while idle: trim again
@@ -91,6 +98,7 @@ namespace Deskmate
             GC.Collect();
             Native.SetProcessWorkingSetSize(Native.GetCurrentProcess(), (IntPtr)(-1), (IntPtr)(-1));
             trimmedMb = WorkingSetMb();
+            settledMb = PrivateMb();
             if (fpsLog) Log.Write("trim " + (clock.Elapsed.TotalMilliseconds - t0).ToString("0.0") + "ms");
         }
     }

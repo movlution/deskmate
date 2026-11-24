@@ -88,7 +88,7 @@ namespace Deskmate
             {
                 base.OnHandleCreated(e);
                 pacer = new DockPacer(Handle, FrameMsg);
-                if (dock.Glass && !CompGlass.Available) Native.SetWindowDisplayAffinity(Handle, Native.WDA_EXCLUDEFROMCAPTURE);
+                if (dock.Glass && !CompGlass.Available && !(isle != null && isle.WallGlassOn)) Native.SetWindowDisplayAffinity(Handle, Native.WDA_EXCLUDEFROMCAPTURE);
             }
 
             protected override void WndProc(ref Message m)
@@ -169,8 +169,10 @@ namespace Deskmate
             // Over its button, within the dock
             public void OpenAt(Rectangle anchor, Rectangle span, Rectangle mon, int barTop, float sc)
             {
+                var tw = System.Diagnostics.Stopwatch.StartNew();
                 scale = sc;
                 Opening(mon, barTop);
+                double tOpening = tw.Elapsed.TotalMilliseconds;
                 H = Math.Max(80, Math.Min(H, (barTop - mon.Top) / scale - 40));
                 if (!IsHandleCreated) CreateHandle();
                 int pw = (int)Math.Ceiling(W * scale), ph = (int)Math.Ceiling(H * scale);
@@ -182,26 +184,61 @@ namespace Deskmate
                 baseY = Math.Min(barTop, anchor.Top) - (int)(10 * scale) - ph;
                 MakeCanvas(pw, ph);
                 Bounds = new Rectangle(baseX, baseY + Rise(), pw, ph);
-                if (dock.Glass && !CompGlass.Available)
+                if (dock.Glass && (!CompGlass.Available || (isle != null && isle.WallGlassOn)))
                 {
                     frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
                     frost.Start();
-                    frost.Request(new Rectangle(baseX, baseY, pw, ph), Ink.Veil, Ink.Light, isle != null && isle.LiquidOn, false);
+                    frost.Request(new Rectangle(baseX, baseY, pw, ph), Ink.Veil, Ink.Light, isle != null ? isle.Kind : GlassKind.Frost, false);
                 }
                 if (Anim.Reduced) open.Snap(1);
                 else { open.Snap(0); open.Target = 1; }
                 lastStep = DateTime.UtcNow;
+                double tSetup = tw.Elapsed.TotalMilliseconds;
                 Render();
+                double tRender = tw.Elapsed.TotalMilliseconds;
                 Show();
                 Present();
+                double tShow = tw.Elapsed.TotalMilliseconds;
                 if (!Anim.Reduced) Animate();
                 // Test runs leave the user's focus alone
-                if (DockWindow.Dry) return;
-                // Keyboard opens too: take focus
-                ShellApp.Activate(Handle);
-                Activate();
+                if (!DockWindow.Dry)
+                {
+                    // Keyboard opens too: take focus
+                    ShellApp.Activate(Handle);
+                    Activate();
+                }
+                if (Environment.GetEnvironmentVariable("DESKMATE_FPS") == "1")
+                    Log.Write("sheet open " + Kind + " opening=" + tOpening.ToString("0.0") + " setup=" + (tSetup - tOpening).ToString("0.0") + " render=" + (tRender - tSetup).ToString("0.0") +
+                              " show=" + (tShow - tRender).ToString("0.0") + " activate=" + (tw.Elapsed.TotalMilliseconds - tShow).ToString("0.0") + " " + cw + "x" + ch);
             }
             public void NudgeFrost() { if (frost != null) frost.Nudge(); }
+
+            // wall.sync or the GPU path changed while the sheet was open
+            public void GlassChanged()
+            {
+                if (IsDisposed || !Visible || cw <= 0 || ch <= 0) return;
+                bool software = dock.Glass && (!CompGlass.Available || (isle != null && isle.WallGlassOn));
+                bool live = software && !(isle != null && isle.WallGlassOn);
+                if (Handle != IntPtr.Zero)
+                    Native.SetWindowDisplayAffinity(Handle, live ? Native.WDA_EXCLUDEFROMCAPTURE : 0);
+                if (software)
+                {
+                    if (frost == null)
+                    {
+                        frost = new DockFrost(pl => { try { BeginInvoke(new Action(() => TakePlate(pl))); } catch (Exception) { pl.Dispose(); } });
+                        frost.Start();
+                    }
+                    frost.Request(new Rectangle(baseX, baseY, cw, ch), Ink.Veil, Ink.Light, isle != null ? isle.Kind : GlassKind.Frost, false);
+                }
+                else if (frost != null)
+                {
+                    frost.Stop();
+                    frost = null;
+                    if (plate != null) { plate.Dispose(); plate = null; }
+                }
+                if (sheetBackdrop != null) sheetBackdrop.HideBackdrop();
+                Render();
+            }
 
 
             int Rise() { return (int)Math.Round((1 - open.Value) * 14 * scale); }
@@ -432,20 +469,23 @@ namespace Deskmate
                 if (g == null || IsDisposed) return;
                 hits.Clear();
                 p.T = dock.Glass ? Ink.Base.OnGlass() : Ink.Base;
+                p.Shadow = dock.Glass && isle != null && GlassRecipe.NeedsShadow(isle.Kind);
                 p.HalfPx = 0.5f / scale;
                 float fade = Ease.Clamp01(open.Value);
                 p.Alpha = fade;
                 g.ResetTransform();
                 g.ScaleTransform(scale, scale);
                 var r = new RectangleF(0.5f, 0.5f, cw / scale - 1, ch / scale - 1);
-                bool gpu = dock.Glass && CompGlass.Available;
+                bool gpu = dock.Glass && CompGlass.Available && !(isle != null && isle.WallGlassOn);
                 bool glass = !gpu && plate != null && dock.Glass;
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
                 using (var path = Ink.Round(r, 20))
                 {
                     if (gpu)
                     {
                         g.Clear(Color.Transparent);
-                        g.FillPath(p.B(Ink.A(Ink.Veil, Math.Max(0.02f, 0.08f * fade))), path);
+                        float veil = GlassRecipe.Overlay(kind, true, false);
+                        g.FillPath(p.B(Ink.A(Ink.Veil, Math.Max(0.02f, veil * fade))), path);
                     }
                     else if (glass)
                     {
@@ -478,7 +518,7 @@ namespace Deskmate
                             }
                         }
                         g.Restore(inner);
-                        g.FillRectangle(p.B(Ink.A(Ink.Veil, 0.34f)), 0, 0, cw / scale, ch / scale);
+                        g.FillRectangle(p.B(Ink.A(Ink.Veil, GlassRecipe.PlateVeil(kind))), 0, 0, cw / scale, ch / scale);
                     }
                     else
                     {
@@ -487,7 +527,9 @@ namespace Deskmate
                     }
                     var st = g.Save();
                     if (!glass) g.SetClip(path, CombineMode.Intersect);
-                    using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 58), Color.FromArgb((int)(fade * (Ink.Light ? 80 : 22)), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
+                    // Solid paper sheets stay one flat tone; only the night keeps a faint top light
+                    int topWash = dock.Glass ? GlassRecipe.TopWash(kind, Ink.Light) : (Ink.Light ? 0 : 22);
+                    using (var lg = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, 58), Color.FromArgb((int)(fade * topWash), p.T.Highlight), Color.FromArgb(0, p.T.Highlight), 90f))
                     {
                         // No wrap: a tiled gradient leaves a bright seam
                         lg.WrapMode = WrapMode.TileFlipXY;
@@ -508,7 +550,8 @@ namespace Deskmate
                         g.FillRectangle(tr, lw - c, lh - c, c, c);
                         g.Restore(cs);
                     }
-                    g.DrawPath(p.P(Color.FromArgb(Ink.Light ? 70 : 40, p.T.Highlight), 1f), path);
+                    int borderA = dock.Glass ? GlassRecipe.Border(kind, Ink.Light) : (Ink.Light ? 70 : 40);
+                    g.DrawPath(p.P(Color.FromArgb(borderA, p.T.Highlight), 1f), path);
                 }
                 tipText = null;
                 Draw();
@@ -537,14 +580,14 @@ namespace Deskmate
             void SyncSheetBackdrop(int x, int y)
             {
                 float fade = Ease.Clamp01(open.Value);
-                if (!dock.Glass || !CompGlass.Available || !Visible || fade <= 0.01f)
+                if (!dock.Glass || !CompGlass.Available || (isle != null && isle.WallGlassOn) || !Visible || fade <= 0.01f)
                 {
                     if (sheetBackdrop != null) sheetBackdrop.HideBackdrop();
                     return;
                 }
                 if (sheetBackdrop == null) sheetBackdrop = new CompGlass.CompBackdrop();
-                bool liquid = isle != null && isle.LiquidOn;
-                var spec = CompGlass.Spec(liquid, true, scale, fade);
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
+                var spec = CompGlass.Spec(kind, true, scale, fade);
                 sheetPills[0] = new CompGlass.PillSpec(0.5f * scale, 0.5f * scale, cw - scale, ch - scale, 20f * scale);
                 sheetBackdrop.Sync(Handle, new Rectangle(x, y, cw, ch), true, spec, sheetPills, 1, null, null, scale, "");
             }
@@ -557,7 +600,9 @@ namespace Deskmate
             // Darker footer shelf
             protected void Shelf(RectangleF r, float height)
             {
-                g.FillRectangle(p.B(Ink.A(Ink.Veil, 0.35f)), r.X, H - height, r.Width, height);
+                GlassKind kind = isle != null ? isle.Kind : GlassKind.Frost;
+                float shelfA = dock.Glass ? GlassRecipe.Shelf(kind) : 0.35f;
+                g.FillRectangle(p.B(Ink.A(Ink.Veil, shelfA)), r.X, H - height, r.Width, height);
                 // Solid: a hairline marks the footer
                 if (!dock.Glass) g.DrawLine(p.P(p.T.Line, 1f), r.X, H - height, r.Right, H - height);
             }
@@ -669,7 +714,7 @@ namespace Deskmate
                 if (available) Hit(new RectangleF(cx - 44, cy - r - 6, 88, more != null ? d + 10 : d + 32), id);
                 bool hover = available && hotId == id, down = available && pressId == id;
                 var circle = new RectangleF(cx - r, cy - r, d, d);
-                Color fill = on ? (down ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.22f) : hover ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent)
+                Color fill = on ? (down ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.22f) : hover ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent)
                                 : down ? p.T.FillPressed : hover ? p.T.FillHover : p.T.Fill;
                 var sq = Squish(id, circle, 0.08f);
                 if (on) p.Circle(cx, cy, r, fill);

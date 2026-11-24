@@ -14,7 +14,15 @@ namespace Deskmate
         public static Color Card { get { return KitInk.Group; } }
         public static Color RowHover { get { return Ink.Mix(KitInk.Group, KitInk.Hover, 0.55f); } }
         public static Color RowSelected { get { return KitInk.Hover; } }
+        public static Color RowPressed { get { return Ink.Mix(KitInk.Group, KitInk.Line, 0.85f); } }
         public static Color Field { get { return Ink.Mix(KitInk.Group, KitInk.Text, 0.05f); } }
+
+        // Accent laid softly over a surface: selected rail item, today chip, empty-state tile.
+        // Light paper needs a little less wash for the same presence.
+        public static Color Wash(Color bg, float k) { return Ink.Mix(bg, KitInk.Accent, Ink.Light ? k * 0.85f : k); }
+
+        // Corner of a row highlight inset into a card: the radii nest (card radius minus the inset)
+        public static float RowRadius(float inset, float s) { return Math.Max(4 * s, Ink.RadiusCard * s - inset); }
 
         // Opaque blend: GDI text ignores alpha, so fades are mixed into the background instead
         public static Color Fade(Color bg, Color fg, float a) { return Ink.Mix(bg, fg, Math.Max(0f, Math.Min(1f, a))); }
@@ -49,7 +57,7 @@ namespace Deskmate
             return d.TimeOfDay == TimeSpan.Zero ? d.Date < DateTime.Today : d < DateTime.Now;
         }
 
-        // Checkmark inside a box, drawn to progress p (0..1)
+        // Checkmark inside a box, drawn to progress p (0..1). Two strokes, no allocation
         public static void CheckMark(Graphics g, RectangleF box, Color c, float p, float width)
         {
             if (p <= 0) return;
@@ -59,24 +67,23 @@ namespace Deskmate
             float l1 = (float)Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
             float l2 = (float)Math.Sqrt((d.X - b.X) * (d.X - b.X) + (d.Y - b.Y) * (d.Y - b.Y));
             float run = p * (l1 + l2);
-            var pts = new List<PointF>();
-            pts.Add(a);
-            if (run <= l1) pts.Add(new PointF(a.X + (b.X - a.X) * run / l1, a.Y + (b.Y - a.Y) * run / l1));
-            else
-            {
-                pts.Add(b);
-                float k = Math.Min(1f, (run - l1) / l2);
-                pts.Add(new PointF(b.X + (d.X - b.X) * k, b.Y + (d.Y - b.Y) * k));
-            }
-            using (var pen = new Pen(c, width) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
-                g.DrawLines(pen, pts.ToArray());
+            var pen = KitInk.PenOf(c, width);
+            if (run <= l1) { g.DrawLine(pen, a, new PointF(a.X + (b.X - a.X) * run / l1, a.Y + (b.Y - a.Y) * run / l1)); return; }
+            float k = Math.Min(1f, (run - l1) / l2);
+            g.DrawLine(pen, a, b);
+            g.DrawLine(pen, b, new PointF(b.X + (d.X - b.X) * k, b.Y + (d.Y - b.Y) * k));
         }
 
-        // Rounded fill, the one place that builds the path
-        public static void Pill(Graphics g, RectangleF r, float radius, Color c)
+        // Rounded fill through Kit's shared brush and path
+        public static void Pill(Graphics g, RectangleF r, float radius, Color c) { KitInk.FillRound(g, r, radius, c); }
+
+        // Soft accent tile with a glyph, centred above an empty state's text
+        public static RectangleF EmptyTile(Graphics g, float cx, float cy, float box, Color back, string glyph, float s)
         {
-            using (var path = Ink.Round(r, radius))
-            using (var b = new SolidBrush(c)) g.FillPath(b, path);
+            var tile = new RectangleF(cx - box / 2, cy - box / 2, box, box);
+            KitInk.FillRound(g, tile, Ink.RadiusControl * s, Wash(back, 0.14f));
+            if (glyph != null) KitInk.Draw(g, glyph, Ink.Icons(box * 0.5f), KitInk.Accent, tile, ContentAlignment.MiddleCenter);
+            return tile;
         }
     }
 
@@ -130,11 +137,14 @@ namespace Deskmate
             Color back = Back != null ? Back() : TaskInk.Card;
             g.Clear(back);
             var r = new RectangleF(1, 1, Width - 2.5f, Height - 2.5f);
+            // Soft squircle, not a circle: icon buttons are buttons, pills are for chips
+            float radius = Math.Min(r.Height / 2f, Ink.RadiusControl * Ui);
             Color actCol = ActiveColor.IsEmpty ? KitInk.Accent : ActiveColor;
             if (Enabled && (Hovered || pressed || Active))
             {
-                Color fill = pressed ? KitInk.Line : (Hovered ? KitInk.Hover : Ink.Mix(back, actCol, 0.14f));
-                TaskInk.Pill(g, r, r.Height / 2f, fill);
+                // States step away from whatever surface the button sits on (window, card, tinted note header)
+                Color fill = pressed ? Ink.Mix(back, KitInk.Text, 0.14f) : (Hovered ? Ink.Mix(back, KitInk.Text, 0.08f) : TaskInk.Wash(back, 0.16f));
+                TaskInk.Pill(g, r, radius, fill);
             }
             Color fg = !Enabled ? KitInk.Disabled : (Active ? actCol : (Hovered ? KitInk.Text : KitInk.Sub));
             KitInk.Draw(g, Glyph.ToString(), Ink.Icons(GlyphPx * Ui), fg, r, ContentAlignment.MiddleCenter);
@@ -144,12 +154,10 @@ namespace Deskmate
                 float ds = 6.5f * s;
                 float dx = r.Right - ds - 3 * s;
                 float dy = r.Bottom - ds - 3 * s;
-                using (var ring = new SolidBrush(back))
-                    g.FillEllipse(ring, dx - 1.5f * s, dy - 1.5f * s, ds + 3 * s, ds + 3 * s);
-                using (var b = new SolidBrush(DotColor))
-                    g.FillEllipse(b, dx, dy, ds, ds);
+                g.FillEllipse(KitInk.BrushOf(back), dx - 1.5f * s, dy - 1.5f * s, ds + 3 * s, ds + 3 * s);
+                g.FillEllipse(KitInk.BrushOf(DotColor), dx, dy, ds, ds);
             }
-            Ring(g, r, r.Height / 2f);
+            Ring(g, r, radius);
         }
     }
 
@@ -188,17 +196,18 @@ namespace Deskmate
             KitInk.Smooth(g);
             g.Clear(Back != null ? Back() : TaskInk.Card);
             float s = Ui;
-            var ft = Ink.Display(24f * s);
+            var ft = Ink.Display(22f * s);
             var fs = Ink.Text(12.5f * s);
             float titleH = 30 * s;
             int tw = TextRenderer.MeasureText(Title, ft, new Size(int.MaxValue, 1000), TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
             float room = Width - (compact ? 28 * s : 0);
-            float w = Math.Min(room, tw + 4 * s);
+            float w = Math.Min(room, tw + Ink.Sp4 * s);
             KitInk.Draw(g, Title, ft, KitInk.Text, new RectangleF(0, 0, w, titleH), ContentAlignment.MiddleLeft);
-            if (compact) KitInk.Draw(g, "\uE70D", Ink.Icons(12f * s), Hovered ? KitInk.Text : KitInk.Sub, new RectangleF(w + 4 * s, 0, 20 * s, titleH), ContentAlignment.MiddleCenter);
+            if (compact) KitInk.Draw(g, "\uE70D", Ink.Icons(12f * s), Hovered ? KitInk.Text : KitInk.Sub, new RectangleF(w + Ink.Sp4 * s, 0, 20 * s, titleH), ContentAlignment.MiddleCenter);
+            // The subtitle gets its own line with air above it, not tucked under the title's descenders
             if (Subtitle.Length > 0)
-                KitInk.Draw(g, Subtitle, fs, KitInk.Sub, new RectangleF(0, 31 * s, Width, 20 * s), ContentAlignment.MiddleLeft);
-            if (compact) Ring(g, new RectangleF(0, 0, w + 24 * s, titleH), 8 * s);
+                KitInk.Draw(g, Subtitle, fs, KitInk.Sub, new RectangleF(0, titleH + Ink.Sp8 * s - 2 * s, Width, 20 * s), ContentAlignment.MiddleLeft);
+            if (compact) Ring(g, new RectangleF(0, 0, w + 24 * s, titleH), Ink.RadiusControl * s);
         }
     }
 
@@ -257,11 +266,11 @@ namespace Deskmate
             float s = Ui;
             Color c = Error ? Ink.Base.Negative : KitInk.Sub;
             float d = 7 * s, cy = Height / 2f;
-            // A busy dot breathes; reduced motion keeps it steady
-            Color dot = Busy && !Anim.Reduced ? TaskInk.Fade(back, c, 0.45f + 0.55f * (float)(0.5 + 0.5 * Math.Sin(Environment.TickCount / 220.0))) : (Error ? c : KitInk.Faint);
-            using (var b = new SolidBrush(dot)) g.FillEllipse(b, 1 * s, cy - d / 2, d, d);
-            KitInk.Draw(g, Text, Ink.Text(12f * s), c, new RectangleF(d + 8 * s, 0, Width - d - 8 * s, Height), ContentAlignment.MiddleLeft);
-            Ring(g, new RectangleF(0, 0, Width - 1, Height - 1), 6 * s);
+            // A busy dot breathes; reduced motion keeps it steady. Synced reads as the calm positive mint
+            Color dot = Busy && !Anim.Reduced ? TaskInk.Fade(back, c, 0.45f + 0.55f * (float)(0.5 + 0.5 * Math.Sin(Environment.TickCount / 220.0))) : (Error ? c : Busy ? KitInk.Faint : Ink.Base.Positive);
+            g.FillEllipse(KitInk.BrushOf(dot), 1 * s, cy - d / 2, d, d);
+            KitInk.Draw(g, Text, Ink.Text(12f * s), c, new RectangleF(d + Ink.Sp8 * s, 0, Width - d - Ink.Sp8 * s, Height), ContentAlignment.MiddleLeft);
+            Ring(g, new RectangleF(0, 0, Width - 1, Height - 1), Ink.RadiusControl * s / 2);
         }
     }
 
@@ -294,7 +303,8 @@ namespace Deskmate
         public TaskRail() { AccessibleRole = AccessibleRole.List; }
 
         float RowH { get { return 36 * Ui; } }
-        float HeadH { get { return 30 * Ui; } }
+        // Section heading: a caption with a section's worth of air above it
+        float HeadH { get { return (Ink.Sp32 + 4) * Ui; } }
         float Gap { get { return 2 * Ui; } }
 
         float Height2(RailItem it) { return it.Kind == RailItem.Heading ? HeadH : RowH; }
@@ -409,6 +419,7 @@ namespace Deskmate
             var fHead = Ink.SmallSemi(11f * s);
             var fCount = Ink.Small(11.5f * s);
             var fIcon = Ink.Icons(15f * s);
+            float radius = Ink.RadiusControl * s;
             for (int i = 0; i < Items.Count; i++)
             {
                 var it = Items[i];
@@ -416,30 +427,30 @@ namespace Deskmate
                 if (c.Bottom < 0 || c.Top > Height) continue;
                 if (it.Kind == RailItem.Heading)
                 {
-                    KitInk.Draw(g, it.Text.ToUpper(CultureInfo.CurrentCulture), fHead, KitInk.Sub, new RectangleF(c.X + 12 * s, c.Y + 6 * s, c.Width - 12 * s, c.Height - 6 * s), ContentAlignment.MiddleLeft);
+                    // Caption in Faint, sitting on the bottom of its band, aligned with the row text
+                    KitInk.Draw(g, it.Text, fHead, KitInk.Faint, new RectangleF(c.X + Ink.Sp12 * s, c.Bottom - 22 * s, c.Width - Ink.Sp12 * s, 20 * s), ContentAlignment.MiddleLeft);
                     continue;
                 }
                 bool sel = it.Kind != RailItem.New && it.Key == selected;
-                Color bg = KitInk.Window;
-                if (sel) bg = KitInk.Hover;
-                else if (i == hover) bg = Ink.Mix(KitInk.Window, KitInk.Hover, 0.5f);
-                if (sel || i == hover) TaskInk.Pill(g, c, 10 * s, bg);
-                if (sel) TaskInk.Pill(g, new RectangleF(c.X + 2 * s, c.Y + 9 * s, 3 * s, c.Height - 18 * s), 1.5f * s, KitInk.Accent);
-                Color fg = sel ? KitInk.Text : KitInk.Sub;
-                if (it.Kind == RailItem.New && i == hover) fg = KitInk.Text;
-                KitInk.Draw(g, it.Glyph.ToString(), fIcon, fg, new RectangleF(c.X + 10 * s, c.Y, 24 * s, c.Height), ContentAlignment.MiddleCenter);
-                float right = c.Right - 12 * s;
+                bool hov = i == hover;
+                // Selected: a soft accent-tinted pill with accent glyph; hover: one tint step
+                if (sel) TaskInk.Pill(g, c, radius, TaskInk.Wash(KitInk.Window, hov ? 0.20f : 0.16f));
+                else if (hov) TaskInk.Pill(g, c, radius, KitInk.Hover);
+                Color fg = sel ? KitInk.Text : (hov ? KitInk.Text : KitInk.Sub);
+                Color glyph = sel ? KitInk.Accent : fg;
+                KitInk.Draw(g, it.Glyph.ToString(), fIcon, glyph, new RectangleF(c.X + 10 * s, c.Y, 24 * s, c.Height), ContentAlignment.MiddleCenter);
+                float right = c.Right - Ink.Sp12 * s;
                 if (it.Count >= 0)
                 {
                     string n = it.Count.ToString(CultureInfo.InvariantCulture);
                     int w = TextRenderer.MeasureText(n, fCount, new Size(int.MaxValue, 1000), TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
-                    if (it.Count > 0) KitInk.Draw(g, n, fCount, KitInk.Sub, new RectangleF(right - w - 2 * s, c.Y, w + 4 * s, c.Height), ContentAlignment.MiddleRight);
+                    if (it.Count > 0) KitInk.Draw(g, n, fCount, sel ? KitInk.Text : KitInk.Faint, new RectangleF(right - w - 2 * s, c.Y, w + Ink.Sp4 * s, c.Height), ContentAlignment.MiddleRight);
                     right -= w + 10 * s;
                 }
                 KitInk.Draw(g, it.Text, sel ? fBold : fText, fg, new RectangleF(c.X + 42 * s, c.Y, Math.Max(10, right - (c.X + 42 * s)), c.Height), ContentAlignment.MiddleLeft);
             }
             int at = IndexOfKey(selected);
-            if (at >= 0) Ring(g, Cell(at), 10 * s);
+            if (at >= 0) Ring(g, Cell(at), radius);
         }
 
         protected override AccessibleObject CreateAccessibilityInstance() { return new Access(this); }

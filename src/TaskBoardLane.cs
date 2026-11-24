@@ -26,6 +26,8 @@ namespace Deskmate
         TodoItem pressed;
         public bool CanMoveList;
         Rectangle dragThreshold;
+        // Dashed outline of a lifted card; the shared Kit pen must keep solid strokes
+        System.Drawing.Pen liftPen;
 
         public event Action<TodoItem> Edit;
         public event Action<TodoItem, Point> Menu;
@@ -68,7 +70,7 @@ namespace Deskmate
                 if (LayoutChanged != null) LayoutChanged();
             };
             options.AccessibleName = Lang.T("Opsi daftar");
-            options.Back = delegate { return Surface; };
+            options.Back = delegate { return TaskInk.Wash(Surface, 0.07f); };
             options.Click += delegate { if (ListMenu != null) ListMenu(ListName, PointToScreen(new Point(options.Left, options.Bottom))); };
             Controls.AddRange(new Control[] { add, options, completed });
         }
@@ -84,9 +86,12 @@ namespace Deskmate
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) landingTimer.Dispose();
+            if (disposing) { landingTimer.Dispose(); if (liftPen != null) liftPen.Dispose(); }
             base.Dispose(disposing);
         }
+
+        // Calm tinted band behind the lane title
+        int Band { get { return (int)(44 * Ui); } }
 
         Color Surface { get { return dragOver ? Ink.Mix(KitInk.Group, KitInk.Accent, 0.12f) : KitInk.Group; } }
 
@@ -111,8 +116,8 @@ namespace Deskmate
         {
             float s = Ui;
             int pad = (int)(14 * s);
-            add.SetBounds(pad, (int)(37 * s), Math.Max(1, Width - 2 * pad), (int)(29 * s));
-            options.SetBounds(Width - (int)(38 * s), (int)(9 * s), (int)(28 * s), (int)(28 * s));
+            add.SetBounds(pad, Band + (int)(Ink.Sp4 * s), Math.Max(1, Width - 2 * pad), (int)(24 * s));
+            options.SetBounds(Width - (int)(38 * s), (int)(8 * s), (int)(28 * s), (int)(28 * s));
             completed.SetBounds(pad, BodyBottom + (int)(3 * s), Math.Max(1, Width - 2 * pad), Math.Max(1, Footer));
             add.Font = completed.Font = Ink.Text(13 * s);
             add.BackColor = completed.BackColor = Surface;
@@ -151,23 +156,30 @@ namespace Deskmate
             g.Clear(KitInk.Window);
             KitInk.Smooth(g);
             var lane = new RectangleF(0, 0, Width - 1, Height - 1);
-            Fill(g, lane, Ink.RadiusControl * s, Surface);
+            float laneR = Ink.RadiusCard * s;
+            Fill(g, lane, laneR, Surface);
+            // Header band: the lane's own surface with a breath of accent, clipped to the lane's corners
+            var outer = g.Save();
+            g.SetClip(KitInk.Shape(lane, laneR));
+            g.FillRectangle(KitInk.BrushOf(TaskInk.Wash(Surface, 0.07f)), 0, 0, Width, Band);
+            g.Restore(outer);
             float settle = !Anim.Reduced && landingTimer.Enabled ? 1f - Math.Min(1f, landingAge.ElapsedMilliseconds / 260f) : 0f;
-            var header = new RectangleF(8 * s, 7 * s, Width - 49 * s, 31 * s);
+            var header = new RectangleF(8 * s, 6 * s, Width - 49 * s, 32 * s);
             if (pressedList || draggingList || (landedList && settle > 0))
-                Fill(g, header, 7 * s, Ink.Mix(Surface, KitInk.Accent, pressedList || draggingList ? 0.24f : 0.26f * settle * settle));
+                Fill(g, header, TaskInk.RowRadius(8 * s, s), Ink.Mix(Surface, KitInk.Accent, pressedList || draggingList ? 0.24f : 0.26f * settle * settle));
             if (CanMoveList)
-                KitInk.Draw(g, "\uE76F", Ink.Icons(12 * s), KitInk.Sub,
-                    new RectangleF(12 * s, 5 * s, 15 * s, 35 * s), ContentAlignment.MiddleCenter);
+                KitInk.Draw(g, "\uE76F", Ink.Icons(12 * s), KitInk.Faint,
+                    new RectangleF(12 * s, 4 * s, 15 * s, 36 * s), ContentAlignment.MiddleCenter);
             int titleX = CanMoveList ? 32 : 14;
-            KitInk.Draw(g, AccessibleName, Ink.Semi(15 * s), draggingList ? KitInk.Sub : KitInk.Text,
-                new RectangleF(titleX * s, 5 * s, Width - (42 + titleX) * s, 35 * s), ContentAlignment.MiddleLeft);
+            KitInk.Draw(g, AccessibleName, Ink.Semi(14.5f * s), draggingList ? KitInk.Sub : KitInk.Text,
+                new RectangleF(titleX * s, 4 * s, Width - (42 + titleX) * s, 36 * s), ContentAlignment.MiddleLeft);
 
             var state = g.Save();
             g.SetClip(RectangleF.FromLTRB(0, Header, Width, Math.Max(Header, BodyBottom)));
             if (cards.Count == 0 && completedCount == 0)
-                KitInk.Draw(g, Lang.T("Belum ada tugas"), Ink.Text(13 * s), KitInk.Sub,
+                KitInk.Draw(g, Lang.T("Belum ada tugas"), Ink.Text(13 * s), KitInk.Faint,
                     new RectangleF(14 * s, Header, Width - 28 * s, 84 * s), ContentAlignment.MiddleCenter);
+            float cardR = TaskInk.RowRadius(10 * s, s);
             for (int i = scroll / Pitch; i < cards.Count; i++)
             {
                 var r = Card(i);
@@ -179,55 +191,57 @@ namespace Deskmate
                 {
                     if (held && !Anim.Reduced) r.Inflate(-s, -s);
                     float accent = lifted ? 0.11f : held ? 0.24f : 0.30f * settle * settle;
-                    Fill(g, r, 7 * s, Ink.Mix(Surface, KitInk.Accent, accent));
+                    Fill(g, r, cardR, Ink.Mix(Surface, KitInk.Accent, accent));
                     if (lifted)
                     {
-                        using (var outline = Ink.Round(r, 7 * s))
-                        using (var pen = new Pen(Ink.Mix(KitInk.Sub, KitInk.Accent, 0.42f), s))
-                        {
-                            pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
-                            g.DrawPath(pen, outline);
-                        }
+                        if (liftPen == null) liftPen = new System.Drawing.Pen(KitInk.Accent, s) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+                        liftPen.Color = Ink.Mix(KitInk.Sub, KitInk.Accent, 0.42f);
+                        liftPen.Width = s;
+                        g.DrawPath(liftPen, KitInk.Shape(r, cardR));
                     }
                 }
-                else if (i == hover || (Focused && i == selected)) Fill(g, r, 7 * s, KitInk.Hover);
+                else if (i == hover || (Focused && i == selected)) Fill(g, r, cardR, Ink.Mix(Surface, KitInk.Text, 0.07f));
                 var check = new RectangleF(r.Left + 5 * s, r.Top + 10 * s, 14 * s, 14 * s);
-                using (var pen = new Pen(KitInk.Sub, 1.2f * s)) g.DrawEllipse(pen, check);
-                if (t.Done) TaskInk.CheckMark(g, check, KitInk.Accent, 1f, 1.5f * s);
+                if (t.Done)
+                {
+                    g.FillEllipse(KitInk.BrushOf(KitInk.Accent), check);
+                    TaskInk.CheckMark(g, check, KitInk.OnAccent, 1f, 1.5f * s);
+                }
+                else g.DrawEllipse(KitInk.PenOf(KitInk.Sub, 1.2f * s), check);
                 float left = r.Left + 29 * s + (string.IsNullOrEmpty(t.ParentId) ? 0 : 10 * s);
                 float width = r.Right - left - (t.Star ? 21 : 4) * s;
-                string detail = t.Due.HasValue ? t.Due.Value.ToString("d") : TaskInk.FirstLine(t.Notes);
+                // Same due wording as the list view; overdue in the calm coral
+                bool late = TaskInk.Overdue(t);
+                string detail = t.Due.HasValue ? TaskInk.DueText(t.Due.Value) : TaskInk.FirstLine(t.Notes);
                 float titleHeight = detail.Length == 0 ? r.Height : 21 * s;
                 KitInk.Draw(g, t.Title, Ink.Text(13.5f * s), t.Done || lifted ? KitInk.Sub : KitInk.Text,
                     new RectangleF(left, r.Top, width, titleHeight), ContentAlignment.MiddleLeft);
                 if (detail.Length > 0)
-                    KitInk.Draw(g, detail, Ink.Small(11.5f * s), KitInk.Sub,
+                    KitInk.Draw(g, detail, Ink.Small(11.5f * s), late ? Ink.Base.Negative : KitInk.Sub,
                         new RectangleF(left, r.Top + 19 * s, width, 16 * s), ContentAlignment.MiddleLeft);
                 if (t.Star) KitInk.Draw(g, "\uE735", Ink.Icons(12 * s), KitInk.Accent,
                     new RectangleF(r.Right - 18 * s, r.Top, 16 * s, r.Height), ContentAlignment.MiddleCenter);
-                if (i == selected) Ring(g, RectangleF.Inflate(r, -2 * s, -2 * s), 8 * s);
+                if (i == selected) Ring(g, RectangleF.Inflate(r, -2 * s, -2 * s), Math.Max(2 * s, cardR - 2 * s));
             }
             if (insertion >= 0)
             {
                 float y = Math.Max(Header + 1, Card(insertion).Top - 4 * s);
                 y = Math.Min(BodyBottom - 2 * s, y);
-                using (var pen = new Pen(KitInk.Accent, 2 * s)) g.DrawLine(pen, 13 * s, y, Width - 13 * s, y);
-                using (var marker = new SolidBrush(KitInk.Accent))
-                    g.FillEllipse(marker, 10 * s, y - 3 * s, 6 * s, 6 * s);
+                g.DrawLine(KitInk.PenOf(KitInk.Accent, 2 * s), 13 * s, y, Width - 13 * s, y);
+                g.FillEllipse(KitInk.BrushOf(KitInk.Accent), 10 * s, y - 3 * s, 6 * s, 6 * s);
             }
             if (MaxScroll > 0 && BodyBottom > Header + 8 * s)
             {
                 float track = BodyBottom - Header - 4 * s;
                 float thumb = Math.Min(track, Math.Max(18 * s, track * track / (cards.Count * Pitch)));
                 float y = Header + (track - thumb) * scroll / MaxScroll;
-                Fill(g, new RectangleF(Width - 5 * s, y, 3 * s, thumb), 2 * s, KitInk.Sub);
+                Fill(g, new RectangleF(Width - 5 * s, y, 3 * s, thumb), 1.5f * s, KitInk.Faint);
             }
             g.Restore(state);
             if (listEdge != 0)
             {
                 float x = listEdge < 0 ? 2 * s : Width - 3 * s;
-                using (var pen = new Pen(KitInk.Accent, 3 * s))
-                    g.DrawLine(pen, x, 6 * s, x, Height - 6 * s);
+                g.DrawLine(KitInk.PenOf(KitInk.Accent, 3 * s), x, 6 * s, x, Height - 6 * s);
             }
         }
 

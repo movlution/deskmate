@@ -175,7 +175,7 @@ namespace Deskmate
     sealed class MenuItemMeta
     {
         public char Glyph;
-        public bool Danger;
+        public bool Danger = false;
         public bool Header;
     }
 
@@ -184,7 +184,7 @@ namespace Deskmate
     {
         static Color Bg { get { return Opaque(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.06f)); } }
         static Color Text { get { return Opaque(Ink.Base.Text); } }
-        static Color Sub { get { return Opaque(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.65f : 0.62f)); } }
+        static Color Sub { get { return Opaque(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, Ink.Light ? 0.70f : 0.62f)); } }
         static Color Hover { get { return Opaque(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.16f)); } }
         static Color Line { get { return Opaque(Ink.Mix(Ink.Base.Bg, Ink.Base.Text, 0.14f)); } }
 

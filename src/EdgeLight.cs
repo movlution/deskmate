@@ -191,7 +191,11 @@ namespace Deskmate
             int want = settings.GetBool("reserve.top", false) && !hiddenByUser && !OnSide ? (int)Math.Ceiling((Gap + 38 + 6) * scale) : 0;
             if (want == reservedPx && want == 0) return;
             var abd = new Native.APPBARDATA { cbSize = System.Runtime.InteropServices.Marshal.SizeOf(typeof(Native.APPBARDATA)), hWnd = Handle, uEdge = 1 };
-            abd.rc = new Native.RECT { Left = monitorPx.Left, Top = monitorPx.Top, Right = monitorPx.Right, Bottom = monitorPx.Top + want };
+            // In multi-display mode keep the work-area strip on the preferred screen, not the moving panel.
+            var preferred = AllIslandScreens ? ChosenScreen() : null;
+            var area = preferred == null ? monitorPx : preferred.Bounds;
+            if (want > 0 && preferred != null) want = (int)Math.Ceiling((Gap + 38 + 6) * MonitorScale(MonitorForScreen(preferred)));
+            abd.rc = new Native.RECT { Left = area.Left, Top = area.Top, Right = area.Right, Bottom = area.Top + want };
             // ABM_QUERYPOS then ABM_SETPOS
             Native.SHAppBarMessage(2, ref abd);
             abd.rc.Bottom = abd.rc.Top + want;
@@ -220,13 +224,25 @@ namespace Deskmate
             Kick();
         }
 
+        // Reused per frame; slot 0 of the combo set follows the tier
+        readonly Color[] edgeComboInk = { Color.Empty, Ink.FxGold, Ink.FxSky, Ink.FxRose, Ink.FxMint };
+        readonly Color[] calmConfetti = new Color[3];
+
         void DrawConfetti(DateTime now, RectangleF r)
         {
             double t = (now - celebrateUtc).TotalSeconds;
             if (t >= ConfettiSec || t < 0) return;
-            Color[] ink = current == View.Combo
-                ? new Color[] { ComboTierColor(ComboTier, t * 2.5), Color.FromArgb(255, 255, 214, 10), Color.FromArgb(255, 50, 173, 230), Color.FromArgb(255, 255, 55, 95), Color.FromArgb(255, 48, 209, 88) }
-                : new Color[] { p.T.Accent, p.T.Text, p.T.Sub };
+            Color[] ink;
+            if (current == View.Combo)
+            {
+                edgeComboInk[0] = ComboTierColor(ComboTier, t * 2.5);
+                ink = edgeComboInk;
+            }
+            else
+            {
+                calmConfetti[0] = p.T.Accent; calmConfetti[1] = p.T.Text; calmConfetti[2] = p.T.Sub;
+                ink = calmConfetti;
+            }
             float fade = 1 - Ease.Clamp01((float)((t - 1.2) / 0.6));
             for (int i = 0; i < 22; i++)
             {

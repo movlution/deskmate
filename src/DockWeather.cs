@@ -60,7 +60,7 @@ namespace Deskmate
                 string label = Lang.T("Pilih kota");
                 var b = new RectangleF(Pad, 96, p.Measure(label, f) + 36, 36);
                 Hit(b, "setup");
-                p.FillRound(b, 18, hotId == "setup" ? Ink.Mix(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent);
+                p.FillRound(b, 18, hotId == "setup" ? KitInk.Deepen(p.T.Accent, p.T.OnAccent, 0.1f) : p.T.Accent);
                 p.TextCenter(label, f, p.T.OnAccent, b.X + b.Width / 2, b.Y + b.Height / 2);
             }
 

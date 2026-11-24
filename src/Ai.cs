@@ -228,13 +228,40 @@ namespace Deskmate
         // Turns: role and text, oldest first, the user last
         public static Reply Ask(string system, List<KeyValuePair<string, string>> turns, object[] tools, out string error)
         {
+            return AskWith(Text, system, turns, tools, out error);
+        }
+
+        // A feature with its own provider (Ingatan) instead of the shared text one
+        public static Reply AskWith(AiProvider p, string system, List<KeyValuePair<string, string>> turns, object[] tools, out string error)
+        {
             error = null;
-            var p = Text;
+            if (p == null) { error = Lang.T("Layanan AI belum dipilih"); return null; }
             if (!Ready(p)) { error = p.Id == "custom" && BaseUrl(p).Length == 0 ? Lang.T("Alamat server belum diisi") : Lang.F("Key {0} belum diisi", Label(p)); return null; }
             string key = Key(p);
             string model = Model(p, key);
             if (model.Length == 0) { error = Lang.F("Model {0} belum dipilih", Label(p)); return null; }
             return p.Anthropic ? AskAnthropic(p, key, model, system, turns, tools, out error) : AskOpenAi(p, key, model, system, turns, tools, out error);
+        }
+
+        // OpenAI-compatible /embeddings; null when the provider has none or the call failed
+        public static float[] Embed(AiProvider p, string model, string text, out string error, int timeoutMs = 15000)
+        {
+            error = null;
+            if (p == null || p.Anthropic || !Ready(p)) { error = "no embeddings"; return null; }
+            var payload = new Dictionary<string, object> { { "model", model }, { "input", text } };
+            var r = Web.Send("POST", BaseUrl(p) + "embeddings", Auth(p, Key(p)), Json.Encode(payload), timeoutMs);
+            if (!r.Ok) { error = Error(p, r); return null; }
+            try
+            {
+                var d = Json.Parse(r.Body) as Dictionary<string, object>;
+                var first = Json.Arr(d, "data");
+                if (first.Length == 0) { error = "empty"; return null; }
+                var nums = Json.Arr(first[0], "embedding");
+                var v = new float[nums.Length];
+                for (int i = 0; i < nums.Length; i++) v[i] = Convert.ToSingle(nums[i], CultureInfo.InvariantCulture);
+                return v.Length > 0 ? v : null;
+            }
+            catch (Exception ex) { error = ex.Message; return null; }
         }
 
         static Reply AskOpenAi(AiProvider p, string key, string model, string system, List<KeyValuePair<string, string>> turns, object[] tools, out string error)

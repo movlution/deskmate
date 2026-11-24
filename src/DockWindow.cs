@@ -52,7 +52,12 @@ namespace Deskmate
             int tickN;
             // Dock slides in on open and for auto-hide
             readonly Spring reveal = new Spring(0, 1, 1, 0.001f), hover = new Spring(0, 1, 1, 0.002f), workDot = new Spring(0, 1, 1, 0.003f);
+            // One shape, one motion: the whole bar rises and leaves on the same
+            // calm, critically damped spring. Pointer effects wait for arrival.
+            const float RevealK = 520f, RevealDamping = 1f;
             bool wantShown = true, focusReveal;
+            // Pointer effects belong to the arrived shape, not to the moving one.
+            bool RevealReady { get { return reveal.Value > 0.985f; } }
 
             [DllImport("user32.dll")] static extern bool RegisterShellHookWindow(IntPtr h);
             [DllImport("user32.dll")] static extern bool DeregisterShellHookWindow(IntPtr h);
@@ -68,8 +73,8 @@ namespace Deskmate
             // Pilot runs: no taskbar or tray changes, drawn off screen
             public static readonly bool Dry = Environment.GetEnvironmentVariable("DESKMATE_DOCK_DRY") == "1";
 
-            // Stands in for the Windows taskbar
-            bool Replacing { get { return S != null && S.GetBool("dockbar.replace", false); } }
+            // Stands in for the Windows taskbar; a debug pause leaves the dock running
+            bool Replacing { get { return S != null && S.GetBool("dockbar.replace", false) && !Taskbar.Paused; } }
             bool Full { get { return S != null && S.Get("dockbar.style", "float") == "full"; } }
 
             string HideMode
@@ -102,7 +107,7 @@ namespace Deskmate
                 AllowDrop = true;
                 Text = "Deskmate Dock";
                 Bounds = new Rectangle(-32000, -32000, 1, 1);
-                Tune(reveal, 170, 0.86f);
+                Tune(reveal, RevealK, RevealDamping);
                 Tune(hover, 260, 0.9f);
                 Tune(workDot, 340, 0.78f);
                 tick.Tick += delegate { Tick(); };
@@ -227,9 +232,9 @@ namespace Deskmate
 
             bool Reserving { get { return HideMode == "never" && (Replacing || S.GetBool("dockbar.reserve", true)); } }
 
-            // Glass reads the screen behind, so it cannot also appear in captures
+            // Live glass reads the screen behind; wallpaper-only glass does not
             public bool Glass { get { return isle != null && isle.GlassOn && !S.GetBool("dockbar.capture", false); } }
-            bool GpuGlass { get { return Glass && CompGlass.Available; } }
+            bool GpuGlass { get { return Glass && CompGlass.Available && !(isle != null && isle.WallGlassOn); } }
             CompGlass.CompBackdrop dockBackdrop;
 
             // Settings or global-owner changes. Peer docks hide the bar on their own
@@ -239,7 +244,8 @@ namespace Deskmate
                 SetGlobalOwner(owner);
                 if (!IsHandleCreated || closing || !UpdateMonitor()) return;
                 bool needFrost = Glass && !GpuGlass;
-                Native.SetWindowDisplayAffinity(Handle, needFrost ? Native.WDA_EXCLUDEFROMCAPTURE : 0);
+                bool liveFrost = needFrost && !(isle != null && isle.WallGlassOn);
+                Native.SetWindowDisplayAffinity(Handle, liveFrost ? Native.WDA_EXCLUDEFROMCAPTURE : 0);
                 if (!GpuGlass && dockBackdrop != null) dockBackdrop.HideBackdrop();
                 // Every dock that stands in for the taskbar hides that screen's bar,
                 // otherwise the secondary screen shows Explorer's bar and ours together
@@ -258,6 +264,8 @@ namespace Deskmate
                 Place();
                 drawnSig = "";
                 Render();
+                if (card != null && !card.IsDisposed) card.GlassChanged();
+                if (sheet != null && !sheet.IsDisposed) sheet.GlassChanged();
             }
 
             public void SetGlobalOwner(bool owner)
@@ -331,6 +339,15 @@ namespace Deskmate
                 area = Rectangle.FromLTRB(abd.rc.Left, abd.rc.Top, abd.rc.Right, abd.rc.Bottom);
             }
 
+            DockWindow TrayOwner()
+            {
+                if (tray != null) return this;
+                if (!Replacing || !S.GetBool("dockbar.tray", true)) return null;
+                foreach (var dock in isle.dockWins.Values)
+                    if (!dock.closing && dock.tray != null) return dock;
+                return null;
+            }
+
             void StartTray()
             {
                 if (tray != null) return;
@@ -350,6 +367,8 @@ namespace Deskmate
                 var t = tray;
                 tray = null;
                 t.Stop();
+                foreach (var dock in isle.dockWins.Values)
+                    if (dock != this && !dock.closing && dock.TrayExpanded) dock.CloseCard();
                 trayIcons = new List<TrayIcon>();
             }
 
@@ -358,6 +377,13 @@ namespace Deskmate
                 trayPosted = 0;
                 if (tray == null || closing) return;
                 trayIcons = tray.Snapshot();
+                foreach (var dock in isle.dockWins.Values)
+                    if (dock != this && !dock.closing && dock.IsHandleCreated) dock.RefreshTrayCard();
+                RefreshTrayCard();
+            }
+
+            void RefreshTrayCard()
+            {
                 if (card != null && card.Kind == DockCard.TrayKind) card.Refill();
                 // Hidden icons change often (sync spinners); redraw only for what shows
                 string sig = TraySig();
@@ -452,6 +478,19 @@ namespace Deskmate
                 var keep = new Dictionary<string, DockApp>();
                 foreach (var a in apps) if (!a.Leaving) keep[a.Key] = a;
                 IntPtr skipWork = S.GetBool("dockbar.work", true) ? isle.WorkHwnd : IntPtr.Zero;
+                HashSet<string> runningBefore = null;
+                HashSet<IntPtr> windowsBefore = null;
+                if (petIconBaseline && !first && PetIconReady)
+                {
+                    runningBefore = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    windowsBefore = new HashSet<IntPtr>();
+                    foreach (var a in keep.Values)
+                    {
+                        if (!a.Running) continue;
+                        runningBefore.Add(a.Key);
+                        foreach (var w in a.Wins) windowsBefore.Add(w.H);
+                    }
+                }
                 var next = watch.Arrange(isle.DockPins(), keep, skipWork);
                 var result = new List<DockApp>(next);
                 var inNext = new HashSet<DockApp>(next);
@@ -486,6 +525,11 @@ namespace Deskmate
                 }
                 apps = result;
                 ApplyBadges();
+                if (runningBefore != null)
+                    foreach (var a in next)
+                        if (a.Running && !runningBefore.Contains(a.Key) && !a.Wins.Exists(w => windowsBefore.Contains(w.H)))
+                            QueuePetIcon(a, false);
+                petIconBaseline = true;
                 // Focus moving between windows the dock does not show changes nothing here
                 string look = LookSig();
                 if (look != lookSig || Moving()) { lookSig = look; Animate(); }
@@ -564,8 +608,11 @@ namespace Deskmate
                     int n = 0;
                     if (counts != null && a.AppId.Length > 0) counts.TryGetValue(a.AppId, out n);
                     if (counts != null && n == 0 && a.Name.Length > 0) counts.TryGetValue("name:" + a.Name, out n);
+                    int previous = a.Badge;
                     a.Badge = n;
+                    if (petBadgeBaseline && n > previous && !a.Leaving && a.Show.Value > 0.5f) QueuePetIcon(a, true);
                 }
+                petBadgeBaseline = counts != null;
             }
 
             string IconCacheKey(string key) { return key + "@" + IconSourcePx(); }
@@ -622,6 +669,7 @@ namespace Deskmate
                 if (sheet != null && !sheet.IsDisposed) sheet.NudgeFrost();
                 if (closing || !IsHandleCreated) return;
                 UpdateVisibility();
+                KeepOnTop();
                 if (shown && HideMode == "smart") SmartHide();
                 // Focus moved elsewhere: the tray grid has done its job
                 if (TrayExpanded && (DateTime.UtcNow - trayOpenUtc).TotalMilliseconds > 250)
@@ -667,6 +715,13 @@ namespace Deskmate
                 }
             }
 
+            // Sunk under an app: back to the top band; the owned pet follows, the glass is restacked
+            void KeepOnTop()
+            {
+                if (Dry || !shown || !Native.KeepTopmost(Handle)) return;
+                if (dockBackdrop != null) dockBackdrop.SyncOrder(Handle);
+            }
+
             internal void RevealAfterSwitch(IntPtr monitor)
             {
                 if (closing || !IsHandleCreated || monitorHandle != monitor || HideMode == "never") return;
@@ -682,6 +737,7 @@ namespace Deskmate
                 tickN++;
                 UpdateVisibility();
                 if (!shown) return;
+                KeepOnTop();
                 if (HideMode == "auto" && StayOnDesktop && !wantShown && DesktopFront()) Reveal(true);
                 // Any dock stands in for the bar on its screen; Rehide only touches owned ones
                 if (Replacing && !Dry && Taskbar.Showing()) Taskbar.Rehide();
@@ -725,15 +781,43 @@ namespace Deskmate
                 float dt = (float)Math.Min(0.05, Math.Max(0.001, t - lastT));
                 lastT = t;
                 bool more = false;
+                double f0 = clock.Elapsed.TotalMilliseconds, f1 = f0;
                 // A failed frame must not leave the pacer waiting forever
                 try
                 {
                     more = Step(dt);
+                    f1 = clock.Elapsed.TotalMilliseconds;
                     Render();
                     // A widget set off during this render
                     more |= WidgetsMoving();
                 }
                 finally { pacer.Done(more); }
+                if (fpsLog) CountDockFrame(f0, f1, clock.Elapsed.TotalMilliseconds, more);
+            }
+
+            // DESKMATE_FPS=1 also logs dock frames
+            static readonly bool fpsLog = Environment.GetEnvironmentVariable("DESKMATE_FPS") == "1";
+            int fpsN, fpsGc;
+            double fpsFrom, fpsLast, fpsStep, fpsRender, fpsWorst, fpsGapWorst;
+
+            void CountDockFrame(double f0, double f1, double f2, bool more)
+            {
+                double ms = f2 - f0;
+                if (fpsLast > 0 && f0 - fpsLast < 250) fpsGapWorst = Math.Max(fpsGapWorst, f0 - fpsLast);
+                else fpsFrom = f0;
+                fpsLast = f2;
+                fpsN++;
+                fpsStep += f1 - f0;
+                fpsRender += f2 - f1;
+                fpsWorst = Math.Max(fpsWorst, ms);
+                int gc = GC.CollectionCount(0);
+                if (ms > 12) Log.Write("dock slow " + ms.ToString("0.0") + "ms step=" + (f1 - f0).ToString("0.0") + " render=" + (f2 - f1).ToString("0.0") + " " + cw + "x" + ch + (gc != fpsGc ? " [GC]" : ""));
+                fpsGc = gc;
+                if (more && f2 - fpsFrom < 2000) return;
+                double span = Math.Max(1, f2 - fpsFrom);
+                Log.Write("dock fps " + (fpsN * 1000 / span).ToString("0.0") + " step " + (fpsStep / fpsN).ToString("0.00") + "ms render " + (fpsRender / fpsN).ToString("0.00") +
+                          "ms worst " + fpsWorst.ToString("0.0") + "ms gap " + fpsGapWorst.ToString("0.0") + "ms " + cw + "x" + ch);
+                fpsN = 0; fpsStep = fpsRender = fpsWorst = fpsGapWorst = 0; fpsFrom = f2;
             }
 
             // Auto-hide: the edge brings it back, after an optional wait
@@ -742,6 +826,7 @@ namespace Deskmate
                 if (on) hideLater.Stop();
                 revealLater.Stop();
                 wantShown = on;
+                Tune(reveal, RevealK, RevealDamping);
                 reveal.Target = on ? 1 : 0;
                 Animate();
             }
@@ -752,8 +837,9 @@ namespace Deskmate
             // Pointer reached a hidden dock: wait, unless the wait is off
             internal void HoverReveal()
             {
-                revealLater.Stop();
-                if (wantShown || closing) return;
+                if (wantShown || closing || !shown) return;
+                if (!PointerOnEdge()) { CancelHoverReveal(); return; }
+                if (revealLater.Enabled) return;
                 int wait = RevealDelay;
                 if (wait <= 0) { Reveal(true); return; }
                 revealLater.Interval = wait;
@@ -767,13 +853,16 @@ namespace Deskmate
             void RevealNow()
             {
                 if (closing || wantShown || HideMode == "never") return;
-                if (!Bounds.Contains(Cursor.Position)) return;
+                if (!shown || !PointerOnEdge()) return;
                 Reveal(true);
             }
 
             void AutoHide()
             {
                 if (focusReveal || HideMode == "never" || inside || card != null || sheet != null || keyMode || dragging) return;
+                // The edge belongs to the dock even where the floating bar leaves
+                // a transparent gap. Do not retract under a pointer resting there.
+                if (PointerOnEdge()) return;
                 if (HideMode == "auto" && StayOnDesktop && DesktopFront()) return;
                 if (HideMode == "smart" && !Covered()) return;
                 Reveal(false);

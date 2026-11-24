@@ -114,10 +114,7 @@ namespace Deskmate
 
         float AgentsHeight()
         {
-            if (hub != null && hub.Error != null) return 214;
-            float qh = QuotaBlockH();
-            if (sessions.Count == 0) return 214 + Math.Max(0, qh - 8);
-            return Clamp(PanelTop + 14 + qh + AgentsContentH(), 150, 360);
+            return Clamp(PanelTop + 14 + AgentsPageContentH(), 150, 360);
         }
 
         float TasksHeight()
@@ -251,7 +248,7 @@ namespace Deskmate
             Spring s;
             float content, step;
             if (page == PageHome && !HomeQuiet) { s = homeScroll; content = homeContentH; view = HomeView(); step = 72; }
-            else if (page == PageAgents) { s = agentScroll; content = AgentsContentH() + QuotaBlockH(); step = 84; }
+            else if (page == PageAgents) { s = agentScroll; content = AgentsPageContentH(); view = AgentsHeight() - PanelTop - 14; step = 84; }
             else if (page == PageClass && classSeg == 0) { s = taskScroll; content = (tasks != null ? tasks.Count : 0) * 54 + TaskFoot(); step = 81; }
             else if (page == PageClass) { s = scheduleScroll; content = ScheduleContentH() + EventFoot(); step = ClassRowH * 1.5f; }
             else if (page == PageMessages) { s = notifScroll; content = notifs.Count * 50; step = 75; }
@@ -484,9 +481,11 @@ namespace Deskmate
             }
             int n = tabs.Length;
             var strip = TabStrip(w, dots ? 32 : TabIcon + TabGap);
+            DrawHeaderClock(strip);
             if (dots) { DrawDots(w, strip, now); return; }
             float pitch = strip.Width / Math.Max(1, n);
             int preview = page;
+            DrawTabTrack(strip, TabY + TabH / 2, TabH + 2, 1f);
             for (int i = 0; i < n; i++)
             {
                 int to = tabs[i];
@@ -500,7 +499,7 @@ namespace Deskmate
                 float cx = pill.X + pill.Width / 2;
                 if (active || hot)
                     p.FillRound(pill, TabH / 2, active ? p.T.Accent : Pressed(id) ? p.T.FillPressed : p.T.FillHover);
-                DrawTabIconFast(to, cx, TabY + TabH / 2, active ? p.T.OnAccent : hot ? p.T.Text : p.T.Sub, true);
+                DrawTabIconFast(to, cx, TabY + TabH / 2, active ? p.T.OnAccent : hot ? p.T.Text : TabInk(), true);
 
                 bool mark = (to == PageMessages && unread > 0) ||
                     (to == PageAgents && approvals.Count + BusyCount() > 0 && !active);
@@ -517,7 +516,33 @@ namespace Deskmate
         void DrawTabName(RectangleF strip, int preview)
         {
             float center = strip.X + strip.Width / 2;
-            p.Text(TabLabel(preview), Ink.Semi(12f), p.T.Text, center, 42, 2 * (center - 12), StringAlignment.Center);
+            // Current page reads as a title; a hovered preview stays quieter
+            p.Text(TabLabel(preview), Ink.Semi(12f), preview == page ? p.T.Text : Ink.Mix(p.T.Sub, p.T.Text, 0.5f), center, 42, 2 * (center - 12), StringAlignment.Center);
+        }
+
+        // Time and date fill the empty corner left of the strip; the quiet Overview hero already shows them
+        void DrawHeaderClock(RectangleF strip)
+        {
+            const float x = 24;
+            float room = strip.X - 4 - 12 - x;
+            if (room < 56 || (page == PageHome && HomeQuiet)) return;
+            var local = DateTime.Now;
+            p.Text(Fmt.Clock(local), Ink.Display(17f), p.T.Text, x, TabY + TabH / 2 - 2, room, StringAlignment.Near);
+            p.Text(local.ToString("ddd, d MMM", Fmt.Id), Ink.Small(11f), p.T.Sub, x, 40, room, StringAlignment.Near);
+        }
+
+        // Idle tab glyphs: a step above Sub so the strip reads on any glass
+        Color TabInk() { return Ink.Mix(p.T.Sub, p.T.Text, 0.35f); }
+
+        // One quiet capsule groups the tabs into a single control
+        void DrawTabTrack(RectangleF strip, float cy, float h, float k)
+        {
+            if (k <= 0.01f) return;
+            var r = new RectangleF(strip.X - 4 + tabNudge.Value, cy - h / 2, strip.Width + 8, h);
+            float keep = p.Alpha;
+            p.Alpha = keep * k;
+            p.FillRound(r, h / 2, p.T.Fill);
+            p.Alpha = keep;
         }
 
         // Dots: hover or focus anywhere opens the whole strip into icons; hover names page
@@ -537,6 +562,7 @@ namespace Deskmate
             dotOpen.Target = open ? 1 : 0;
             if (Anim.Reduced) dotOpen.Snap(dotOpen.Target);
             float e = Ease.Clamp01(dotOpen.Value);
+            DrawTabTrack(strip, cy, Ease.Lerp(16, 30, e), Ease.Lerp(0.6f, 1f, e));
             for (int i = 0; i < n; i++)
             {
                 string id = "tab" + tabs[i];
@@ -579,9 +605,9 @@ namespace Deskmate
                     // The dot melts away as its icon arrives
                     float rad = Ease.Lerp(lit ? 4.5f : news ? 4.2f : 3.8f, 7f, t);
                     p.Alpha = keep * (1 - t);
-                    if (t < 0.99f) p.Circle(cx, cy, rad, lit || news ? p.T.Text : p.T.Faint);
+                    if (t < 0.99f) p.Circle(cx, cy, rad, lit || news ? p.T.Text : p.T.Sub);
                     p.Alpha = keep;
-                    iconColor = lit ? p.T.Text : p.T.Sub;
+                    iconColor = lit ? p.T.Text : TabInk();
                 }
                 if (ia > 0.01f)
                 {

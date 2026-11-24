@@ -11,15 +11,8 @@ namespace Deskmate
     {
         public static readonly string[] Keys = new[] { "", "amber", "emerald", "sky", "violet", "rose" };
 
-        public static Color ColorOf(string name)
-        {
-            if (string.Equals(name, "amber", StringComparison.OrdinalIgnoreCase)) return Color.FromArgb(245, 158, 11);
-            if (string.Equals(name, "emerald", StringComparison.OrdinalIgnoreCase)) return Color.FromArgb(16, 185, 129);
-            if (string.Equals(name, "sky", StringComparison.OrdinalIgnoreCase)) return Color.FromArgb(14, 165, 233);
-            if (string.Equals(name, "violet", StringComparison.OrdinalIgnoreCase)) return Color.FromArgb(139, 92, 246);
-            if (string.Equals(name, "rose", StringComparison.OrdinalIgnoreCase)) return Color.FromArgb(244, 63, 94);
-            return Color.Empty;
-        }
+        // Calm categorical twins from Ink.Labels; the stored keys are the same
+        public static Color ColorOf(string name) { return string.IsNullOrEmpty(name) ? Color.Empty : Ink.Label(name); }
 
         public static string NameOf(string key, bool forFilter)
         {
@@ -183,30 +176,22 @@ namespace Deskmate
                 if (i == sel)
                 {
                     float rr = r + 2.8f * s;
-                    using (var pen = new Pen(isAll ? KitInk.Text : dot, 1.8f * s))
-                        g.DrawEllipse(pen, pt.X - rr, pt.Y - rr, rr * 2, rr * 2);
+                    g.DrawEllipse(KitInk.PenOf(isAll ? KitInk.Text : dot, 1.8f * s), pt.X - rr, pt.Y - rr, rr * 2, rr * 2);
                 }
                 else if (i == hovered)
                 {
                     float rr = r + 2.4f * s;
-                    using (var pen = new Pen(Ink.Mix(back, ringCol, 0.5f), 1.4f * s))
-                        g.DrawEllipse(pen, pt.X - rr, pt.Y - rr, rr * 2, rr * 2);
+                    g.DrawEllipse(KitInk.PenOf(Ink.Mix(back, ringCol, 0.5f), 1.4f * s), pt.X - rr, pt.Y - rr, rr * 2, rr * 2);
                 }
 
                 if (isAll)
                 {
-                    using (var b = new SolidBrush(KitInk.Group))
-                        g.FillEllipse(b, pt.X - r, pt.Y - r, r * 2, r * 2);
-                    using (var pen = new Pen(i == sel ? KitInk.Text : KitInk.Sub, 1.4f * s))
-                        g.DrawEllipse(pen, pt.X - r, pt.Y - r, r * 2, r * 2);
+                    g.FillEllipse(KitInk.BrushOf(KitInk.Group), pt.X - r, pt.Y - r, r * 2, r * 2);
+                    g.DrawEllipse(KitInk.PenOf(i == sel ? KitInk.Text : KitInk.Sub, 1.4f * s), pt.X - r, pt.Y - r, r * 2, r * 2);
                 }
-                else
-                {
-                    using (var b = new SolidBrush(dot))
-                        g.FillEllipse(b, pt.X - r, pt.Y - r, r * 2, r * 2);
-                }
+                else g.FillEllipse(KitInk.BrushOf(dot), pt.X - r, pt.Y - r, r * 2, r * 2);
             }
-            Ring(g, new RectangleF(1, 1, Width - 2, Height - 2), 8 * s);
+            Ring(g, new RectangleF(1, 1, Width - 2, Height - 2), Ink.RadiusControl * s);
         }
     }
 
@@ -508,16 +493,16 @@ namespace Deskmate
             bool sel = string.Equals(n.Path, selPath, StringComparison.OrdinalIgnoreCase);
             float amt = HotAmt(n.Path);
             var pill = new RectangleF(6 * s, top + 2 * s, Width - 12 * s, r.H - 4 * s);
-            Color baseBg = sel ? TaskInk.RowSelected : TaskInk.Fade(KitInk.Window, TaskInk.RowHover, amt);
+            // Selected reads like the task rail: a soft accent wash. A label colour tints the card
+            // lightly and keeps a slim marker so the colour is never the only cue.
+            Color baseBg = sel ? TaskInk.Wash(KitInk.Window, 0.16f) : TaskInk.Fade(KitInk.Window, TaskInk.RowHover, amt);
             Color cardTint = NotePalette.ColorOf(n.Color);
             if (cardTint != Color.Empty)
-                baseBg = Ink.Mix(baseBg, cardTint, sel ? (Ink.Light ? 0.14f : 0.18f) : (Ink.Light ? 0.08f : 0.12f));
+                baseBg = Ink.Mix(baseBg, cardTint, sel ? (Ink.Light ? 0.12f : 0.14f) : (Ink.Light ? 0.07f : 0.09f));
             if (baseBg != KitInk.Window)
                 TaskInk.Pill(g, pill, Ink.RadiusControl * s, baseBg);
             if (cardTint != Color.Empty)
-                TaskInk.Pill(g, new RectangleF(pill.X + 4 * s, pill.Y + 8 * s, 3 * s, pill.Height - 16 * s), 1.5f * s, cardTint);
-            else if (sel)
-                TaskInk.Pill(g, new RectangleF(pill.X + 4 * s, pill.Y + 10 * s, 3 * s, pill.Height - 20 * s), 1.5f * s, KitInk.Accent);
+                TaskInk.Pill(g, new RectangleF(pill.X + Ink.Sp4 * s, pill.Y + Ink.Sp8 * s, 3 * s, pill.Height - Ink.Sp16 * s), 1.5f * s, cardTint);
 
             RectangleF pinRect, delRect;
             ActionRects(r, top, out pinRect, out delRect);
@@ -530,8 +515,9 @@ namespace Deskmate
             {
                 bool hp = cellHere && hoverCell == CPin;
                 bool hd = cellHere && hoverCell == CDelete;
-                if (hp) TaskInk.Pill(g, pinRect, 8 * s, KitInk.Line);
-                if (hd) TaskInk.Pill(g, delRect, 8 * s, KitInk.Line);
+                float slotR = Ink.RadiusControl * s - 3 * s;
+                if (hp) TaskInk.Pill(g, pinRect, slotR, Ink.Mix(baseBg, KitInk.Text, 0.10f));
+                if (hd) TaskInk.Pill(g, delRect, slotR, Ink.Mix(baseBg, Ink.Base.Negative, 0.14f));
                 Color fg = TaskInk.Fade(baseBg, KitInk.Sub, amt);
                 KitInk.Draw(g, "\uE718", Ink.Icons(12.5f * s), n.Pin ? KitInk.Accent : (hp ? KitInk.Text : fg), pinRect, ContentAlignment.MiddleCenter);
                 KitInk.Draw(g, "\uE74D", Ink.Icons(12.5f * s), hd ? Ink.Base.Negative : fg, delRect, ContentAlignment.MiddleCenter);
@@ -544,7 +530,7 @@ namespace Deskmate
                 titleRight = pinBadge.Left - 4 * s;
             }
 
-            float left = pill.X + (cardTint != Color.Empty || sel ? 14 * s : 12 * s);
+            float left = pill.X + (cardTint != Color.Empty ? 14 * s : Ink.Sp12 * s);
             float contentW = Math.Max(20, pill.Right - 10 * s - left);
             float titleW = Math.Max(20, titleRight - left);
 

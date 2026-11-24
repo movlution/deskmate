@@ -1,3 +1,29 @@
+# Build output
 *.pdb
 /Deskmate*.exe
+/Deskmate.exe.backup-*
+/Deskmate.previous-*.exe
+
+# Local release staging and archived local builds
+/release/
+
+# Update/self-heal residue
 /.deskmate-*.tmp.bak
+
+# IDE / local settings
+.vs/
+*.user
+*.suo
+
+# AI agent scratch (keep local, do not commit)
+/.agents/
+.swarm/
+.swarm-worktrees/
+
+# Visual harness output (tests/render_surfaces.ps1)
+/tests/out/
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store

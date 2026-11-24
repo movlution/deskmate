@@ -42,17 +42,32 @@ namespace Deskmate
 
             // Share of the magnify setting that still applies when icons swell without moving neighbours
             const float InPlaceK = 0.6f;
-            const float PadTop = 7, PadBottom = 9, GapX = 8, PadX = 12, Side = 8, SegGap = 21, Hop = 18, HopSecs = 0.42f;
+            const float PadTop = 7, PadBottom = 9, GapX = 8, Side = 8, SegGap = 21, Hop = 18, HopSecs = 0.42f;
             float BarH { get { return IconRest + PadTop + PadBottom; } }
             // Every tile and hover plate shares this size and centre line
             const float GlyphK = 0.62f;
             float PlateH { get { return IconRest * 0.86f; } }
-            float PlateR { get { return PlateH * 0.3f; } }
+            // Corner geometry: one bar curve, and every plate nests in it. A plate's
+            // radius is the bar's minus its inset, and its inset is the same from the
+            // side as from the top, so inner and outer corners run parallel.
+            float Curve { get { return BarH * 0.36f; } }
+            // Slot to plate (as OnBar), and bar edge to an icon plate
+            float PlateIn { get { return IconRest * 0.07f; } }
+            float EdgeIn { get { return PadTop + PlateIn; } }
+            float PlateR { get { return Math.Max(4f, Curve - EdgeIn); } }
+            // Two-line widgets need a taller plate, so it sits closer to the edge
+            const float WidgetIn = 6;
+            float WidgetR { get { return Math.Max(4f, Curve - WidgetIn); } }
+            // Radius per plate height, for plates that grow with a magnified icon
+            float PlateK { get { return PlateR / PlateH; } }
+            // Capsule ends: widgets and tray bring their own inset; an app slot
+            // already carries PlateIn, so PadTop leaves its plate EdgeIn from the side
+            float padL = PadTop, padR = PadTop;
             float PlateCy(RectangleF pill) { return pill.Y + PadTop + IconRest / 2; }
             float Edge { get { return Full ? 0 : 6; } }
             // Room above the bar: magnified icons, their names, a bounce
             float Lift { get { return IconRest * (Mag - 1) + Hop + 40; } }
-            float Radius { get { return Full ? 0 : Math.Min(BarH / 2, 18f); } }
+            float Radius { get { return Full ? 0 : Curve; } }
 
             readonly List<Slot> slots = new List<Slot>();
             readonly Dictionary<string, Spring> sysGrow = new Dictionary<string, Spring>();
@@ -72,6 +87,25 @@ namespace Deskmate
 
             Point WindowOrigin() { return new Point(mon.Left - (Dry ? 40000 : 0), area.Bottom - ch); }
 
+            // The floating bar leaves a transparent gap above the screen edge. That
+            // gap is still part of the dock's hover target: a pointer resting on the
+            // edge must keep the bar up instead of falling through to the desktop.
+            float EdgeHitH { get { return Math.Max(6f, Edge); } }
+
+            static bool InEdgeBand(Rectangle monitor, float scale, float edge, Point p)
+            {
+                if (monitor.IsEmpty || scale <= 0) return false;
+                if (p.X < monitor.Left || p.X >= monitor.Right) return false;
+                float bandDip = Math.Max(6f, edge);
+                int band = (int)Math.Ceiling(bandDip * scale);
+                return p.Y >= monitor.Bottom - band && p.Y < monitor.Bottom;
+            }
+
+            bool PointerOnEdge()
+            {
+                return HideMode != "never" && InEdgeBand(mon, scale, Edge, System.Windows.Forms.Cursor.Position);
+            }
+
             void Place()
             {
                 if (closing) return;
@@ -84,7 +118,15 @@ namespace Deskmate
                 if (frost != null && Glass)
                 {
                     int top = area.Bottom - (int)Math.Ceiling((BarH + Edge) * scale);
-                    frost.Request(new Rectangle(at.X, top, cw, area.Bottom - top), Ink.Veil, Ink.Light, isle.LiquidOn);
+                    var bar = Full ? new RectangleF(0, barTop, cw / scale, BarH) : centerPill;
+                    if (bar.Width < 2) bar = new RectangleF(0, barTop, cw / scale, BarH);
+                    var core = new Rectangle(
+                        (int)Math.Round(bar.X * scale),
+                        (int)Math.Round(at.Y + barTop * scale - top),
+                        Math.Max(1, (int)Math.Round(bar.Width * scale)),
+                        Math.Max(1, (int)Math.Round(bar.Height * scale)));
+                    frost.Request(new Rectangle(at.X, top, cw, area.Bottom - top), Ink.Veil, Ink.Light, isle.Kind, true,
+                        true, core, Full ? 0f : Radius * scale);
                 }
                 if (tray != null) tray.SetArea(TrayArea());
             }
@@ -215,7 +257,7 @@ namespace Deskmate
                 iconSize = IconRest;
                 float restW = RestWidth(), wl = LeftWidth(), wr = RightWidth();
                 // Too wide for the screen: icons shrink first, then widgets drop from the end
-                float room = dipW - Side * 2 - PadX * 2;
+                float room = dipW - Side * 2 - EdgeIn * 2;
                 float sides = wl + wr + SegGap * 2;
                 if (sides + restW > room && restW > 1)
                 {
@@ -240,7 +282,7 @@ namespace Deskmate
                 // Magnification targets from rest positions: no feedback loop
                 // Icons swell in place: slots, spacing and capsule never move, so a fast sweep cannot shake the row
                 float mag = 1 + (Mag - 1) * InPlaceK, sigma = (iconSize + GapX * fit) * 0.7f;
-                bool wave = inside && mouseY >= barTop - iconSize * (mag - 1) - 8 && dragApp == null;
+                bool wave = inside && RevealReady && mouseY >= barTop - iconSize * (mag - 1) - 8 && dragApp == null;
                 float x = originRest;
                 foreach (var s in slots)
                 {
@@ -273,7 +315,9 @@ namespace Deskmate
                 rightPill = hasR ? new RectangleF(right - wr, barTop, wr, BarH) : RectangleF.Empty;
                 sepA = hasL && gapL > 0 ? left + wl + gapL / 2 : float.NaN;
                 sepB = hasR && gapR > 0 ? right - wr - gapR / 2 : float.NaN;
-                centerPill = right > left ? new RectangleF(left - PadX, barTop, right - left + PadX * 2, BarH) : RectangleF.Empty;
+                padL = hasL ? WidgetIn : PadTop;
+                padR = hasR ? EdgeIn : PadTop;
+                centerPill = right > left ? new RectangleF(left - padL, barTop, right - left + padL + padR, BarH) : RectangleF.Empty;
             }
 
             float RestWidth()
@@ -557,7 +601,9 @@ namespace Deskmate
             List<TrayIcon> OverflowTray()
             {
                 var list = new List<TrayIcon>();
-                foreach (var ic in trayIcons) if (Listed(ic) && !TrayPromo.Promoted(ic)) list.Add(ic);
+                var owner = TrayOwner();
+                if (owner != null)
+                    foreach (var ic in owner.trayIcons) if (Listed(ic) && !TrayPromo.Promoted(ic)) list.Add(ic);
                 return list;
             }
         }

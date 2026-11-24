@@ -131,7 +131,7 @@ namespace Deskmate
             Native.DarkFrame(Handle, !Ink.Light);
             int m = u(24), w = u(480), inner = w - 2 * m;
             kind.Font = UiFont(12.5f);
-            kind.SetBounds(m, u(20), u(330), u(30));
+            kind.SetBounds(m, u(20), u(330), u(36));
             textWell = new RectangleF(m, kind.Bottom + u(14), inner, u(150));
             text.Font = UiFont(13f);
             text.SetBounds((int)textWell.X + u(14), (int)textWell.Y + u(12), (int)textWell.Width - u(20), (int)textWell.Height - u(20));
@@ -151,7 +151,7 @@ namespace Deskmate
             if (note.Text.Length == 0) note.Text = Lang.T("Dikirim ke Google Form pembuat Deskmate. Tanpa nama, tanpa isi layar.");
             foreach (var l in new[] { systemLabel, note }) { l.BackColor = KitInk.Window; l.ForeColor = l == note ? KitInk.Sub : KitInk.Text; }
             foreach (var t in new TextBox[] { text, contact }) { t.BackColor = KitInk.Group; t.ForeColor = KitInk.Text; }
-            int btnH = u(30), by = note.Bottom + u(12);
+            int btnH = u(36), by = note.Bottom + u(12);
             foreach (var b in new[] { send, close })
             {
                 b.Font = UiFont(12.5f);
