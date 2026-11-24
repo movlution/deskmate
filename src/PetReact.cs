@@ -21,11 +21,10 @@ namespace Deskmate
             // Typing combos can fire moods in bursts; the pet answers one at a time
             var now = DateTime.UtcNow;
             if ((now - petReactUtc).TotalSeconds < 3) return;
-            petReactUtc = now;
-            pet.React(m == EyeMood.Happy);
+            if (pet.React(m == EyeMood.Happy)) petReactUtc = now;
         }
 
-        enum PetEmote { Heart, Bang, Note, Spark }
+        enum PetEmote { Heart, Bang, Note, Spark, Scratch }
 
         // Back-and-forth strokes over the pet: three turns, each within 0.6 s of the last, is petting
         sealed class PetStroke
@@ -60,16 +59,155 @@ namespace Deskmate
             readonly PetStroke stroke = new PetStroke();
             PetEmoteWindow emote;
             bool grooveWas;
+            bool petPressed;
+            Point pressAt;
+            int pressButton;
+            double pressX;
+            bool autoChase, autoFullscreen;
+            double nextAutoSample, nextAutoFullscreen, nextDockFullscreen;
+
+            bool FocusActive { get { return Isle != null && Isle.timerKind == TimerKind.Focus && !Isle.timerPaused; } }
+            bool PlayBlocked { get { return hidden || closing || Anim.Reduced || FocusActive; } }
+            double StretchSeconds { get { return Math.Max(1.2, sheet.Length(PetMode.Stretch)); } }
+
+            public void DockTrick(double iconX, bool scratch)
+            {
+                if (!placed || floor.IsEmpty || sheet == null || PlayBlocked || petPressed) return;
+                double now = clock.Elapsed.TotalSeconds;
+                nextDockFullscreen = 0;
+                if (!DockTrickVisible(now)) return;
+                if (!brain.TryDockTrick(iconX, cw / 2.0, scratch, scratch ? sheet.Length(PetMode.Scratch) : 0.75, now)) return;
+                if (scratch)
+                {
+                    if (emote == null || emote.IsDisposed) emote = new PetEmoteWindow { Owner = this };
+                    emote.Pop(PetEmote.Scratch, (int)Math.Round(iconX), lane.Y - 3, Math.Max(1, f), now, false);
+                }
+                lastT = now;
+                Frame();
+            }
+
+            bool DockTrickVisible(double now)
+            {
+                var dock = Owner as DockWindow;
+                if (dock == null || !dock.PetIconReady || (away != null && away())) return false;
+                if (now < nextDockFullscreen) return true;
+                nextDockFullscreen = now + 0.12;
+                return !Native.IsFullscreenOn(monitor);
+            }
+
+            void BeginPetPress()
+            {
+                if (hidden || closing || petPressed || brain.Manipulating) return;
+                brain.NoWalk = Anim.Reduced;
+                brain.Calm = FocusActive;
+                if (PlayBlocked || brain.Away)
+                {
+                    brain.Click(StretchSeconds);
+                }
+                else
+                {
+                    if (Native.IsFullscreenOn(monitor)) return;
+                    brain.StopPlay();
+                    petPressed = true;
+                    pressAt = Cursor.Position;
+                    pressButton = SystemInformation.MouseButtonsSwapped ? 0x02 : 0x01;
+                    pressX = brain.X;
+                    if (emote != null) emote.Stop();
+                }
+                lastT = clock.Elapsed.TotalSeconds;
+                Frame();
+            }
+
+            // The pet never takes focus. A background window cannot rely on mouse capture,
+            // so the existing frame pacer observes the button only after a press on the pet.
+            void UpdatePetPress()
+            {
+                if (PlayBlocked || (away != null && away())) { CancelPetPress(); return; }
+                Point at = Cursor.Position;
+                if (KeyState(pressButton) >= 0) { EndPetPress(at); return; }
+                if (!brain.Holding && PetBrain.DragThreshold(pressAt, at, scale)) brain.BeginHold();
+                if (brain.Holding) brain.MoveHeld(pressX + at.X - pressAt.X, 8 * scale + pressAt.Y - at.Y);
+            }
+
+            void EndPetPress(Point at)
+            {
+                petPressed = false;
+                if (PlayBlocked) { brain.CancelHold(); return; }
+                if (brain.Holding) brain.EndHold();
+                else if (!PetBrain.DragThreshold(pressAt, at, scale)) brain.Click(StretchSeconds);
+                lastT = clock.Elapsed.TotalSeconds;
+            }
+
+            void CancelPetPress()
+            {
+                petPressed = false;
+                brain.CancelHold();
+            }
+
+            public void SetAutoChase(bool on)
+            {
+                if (autoChase == on) return;
+                autoChase = on;
+                if (!on) brain.StopPlay();
+                if (placed) Frame();
+            }
+
+            bool CanProbeAutoChase(double now)
+            {
+                return autoChase && !floor.IsEmpty && !PlayBlocked && brain.CanProbeAuto(now);
+            }
+
+            // Logical px around the lane's top edge: the bar below it, a strip above it
+            const double ChaseBelow = 96, AutoAbove = 24, AutoNear = 160;
+
+            // Screen px. The chase follows the cursor along the dock itself, not over the windows above it;
+            // margin widens the band on every side.
+            public static bool InChaseBand(Rectangle lane, int cell, float scale, Point at, double above, double margin)
+            {
+                double m = margin * scale;
+                return at.X >= lane.Left - m && at.X < lane.Right + cell + m &&
+                    at.Y >= lane.Y - (above + margin) * scale && at.Y <= lane.Y + (ChaseBelow + margin) * scale;
+            }
+
+            bool InAutoChaseBand(Point at) { return !floor.IsEmpty && InChaseBand(lane, cw, scale, at, AutoAbove, 0); }
+
+            // Near enough that a sweep could begin: sample quickly; otherwise a slow glance is enough
+            bool AutoChaseNear(Point at) { return !floor.IsEmpty && InChaseBand(lane, cw, scale, at, AutoAbove, AutoNear); }
+
+            void ProbeAutoChase(double now)
+            {
+                if (!CanProbeAutoChase(now) || now < nextAutoSample) return;
+                nextAutoSample = now + 0.055;
+                Point at = Cursor.Position;
+                if (!brain.ProbeAuto(at, now, cw / 2.0, InAutoChaseBand(at) && MouseButtons == MouseButtons.None)) return;
+                nextAutoFullscreen = 0;
+                if (!AutoChaseAllowed(at, now)) brain.StopPlay();
+            }
+
+            bool AutoChaseAllowed(Point at, double now)
+            {
+                if (!autoChase || !InAutoChaseBand(at) || MouseButtons != MouseButtons.None ||
+                    (away != null && away())) return false;
+                if (now >= nextAutoFullscreen)
+                {
+                    autoFullscreen = Native.IsFullscreenOn(monitor);
+                    nextAutoFullscreen = now + 0.12;
+                }
+                return !autoFullscreen;
+            }
 
             // A Deskmate moment: surprise turns toward the island with a small hop, joy hops and sparkles
-            public void React(bool happy)
+            public bool React(bool happy)
             {
-                if (!placed || hidden || closing || sheet == null) return;
+                if (!placed || hidden || closing || sheet == null || FocusActive || petPressed || brain.Manipulating || brain.DockTrickActive || brain.Playing) return false;
+                brain.NoWalk = Anim.Reduced;
+                brain.Calm = false;
                 var mode = happy ? PetMode.Happy : PetMode.Surprised;
-                if (!brain.React(mode, Math.Max(happy ? 1.4 : 1.0, sheet.Length(mode)), happy ? 1 : 0.5)) return;
+                if (!brain.React(mode, Math.Max(happy ? 1.4 : 1.0, sheet.Length(mode)), happy ? 1 : 0.5)) return false;
                 if (!happy) brain.Dir = work.Left + work.Width / 2 >= drawnX + cw / 2 ? 1 : -1;
                 Emote(happy ? PetEmote.Spark : PetEmote.Bang);
                 Frame();
+                return true;
             }
 
             // A sleeping pet keeps sleeping, contented
@@ -86,8 +224,33 @@ namespace Deskmate
                 if (hidden || !placed || sheet == null || drawnX == int.MinValue) return;
                 if (emote == null || emote.IsDisposed) emote = new PetEmoteWindow { Owner = this };
                 int factor = Math.Max(2, f);
-                int cx = drawnX + cw / 2 + brain.Dir * cw / 4;
+                int dir = IsRemote ? remoteDir : brain.Dir;
+                int cx = drawnX + cw / 2 + dir * cw / 4;
                 emote.Pop(kind, cx, drawnY + sheet.Top * f - factor, factor, clock.Elapsed.TotalSeconds, Anim.Reduced);
+            }
+
+            void ShowPetContextMenu()
+            {
+                if (hidden || closing || sheet == null || Isle == null) return;
+                var menu = new ContextMenuStrip();
+                var chat = menu.Items.Add(Lang.T("Kirim pesan..."), null, delegate
+                {
+                    Isle.OpenPetChatInput(this);
+                });
+                chat.Enabled = Isle.PetRoomConnected;
+                menu.Items.Add(Lang.T("Teman pet..."), null, delegate
+                {
+                    Isle.OpenPrefs("dock");
+                });
+                MenuLook.Apply(menu);
+                menu.Closed += delegate
+                {
+                    lastT = clock.Elapsed.TotalSeconds;
+                    menu.BeginInvoke(new Action(menu.Dispose));
+                    if (!closing && !hidden) Frame();
+                };
+                MenuGuard.Watch(menu);
+                menu.Show(Cursor.Position);
             }
 
             // Once a second: music, a focus session, and whether anyone is at the keyboard
@@ -95,16 +258,16 @@ namespace Deskmate
             {
                 if (Isle == null || !placed || sheet == null) return;
                 bool react = Isle.PetReactOn;
-                bool calm = react && Isle.FocusHold;
+                bool calm = FocusActive;
                 bool groove = react && !calm && Isle.mediaInfo != null && Isle.mediaInfo.Playing;
                 double idle = IdleSeconds();
                 bool wasAway = brain.Away;
                 if (!wasAway && react && idle >= AwayAfter) brain.SetAway(true, 0);
-                else if (wasAway && (!react || idle < 2)) brain.SetAway(false, Math.Max(1.2, sheet.Length(PetMode.Stretch)));
+                else if (wasAway && (!react || idle < 2)) brain.SetAway(false, StretchSeconds);
                 bool changed = wasAway != brain.Away || groove != brain.Groove || calm != brain.Calm;
                 brain.Groove = groove;
                 brain.Calm = calm;
-                if (groove && !grooveWas && !brain.Away) Emote(PetEmote.Note);
+                if (groove && !grooveWas && !brain.Away && !petPressed && !brain.Manipulating) Emote(PetEmote.Note);
                 if (changed) Frame();
                 grooveWas = groove;
             }
@@ -171,7 +334,7 @@ namespace Deskmate
             public bool Step(double now)
             {
                 if (kind < 0) return false;
-                double u = (now - start) / Life;
+                double u = (now - start) / (kind == (int)PetEmote.Scratch ? PetBrain.HopTime : Life);
                 if (u >= 1 || u < 0) { Stop(); return false; }
                 int rise = still ? 0 : (int)Math.Round((1 - (1 - u) * (1 - u)) * 4 * f);
                 byte a = (byte)(u < 0.55 ? 255 : Math.Round(255 * (1 - (u - 0.55) / 0.45)));
@@ -237,6 +400,7 @@ namespace Deskmate
                 new[] { "..###..", "..###..", "..###..", "..###..", ".......", "..###.." },
                 new[] { "...##..", "...#.#.", "...#..#", "...#...", ".###...", "####...", ".##...." },
                 new[] { "...#...", "...#...", "..###..", "###+###", "..###..", "...#...", "...#..." },
+                new[] { "....#.#", "...#.#.", "..+.#.#", ".#.#.#.", "#.#.#..", ".#.#...", "#.#...." },
             };
 
             static readonly int[][] Inks =
@@ -245,6 +409,7 @@ namespace Deskmate
                 new[] { unchecked((int)0xFFFFC93C), unchecked((int)0xFFFFF0B0) },
                 new[] { unchecked((int)0xFFF5F1EA), unchecked((int)0xFFFFFFFF) },
                 new[] { unchecked((int)0xFFFFD45A), unchecked((int)0xFFFFFFFF) },
+                new[] { unchecked((int)0xFFFDE6A5), unchecked((int)0xFFFFFFFF) },
             };
 
             public static int Count { get { return Maps.Length; } }

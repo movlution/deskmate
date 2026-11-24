@@ -31,15 +31,21 @@ Describe "Tier 1 Feature Suite: Desktop Pet" {
         }
     }
 
-    It "1. Built-in cat and dog: 10 opaque cells per facing, left row mirrors right, paws on row 14" {
+    It "1. Built-in cat and dog: 20 opaque cells per facing, left row mirrors right, paws on row 19" {
         foreach ($kind in "cat", "dog") {
         $sheet = $sheetType.GetMethod("BuiltIn").Invoke($null, @([string]$kind, "orange"))
-        Assert-Equal $sheet.Count 10 "$kind must have 10 frames"
-        Assert-Equal $sheet.Base 14 "$kind paws (outline row) must be the ground row"
-        $f = 2; $cell = 16 * $f; $w = $cell * 10
+        Assert-Equal $sheet.Count 20 "$kind must have 20 frames"
+        Assert-Equal $sheet.W 24 "$kind has native 24 px detail"
+        Assert-Equal $sheet.H 24 "$kind has the same canvas as Rubah"
+        foreach ($frame in $sheet.Art) {
+            Assert-True (($frame[(19 * 24)..(20 * 24 - 1)] | Where-Object { $_ -ne 0 }).Count -gt 0) "Every frame keeps the same foothold"
+            Assert-True (($frame[(20 * 24)..($frame.Length - 1)] | Where-Object { $_ -ne 0 }).Count -eq 0) "Nothing is drawn below the foothold"
+        }
+        Assert-Equal $sheet.Base 19 "$kind paws (outline row) must be the ground row"
+        $f = 2; $cell = $sheet.W * $f; $w = $cell * 20
         $px = [int[]]$sheetType.GetMethod("Atlas").Invoke($sheet, @($f))
-        Assert-Equal $px.Length ($w * $cell * 2) "Atlas must be 10 cells wide and 2 rows tall"
-        for ($c = 0; $c -lt 10; $c++) {
+        Assert-Equal $px.Length ($w * $cell * 2) "Atlas must be 20 cells wide and 2 rows tall"
+        for ($c = 0; $c -lt 20; $c++) {
             $opaque = 0; $mirrorOk = $true
             for ($y = 0; $y -lt $cell; $y++) {
                 for ($x = 0; $x -lt $cell; $x++) {
@@ -179,12 +185,50 @@ Describe "Tier 1 Feature Suite: Desktop Pet" {
         Assert-Equal ($narrow.X + 24) 910 "The sprite centres on a narrow floor"
     }
 
+    It "Wellness bubbles clamp to the pet monitor and decline when they cannot fit" {
+        $bubbleType = Get-DeskmateType "PetWellnessBubble"
+        $bounds = $bubbleType.GetMethod("BoundsAbove")
+        $area = [Drawing.Rectangle]::new(-1600, -100, 1600, 900)
+        $size = [Drawing.Size]::new(268, 107)
+        $left = $bounds.Invoke($null, @($area, [Drawing.Point]::new(-1590, 750), $size, 6))
+        $right = $bounds.Invoke($null, @($area, [Drawing.Point]::new(-10, 750), $size, 6))
+        Assert-Equal $left.Left (-1594) "The body stays on the left monitor"
+        Assert-Equal $right.Right (-6) "The body stays left of the right edge"
+        Assert-Equal $left.Bottom 744 "The bubble is above the pet"
+        $blocked = $bounds.Invoke($null, @($area, [Drawing.Point]::new(-10, -60), $size, 6))
+        Assert-True $blocked.IsEmpty "No room above the pet means no bubble"
+    }
+
+    It "Wellness bubble uses the correct prompt, actions and eye-rest duration" {
+        $bubbleType = Get-DeskmateType "PetWellnessBubble"
+        $kindType = Get-DeskmateType "RemindKind"
+        $bounds = [Drawing.Rectangle]::new(0, 0, 1920, 1040)
+        foreach ($name in "Drink", "Eyes", "Stretch") {
+            $kind = [Enum]::Parse($kindType, $name)
+            $b = [Activator]::CreateInstance($bubbleType, [object[]]@($kind, "Wellness detail", [single]1, [int]1920, [Func[bool]]{ $true }, $null, $null))
+            try {
+                Assert-True ($b.MoveAbove($bounds, [Drawing.Point]::new(900, 960))) "Bubble fits above the dock"
+                Assert-False $b.Visible "Construction and layout must not show a real window"
+                Assert-True ($b.Text.Length -gt 0) "$name has a spoken prompt"
+                $buttons = @($b.Controls | Where-Object { $_ -is [Windows.Forms.Button] })
+                $expected = if ($name -eq "Eyes") { 1 } else { 2 }
+                Assert-Equal $buttons.Count $expected "$name action count"
+                Assert-False ($b.Region.IsVisible(0, 0)) "Rounded corners do not intercept clicks"
+                Assert-True ($b.Region.IsVisible([int]($b.Width / 2), $b.Height - 3)) "The pointer tail is part of the shape"
+            } finally { $b.Dispose() }
+        }
+        $left = $bubbleType.GetMethod("SecondsLeft")
+        Assert-Equal ($left.Invoke($null, @(0.0))) 20 "The eye break starts at 20 seconds"
+        Assert-Equal ($left.Invoke($null, @(19.2))) 1 "Fractional time rounds up"
+        Assert-Equal ($left.Invoke($null, @(20.1))) 0 "Expired reminders never show negative time"
+    }
+
     It "11. Size: whole art px per screen px from the chosen height and DPI" {
         $cat = $sheetType.GetMethod("BuiltIn").Invoke($null, @("cat", "orange"))
         $factor = $winType.GetMethod("Factor")
-        Assert-Equal $factor.Invoke($null, @($cat, 48, [single]1)) 3 "Medium at 100% is 3x"
-        Assert-Equal $factor.Invoke($null, @($cat, 32, [single]1)) 2 "Small at 100% is 2x"
-        Assert-Equal $factor.Invoke($null, @($cat, 64, [single]2)) 8 "Large at 200% is 8x"
+        Assert-Equal $factor.Invoke($null, @($cat, 48, [single]1)) 2 "Medium matches the 48 px Rubah at 100%"
+        Assert-Equal $factor.Invoke($null, @($cat, 32, [single]1)) 1 "Small uses whole pixels at 100%"
+        Assert-Equal $factor.Invoke($null, @($cat, 64, [single]2)) 5 "Large uses whole pixels at 200%"
         Assert-Equal $factor.Invoke($null, @($cat, 48, [single]0.2)) 1 "Never below 1x"
     }
 
@@ -273,13 +317,22 @@ Describe "Tier 1 Feature Suite: Desktop Pet" {
         $seen = @{}
         foreach ($color in $sheetType.GetField("Colors").GetValue($null)) {
             $sheet = $sheetType.GetMethod("BuiltIn").Invoke($null, @("cat", [string]$color))
-            $fur = $sheet.Art[0][8 * 16 + 6]
+            $fur = $sheet.Art[0][13 * 24 + 8]
             Assert-True (-not $seen.ContainsKey($fur)) "Colour $color must differ from the others"
             $seen[$fur] = $true
         }
         $odd = $sheetType.GetMethod("BuiltIn").Invoke($null, @("cat", "plaid"))
         $orange = $sheetType.GetMethod("BuiltIn").Invoke($null, @("cat", "orange"))
-        Assert-Equal $odd.Art[0][8 * 16 + 6] $orange.Art[0][8 * 16 + 6] "Unknown colour falls back to orange"
+        Assert-Equal $odd.Art[0][13 * 24 + 8] $orange.Art[0][13 * 24 + 8] "Unknown colour falls back to orange"
+        # Open eyes stay visible on a black coat; elsewhere they match the outline
+        foreach ($kind in "cat", "dog") {
+            $eyeAt = if ($kind -eq "cat") { 7 * 24 + 18 } else { 7 * 24 + 17 }
+            $black = $sheetType.GetMethod("BuiltIn").Invoke($null, @([string]$kind, "black"))
+            $fur = $black.Art[0][13 * 24 + 8]; $eye = $black.Art[0][$eyeAt]; $outline = $black.Art[0][19 * 24 + 6]
+            Assert-True ($eye -ne $fur -and $eye -ne $outline) "$kind black coat must get a contrasting eye"
+            $plain = $sheetType.GetMethod("BuiltIn").Invoke($null, @([string]$kind, "orange"))
+            Assert-Equal $plain.Art[0][$eyeAt] $plain.Art[0][19 * 24 + 6] "$kind orange coat keeps dark eyes"
+        }
     }
 
     $strokeType = Get-DeskmateType "PetStroke"
@@ -361,28 +414,229 @@ Describe "Tier 1 Feature Suite: Desktop Pet" {
         Assert-False $any "Jitter under the step size is not petting"
     }
 
-    It "22. Reaction tags are optional: built-ins borrow poses, Aseprite tags are used when present" {
+    It "22. Reaction tags are optional: built-ins have their own poses, Aseprite tags are used when present" {
         $cat = $sheetType.GetMethod("BuiltIn").Invoke($null, @("cat", "orange"))
         $seq = { param($s, [string]$m) ($s.Sequence([Enum]::Parse($modeType, $m))) -join "," }
-        Assert-Equal (& $seq $cat "Happy") "0,1" "Built-in joy borrows standing"
-        Assert-Equal (& $seq $cat "Surprised") "0,1" "Built-in surprise borrows standing"
-        Assert-Equal (& $seq $cat "Stretch") "6,7" "Built-in stretch borrows sitting"
+        Assert-Equal (& $seq $cat "Happy") "10,11" "Built-in joy has its own pose"
+        Assert-Equal (& $seq $cat "Surprised") "12,13" "Built-in surprise has its own pose"
+        Assert-Equal (& $seq $cat "Stretch") "14,15" "Built-in stretch has its own pose"
+        Assert-Equal (& $seq $cat "Held") "16,17" "Built-in held pose has its own pose"
+        Assert-Equal (& $seq $cat "Scratch") "18,19,18" "Built-in scratch swipes and returns to its wind-up"
+        Assert-True ([Math]::Abs($cat.Length([Enum]::Parse($modeType, "Scratch")) - 0.4) -lt 1e-9) "Scratch lasts one dock hop"
+        # Every reaction pose must look different from standing and from each other
+        foreach ($kind in "cat", "dog") {
+            $s = $sheetType.GetMethod("BuiltIn").Invoke($null, @([string]$kind, "orange"))
+            $cells = @(0, 6, 10, 12, 14, 16, 18)
+            for ($i = 0; $i -lt $cells.Count; $i++) {
+                for ($j = $i + 1; $j -lt $cells.Count; $j++) {
+                    $diff = 0; $a = $s.Art[$cells[$i]]; $o = $s.Art[$cells[$j]]
+                    for ($p = 0; $p -lt $a.Length; $p++) { if ($a[$p] -ne $o[$p]) { $diff++ } }
+                    Assert-True ($diff -gt 12) "$kind cells $($cells[$i]) and $($cells[$j]) must differ visibly ($diff px)"
+                }
+            }
+        }
         Assert-True ($cat.Top -ge 1 -and $cat.Top -lt $cat.Base) "Top row lies above the ground row (top $($cat.Top), base $($cat.Base))"
         Assert-True ([Math]::Abs($cat.Length([Enum]::Parse($modeType, "Walk")) - 0.5) -lt 1e-9) "Walk cycle lasts 0.5 s"
         try {
             $frames = (0..3 | ForEach-Object { Frame-Json $_ ($_ * 8) 8 }) -join ","
-            $dir = Write-Pet "reactions" ('{"frames":[' + $frames + '],"meta":{"frameTags":[{"name":"walk","from":0,"to":1},{"name":"Happy","from":2,"to":2},{"name":"stretch","from":3,"to":3}]}}')
+            $dir = Write-Pet "reactions" ('{"frames":[' + $frames + '],"meta":{"frameTags":[{"name":"walk","from":0,"to":1},{"name":"Happy","from":2,"to":2},{"name":"stretch","from":3,"to":3},{"name":"held","from":1,"to":1},{"name":"scratch","from":2,"to":3}]}}')
             $sheet = $sheetType.GetMethod("Load").Invoke($null, @([string]$dir))
             Assert-Equal (& $seq $sheet "Happy") "2" "happy tag"
             Assert-Equal (& $seq $sheet "Stretch") "3" "stretch tag"
+            Assert-Equal (& $seq $sheet "Held") "1" "held tag"
+            Assert-Equal (& $seq $sheet "Scratch") "2,3" "scratch tag"
             Assert-Equal (& $seq $sheet "Surprised") "0" "Missing surprised borrows standing"
             Assert-True ([Math]::Abs($sheet.Length([Enum]::Parse($modeType, "Happy")) - 0.1) -lt 1e-9) "Tag length comes from frame durations"
         } finally { if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp } }
     }
 
-    It "23. Emote glyphs: four outlined cells, each clearly drawn" {
+    It "Automatic chase needs fast sideways movement, then times out and cools down" {
+        $b = New-Brain 7 0 400
+        $b.X = 100
+        Assert-False ($b.ProbeAuto([Drawing.Point]::new(140, 20), 0.0, 24, $true)) "One sample cannot start play"
+        Assert-False ($b.ProbeAuto([Drawing.Point]::new(150, 20), 0.1, 24, $true)) "Slow travel must not trigger"
+        Assert-False ($b.ProbeAuto([Drawing.Point]::new(190, 55), 0.2, 24, $true)) "Diagonal travel must not trigger"
+        Assert-False ($b.ProbeAuto([Drawing.Point]::new(230, 55), 0.3, 24, $false)) "Do not start outside the allowed band"
+        Assert-False ($b.ProbeAuto([Drawing.Point]::new(150, 55), 0.4, 24, $true)) "Re-entry needs a fresh sample"
+        Assert-True ($b.ProbeAuto([Drawing.Point]::new(200, 55), 0.5, 24, $true)) "Fast sideways sweep starts chase"
+        Assert-True $b.Playing "Sweep starts a session"
+        Assert-False ($b.StepPlay(0.1, 300, 24, $true)) "Cursor is not yet caught"
+        Assert-True ($b.X -gt 100 -and $b.X -lt 110) "Automatic chase moves without teleporting"
+        [void]$b.StepPlay(1.41, 300, 24, $true)
+        Assert-False $b.Playing "Auto chase times out at 1.5 seconds"
+        Assert-False ($b.CanProbeAuto(21.99)) "No automatic retrigger during cooldown"
+        Assert-True ($b.CanProbeAuto(22.0)) "Automatic chase is available again after cooldown"
+    }
+
+    It "Chase band lies along the dock, not over the windows above it" {
+        $winType = Get-DeskmateType "PetWindow"
+        $band = $winType.GetMethod("InChaseBand")
+        Assert-NotNull $band "InChaseBand must exist"
+        # Lane top edge at y=1000, x 100..500, 48 px sprite, 150% scale
+        $lane = [Drawing.Rectangle]::new(100, 1000, 400, 0)
+        $in = { param([int]$x, [int]$y, [double]$above, [double]$margin) [bool]$band.Invoke($null, @($lane, [int]48, [single]1.5, [Drawing.Point]::new($x, $y), $above, $margin)) }
+        Assert-True (& $in 300 1060 24 0) "Over the dock icons triggers"
+        Assert-True (& $in 300 990 24 0) "Just above the dock edge triggers"
+        Assert-False (& $in 300 950 24 0) "Bottom of an app window above the dock does not trigger"
+        Assert-False (& $in 300 1200 24 0) "Below the dock bar does not trigger"
+        Assert-False (& $in 40 1060 24 0) "Beside the lane does not trigger"
+        Assert-True (& $in 300 820 24 160) "The near margin wakes sampling before the cursor arrives"
+        Assert-False (& $in 300 500 24 160) "Far away keeps the slow glance"
+    }
+
+    It "Automatic chase does not start during focus or reduced motion and cancels when blocked" {
+        $b = New-Brain 7 0 400
+        $b.X = 100
+        $b.Calm = $true
+        Assert-False ($b.CanProbeAuto(0)) "Focus disables automatic sampling"
+        $b.Calm = $false
+        $b.NoWalk = $true
+        Assert-False ($b.CanProbeAuto(0)) "Reduced motion disables automatic sampling"
+        $b.NoWalk = $false
+        [void]$b.ProbeAuto([Drawing.Point]::new(160, 20), 0.0, 24, $true)
+        Assert-True ($b.ProbeAuto([Drawing.Point]::new(205, 20), 0.1, 24, $true)) "Start an automatic session"
+        Assert-False ($b.StepPlay(0.1, 205, 24, $false)) "Blocked frame does not catch the cursor"
+        Assert-False $b.Playing "Cancellation ends the automatic session"
+        Assert-Equal $b.X 100 "Cancellation takes no step"
+    }
+
+    It "Focus stops an active walk or chase before any further movement" {
+        $b = New-Brain 7 0 1000
+        $b.X = 100
+        $brainType.GetMethod("StartWalk", [Reflection.BindingFlags]'NonPublic,Instance').Invoke($b, $null) | Out-Null
+        Assert-Equal (Get-Mode $b) "Walk" "Start with an active walk"
+        $b.Calm = $true
+        $b.Step(0.1)
+        Assert-Equal (Get-Mode $b) "Sit" "Stop walking when focus starts"
+        Assert-Equal $b.X 100 "Do not take another step"
+        $b.Calm = $false
+        [void]$b.ProbeAuto([Drawing.Point]::new(160, 20), 0.0, 24, $true)
+        Assert-True ($b.ProbeAuto([Drawing.Point]::new(205, 20), 0.1, 24, $true)) "Start chase"
+        $b.Calm = $true
+        Assert-False ($b.StepPlay(0.1, 300, 24, $true)) "Focus cancels the chase"
+        Assert-False $b.Playing "Chase stays cancelled"
+        Assert-Equal $b.X 100 "No chase step during focus"
+    }
+
+    It "Click wakes an away sleeper with a stretch and no hop" {
+        $b = New-Brain 7 0 1000
+        $b.Hop()
+        $b.SetAway($true, 0)
+        Assert-False $b.Moving "Falling asleep cancels existing movement"
+        $b.Click(1.2)
+        Assert-False $b.Away "Click clears the idle-away flag"
+        Assert-Equal (Get-Mode $b) "Stretch" "Show the wake pose"
+        Assert-False $b.Moving "Do not hop on the wake click"
+        $b.Step(1.3)
+        Assert-Equal (Get-Mode $b) "Idle" "Return to idle"
+    }
+
+    It "Enabling reduced motion mid-hop lands and does not resume the old hop" {
+        $b = New-Brain 7 0 1000
+        $b.Hop()
+        $b.Step(0.1)
+        Assert-True ($b.Lift -gt 0) "Already in the air"
+        $b.NoWalk = $true
+        $b.Step(0.01)
+        Assert-Equal $b.Lift 0 "Land on the next frame"
+        Assert-False $b.Moving "Stop requesting moving frames"
+        $b.NoWalk = $false
+        $b.Step(0.01)
+        Assert-Equal $b.Lift 0 "Do not resume the old hop"
+    }
+
+    It "Dragging clamps to the lane, drops with one bounce, and settles" {
+        $b = New-Brain 7 50 300
+        $b.X = 100
+        $drag = $brainType.GetMethod("DragThreshold")
+        $origin = [Drawing.Point]::new(100, 100)
+        Assert-False ($drag.Invoke($null, @($origin, [Drawing.Point]::new(110, 100), [single]1.5))) "Small mouse jitter is still a click"
+        Assert-True ($drag.Invoke($null, @($origin, [Drawing.Point]::new(100, 88), [single]1.5))) "Vertical travel can lift the pet"
+        [void]$b.ProbeAuto([Drawing.Point]::new(160, 20), 0.0, 24, $true)
+        Assert-True ($b.ProbeAuto([Drawing.Point]::new(205, 20), 0.1, 24, $true)) "Chase before grabbing"
+        Assert-True ($b.BeginHold()) "The grab starts"
+        Assert-False $b.Playing "Grab interrupts chase"
+        Assert-Equal (Get-Mode $b) "Held" "Held pose"
+        $b.MoveHeld(900, 200)
+        Assert-Equal $b.X 300 "Right bound stays inside the lane"
+        Assert-Equal $b.Lift 96 "Lift is limited"
+        $b.MoveHeld(-100, 30)
+        Assert-Equal $b.X 50 "Left bound stays inside the lane"
+        $b.Step(0.3)
+        Assert-Equal $b.Lift 30 "Held pet does not fall until released"
+        $b.EndHold()
+        Assert-False $b.Holding "Release clears holding"
+        $b.Step(0.05)
+        Assert-True ($b.Lift -lt 30 -and $b.Lift -gt 0) "Released pet falls"
+        for ($i = 0; $i -lt 20 -and $b.Manipulating; $i++) { $b.Step(0.02) }
+        Assert-Equal $b.Lift 0 "Fall reaches contact"
+        Assert-False $b.Manipulating "Fall ends at contact"
+        Assert-True $b.Moving "Contact starts the bounce"
+        $b.Step(0.1)
+        Assert-True ($b.Lift -gt 0 -and $b.Lift -lt 5) "Bounce is smaller than a normal click hop"
+        for ($i = 0; $i -lt 5; $i++) { $b.Step(0.1) }
+        Assert-False $b.Moving "No second bounce"
+        Assert-Equal $b.X 50 "No horizontal drift after release"
+    }
+
+    It "Interrupted drag lands without a bounce and never resumes" {
+        $b = New-Brain 7 0 500
+        $b.Calm = $true
+        Assert-False ($b.BeginHold()) "Focus blocks lifting"
+        $b.Calm = $false
+        Assert-True ($b.BeginHold()) "Lift before reduced motion"
+        $b.MoveHeld(230, 80)
+        $b.NoWalk = $true
+        $b.Step(0.01)
+        Assert-False $b.Moving "Reduced motion cancels without bounce"
+        Assert-Equal $b.Lift 0 "Grounded after cancellation"
+        $b.NoWalk = $false
+        Assert-True ($b.BeginHold()) "Lift again"
+        $b.MoveHeld(270, 80)
+        $b.EndHold()
+        $b.CancelHold()
+        Assert-False $b.Manipulating "An interrupted drop clears its state"
+        Assert-Equal $b.Lift 0 "Cancelled drop stays on the ground"
+    }
+
+    It "Dock launch hops toward a nearby icon without leaving the lane" {
+        $b = New-Brain 7 50 150
+        $b.X = 120
+        Assert-False ($b.TryDockTrick(350, 24, $false, 0.75, 1)) "Ignore distant icons"
+        Assert-True ($b.TryDockTrick(209, 24, $false, 0.75, 1)) "Follow a nearby icon"
+        Assert-Equal $b.X 120 "No teleport when reacting"
+        $b.Step(0.1)
+        Assert-True ($b.X -gt 120 -and $b.X -lt 150 -and $b.Lift -gt 0) "Travel in the air"
+        for ($i = 0; $i -lt 3; $i++) { $b.Step(0.1) }
+        Assert-Equal $b.X 150 "Land within the lane"
+        Assert-Equal $b.Lift 0 "Land on the floor"
+        Assert-False ($b.TryDockTrick(172, 24, $true, 0.4, 6.99)) "No immediate second icon reaction"
+    }
+
+    It "Badge scratch replaces a generic surprise and stops without another step during focus" {
+        $b = New-Brain 7 0 300
+        $b.X = 100
+        Assert-True ($b.React([Enum]::Parse($modeType, "Surprised"), 1, 0.5)) "A toast already arrived"
+        Assert-True ($b.TryDockTrick(176, 24, $true, 0.4, 1)) "The same notification can trigger the icon-specific reaction"
+        Assert-Equal (Get-Mode $b) "Scratch" "Use the scratch pose"
+        $b.Step(0.1)
+        $x = $b.X
+        $b.Calm = $true
+        $b.Step(0.1)
+        Assert-Equal $b.X $x "Focus cancels without horizontal drift"
+        Assert-Equal $b.Lift 0 "Focus grounds the pet"
+        Assert-False $b.DockTrickActive "Focus clears the scratch"
+        Assert-False ($b.TryDockTrick(176, 24, $true, 0.4, 8)) "Focus blocks new scratch"
+        $b.Calm = $false
+        $px = [int]$b.X + 24
+        [void]$b.ProbeAuto([Drawing.Point]::new($px + 36, 20), 9.0, 24, $true)
+        Assert-True ($b.ProbeAuto([Drawing.Point]::new($px + 81, 20), 9.1, 24, $true)) "Chase starts"
+        Assert-False ($b.TryDockTrick(176, 24, $true, 0.4, 9.1)) "An icon does not interrupt a chase"
+    }
+
+    It "Emote glyphs: five outlined cells, each clearly drawn" {
         $count = [int]$emoteArtType.GetProperty("Count").GetValue($null)
-        Assert-Equal $count 4 "Heart, bang, note, sparkle"
+        Assert-Equal $count 5 "Heart, bang, note, sparkle, scratch"
         $f = 2; $cell = 9 * $f; $w = $cell * $count
         $px = [int[]]$emoteArtType.GetMethod("Atlas").Invoke($null, @([int]$f))
         Assert-Equal $px.Length ($w * $cell) "Atlas is one row of cells"

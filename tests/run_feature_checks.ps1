@@ -13,7 +13,8 @@ if (-not (Test-Path -LiteralPath $powershell)) { $powershell = "powershell.exe" 
 
 $checks = @(
     @{ Name = "Task note images"; Source = Join-Path $PSScriptRoot "task_note_images_check.cs"; Type = "TaskNoteImagesCheck" },
-    @{ Name = "Notification emoji"; Source = Join-Path $PSScriptRoot "notification_emoji_check.cs"; Type = "NotificationEmojiCheck" }
+    @{ Name = "Notification emoji"; Source = Join-Path $PSScriptRoot "notification_emoji_check.cs"; Type = "NotificationEmojiCheck" },
+    @{ Name = "Pet link multiplayer"; Source = Join-Path $PSScriptRoot "pet_link_check.cs"; Type = "PetLinkCheck" }
 )
 
 $temporary = New-Object System.Collections.Generic.List[string]

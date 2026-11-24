@@ -478,6 +478,19 @@ namespace Deskmate
                 var keep = new Dictionary<string, DockApp>();
                 foreach (var a in apps) if (!a.Leaving) keep[a.Key] = a;
                 IntPtr skipWork = S.GetBool("dockbar.work", true) ? isle.WorkHwnd : IntPtr.Zero;
+                HashSet<string> runningBefore = null;
+                HashSet<IntPtr> windowsBefore = null;
+                if (petIconBaseline && !first && PetIconReady)
+                {
+                    runningBefore = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    windowsBefore = new HashSet<IntPtr>();
+                    foreach (var a in keep.Values)
+                    {
+                        if (!a.Running) continue;
+                        runningBefore.Add(a.Key);
+                        foreach (var w in a.Wins) windowsBefore.Add(w.H);
+                    }
+                }
                 var next = watch.Arrange(isle.DockPins(), keep, skipWork);
                 var result = new List<DockApp>(next);
                 var inNext = new HashSet<DockApp>(next);
@@ -512,6 +525,11 @@ namespace Deskmate
                 }
                 apps = result;
                 ApplyBadges();
+                if (runningBefore != null)
+                    foreach (var a in next)
+                        if (a.Running && !runningBefore.Contains(a.Key) && !a.Wins.Exists(w => windowsBefore.Contains(w.H)))
+                            QueuePetIcon(a, false);
+                petIconBaseline = true;
                 // Focus moving between windows the dock does not show changes nothing here
                 string look = LookSig();
                 if (look != lookSig || Moving()) { lookSig = look; Animate(); }
@@ -590,8 +608,11 @@ namespace Deskmate
                     int n = 0;
                     if (counts != null && a.AppId.Length > 0) counts.TryGetValue(a.AppId, out n);
                     if (counts != null && n == 0 && a.Name.Length > 0) counts.TryGetValue("name:" + a.Name, out n);
+                    int previous = a.Badge;
                     a.Badge = n;
+                    if (petBadgeBaseline && n > previous && !a.Leaving && a.Show.Value > 0.5f) QueuePetIcon(a, true);
                 }
+                petBadgeBaseline = counts != null;
             }
 
             string IconCacheKey(string key) { return key + "@" + IconSourcePx(); }

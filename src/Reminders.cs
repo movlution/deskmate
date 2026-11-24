@@ -170,6 +170,7 @@ namespace Deskmate
             SetWell(0, lastDrinkUtc, false);
             settings.Save();
             if (toast != null && toast.View == View.Remind) DismissToast();
+            if (pet != null) pet.CloseWellness(RemindKind.Drink);
             Kick();
         }
 
@@ -210,7 +211,8 @@ namespace Deskmate
             }
             redraw |= IbadahTick(now);
             // Nudges wait: away, fullscreen, or quiet
-            if (idle > 120 || fullscreen || Quiet || PrompterOn || nowUtc < snoozeUntilUtc || toast != null) return redraw;
+            if (idle > 120 || fullscreen || Quiet || PrompterOn || nowUtc < snoozeUntilUtc || toast != null ||
+                (pet != null && pet.WellnessOpen)) return redraw;
             int hour = now.Hour;
             bool nudged = false;
             if (settings.GetBool("drink", false) && hour >= 7 && hour < 22 && DrinkCount() < DrinkGoal &&
@@ -223,22 +225,29 @@ namespace Deskmate
             return redraw || nudged;
         }
 
-        // The clock moves only once the toast really shows: a refused nudge retries next tick
+        // Commit the clock and play sound once, whichever surface actually displays the reminder.
         bool Nudge(RemindKind kind, ref DateTime last, int well)
         {
-            var t = ShowToast(View.Remind, 20, 2, true);
-            if (t == null) return false;
+            if (QuietToast(View.Remind, 2)) return false;
+            bool spoken = PetOn && pet != null && !expanded && (!MiniOn() || MiniLets(View.Remind, 2)) &&
+                pet.TryWellness(kind, RemindDetail(kind));
+            if (!spoken)
+            {
+                var t = ShowToast(View.Remind, WellnessSeconds, 2, true);
+                if (t == null) return false;
+                remindShown = kind;
+                t.Data = kind;
+                if (!Anim.Reduced) topGap.Velocity += 80;
+            }
             var now = DateTime.UtcNow;
             last = now;
             SetWell(well, now, true);
-            remindShown = kind;
-            t.Data = kind;
-            // Not held: a nudge is ambient news, so it closes itself and stops blocking other toasts
             PlayRemind(settings.Get("sound." + WellKeys[well], ""));
-            if (kind == RemindKind.Eyes) restUntilUtc = now.AddSeconds(20);
-            if (!Anim.Reduced) topGap.Velocity += 80;
+            if (kind == RemindKind.Eyes) restUntilUtc = now.AddSeconds(WellnessSeconds);
             return true;
         }
+
+        const int WellnessSeconds = 20;
 
         // Compact views
 

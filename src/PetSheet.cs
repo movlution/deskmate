@@ -5,6 +5,8 @@ using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Web.Script.Serialization;
 
 namespace Deskmate
@@ -22,13 +24,40 @@ namespace Deskmate
             public int W, H, Base, Top;
             // Premultiplied ARGB, W*H each, facing right
             public readonly List<int[]> Art = new List<int[]>();
-            const int Modes = 7;
+            const int Modes = (int)PetMode.Scratch + 1;
             readonly int[][] seq = new int[Modes][];
             readonly double[][] dur = new double[Modes][];
 
             public int Count { get { return Art.Count; } }
 
             public static string Folder { get { return Path.Combine(Settings.Dir, "pets"); } }
+            public static string CacheFolder { get { return Path.Combine(Settings.Dir, "pet-cache"); } }
+
+            public static string ComputeHashBytes(byte[] jsonBytes, byte[] pngBytes)
+            {
+                if (jsonBytes == null || pngBytes == null) return "";
+                using (var sha = SHA256.Create())
+                {
+                    sha.TransformBlock(jsonBytes, 0, jsonBytes.Length, null, 0);
+                    sha.TransformFinalBlock(pngBytes, 0, pngBytes.Length);
+                    var hash = sha.Hash;
+                    var sb = new StringBuilder(16);
+                    for (int i = 0; i < 8 && i < hash.Length; i++) sb.Append(hash[i].ToString("x2"));
+                    return sb.ToString();
+                }
+            }
+
+            public static string ComputeHash(string dir, out long totalBytes)
+            {
+                totalBytes = 0;
+                if (string.IsNullOrEmpty(dir)) return "";
+                string json = Path.Combine(dir, "pet.json"), png = Path.Combine(dir, "sheet.png");
+                if (!File.Exists(json) || !File.Exists(png)) return "";
+                long jl = new FileInfo(json).Length, pl = new FileInfo(png).Length;
+                totalBytes = jl + pl;
+                if (jl > (1 << 20) || pl > (8 << 20)) return "";
+                return ComputeHashBytes(File.ReadAllBytes(json), File.ReadAllBytes(png));
+            }
 
             // Frame shown t seconds into a mode; pace above 1 plays it faster
             public int Frame(PetMode m, double t, double pace)
@@ -92,6 +121,8 @@ namespace Deskmate
                 if (seq[(int)PetMode.Happy] == null) Set(PetMode.Happy, seq[(int)PetMode.Idle], dur[(int)PetMode.Idle]);
                 if (seq[(int)PetMode.Surprised] == null) Set(PetMode.Surprised, seq[(int)PetMode.Idle], dur[(int)PetMode.Idle]);
                 if (seq[(int)PetMode.Stretch] == null) Set(PetMode.Stretch, seq[(int)PetMode.Sit], dur[(int)PetMode.Sit]);
+                if (seq[(int)PetMode.Held] == null) Set(PetMode.Held, seq[(int)PetMode.Sit], dur[(int)PetMode.Sit]);
+                if (seq[(int)PetMode.Scratch] == null) Set(PetMode.Scratch, new[] { seq[(int)PetMode.Surprised][0] }, new[] { 0.4 });
                 Top = H - 1;
                 foreach (var a in Art)
                     for (int y = 0; y < Top; y++)
@@ -144,6 +175,13 @@ namespace Deskmate
                 s.Set(PetMode.Walk, new[] { 2, 3, 4, 5 }, new[] { 0.125, 0.125, 0.125, 0.125 });
                 s.Set(PetMode.Sit, new[] { 6, 7 }, new[] { 1.25, 1.25 });
                 s.Set(PetMode.Sleep, new[] { 8, 9 }, new[] { 1 / 0.6, 1 / 0.6 });
+                // Reactions have their own poses: a wagging smile, a startled jump, a long stretch,
+                // dangling paws while carried, and a paw swipe that ends on its wind-up
+                s.Set(PetMode.Happy, new[] { 10, 11 }, new[] { 0.18, 0.18 });
+                s.Set(PetMode.Surprised, new[] { 12, 13 }, new[] { 0.14, 0.4 });
+                s.Set(PetMode.Stretch, new[] { 14, 15 }, new[] { 0.45, 0.75 });
+                s.Set(PetMode.Held, new[] { 16, 17 }, new[] { 0.25, 0.25 });
+                s.Set(PetMode.Scratch, new[] { 18, 19, 18 }, new[] { 0.12, 0.16, 0.12 });
                 s.Finish();
                 return s;
             }
@@ -170,9 +208,17 @@ namespace Deskmate
                 string json = Path.Combine(dir, "pet.json"), png = Path.Combine(dir, "sheet.png");
                 if (!File.Exists(json) || !File.Exists(png)) throw new InvalidDataException("butuh sheet.png dan pet.json");
                 if (new FileInfo(json).Length > 1 << 20 || new FileInfo(png).Length > 8 << 20) throw new InvalidDataException("berkas terlalu besar");
+                return LoadBytes(File.ReadAllBytes(json), File.ReadAllBytes(png));
+            }
+
+            public static PetSheet LoadBytes(byte[] jsonBytes, byte[] pngBytes)
+            {
+                if (jsonBytes == null || pngBytes == null || jsonBytes.Length == 0 || pngBytes.Length == 0)
+                    throw new InvalidDataException("butuh sheet.png dan pet.json");
+                if (jsonBytes.Length > 1 << 20 || pngBytes.Length > 8 << 20) throw new InvalidDataException("berkas terlalu besar");
 
                 Dictionary<string, object> root;
-                try { root = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(json)) as Dictionary<string, object>; }
+                try { root = new JavaScriptSerializer().DeserializeObject(Encoding.UTF8.GetString(jsonBytes)) as Dictionary<string, object>; }
                 catch (ArgumentException) { root = null; }
                 catch (InvalidOperationException) { root = null; }
                 if (root == null) throw new InvalidDataException("pet.json tidak terbaca");
@@ -187,7 +233,7 @@ namespace Deskmate
                 if (frames.Count == 0 || frames.Count > MaxFrames) throw new InvalidDataException("jumlah frame tidak sesuai");
 
                 int iw, ih;
-                int[] image = ReadImage(png, out iw, out ih);
+                int[] image = ReadImageBytes(pngBytes, out iw, out ih);
                 var s = new PetSheet();
                 var secs = new double[frames.Count];
                 for (int i = 0; i < frames.Count; i++)
@@ -244,11 +290,11 @@ namespace Deskmate
                 return s;
             }
 
-            static int[] ReadImage(string png, out int w, out int h)
+            static int[] ReadImageBytes(byte[] pngBytes, out int w, out int h)
             {
                 try
                 {
-                    using (var ms = new MemoryStream(File.ReadAllBytes(png)))
+                    using (var ms = new MemoryStream(pngBytes))
                     using (var img = new Bitmap(ms))
                     {
                         w = img.Width;
@@ -300,6 +346,8 @@ namespace Deskmate
                     case "happy": case "senang": m = PetMode.Happy; return true;
                     case "surprised": case "surprise": case "kaget": m = PetMode.Surprised; return true;
                     case "stretch": case "geliat": m = PetMode.Stretch; return true;
+                    case "held": m = PetMode.Held; return true;
+                    case "scratch": m = PetMode.Scratch; return true;
                 }
                 m = PetMode.Idle;
                 return false;
@@ -335,24 +383,36 @@ namespace Deskmate
             }
         }
 
-        // Placeholder pixel animals on a 16 px grid, outlined. Cells: idle 0-1, walk 2-5, sit 6-7, sleep 8-9.
+        // Pixel animals on a 24 px grid, outlined. Cells: idle 0-1, walk 2-5, sit 6-7, sleep 8-9,
+        // happy 10-11, surprised 12-13, stretch 14-15, held 16-17, scratch 18-19.
         static class PetArt
         {
-            public const int Grid = 16, Cells = 10;
-            const byte Fur = 1, Stripe = 2, Dark = 3, Nose = 4, Light = 5;
+            public const int Grid = 24, Cells = 20;
+            const byte Dark = 3;
 
-            // ARGB by index: clear, fur, stripe, outline and eyes, nose, sleep mark
+            // ARGB follows Ink: clear, coat, markings, outline, blush, cream, eyes, light, shadow.
+            // A black coat gets amber eyes; dark eyes would vanish into it.
             public static int[] Palette(string color)
             {
-                uint fur = 0xFFF0A35E, stripe = 0xFFC9773A, dark = 0xFF2A1E17;
+                uint fur = 0xFFF0A35E, stripe = 0xFFC9773A, dark = 0xFF2A1E17, eye = 0;
                 switch (color)
                 {
                     case "brown": fur = 0xFFB98250; stripe = 0xFF8A5A33; break;
                     case "gray": fur = 0xFFAEB0BA; stripe = 0xFF7F8290; break;
-                    case "black": fur = 0xFF4C4654; stripe = 0xFF342F3A; dark = 0xFF141017; break;
+                    case "black": fur = 0xFF4C4654; stripe = 0xFF342F3A; dark = 0xFF141017; eye = 0xFFE8C24E; break;
                     case "cream": fur = 0xFFF4E4C4; stripe = 0xFFD9BF8C; break;
                 }
-                return new[] { 0, (int)fur, (int)stripe, (int)dark, unchecked((int)0xFFE88A8A), unchecked((int)0xFFF5F1EA) };
+                if (eye == 0) eye = dark;
+                return new[] { 0, (int)fur, (int)stripe, (int)dark, unchecked((int)0xFFE88A8A),
+                    unchecked((int)0xFFF5DFBF), (int)eye, Shade(fur, 0xFFFFE6BC, 46), Shade(stripe, dark, 75) };
+            }
+
+            static int Shade(uint from, uint to, int mix)
+            {
+                uint rgb = 0xFF000000;
+                for (int shift = 0; shift < 24; shift += 8)
+                    rgb |= (((from >> shift & 255) * (256u - (uint)mix) + (to >> shift & 255) * (uint)mix) >> 8) << shift;
+                return (int)rgb;
             }
 
             // Opaque or clear pixels only, so the result is already premultiplied
@@ -364,140 +424,148 @@ namespace Deskmate
                 return px;
             }
 
-            static readonly int[] LegsA = { 4, 2, 6, 2, 9, 2, 11, 2 }, LegsB = { 3, 2, 7, 1, 8, 2, 12, 1 }, LegsC = { 5, 1, 6, 2, 10, 1, 11, 2 };
+            // Draw at native resolution; the letters are palette indices, not RGB values.
+            // f coat, s markings, h highlight, b shadow, w muzzle/chest, n blush,
+            // e eye, o dark detail. All grounded poses share outline row 19.
+            const string Ink = ".fsonwehb";
 
-            public static byte[] Cat(int c)
+            static readonly string[] CatHead = {
+                "s......h", "fn....nhf", "ffh..hfff", "fhhsfhfff", "fhfsffeff",
+                "fffffheff", "sfffwhwww", ".sfwwwwwn", "..bwwwww", "...bbww"
+            };
+            static readonly string[] DogHead = {
+                "..hhh", ".hffffh", "hfffffff", "ssffhffff", "sssfhehff",
+                "sbsffefwwo", "sbsffffwww", ".bbfwwwwww", "..bwwwwwo", "...bbww"
+            };
+
+            static readonly string[] CatBody = {
+                "..hhsfhshff", ".hffsfhshfff", "ffffsfsfffffw",
+                "fsfffsffffffw", "fsfffffsfffbw", ".bffffsffbbww", "..bbbbbbbb"
+            };
+            static readonly string[] DogBody = {
+                "..hhhhhhfff", ".hffsssfffff", "fffsssssffffw",
+                "fffssbsffffww", "ffffsbsffffbw", ".bfffffffbbww", "..bbbbbbbb"
+            };
+            static readonly string[] CatTail = {
+                "sf...", "hff..", ".fs..", ".hfs.", "..ff.", "...fb", "....b"
+            };
+            static readonly string[] DogTail = {
+                ".h...", "hff..", ".ff..", ".bff.", "..bfb", "...bb"
+            };
+            static readonly string[] Haunch = {
+                "..hhf", ".hffff", "hffffff", "fffsfff", "fffsfbf", "bfffffb", ".bbffww"
+            };
+
+            public static byte[] Cat(int c) { return Animal(false, c); }
+            public static byte[] Dog(int c) { return Animal(true, c); }
+
+            static byte[] Animal(bool dog, int c)
             {
                 var g = new byte[Grid * Grid];
-                switch (c)
+                int phase = c & 1;
+                var body = dog ? DogBody : CatBody;
+                var head = dog ? DogHead : CatHead;
+                var tail = dog ? DogTail : CatTail;
+
+                if (c == 8 || c == 9)
                 {
-                    case 0: case 2: case 4: CatStand(g, LegsA, 0); break;
-                    case 1: CatStand(g, LegsA, 1); break;
-                    case 3: CatStand(g, LegsB, 1); break;
-                    case 5: CatStand(g, LegsC, 1); break;
-                    case 6: case 7: CatSit(g, c - 6); break;
-                    default: CatSleep(g, c == 9 ? 1 : 0); break;
+                    Stamp(g, 4, 12 - phase, body);
+                    Stamp(g, 3, 16, ".bssss", "sfffffff", ".bbbffww");
+                    Stamp(g, 12, 11, dog ? DogDoze : CatDoze);
+                    Stamp(g, 15, 18, ".wwww"); // muzzle-level paws
+                    if (phase == 1) Stamp(g, 17, 4, "wwww", "..w.", ".w..", "wwww");
+                    return g;
+                }
+                if (c == 6 || c == 7)
+                {
+                    Stamp(g, 3 + phase, 16, ".hhf", "ffsbfb", ".bbbbfff");
+                    Stamp(g, 8, 9, body);
+                    Stamp(g, 7, 12, Haunch);
+                    Leg(g, 16, 14, 0, 18, false);
+                    Stamp(g, 12, 3, head);
+                    return g;
+                }
+                if (c == 14 || c == 15)
+                {
+                    Stamp(g, 2, 5 - phase, tail);
+                    Stamp(g, 5, 9 - phase, body);
+                    Leg(g, 7, 14, -1, 18, false);
+                    Leg(g, 9, 14, 0, 18, true);
+                    Stamp(g, 13, 10, dog ? DogDoze : CatDoze);
+                    Stamp(g, 14, 17, "bbbb", ".bwwwwww");
+                    return g;
+                }
+                if (c == 16 || c == 17)
+                {
+                    Stamp(g, 2 + phase, 10, tail);
+                    Stamp(g, 6, 8, body);
+                    Leg(g, 7, 13, -1 + phase, 18, false);
+                    Leg(g, 10, 13, 0, 17 + phase, true);
+                    Leg(g, 14, 13, phase, 18, false);
+                    Leg(g, 16, 13, 0, 17 - phase, true);
+                    Stamp(g, 12, 3, head);
+                    return g;
+                }
+
+                bool happy = c == 10 || c == 11;
+                bool startled = c == 12 || c == 13;
+                bool swipe = c == 18 || c == 19;
+                int step = c >= 2 && c <= 5 ? c - 2 : -1;
+                int bodyY = startled ? 9 : 10;
+                int headY = happy || startled ? 2 : 3;
+                Stamp(g, 1 + (phase == 1 && !startled ? 1 : 0), startled ? 4 + phase : happy ? 5 : 7, tail);
+                if (startled)
+                    Stamp(g, 5, 8, "h.h.h.h.h", "hhshhshhsh");
+                Leg(g, 8, bodyY + 4, step == 0 ? -1 : step == 2 ? 1 : 0, step == 1 ? 16 : 18, true);
+                Leg(g, 16, bodyY + 4, step == 0 ? 1 : step == 2 ? -1 : 0, step == 3 || happy || swipe ? 16 : 18, true);
+                Leg(g, 6, bodyY + 5, step == 1 ? 1 : step == 3 ? -1 : 0, 18, false);
+                if (!swipe)
+                    Leg(g, 14, bodyY + 5, step == 1 ? -1 : step == 3 ? 1 : 0, happy && phase == 0 ? 17 : 18, false);
+                Stamp(g, 5, bodyY, body);
+                Stamp(g, 12, headY, head);
+                if (happy || c == 1)
+                {
+                    int eyeX = dog ? 17 : 19, eyeY = headY + (dog ? 4 : 5);
+                    Stamp(g, eyeX - 1, eyeY, happy ? "ofo" : "ooo", "fff");
+                    if (happy && dog) Stamp(g, 21, headY + 9, "nn");
+                }
+                if (startled)
+                {
+                    int eyeX = dog ? 17 : 18, eyeY = headY + (dog ? 4 : 5);
+                    Stamp(g, eyeX, eyeY, "we", "ee");
+                }
+                if (swipe)
+                {
+                    if (phase == 0) Stamp(g, 14, 13, ".hhffffw", "bffbbb");
+                    else Stamp(g, 14, 14, "ff", ".ff", "..ff", "...bww");
                 }
                 return g;
             }
 
-            public static byte[] Dog(int c)
+            static readonly string[] CatDoze = {
+                "s.....h", "fh...hff", "fhfffffhh", "sfooffwww",
+                ".bfswwwwn", "..bbwwww", "...bbbb"
+            };
+            static readonly string[] DogDoze = {
+                "..hhh", ".hffffh", "ssfffffff", "sbsfooowwo",
+                ".bsffffwww", "..bbwwwwwo", "...bbwww"
+            };
+
+            static void Leg(byte[] g, int x, int top, int stride, int ground, bool far)
             {
-                var g = new byte[Grid * Grid];
-                switch (c)
+                for (int y = top; y < ground; y++)
                 {
-                    case 0: case 2: case 4: DogStand(g, LegsA, 0); break;
-                    case 1: DogStand(g, LegsA, 1); break;
-                    case 3: DogStand(g, LegsB, 1); break;
-                    case 5: DogStand(g, LegsC, 1); break;
-                    case 6: case 7: DogSit(g, c - 6); break;
-                    default: DogSleep(g, c == 9 ? 1 : 0); break;
+                    int dx = y > top ? stride : 0;
+                    Stamp(g, x + dx, y, far ? "bs" : "fb");
                 }
-                return g;
+                Stamp(g, x + stride, ground, far ? "bb" : "ww");
             }
 
-            // legs: x and height pairs; a height of 1 is a raised paw
-            static void CatStand(byte[] g, int[] legs, int tail)
+            static void Stamp(byte[] g, int x, int y, params string[] rows)
             {
-                Box(g, 3, 8, 9, 4, Fur);
-                Box(g, 10, 4, 5, 4, Fur);
-                Dot(g, 10, 3, Fur); Dot(g, 14, 3, Fur);
-                Dot(g, 13, 5, Dark); Dot(g, 14, 6, Nose);
-                Dot(g, 12, 4, Stripe); Dot(g, 5, 8, Stripe); Dot(g, 7, 8, Stripe); Dot(g, 9, 8, Stripe);
-                Legs(g, legs);
-                if (tail == 0) { Dot(g, 2, 8, Fur); Dot(g, 1, 7, Fur); Dot(g, 1, 6, Fur); Dot(g, 2, 5, Fur); }
-                else { Dot(g, 2, 9, Fur); Dot(g, 1, 8, Fur); Dot(g, 1, 7, Fur); Dot(g, 1, 6, Fur); }
-            }
-
-            static void CatSit(byte[] g, int tail)
-            {
-                Box(g, 5, 7, 6, 5, Fur);
-                Box(g, 4, 10, 2, 4, Fur);
-                Box(g, 6, 12, 3, 2, Fur);
-                Box(g, 10, 12, 1, 2, Fur);
-                Box(g, 9, 3, 5, 4, Fur);
-                Dot(g, 9, 2, Fur); Dot(g, 13, 2, Fur);
-                Dot(g, 12, 4, Dark); Dot(g, 13, 5, Nose);
-                Dot(g, 11, 3, Stripe); Dot(g, 6, 7, Stripe); Dot(g, 8, 7, Stripe);
-                Box(g, 1, 13, 3, 1, Fur);
-                Dot(g, tail == 0 ? 1 : 2, 12, Fur);
-            }
-
-            static void CatSleep(byte[] g, int breath)
-            {
-                int top = 10 + breath;
-                Box(g, 3, top, 9, 14 - top, Fur);
-                Box(g, 10, 9, 4, 4, Fur);
-                Dot(g, 10, 8, Fur); Dot(g, 13, 8, Fur);
-                Box(g, 11, 10, 2, 1, Dark);
-                Dot(g, 5, top, Stripe); Dot(g, 7, top, Stripe);
-                Box(g, 2, 12, 1, 2, Fur);
-                if (breath == 1) Zee(g);
-            }
-
-            // Floppy ear, longer snout, patch on the back, tail up and wagging
-            static void DogStand(byte[] g, int[] legs, int tail)
-            {
-                Box(g, 3, 8, 9, 4, Fur);
-                Box(g, 10, 4, 4, 4, Fur);
-                Box(g, 13, 6, 2, 2, Fur);
-                Dot(g, 14, 6, Dark); Dot(g, 12, 5, Dark);
-                Box(g, 10, 4, 1, 4, Stripe); Dot(g, 11, 4, Stripe);
-                Box(g, 5, 9, 2, 2, Stripe);
-                Legs(g, legs);
-                if (tail == 0) { Dot(g, 2, 8, Fur); Dot(g, 2, 7, Fur); Dot(g, 1, 6, Fur); Dot(g, 1, 5, Fur); }
-                else { Dot(g, 2, 8, Fur); Dot(g, 2, 7, Fur); Dot(g, 2, 6, Fur); Dot(g, 3, 5, Fur); }
-            }
-
-            static void DogSit(byte[] g, int tail)
-            {
-                Box(g, 5, 7, 6, 5, Fur);
-                Box(g, 4, 10, 2, 4, Fur);
-                Box(g, 6, 12, 3, 2, Fur);
-                Box(g, 10, 12, 1, 2, Fur);
-                Box(g, 9, 3, 4, 4, Fur);
-                Box(g, 12, 5, 2, 2, Fur);
-                Dot(g, 13, 5, Dark); Dot(g, 11, 4, Dark);
-                Box(g, 9, 3, 1, 4, Stripe); Dot(g, 10, 3, Stripe);
-                Box(g, 6, 8, 2, 2, Stripe);
-                Box(g, 1, 13, 3, 1, Fur);
-                Dot(g, tail == 0 ? 1 : 2, 12, Fur);
-            }
-
-            static void DogSleep(byte[] g, int breath)
-            {
-                int top = 10 + breath;
-                Box(g, 3, top, 9, 14 - top, Fur);
-                Box(g, 10, 10, 4, 3, Fur);
-                Box(g, 13, 11, 2, 2, Fur);
-                Dot(g, 14, 11, Dark); Dot(g, 12, 11, Dark);
-                Box(g, 10, 10, 1, 3, Stripe);
-                Dot(g, 5, top, Stripe); Dot(g, 6, top, Stripe);
-                Box(g, 1, 13, 2, 1, Fur);
-                if (breath == 1) Zee(g);
-            }
-
-            static void Legs(byte[] g, int[] legs)
-            {
-                for (int i = 0; i < legs.Length; i += 2) Box(g, legs[i], 12, 1, legs[i + 1], Fur);
-            }
-
-            static void Zee(byte[] g)
-            {
-                Box(g, 12, 3, 3, 1, Light);
-                Dot(g, 13, 4, Light);
-                Box(g, 12, 5, 3, 1, Light);
-            }
-
-            static void Box(byte[] g, int x, int y, int w, int h, byte c)
-            {
-                for (int yy = y; yy < y + h; yy++)
-                    for (int xx = x; xx < x + w; xx++) Dot(g, xx, yy, c);
-            }
-
-            static void Dot(byte[] g, int x, int y, byte c)
-            {
-                if (x >= 0 && y >= 0 && x < Grid && y < Grid) g[y * Grid + x] = c;
+                for (int j = 0; j < rows.Length; j++)
+                    for (int i = 0; i < rows[j].Length; i++)
+                        if (rows[j][i] != '.') g[(y + j) * Grid + x + i] = (byte)Ink.IndexOf(rows[j][i]);
             }
 
             static byte[] Outline(byte[] g)

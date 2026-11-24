@@ -24,6 +24,13 @@ namespace Deskmate
         // Passing feedback is dropped, news waits
         static bool Fleeting(View v) { return v == View.Volume || v == View.Brightness || v == View.Locks || v == View.Mic || v == View.Track || v == View.AudioDevice || v == View.Network || v == View.Privacy; }
 
+        bool QuietToast(View v, int priority)
+        {
+            return (Quiet || MeetingOn || ExceptQuieted() || FocusHold) && priority < 3 &&
+                (v == View.Notif || v == View.Track || v == View.Network || v == View.Privacy || v == View.Remind ||
+                    v == View.Download || v == View.Info || v == View.Done);
+        }
+
         Toast ShowToast(View v, double seconds, int priority, bool interactive, bool force = false)
         {
             if (toast != null && toast.Hold && !IsReminder(v))
@@ -37,7 +44,7 @@ namespace Deskmate
             if (toast != null && toast.Priority > priority) return null;
             // Senyap: only what can't wait
             // Calls hold the same quiet news
-            if ((Quiet || MeetingOn || ExceptQuieted() || FocusHold) && priority < 3 && (v == View.Notif || v == View.Track || v == View.Network || v == View.Privacy || v == View.Remind || v == View.Download || v == View.Info || v == View.Done)) return null;
+            if (QuietToast(v, priority)) return null;
             // Retracted: quiet news stays in the sliver
             if (MiniOn() && !MiniLets(v, priority)) return null;
             if (expanded && !force)

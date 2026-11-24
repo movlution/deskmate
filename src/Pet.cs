@@ -53,6 +53,9 @@ namespace Deskmate
             // Owned by the dock: always just above it, and the dock's later windows stay above both
             pet.Owner = dock;
             pet.Floor(dock != null ? dock.PetFloor() : Rectangle.Empty, dock != null);
+            pet.SetAutoChase(settings.GetBool("pet.autoChase", false));
+            ApplyRemotePets(work, s, mon, dock);
+            SyncLocalPetProfile();
         }
 
         // Built-in art, or the chosen folder under pets\. Reloaded only when the choice
@@ -103,13 +106,29 @@ namespace Deskmate
         }
 
         // A closing owner would take the pet with it
-        void DetachPet() { if (pet != null && !pet.IsDisposed) pet.Owner = null; }
+        void DetachPet()
+        {
+            if (pet != null && !pet.IsDisposed) pet.Owner = null;
+            DetachRemotePets();
+        }
 
         // Every dock frame: the pet rides the bar as it rises and drops
-        void PetFollow(DockWindow d) { if (pet != null && !pet.IsDisposed && d == dockWin) pet.Floor(d.PetFloor(), true); }
+        bool PetUsesDock(DockWindow d) { return pet != null && !pet.IsDisposed && d == dockWin && PetReactOn; }
+
+        void PetFollow(DockWindow d)
+        {
+            if (pet == null || pet.IsDisposed || d != dockWin) return;
+            var fl = d.PetFloor();
+            pet.Floor(fl, true);
+            RemotePetsFollow(fl);
+            d.ShowPetIconMoment();
+        }
 
         void ClosePet()
         {
+            ClosePetChatUi();
+            CloseRemotePets();
+            StopPetRoom();
             if (pet != null && !pet.IsDisposed) pet.Close();
             pet = null;
             // Switching off and on again reloads a custom pet
@@ -120,6 +139,36 @@ namespace Deskmate
         sealed partial class DockWindow
         {
             internal Screen PetScreen { get { return targetScreen; } }
+
+            DockApp petIcon;
+            bool petIconScratch, petIconBaseline, petBadgeBaseline;
+            double petIconUntil;
+            internal bool PetIconReady { get { return shown && !closing && RevealReady && reveal.Target > 0 && isle != null && isle.PetUsesDock(this); } }
+
+            void QueuePetIcon(DockApp app, bool scratch)
+            {
+                if (Anim.Reduced || !PetIconReady || (scratch && isle.Quiet)) return;
+                if (petIcon != null && !petIconScratch && scratch) return;
+                petIcon = app;
+                petIconScratch = scratch;
+                petIconUntil = clock.Elapsed.TotalSeconds + 0.6;
+            }
+
+            internal void ShowPetIconMoment()
+            {
+                if (petIcon == null) return;
+                if (!PetIconReady || petIcon.Leaving || clock.Elapsed.TotalSeconds >= petIconUntil ||
+                    (petIconScratch ? petIcon.Badge == 0 : !petIcon.Running))
+                {
+                    petIcon = null;
+                    return;
+                }
+                if (petIcon.Show.Value <= 0.5f) return;
+                Rectangle icon = IconScreenRect(petIcon);
+                var scratch = petIconScratch;
+                petIcon = null;
+                if (!icon.IsEmpty && (!scratch || !isle.Quiet)) isle.pet.DockTrick(icon.Left + icon.Width / 2.0, scratch);
+            }
 
             // Screen px: the flat part of the bar's top edge, held at the screen bottom while the bar
             // is down. Empty while the dock is hidden or not laid out yet.
@@ -135,7 +184,7 @@ namespace Deskmate
         }
 
         // Happy, Surprised and Stretch are short reactions that return to Idle
-        enum PetMode { Idle, Walk, Sit, Sleep, Happy, Surprised, Stretch }
+        enum PetMode { Idle, Walk, Sit, Sleep, Happy, Surprised, Stretch, Held, Scratch }
 
         // Time-driven behaviour with no window, so tests can step it
         sealed class PetBrain
@@ -155,6 +204,12 @@ namespace Deskmate
             // Ambient cues, refreshed once a second: music playing, a focus session
             public bool Groove, Calm;
             bool away;
+            double playLeft, autoAfter, autoSampleTime = -1;
+            Point autoSample;
+            double dockHopFrom, dockHopTo, nextDockTrick;
+            bool dockHop;
+            bool held;
+            double heldLift, dropHeight, dropTime;
             readonly Random rnd;
 
             public PetBrain(int seed) { rnd = new Random(seed); }
@@ -166,12 +221,138 @@ namespace Deskmate
             public double ModeLeft { get { return Mode == PetMode.Walk ? double.MaxValue : Math.Max(0.001, modeLeft); } }
 
             // The walk cycle follows ground speed
-            public double Pace { get { return Mode == PetMode.Walk ? Speed / BaseSpeed : 1; } }
+            double PlaySpeed { get { return Math.Max(2 * Speed, 2 * BaseSpeed); } }
+            public double Pace { get { return Mode == PetMode.Walk ? (Playing ? PlaySpeed : Speed) / BaseSpeed : 1; } }
+
+            public bool Playing { get { return playLeft > 0; } }
+
+            public bool CanProbeAuto(double now)
+            {
+                return !Playing && !Away && !NoWalk && !Calm && !Reacting && !Manipulating &&
+                    Mode != PetMode.Sleep && hopT < 0 && Right - Left >= 24 * Scale && now >= autoAfter;
+            }
+
+            public bool ProbeAuto(Point at, double now, double halfWidth, bool nearby)
+            {
+                if (!nearby || !CanProbeAuto(now))
+                {
+                    autoSampleTime = -1;
+                    return false;
+                }
+                double dt = now - autoSampleTime;
+                int dx = Math.Abs(at.X - autoSample.X), dy = Math.Abs(at.Y - autoSample.Y);
+                bool fast = autoSampleTime >= 0 && dt > 0 && dt <= 0.25 &&
+                    dx >= Math.Max(24 * Scale, 360 * Scale * dt) && dx >= 2 * dy;
+                autoSampleTime = now;
+                autoSample = at;
+                double gap = Math.Abs(at.X - (X + halfWidth));
+                if (!fast || gap < 24 * Scale || gap > 160 * Scale) return false;
+
+                Enter(PetMode.Walk);
+                hopT = -1;
+                playLeft = 1.5;
+                autoAfter = now + playLeft + 20;
+                autoSampleTime = -1;
+                return true;
+            }
+
+            // Play receives cursor samples from the existing frame pacer only during a session.
+            public bool StepPlay(double dt, double pointerX, double halfWidth, bool allowed)
+            {
+                if (!Playing) return false;
+                if (!allowed || NoWalk || Calm || away || Right - Left < 24 * Scale || dt >= playLeft)
+                {
+                    Enter(PetMode.Idle);
+                    return false;
+                }
+                playLeft -= dt;
+                double gap = Clamp(pointerX - halfWidth) - X;
+                double step = PlaySpeed * Scale * Math.Min(dt, 0.1);
+                if (Math.Abs(pointerX - (X + halfWidth)) <= 8 * Scale)
+                {
+                    Enter(PetMode.Idle);
+                    return true;
+                }
+                if (gap != 0) Dir = Math.Sign(gap);
+                if (gap != 0) animT += dt;
+                X += Math.Sign(gap) * Math.Min(Math.Abs(gap), step);
+                return false;
+            }
+
+            public void StopPlay() { if (Playing) Enter(PetMode.Idle); }
 
             // Walking or mid-hop: frames run on vsync
-            public bool Moving { get { return Mode == PetMode.Walk || hopT >= 0; } }
+            public bool Moving { get { return Mode == PetMode.Walk || hopT >= 0 || Manipulating; } }
+            public bool Holding { get { return held; } }
+            public bool Manipulating { get { return Mode == PetMode.Held; } }
 
-            public bool Reacting { get { return Mode == PetMode.Happy || Mode == PetMode.Surprised || Mode == PetMode.Stretch; } }
+            public static bool DragThreshold(Point start, Point at, float scale)
+            {
+                return Math.Max(Math.Abs(at.X - start.X), Math.Abs(at.Y - start.Y)) >= 8 * scale;
+            }
+
+            public bool BeginHold()
+            {
+                if (NoWalk || Calm || away || Manipulating) return false;
+                Enter(PetMode.Held);
+                hopT = -1;
+                held = true;
+                heldLift = 0;
+                return true;
+            }
+
+            public void MoveHeld(double x, double lift)
+            {
+                if (!held) return;
+                X = Clamp(x);
+                heldLift = Math.Max(0, Math.Min(96 * Scale, lift));
+            }
+
+            public void EndHold()
+            {
+                if (!held) return;
+                held = false;
+                dropHeight = heldLift;
+                dropTime = 0;
+                if (dropHeight <= 0) CancelHold();
+            }
+
+            public void CancelHold()
+            {
+                if (!Manipulating) return;
+                held = false;
+                heldLift = 0;
+                Enter(PetMode.Idle);
+            }
+
+            public bool Reacting { get { return Mode == PetMode.Happy || Mode == PetMode.Surprised || Mode == PetMode.Stretch || Mode == PetMode.Scratch; } }
+
+            public bool TryDockTrick(double iconX, double halfWidth, bool scratch, double seconds, double now)
+            {
+                // The app badge and the Island toast may describe the same notification.
+                bool replaceSurprise = scratch && Mode == PetMode.Surprised;
+                if (NoWalk || Calm || Away || Playing || Manipulating || Mode == PetMode.Sleep || now < nextDockTrick ||
+                    (!replaceSurprise && (Reacting || hopT >= 0))) return false;
+                double gap = iconX - (X + halfWidth);
+                if (Math.Abs(gap) > 96 * Scale) return false;
+                if (gap != 0) Dir = Math.Sign(gap);
+                double target = scratch && Math.Abs(gap) > 12 * Scale ? iconX - Dir * 12 * Scale : iconX;
+                React(scratch ? PetMode.Scratch : PetMode.Happy, Math.Max(HopTime, seconds), scratch ? 0.45 : 0.7);
+                dockHopFrom = X;
+                dockHopTo = Clamp(target - halfWidth);
+                dockHop = true;
+                nextDockTrick = now + 6;
+                return true;
+            }
+
+            public bool DockTrickActive { get { return dockHop || Mode == PetMode.Scratch; } }
+
+            public void CancelDockTrick()
+            {
+                if (!DockTrickActive) return;
+                hopT = -1;
+                Enter(PetMode.Idle);
+            }
 
             // Asleep because nobody is at the keyboard
             public bool Away { get { return away; } }
@@ -185,10 +366,10 @@ namespace Deskmate
             // A reaction pose for a while, with a hop scaled by hop (0 for none). Nobody to react to while away.
             public bool React(PetMode m, double seconds, double hop)
             {
-                if (away) return false;
+                if (away || Manipulating) return false;
                 Enter(m);
                 modeLeft = seconds;
-                if (hop > 0 && !NoWalk) { hopT = 0; hopScale = hop; }
+                if (hop > 0 && !NoWalk && !Calm) { hopT = 0; hopScale = hop; }
                 return true;
             }
 
@@ -197,6 +378,8 @@ namespace Deskmate
             {
                 if (on == away) return;
                 away = on;
+                CancelHold();
+                hopT = -1;
                 Enter(on ? PetMode.Sleep : PetMode.Stretch);
                 modeLeft = on ? 1e9 : stretchSeconds;
             }
@@ -206,6 +389,7 @@ namespace Deskmate
             {
                 get
                 {
+                    if (Manipulating) return heldLift;
                     if (hopT >= 0)
                     {
                         double u = hopT / HopTime;
@@ -216,10 +400,17 @@ namespace Deskmate
             }
 
             // Click: a sleeping or sitting pet wakes; reduced motion skips the hop itself
+            public void Click(double stretchSeconds)
+            {
+                StopPlay();
+                if (Away) SetAway(false, stretchSeconds);
+                else Hop();
+            }
+
             public void Hop()
             {
                 if (Mode == PetMode.Sleep || Mode == PetMode.Sit) Enter(PetMode.Idle);
-                if (!NoWalk) { hopT = 0; hopScale = 1; }
+                if (!NoWalk && !Calm) { hopT = 0; hopScale = 1; }
             }
 
             // Pointer over the pet: a walk stops and it looks that way (dx > 0: pointer to the right).
@@ -227,7 +418,7 @@ namespace Deskmate
             public bool Notice(int dx)
             {
                 // A reaction keeps its pose; petting must not flip it side to side
-                if (Mode == PetMode.Sleep || Reacting) return false;
+                if (Mode == PetMode.Sleep || Reacting || Manipulating) return false;
                 int face = dx >= 0 ? 1 : -1;
                 bool changed = face != Dir;
                 Dir = face;
@@ -250,14 +441,34 @@ namespace Deskmate
             {
                 if (dt < 0) dt = 0;
                 animT += dt;
+                if (Manipulating)
+                {
+                    if (NoWalk || Calm) { CancelHold(); return; }
+                    if (held) return;
+                    dropTime += Math.Min(dt, 0.05);
+                    heldLift = dropHeight - 800 * Scale * dropTime * dropTime;
+                    if (heldLift <= 0)
+                    {
+                        CancelHold();
+                        hopT = 0;
+                        hopScale = 0.4;
+                    }
+                    return;
+                }
+                if (NoWalk || Calm) { CancelDockTrick(); hopT = -1; }
                 if (hopT >= 0)
                 {
                     hopT += Math.Min(dt, 0.1);
-                    if (hopT >= HopTime) hopT = -1;
+                    if (dockHop)
+                    {
+                        double u = Math.Min(1, hopT / HopTime);
+                        X = Clamp(dockHopFrom + (dockHopTo - dockHopFrom) * u);
+                    }
+                    if (hopT >= HopTime) { hopT = -1; dockHop = false; }
                 }
                 if (Mode == PetMode.Walk)
                 {
-                    if (NoWalk) { Enter(PetMode.Sit); return; }
+                    if (NoWalk || Calm) { Enter(PetMode.Sit); return; }
                     // A stalled frame slows the step instead of teleporting the pet
                     double v = Speed * Scale * Math.Min(dt, 0.1), gap = targetX - X;
                     if (Math.Abs(gap) <= v) { X = targetX; Enter(rnd.NextDouble() < 0.6 ? PetMode.Idle : PetMode.Sit); }
@@ -265,7 +476,7 @@ namespace Deskmate
                     return;
                 }
                 modeLeft -= dt;
-                if (modeLeft <= 0) Next();
+                if (modeLeft <= 0 && !dockHop) Next();
             }
 
             void Next()
@@ -293,6 +504,9 @@ namespace Deskmate
 
             void Enter(PetMode m)
             {
+                playLeft = 0;
+                if (dockHop) hopT = -1;
+                dockHop = false;
                 Mode = m;
                 animT = 0;
                 double r = rnd.NextDouble();
@@ -325,10 +539,138 @@ namespace Deskmate
             double lastT;
             bool hidden, closing, wasMoving, placed, rebuild;
             int waitTicks;
+            double scratchLastFrame;
             int drawnX = int.MinValue, drawnY = int.MinValue, drawnCell = -1, drawnRow = -1;
             // Trial counters: frames run, bitmap uploads, moves without a bitmap, worst walking gap
             public int Frames, Uploads, Moves;
             public double MaxGapMs;
+
+            // Remote pet state (when IsRemote == true, driven by network updates instead of local PetBrain)
+            public bool IsRemote;
+            public string PeerId, PeerName;
+            double remoteX, remoteTargetNorm = 0.5, remoteAnimT, remoteHopT = -1;
+            int remoteDir = 1;
+            PetMode remoteMode = PetMode.Idle;
+            bool remotePlaced;
+            PetMode lastPubMode = PetMode.Idle;
+            int lastPubDir = 1;
+            double lastPubNorm = -1;
+            bool lastPubHop;
+            PetChatBubble chatBubble;
+
+            public double NormX
+            {
+                get
+                {
+                    double x = IsRemote ? remoteX : brain.X;
+                    return lane.Width > 0 ? Math.Max(0, Math.Min(1, (x - lane.Left) / lane.Width)) : 0.5;
+                }
+            }
+            public int DrawnCenterX { get { return drawnX == int.MinValue ? lane.Left + cw / 2 : drawnX + cw / 2; } }
+            public int BubbleAnchorY { get { return sheet == null ? lane.Y : lane.Y - (sheet.Base + 1 - sheet.Top) * f; } }
+            public Rectangle WorkArea { get { return work; } }
+            public float UiScale { get { return scale; } }
+            public bool CanShowBubble { get { return placed && !hidden && !closing && Visible && !Native.IsFullscreenOn(monitor); } }
+
+            double RemoteTargetX { get { return lane.Left + Math.Max(0, Math.Min(1, remoteTargetNorm)) * lane.Width; } }
+            bool RemoteMoving { get { return Math.Abs(RemoteTargetX - remoteX) > 1.0 || remoteHopT >= 0; } }
+            double RemoteLift { get { return remoteHopT < 0 ? 0 : Math.Sin(Math.PI * Math.Min(1, remoteHopT / PetBrain.HopTime)) * PetBrain.HopHeight * scale; } }
+
+            public void ApplyRemoteState(double xNorm, int dir, PetMode mode, bool hop)
+            {
+                if (!IsRemote) return;
+                remoteTargetNorm = Math.Max(0, Math.Min(1, xNorm));
+                remoteDir = dir >= 0 ? 1 : -1;
+                if (mode != remoteMode) { remoteMode = mode; remoteAnimT = 0; }
+                if (hop && remoteHopT < 0) remoteHopT = 0;
+                if (!remotePlaced && placed)
+                {
+                    remoteX = RemoteTargetX;
+                    remotePlaced = true;
+                }
+                if (placed && !closing && !hidden) { lastT = clock.Elapsed.TotalSeconds; Frame(); }
+            }
+
+            public void FacePoint(int screenX)
+            {
+                int dir = screenX >= DrawnCenterX ? 1 : -1;
+                if (IsRemote) remoteDir = dir;
+                else brain.Dir = dir;
+                if (placed && !closing && !hidden) Frame();
+            }
+
+            public void PopEmote(PetEmote kind)
+            {
+                if (placed && !closing && !hidden) { Emote(kind); Frame(); }
+            }
+
+            public void ShowChatBubble(string sender, string text, bool masked, Action onReply)
+            {
+                if (!CanShowBubble || sheet == null) return;
+                CloseChatBubble();
+                var b = new PetChatBubble(sender, text, masked, scale, work.Width, () => CanShowBubble, onReply);
+                if (!b.MoveAbove(work, new Point(DrawnCenterX, BubbleAnchorY)))
+                {
+                    b.Dispose();
+                    return;
+                }
+                b.FormClosed += delegate { if (chatBubble == b) chatBubble = null; };
+                b.Show(this);
+                chatBubble = b;
+            }
+
+            public void CloseChatBubble()
+            {
+                if (chatBubble != null && !chatBubble.IsDisposed) chatBubble.Close();
+                chatBubble = null;
+            }
+
+            void PlaceChatBubble()
+            {
+                if (chatBubble != null && !chatBubble.IsDisposed && !chatBubble.MoveAbove(work, new Point(DrawnCenterX, BubbleAnchorY)))
+                    CloseChatBubble();
+            }
+
+            void StepRemote(double dt)
+            {
+                if (dt < 0) dt = 0;
+                double clamped = Math.Min(dt, 0.1);
+                remoteAnimT += clamped;
+                if (remoteHopT >= 0)
+                {
+                    remoteHopT += clamped;
+                    if (remoteHopT >= PetBrain.HopTime) remoteHopT = -1;
+                }
+                double target = RemoteTargetX;
+                if (!remotePlaced) { remoteX = target; remotePlaced = true; }
+                double gap = target - remoteX;
+                if (Math.Abs(gap) <= 1.0)
+                {
+                    remoteX = target;
+                }
+                else
+                {
+                    // Smooth catch-up towards remote peer's latest xNorm
+                    double step = Math.Max(PetBrain.BaseSpeed * scale * 2.5 * clamped, Math.Abs(gap) * Math.Min(1.0, clamped * 10.0));
+                    remoteX += Math.Sign(gap) * Math.Min(Math.Abs(gap), step);
+                    remoteDir = Math.Sign(gap);
+                }
+            }
+
+            void PublishLocalState()
+            {
+                if (IsRemote || Isle == null || !Isle.PetRoomConnected) return;
+                double n = NormX;
+                bool hop = brain.Lift > 1.0;
+                bool changed = brain.Mode != lastPubMode || brain.Dir != lastPubDir || hop != lastPubHop || Math.Abs(n - lastPubNorm) >= 0.008;
+                if (!changed) return;
+                bool force = brain.Mode != lastPubMode || brain.Dir != lastPubDir || (hop && !lastPubHop);
+                lastPubMode = brain.Mode;
+                lastPubDir = brain.Dir;
+                lastPubNorm = n;
+                lastPubHop = hop;
+                Isle.PublishLocalPetState(n, brain.Dir, (int)brain.Mode, hop, force);
+            }
 
             public PetWindow(Rectangle work, float scale, IntPtr monitor, Func<bool> away)
             {
@@ -375,6 +717,7 @@ namespace Deskmate
             public void Use(PetSheet sheet, int height, int speedPercent)
             {
                 if (sheet != this.sheet || height != this.height) rebuild = true;
+                if (sheet != this.sheet) scratchLastFrame = Math.Max(0, sheet.Length(PetMode.Scratch) - 0.001);
                 this.sheet = sheet;
                 this.height = height;
                 brain.Speed = PetBrain.BaseSpeed * speedPercent / 100.0;
@@ -425,6 +768,11 @@ namespace Deskmate
                 if (sheet == null) return;
                 lane = Lane(work, floor, cw);
                 brain.Bounds(lane.Left, lane.Right, !placed);
+                if (IsRemote)
+                {
+                    remoteX = RemoteTargetX;
+                    remotePlaced = true;
+                }
                 if (placed) { Draw(); return; }
                 placed = true;
                 lastT = clock.Elapsed.TotalSeconds;
@@ -478,12 +826,41 @@ namespace Deskmate
                 if (closing || !placed) return;
                 double now = clock.Elapsed.TotalSeconds, dt = now - lastT;
                 lastT = now;
+                if (IsRemote)
+                {
+                    Frames++;
+                    StepRemote(dt);
+                    Draw();
+                    if (emote != null) emote.Step(now);
+                    Schedule();
+                    return;
+                }
                 if (wasMoving && brain.Moving && dt * 1000 > MaxGapMs) MaxGapMs = dt * 1000;
                 Frames++;
                 brain.NoWalk = Anim.Reduced;
-                brain.Step(dt);
+                brain.Calm = FocusActive;
+                bool caught = false;
+                if (brain.DockTrickActive && (PlayBlocked || !DockTrickVisible(now)))
+                {
+                    brain.CancelDockTrick();
+                    if (emote != null) emote.Stop();
+                }
+                if (petPressed) UpdatePetPress();
+                if (brain.Playing)
+                {
+                    Point at = Cursor.Position;
+                    caught = brain.StepPlay(dt, at.X, cw / 2.0, !PlayBlocked && AutoChaseAllowed(at, now));
+                    if (caught) brain.React(PetMode.Happy, Math.Max(1.4, sheet.Length(PetMode.Happy)), 0);
+                }
+                else
+                {
+                    if (!petPressed || brain.Holding) brain.Step(dt);
+                    if (!petPressed) ProbeAutoChase(now);
+                }
                 wasMoving = brain.Moving;
                 Draw();
+                PublishLocalState();
+                if (caught) Emote(PetEmote.Spark);
                 if (emote != null) emote.Step(now);
                 Schedule();
             }
@@ -493,7 +870,22 @@ namespace Deskmate
             {
                 if (pacer == null) return;
                 if (hidden || closing) { pacer.Done(false); rest.Stop(); return; }
-                if (brain.Moving || (emote != null && emote.Active))
+                if (IsRemote)
+                {
+                    if (RemoteMoving || (emote != null && emote.Active))
+                    {
+                        rest.Stop();
+                        pacer.Want();
+                        pacer.Done(true);
+                        return;
+                    }
+                    pacer.Done(false);
+                    double rwait = sheet != null ? sheet.NextChange(remoteMode, remoteAnimT, 1.0) : 0.25;
+                    rest.Interval = Math.Max(16, (int)Math.Min(1000, Math.Ceiling(rwait * 1000)));
+                    rest.Start();
+                    return;
+                }
+                if (petPressed || brain.Moving || (emote != null && emote.Active))
                 {
                     rest.Stop();
                     pacer.Want();
@@ -501,7 +893,11 @@ namespace Deskmate
                     return;
                 }
                 pacer.Done(false);
-                double wait = Math.Min(Math.Min(sheet.NextChange(brain.Mode, brain.AnimT, brain.Pace), brain.ModeLeft), brain.NextBob);
+                double wait = Math.Min(brain.Mode == PetMode.Scratch && brain.AnimT >= scratchLastFrame
+                    ? double.MaxValue : sheet.NextChange(brain.Mode, brain.AnimT, brain.Pace), brain.ModeLeft);
+                wait = Math.Min(wait, brain.NextBob);
+                // Auto chase: about 16 samples a second only while the cursor is near the dock, 4 otherwise
+                if (CanProbeAutoChase(clock.Elapsed.TotalSeconds)) wait = Math.Min(wait, AutoChaseNear(Cursor.Position) ? 0.06 : 0.25);
                 rest.Interval = Math.Max(16, (int)Math.Min(int.MaxValue, Math.Ceiling(wait * 1000)));
                 rest.Start();
             }
@@ -509,9 +905,24 @@ namespace Deskmate
             void Draw()
             {
                 if (memDC == IntPtr.Zero || hidden || !placed) return;
-                int x = (int)Math.Round(brain.X), c = sheet.Frame(brain.Mode, brain.AnimT, brain.Pace), row = brain.Dir > 0 ? 0 : 1;
-                // The lowest opaque row of the sheet stands on the ground
-                int y = lane.Y - (sheet.Base + 1) * f - (int)Math.Round(brain.Lift);
+                int x, c, row, y;
+                if (IsRemote)
+                {
+                    PetMode drawMode = Math.Abs(RemoteTargetX - remoteX) > 1.5 ? PetMode.Walk : remoteMode;
+                    x = (int)Math.Round(remoteX);
+                    c = sheet.Frame(drawMode, remoteAnimT, 1.0);
+                    row = remoteDir > 0 ? 0 : 1;
+                    y = lane.Y - (sheet.Base + 1) * f - (int)Math.Round(RemoteLift);
+                }
+                else
+                {
+                    double poseTime = brain.Mode == PetMode.Scratch ? Math.Min(brain.AnimT, scratchLastFrame) : brain.AnimT;
+                    x = (int)Math.Round(brain.X);
+                    c = sheet.Frame(brain.Mode, poseTime, brain.Pace);
+                    row = brain.Dir > 0 ? 0 : 1;
+                    // The lowest opaque row of the sheet stands on the ground
+                    y = lane.Y - (sheet.Base + 1) * f - (int)Math.Round(brain.Lift);
+                }
                 bool art = c != drawnCell || row != drawnRow;
                 if (!art && x == drawnX && y == drawnY) return;
                 if (art)
@@ -532,17 +943,30 @@ namespace Deskmate
                 drawnY = y;
                 drawnCell = c;
                 drawnRow = row;
+                PlaceWellness();
+                PlaceChatBubble();
             }
 
             // Out of the way of fullscreen games, video and presentations, and gone with a hidden Deskmate
             void Watch()
             {
                 if (!placed && ++waitTicks >= 3) { floor = Rectangle.Empty; Settle(); }
-                Cue();
                 bool hide = (away != null && away()) || Native.IsFullscreenOn(monitor);
+                if (!hide && !IsRemote) Cue();
                 if (hide == hidden) return;
                 hidden = hide;
-                if (hide) { if (emote != null) emote.Stop(); Native.ShowWindow(Handle, Native.SW_HIDE); Schedule(); return; }
+                if (hide)
+                {
+                    brain.StopPlay();
+                    brain.CancelDockTrick();
+                    CancelPetPress();
+                    if (emote != null) emote.Stop();
+                    CloseWellness();
+                    CloseChatBubble();
+                    Native.ShowWindow(Handle, Native.SW_HIDE);
+                    Schedule();
+                    return;
+                }
                 Native.ShowWindow(Handle, Native.SW_SHOWNOACTIVATE);
                 lastT = clock.Elapsed.TotalSeconds;
                 drawnCell = -1;
@@ -552,14 +976,30 @@ namespace Deskmate
             protected override void WndProc(ref Message m)
             {
                 if (m.Msg == FrameMsg) { Frame(); return; }
+                if (IsRemote)
+                {
+                    if ((m.Msg == 0x202 || m.Msg == 0x205) && placed && Isle != null)
+                    {
+                        Isle.OpenPetChatInput(this);
+                        return;
+                    }
+                    if (m.Msg == Native.WM_MOUSEACTIVATE) { m.Result = (IntPtr)Native.MA_NOACTIVATE; return; }
+                    base.WndProc(ref m);
+                    return;
+                }
+                if (m.Msg == 0x84 && brain != null && brain.DockTrickActive) { m.Result = (IntPtr)(-1); return; }
                 if (m.Msg == 0x200 && placed)
                 {
+                    if (petPressed || brain.Manipulating || brain.Playing) return;
                     bool turned = brain.Notice(Cursor.Position.X - (Left + cw / 2));
                     if (stroke.Feed(Cursor.Position.X, clock.Elapsed.TotalSeconds, Math.Max(2, f))) Petted();
                     else if (turned) Frame();
                     return;
                 }
-                if (m.Msg == 0x201 && placed) { brain.Hop(); Frame(); return; }
+                if ((m.Msg == 0x201 || m.Msg == 0x203) && placed && sheet != null) { BeginPetPress(); return; }
+                if (m.Msg == 0x202 && petPressed) { EndPetPress(Cursor.Position); Frame(); return; }
+                if ((m.Msg == 0x001F || m.Msg == 0x0215) && petPressed) { CancelPetPress(); Frame(); }
+                if (m.Msg == 0x205 && placed && !petPressed && !brain.Manipulating) { ShowPetContextMenu(); return; }
                 if (m.Msg == Native.WM_MOUSEACTIVATE) { m.Result = (IntPtr)Native.MA_NOACTIVATE; return; }
                 base.WndProc(ref m);
             }
@@ -567,6 +1007,9 @@ namespace Deskmate
             protected override void OnFormClosed(FormClosedEventArgs e)
             {
                 closing = true;
+                CloseWellness();
+                CloseChatBubble();
+                CancelPetPress();
                 rest.Stop();
                 watch.Stop();
                 if (pacer != null) pacer.Stop();
