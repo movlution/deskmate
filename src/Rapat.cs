@@ -184,7 +184,7 @@ namespace Deskmate
             t.Glyph = '\uE8A5';
             t.Title = Lang.T("Transkrip rapat siap");
             t.Detail = error ?? Lang.T("Klik untuk membuka");
-            t.Data = new Action(delegate { try { Process.Start(path); } catch (Exception ex) { Log.Write("buka transkrip: " + ex.Message); } });
+            t.Data = new Action(delegate { try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch (Exception ex) { Log.Write("buka transkrip: " + ex.Message); } });
         }
 
         // Raw PCM tracks: how many seconds were actually recorded

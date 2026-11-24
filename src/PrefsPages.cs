@@ -461,7 +461,7 @@ namespace Deskmate
                                 Button(Lang.T("Kembalikan banner Windows"), false, delegate { island.RestoreWindowsBanners(); Relayout(); })));
                         var doubled = island.DoubledApps();
                         if (deskmateBanner && doubled.Count > 0)
-                            add(Row(Lang.T("Banner Windows masih nyala"), string.Join(", ", doubled.ToArray()), Button(Lang.T("Buka pengaturan Windows"), false, delegate { try { Process.Start("ms-settings:notifications"); } catch (Exception ex) { Log.Write("ms-settings: " + ex.Message); } })));
+                            add(Row(Lang.T("Banner Windows masih nyala"), string.Join(", ", doubled.ToArray()), Button(Lang.T("Buka pengaturan Windows"), false, delegate { try { Process.Start(new ProcessStartInfo("ms-settings:notifications") { UseShellExecute = true }); } catch (Exception ex) { Log.Write("ms-settings: " + ex.Message); } })));
                         add(ListRow(Lang.T("Aplikasi chat tambahan"), Lang.T("Nama aplikasi dipisah koma, Enter menyimpan"), "notif.apps", "Element, Zalo"));
                         string share = settings.Get("share.mode", "auto");
                         add(Row(Lang.T("Mode berbagi layar"), Lang.T("Zoom, Meet, Teams: isi pesan disamarkan saat berbagi layar"),

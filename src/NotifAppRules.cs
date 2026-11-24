@@ -168,7 +168,7 @@ namespace Deskmate
             if (windows)
                 menu.Items.Add(Lang.T("Buka pengaturan Windows"), null, delegate
                 {
-                    try { Process.Start("ms-settings:notifications"); }
+                    try { Process.Start(new ProcessStartInfo("ms-settings:notifications") { UseShellExecute = true }); }
                     catch (Exception ex) { Log.Write("ms-settings: " + ex.Message); }
                 });
             return menu;

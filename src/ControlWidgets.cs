@@ -137,7 +137,7 @@ namespace Deskmate
 
         void OpenSettings(string uri)
         {
-            try { Process.Start(uri); } catch (Exception ex) { Log.Write("settings: " + ex.Message); }
+            try { Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true }); } catch (Exception ex) { Log.Write("settings: " + ex.Message); }
         }
 
         // Timer: presets idle, countdown when running
