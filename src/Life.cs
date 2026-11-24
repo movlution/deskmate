@@ -178,6 +178,7 @@ namespace Deskmate
             if (phone != null) phone.Sweep();
             if (TickMeeting()) { Kick(); redraw = true; }
             TickShare(now);
+            TickGuard(now);
             if (AwakeTick(now, minute)) redraw = true;
             if (minute && ShelfExpireTick()) redraw = true;
             if (mediaInfo.Present) SyncLyrics();

@@ -45,6 +45,7 @@ namespace Deskmate
                 case View.Shot: return new SizeF((OcrShown ? 438 : 380) + ShotBlurW - 52, 76);
                 case View.Mic: return new SizeF(MicWidth(), 42);
                 case View.Drive: return new SizeF(DriveWidth(), 64);
+                case View.Guard: return new SizeF(GuardWidth(), 64);
                 case View.Run: return new SizeF(RunWidth(), 38);
                 case View.Meet: return new SizeF(MeetWidth(), 38);
                 case View.Mirror: return new SizeF(MirrorW, MirrorH);
@@ -71,6 +72,7 @@ namespace Deskmate
                 case View.Deadline:
                 case View.Shot:
                 case View.Drive:
+                case View.Guard:
                 case View.Otp:
                 case View.Prompter:
                 case View.Mirror:
@@ -113,6 +115,7 @@ namespace Deskmate
                 case View.Shot: DrawShot(w, h); break;
                 case View.Mic: DrawMic(w, h); break;
                 case View.Drive: DrawDrive(w, h); break;
+                case View.Guard: DrawGuard(w, h); break;
                 case View.Run: DrawRun(w, h); break;
                 case View.Meet: DrawMeet(w, h); break;
                 case View.Mirror: DrawMirror(w, h); break;

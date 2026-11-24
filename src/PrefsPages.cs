@@ -485,6 +485,7 @@ namespace Deskmate
                         cap(Lang.T("Lainnya"));
                         add(Row(Lang.T("Kelas yang berlangsung"), null, Switch("class.island", true, null)));
                         add(Row(Lang.T("Progres unduhan"), null, Switch("downloads", true, null)));
+                        add(Row(Lang.T("Penjaga beban"), Lang.T("Aplikasi di latar yang memakai banyak CPU atau RAM selama beberapa menit: mode hemat atau tutup"), Switch("guard", true, null)));
                         add(Row(Lang.T("Mode rapat"), Lang.T("Mikrofon dipakai lebih dari 20 detik: durasi tampil, notifikasi biasa ditahan"), Switch("meeting", true, null)));
                         break;
                     case "combo":

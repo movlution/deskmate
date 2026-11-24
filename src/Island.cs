@@ -12,7 +12,7 @@ using WinTimer = System.Windows.Forms.Timer;
 
 namespace Deskmate
 {
-    enum View { Idle, Media, Lyric, Track, Agent, Approve, Done, Notif, Volume, Power, Network, Privacy, Info, Task, Deadline, Timer, Prompter, Class, Download, Brightness, AudioDevice, ShelfDrop, Pray, Remind, Locks, Shot, Mic, Drive, Run, Meet, Mirror, Convert, Otp, Dictate, Record, Combo, Mini, Panel }
+    enum View { Idle, Media, Lyric, Track, Agent, Approve, Done, Notif, Volume, Power, Network, Privacy, Info, Task, Deadline, Timer, Prompter, Class, Download, Brightness, AudioDevice, ShelfDrop, Pray, Remind, Locks, Shot, Mic, Drive, Guard, Run, Meet, Mirror, Convert, Otp, Dictate, Record, Combo, Mini, Panel }
 
     class Toast
     {

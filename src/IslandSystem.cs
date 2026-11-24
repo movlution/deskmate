@@ -28,7 +28,7 @@ namespace Deskmate
         {
             return (Quiet || MeetingOn || ExceptQuieted() || FocusHold) && priority < 3 &&
                 (v == View.Notif || v == View.Track || v == View.Network || v == View.Privacy || v == View.Remind ||
-                    v == View.Download || v == View.Info || v == View.Done);
+                    v == View.Download || v == View.Info || v == View.Done || v == View.Guard);
         }
 
         Toast ShowToast(View v, double seconds, int priority, bool interactive, bool force = false)

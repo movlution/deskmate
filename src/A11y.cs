@@ -63,6 +63,8 @@ namespace Deskmate
                 case View.Drive:
                     var dc = toast != null ? toast.Data as DriveCard : null;
                     return dc == null ? "" : DriveTitle(dc) + ". " + DriveDetail(dc);
+                case View.Guard:
+                    return DescribeGuard();
                 case View.Mic:
                     return MicTitle();
                 case View.Convert:

@@ -211,6 +211,7 @@ namespace Deskmate
                 case View.Dictate:
                 case View.ShelfDrop:
                 case View.Drive:
+                case View.Guard:
                 case View.Otp:
                 case View.Remind:
                 case View.Pray:

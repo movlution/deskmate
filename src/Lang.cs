@@ -23,6 +23,7 @@ namespace Deskmate
             AddWhatsNew(d);
             AddPet(d);
             AddIngat(d);
+            AddGuard(d);
             return d;
         }
 

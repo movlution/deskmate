@@ -21,7 +21,7 @@ namespace Deskmate
             "dockbar.w.clock", "dockbar.w.media", "dockbar.w.ai", "dockbar.w.timer", "dockbar.w.weather", "dockbar.w.battery", "dockbar.w.system", "dockbar.style", "dockbar.size", "dockbar.mag", "dockbar.hide", "dockbar.revealdelay", "dockbar.previews", "dockbar.badges", "dockbar.taskview", "dockbar.capture",
             "panel.first", "panel.open", "panel.delay", "tabs.style", "mini", "mini.notif", "island.eyes", "island.follow", "idle.face", "island.except",
             "prompter.wpm", "prompter.size", "prompter.mirror", "prompter.width", "prompter.height", "prompter.bg", "lang", "capture.show",
-            "a11y.announce", "clipboard", "downloads", "class.island", "shelf", "shelf.keep", "shelf.expire", "convert", "shots", "drives",
+            "a11y.announce", "clipboard", "downloads", "class.island", "shelf", "shelf.keep", "shelf.expire", "convert", "shots", "drives", "guard",
             "meeting", "keys.caps", "keys.num", "keys.lang", "keys.combo", "keys.combo.sound", "keys.combo.sound.profile", "keys.combo.fever", "keys.combo.penalty", "keys.combo.enter", "keys.combo.rpg", "keys.combo.quest.chars", "keys.combo.quest.combos", "battery.unplug", "note.to", "dnd", "dnd.follow", "motion.reduce", "motion.feel",
             "pray", "pray.city", "pray.before", "drink", "drink.every", "drink.goal", "eyes", "stretch", "stretch.every", "theme.pack",
             "theme.voice", "weather", "clock.24", "look.custom", "look.bg", "look.text", "look.accent", "wall.sync", "sound.agent", "phone.notifs", "phone.otp",

@@ -114,6 +114,7 @@ namespace Deskmate
                 case View.Shot:
                 case View.Mic:
                 case View.Drive:
+                case View.Guard:
                 case View.AudioDevice:
                 case View.Power:
                 case View.Remind:

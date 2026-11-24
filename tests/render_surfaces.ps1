@@ -694,6 +694,17 @@ $surfaces['dock-bar'] = { Render-DockBar }
 foreach ($v in 'Idle', 'Volume', 'Timer') {
     $surfaces["island-$($v.ToLower())"] = [scriptblock]::Create("Render-IslandView '$v'")
 }
+function Render-GuardToast([bool]$ram) {
+    $isle = Get-Island
+    $toast = [Activator]::CreateInstance((Get-DeskmateType 'Toast'))
+    $alert = [Activator]::CreateInstance((Get-DeskmateType 'GuardAlert'))
+    $alert.Title = 'Google Chrome'; $alert.Ram = $ram; $alert.Cpu = 38; $alert.Bytes = 6442450944; $alert.For = [TimeSpan]::FromMinutes(3)
+    $toast.View = [Enum]::Parse($viewType, 'Guard'); $toast.Data = $alert
+    Set-Member2 $isle 'toast' $toast
+    try { Render-IslandView 'Guard' } finally { Set-Member2 $isle 'toast' $null }
+}
+$surfaces['island-guard-cpu'] = { Render-GuardToast $false }
+$surfaces['island-guard-ram'] = { Render-GuardToast $true }
 $pageNames = (Get-DeskmateType 'Island').GetField('PageNames', $F).GetValue($null)
 for ($i = 0; $i -lt $pageNames.Length; $i++) {
     $surfaces["island-panel-$i-$($pageNames[$i].ToLower())"] = [scriptblock]::Create("Render-IslandView 'Panel' $i")
