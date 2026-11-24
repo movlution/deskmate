@@ -8,6 +8,11 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.13.0
+            en.Add("Geser island dengan mouse", "Drag the island with the mouse");
+            en.Add("Seret island ke mana pun di sepanjang tepi layar; posisinya tersimpan saat dilepas. Bisa dimatikan di Pengaturan › Island › Posisi.", "Drag the island anywhere along the screen edge; it stays where you let go. Turn it off in Settings › Island › Position.");
+            en.Add("Ingatan lebih peka layar", "Memory reads the screen faster");
+            en.Add("Ingatan membaca layar aktif dalam hitungan ratusan milidetik dan menyusunnya per bagian, jadi jawaban tentang yang sedang Anda lihat lebih tepat, bahkan tanpa AI.", "Memory reads the active screen within a few hundred milliseconds and organizes it by section, so answers about what you are looking at are more accurate, even without AI.");
             // What's new 2.12.0 ("Ingatan" is translated with the Ingatan settings)
             en.Add("Pet bisa dibawa ke mana saja", "Carry the pet anywhere");
             en.Add("Seret pet ke mana pun di layar; saat dilepas ia jatuh kembali. Pilih Area jalan › Bawah layar agar pet berjalan selebar layar dan melompat naik ke dock.", "Drag the pet anywhere on the screen; let go and it drops back down. Choose Walking area › Screen bottom to let it walk the full width and hop up onto the Dock.");

@@ -20,6 +20,15 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.13.0",
+                Items = new[]
+                {
+                    new[] { "Geser island dengan mouse", "Seret island ke mana pun di sepanjang tepi layar; posisinya tersimpan saat dilepas. Bisa dimatikan di Pengaturan › Island › Posisi.", "" },
+                    new[] { "Ingatan lebih peka layar", "Ingatan membaca layar aktif dalam hitungan ratusan milidetik dan menyusunnya per bagian, jadi jawaban tentang yang sedang Anda lihat lebih tepat, bahkan tanpa AI.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.12.0",
                 Items = new[]
                 {
