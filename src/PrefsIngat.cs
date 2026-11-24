@@ -38,6 +38,9 @@ namespace Deskmate
                 add(Row(Lang.T("Teks di layar"), Lang.T("Dibaca lewat UI Automation saat jendela atau isinya berubah"), Switch("ingat.text", true, null)));
                 add(Row(Lang.T("OCR cadangan"), Lang.T("Untuk aplikasi yang tidak memberi teks; dilewati saat baterai rendah dan layar penuh"), Switch("ingat.ocr", true, null)));
                 add(Row(Lang.T("Teks yang disalin"), Lang.T("Kecuali yang ditandai rahasia oleh pengelola kata sandi"), Switch("ingat.clip", true, null)));
+                add(Row(Lang.T("Percakapan dan orang"), Lang.T("Obrolan di WhatsApp, Telegram, Discord, Slack, Teams, dan email: siapa, apa yang dibahas, dan janji"), Switch("ingat.chat", true, null)));
+                add(Row(Lang.T("Isi kolom yang kamu tulis"), Lang.T("Dibaca dari kolomnya, bukan dari keyboard; kolom kata sandi dilewati"), Switch("ingat.typed", true, null)));
+                add(Row(Lang.T("Konteks saat menulis pesan"), Lang.T("Pet merangkum obrolan dan janji dengan orang itu saat kamu mulai mengetik"), Switch("ingat.assist", true, null)));
                 add(Row(Lang.T("Rekam panggilan otomatis"), Lang.T("Mulai saat mikrofon dipakai panggilan, berhenti saat selesai; beri tahu peserta lain"), Switch("ingat.rapat", false, null)));
                 add(Row(Lang.T("Pet memakai Ingatan"), Lang.T("Rekap pagi dan pengingat istirahat setelah 2 jam di satu proyek"), Switch("ingat.pet", true, null)));
 

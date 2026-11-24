@@ -114,7 +114,8 @@ namespace Deskmate
             DateTime settingsCheck = DateTime.MinValue;
             while (!stopping)
             {
-                nudge.WaitOne(LookMs);
+                // Typing in a chat: look more often so the sent line is caught whole
+                nudge.WaitOne(Composing ? 1500 : LookMs);
                 if (ParentGone()) { Log.Write("ingat: Deskmate sudah tutup"); break; }
                 if ((DateTime.UtcNow - settingsCheck).TotalSeconds >= 10)
                 {
@@ -208,8 +209,9 @@ namespace Deskmate
             State = "on";
 
             bool newWindow = hwnd != currentHwnd;
-            bool titleChanged = current == null || current.Title != title;
+            bool titleChanged = current == null || current.Title != IngatPrivacy.Redact(title);
             bool due = (now - lastReadUtc).TotalMilliseconds >= RereadMs;
+            // While typing the loop runs faster; the heavy read still waits its 5 s
             bool look = settings.GetBool("ingat.text", true) && (now - lastLookUtc).TotalMilliseconds >= LookMs - 200;
 
             // Text: on arrival, on a new title, or when the picture changed enough
@@ -244,6 +246,7 @@ namespace Deskmate
             finally { if (shot != null) shot.Dispose(); }
 
             url = IngatPrivacy.CleanUrl(url);
+            if (url.Length == 0 && current != null && !newWindow) url = current.Url;
             if (url.Length > 0 && IngatPrivacy.PrivateWindow(title, url, blockedSites)) { State = "private"; lock (gate) CloseCurrent(now); return; }
             text = IngatPrivacy.Redact(text);
             string cleanTitle = IngatPrivacy.Redact(title);
@@ -251,7 +254,21 @@ namespace Deskmate
             string app = AppName(exe);
             string project = IngatPrivacy.Project(exe, title);
             string host = IngatPrivacy.Host(url);
-            string key = exe + "|" + (project.Length > 0 ? project : host.Length > 0 ? host : "");
+            // Chats and mail: each conversation is its own episode when the title names it
+            string channel = settings.GetBool("ingat.chat", true) ? IngatChat.Kind(exe, url, title) : "";
+            string conversation = channel == "chat" ? IngatChat.Conversation(title) : "";
+            if (channel.Length > 0 && source != "window") source = "chat";
+            string key = exe + "|" + (project.Length > 0 ? project : conversation.Length > 0 ? "c:" + IngatChat.Norm(conversation) : host.Length > 0 ? host : "");
+
+            // What the user is writing: the focused field's own text, never keystrokes
+            string draft = null, field = "";
+            if (settings.GetBool("ingat.typed", true))
+            {
+                bool secretField;
+                draft = IngatChat.Draft(hwnd, out secretField, out field);
+                if (secretField) draft = null;
+                if (draft != null) draft = IngatPrivacy.Redact(draft);
+            }
 
             lock (gate)
             {
@@ -260,16 +277,96 @@ namespace Deskmate
                 {
                     CloseCurrent(lastSeenUtc > DateTime.MinValue && current != null ? lastSeenUtc : now);
                     long id = Store.Open(now, app, exe, project, cleanTitle, url, "");
+                    if (channel.Length > 0) Store.SetChannel(id, channel);
                     current = Store.Get(id);
                     currentKey = key;
                 }
                 Store.Touch(current.Id, now, cleanTitle, url, text);
                 if (text.Length > 0 || titleChanged || newWindow) Store.AddEvent(now, current.Id, source, app, cleanTitle, url, text);
+                TrackDraft(now, hwnd, field, draft, app, channel, conversation, cleanTitle, url);
                 current.Title = cleanTitle;
                 current.Url = url.Length > 0 ? url : current.Url;
                 current.EndUtc = now;
                 currentHwnd = hwnd;
                 lastSeenUtc = now;
+            }
+        }
+
+        // Drafts: kept when they settle, and remembered as sent when the field empties in the same window
+        string lastDraft = "";
+        IntPtr lastDraftHwnd;
+        string lastDraftField = "", lastDraftTitle = "";
+        string lastDraftSaved = "";
+        public volatile bool Composing;
+        Dictionary<string, object> composing;
+        DateTime composingSinceUtc;
+
+        void TrackDraft(DateTime now, IntPtr hwnd, string field, string draft, string app, string channel, string conversation, string title, string url)
+        {
+            string d = draft ?? "";
+            // Same window, same box, same tab or chat: anything else emptying is a switch, not a send
+            bool sameField = hwnd == lastDraftHwnd && field.Length > 0 && field == lastDraftField && title == lastDraftTitle;
+            if (sameField && lastDraft.Length >= 2 && d.Length == 0 && draft != null)
+            {
+                // The text left the box: in a chat that means it was sent
+                Store.AddEvent(now, current.Id, channel.Length > 0 ? "sent" : "typed", app, title, url, lastDraft);
+                Store.Touch(current.Id, now, "", "", (channel.Length > 0 ? "Aku menulis: " : "") + lastDraft);
+                if (channel == "chat" && conversation.Length > 0)
+                {
+                    long conv = Store.FindConversation(app, conversation);
+                    if (conv == 0) conv = Store.Conversation(app, conversation, "person", 0, now);
+                    Store.AddMessage(conv, now, "me", true, lastDraft, current.Id);
+                }
+                lastDraftSaved = "";
+            }
+            else if (d.Length >= 2 && d == lastDraft && d != lastDraftSaved)
+            {
+                // Unchanged for one look: worth keeping as the latest draft
+                Store.AddEvent(now, current.Id, "draft", app, title, url, d);
+                lastDraftSaved = d;
+            }
+            if (d.Length >= 2 && channel.Length > 0)
+            {
+                if (!Composing || !sameField) composingSinceUtc = now;
+                composing = new Dictionary<string, object>
+                {
+                    { "app", app }, { "channel", channel }, { "conversation", conversation }, { "title", title },
+                    { "chars", d.Length }, { "since", composingSinceUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture) },
+                };
+                Composing = true;
+            }
+            else { Composing = false; composing = null; }
+            lastDraft = d;
+            lastDraftHwnd = hwnd;
+            lastDraftField = field;
+            lastDraftTitle = title;
+        }
+
+        public Dictionary<string, object> ComposingNow()
+        {
+            var c = composing;
+            return c != null ? new Dictionary<string, object>(c) : new Dictionary<string, object>();
+        }
+
+        // Heads-up for the message being written now
+        public Dictionary<string, object> BriefNow()
+        {
+            var c = composing;
+            if (c == null) return new Dictionary<string, object> { { "brief", "" } };
+            string app = Json.Str(c, "app"), conv = Json.Str(c, "conversation");
+            string brief = Brain.Brief(app, conv, ChatScreen(), lastDraft);
+            return new Dictionary<string, object> { { "brief", brief }, { "app", app }, { "conversation", conv } };
+        }
+
+        // What the open chat shows right now, for the writing brief
+        public string ChatScreen()
+        {
+            lock (gate)
+            {
+                if (current == null) return "";
+                var ev = Store.EventsOf(current.Id, 400);
+                for (int i = ev.Count - 1; i >= 0; i--) if (ev[i][1] == "chat" || ev[i][1] == "uia") return ev[i][3];
+                return "";
             }
         }
 
@@ -314,6 +411,8 @@ namespace Deskmate
             lock (gate) ep = current;
             if (ep == null) return d;
             d["episode"] = ep.ToJson(false);
+            var c = composing;
+            if (c != null) d["composing"] = c;
             // Streak: same project (or app) with no break over 10 minutes
             var recent = Store.Timeline(DateTime.UtcNow.AddHours(-6), DateTime.UtcNow, 400);
             double minutes = 0;

@@ -42,9 +42,31 @@ Deskmate.exe --mcp (stdio)        ──┼──► API lokal 127.0.0.1 + token
 claude mcp add deskmate -- "C:\path\Deskmate.exe" --mcp
 ```
 
-  Tool yang tersedia: `search_activity`, `ask_memory`, `get_timeline`, `current_context`, `get_episode`, `list_meetings`, `get_meeting_transcript`, `get_facts`. Semuanya hanya membaca.
+  Tool yang tersedia: `search_activity`, `ask_memory`, `get_timeline`, `current_context`, `get_episode`, `list_meetings`, `get_meeting_transcript`, `get_facts`, `list_people`, `get_person`, `search_messages`, `get_promises`. Semuanya hanya membaca.
 
 Pencarian menggabungkan BM25 (SQLite FTS5) dengan kemiripan makna (embedding) memakai *reciprocal rank fusion*. Kata waktu seperti "tadi pagi", "kemarin", "minggu lalu", "3 jam terakhir", atau "yesterday afternoon" otomatis menjadi rentang waktu.
+
+## Percakapan dan orang
+
+Ingatan mengenali aplikasi chat dan email: WhatsApp, Telegram, Discord, Slack, Teams, Signal, Messenger, LINE, Outlook, Thunderbird, serta versi web-nya (WhatsApp Web, Gmail, Outlook web, Slack, Discord, dan pesan langsung di X, Instagram, LinkedIn).
+
+- **Yang dicatat:** isi obrolan yang terlihat di layar, draf yang sedang kamu tulis, dan pesan yang kamu kirim. Kalau judul jendela menyebut nama lawan bicara (Discord, Telegram, Teams), tiap percakapan menjadi episode sendiri.
+- **Dipilah AI:** setelah episode chat selesai, AI memilah isinya menjadi percakapan (orang, grup, kanal, atau utas email), pesan per pengirim, ringkasan, dan **janji**. Janji mencakup apa yang kamu janjikan dan apa yang diminta orang lain darimu, termasuk tenggatnya.
+- **Satu orang lintas aplikasi:** orang yang sama di WhatsApp, Discord, dan email digabung lewat namanya, tanpa membedakan huruf besar, gelar (Pak, Bu, Mas, Kak), atau emoji. AI juga mencatat siapa dia bagimu kalau itu jelas dari obrolan (klien, teman kuliah, atasan).
+- **Bertanya tentang orang:** pertanyaan yang menyebut nama ("Budi minta apa ke aku?", "apa janjiku ke Rina?") otomatis membawa obrolan, pesan terakhir, dan janji dengan orang itu ke pet, Suruh, dan MCP.
+
+## Isi kolom yang kamu tulis
+
+Ingatan membaca isi kolom yang sedang fokus langsung dari kolomnya lewat UI Automation, bukan dari keyboard. Ketikan, tombol, dan pintasan tidak pernah direkam.
+
+- Draf disimpan setelah isinya stabil beberapa detik.
+- Kalau kolom yang sama kosong di tab atau obrolan yang sama, isinya dicatat sebagai pesan terkirim (di chat) atau teks yang ditulis (di aplikasi lain). Pindah tab, pindah obrolan, atau pindah kolom tidak dihitung.
+- Saat kamu mengetik di chat, pengecekan dipercepat menjadi tiap 1,5 detik supaya pesan terkirim tercatat utuh.
+- Kolom kata sandi, kotak pencarian, dan bilah alamat dilewati. Dokumen panjang (Notepad, Word) tidak dianggap draf, karena isinya sudah tercatat sebagai teks layar.
+
+## Konteks saat menulis pesan
+
+Saat kamu mulai mengetik balasan di chat atau email, pet menampilkan gelembung singkat: siapa orang itu bagimu, apa yang terakhir dibahas, janji yang masih terbuka, dan hal yang relevan dengan drafmu. Contoh: "Budi Santoso meminta revisi harga paket animasi menjadi 7,5 juta. Pastikan portofolio game edukasi ikut dilampirkan." Gelembung ini muncul paling sering sekali per percakapan tiap 30 menit, dan tidak muncul kalau tidak ada yang berguna untuk disampaikan. Klik gelembungnya untuk bertanya lanjut ke pet. Matikan di **Pengaturan › Ingatan › Konteks saat menulis pesan**.
 
 ## AI
 
@@ -66,6 +88,7 @@ Kalau **Rekam panggilan otomatis** dinyalakan, Deskmate mulai merekam setelah mi
 
 ## Privasi
 
+- **Pesan orang lain:** isi obrolan yang terlihat di layar ikut tersimpan, termasuk pesan dari orang lain. Semuanya tetap di laptop ini, dan dihapus mengikuti lama simpan episode. Matikan **Percakapan dan orang** kalau tidak mau, atau tambahkan aplikasi chat tertentu ke **Aplikasi dikecualikan**.
 - **Tidak pernah dicatat:** ketukan keyboard, jendela InPrivate/Incognito, kolom kata sandi (UI Automation `IsPassword`), pengelola kata sandi (1Password, Bitwarden, KeePass, dan lainnya), dompet kripto, layar masuk dan kata sandi Windows, judul jendela berisi kata seperti "password", "login", atau "OTP", situs perbankan umum, serta isi clipboard yang ditandai rahasia.
 - **Disaring sebelum disimpan:** kunci API dan token (OpenAI, Anthropic, GitHub, Google, AWS, Slack, JWT, Bearer), kunci privat, nilai `password=`, nomor kartu, email, nomor HP, dan NIK. Query dan fragmen URL dibuang.
 - **Pengecualian buatanmu:** aplikasi dan domain di **Pengaturan › Ingatan › Privasi**.
@@ -92,6 +115,13 @@ Semua request wajib membawa header `X-Deskmate-Token`.
 | GET | `/episode?id=` | Detail satu episode beserta teksnya |
 | GET | `/meetings?days=` dan `/meeting?id=` | Daftar rapat dan transkripnya |
 | GET | `/facts` | Fakta jangka panjang |
+| GET | `/people?limit=` | Orang yang kamu ajak bicara, terbaru dulu |
+| GET | `/person?name=` atau `?id=` | Satu orang: percakapan lintas aplikasi, pesan terakhir, dan janji |
+| GET | `/messages?q=&from=&to=` | Cari pesan di semua chat dan email |
+| GET | `/promises?person=&all=1` | Janji yang masih terbuka (atau semuanya) |
+| POST | `/promise` `{"id": 1, "done": true}` | Menandai janji selesai |
+| GET | `/composing` | Kolom chat yang sedang kamu tulis (aplikasi, percakapan, panjang draf) |
+| GET | `/brief` | Ringkasan konteks untuk pesan yang sedang ditulis |
 | POST | `/ask` `{"q": "..."}` | Jawaban beserta momen sumbernya |
 | POST | `/pause` `{"minutes": 60}` | Jeda (`0` untuk lanjut) |
 | POST | `/event` `{"source": "...", "text": "..."}` | Menambahkan teks ke episode yang sedang berjalan |

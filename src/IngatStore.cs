@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Deskmate
 {
@@ -62,7 +63,19 @@ namespace Deskmate
                 "CREATE TABLE IF NOT EXISTS daily(date TEXT PRIMARY KEY, summary TEXT, made INTEGER);" +
                 "CREATE TABLE IF NOT EXISTS facts(id INTEGER PRIMARY KEY, text TEXT, updated INTEGER);" +
                 "CREATE TABLE IF NOT EXISTS meetings(id INTEGER PRIMARY KEY, path TEXT UNIQUE, start INTEGER, title TEXT, episode INTEGER);" +
-                "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)");
+                "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);" +
+                // People and conversations, the same person across apps
+                "CREATE TABLE IF NOT EXISTS people(id INTEGER PRIMARY KEY, name TEXT, norm TEXT UNIQUE, aliases TEXT DEFAULT '', about TEXT DEFAULT '', last INTEGER, mentions INTEGER DEFAULT 0);" +
+                "CREATE TABLE IF NOT EXISTS conversations(id INTEGER PRIMARY KEY, app TEXT, name TEXT, norm TEXT, kind TEXT, person INTEGER, last INTEGER, digest TEXT DEFAULT '', digest_t INTEGER DEFAULT 0, UNIQUE(app, norm));" +
+                "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, conversation INTEGER, t INTEGER, sender TEXT, mine INTEGER, text TEXT, hash TEXT UNIQUE, episode INTEGER);" +
+                "CREATE INDEX IF NOT EXISTS messages_conv ON messages(conversation, t);" +
+                "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(sender, text, conv, tokenize='unicode61 remove_diacritics 2');" +
+                "CREATE TABLE IF NOT EXISTS commitments(id INTEGER PRIMARY KEY, conversation INTEGER, person INTEGER, who TEXT, what TEXT, due TEXT, t INTEGER, done INTEGER DEFAULT 0, hash TEXT UNIQUE);" +
+                "CREATE TABLE IF NOT EXISTS episode_people(episode INTEGER, person INTEGER, PRIMARY KEY(episode, person))");
+            // Columns added after the first release: older databases get them here
+            foreach (var col in new[] { "channel TEXT DEFAULT ''", "digested INTEGER DEFAULT 0" })
+                try { db.Exec("ALTER TABLE episodes ADD COLUMN " + col); }
+                catch (InvalidOperationException) { }
         }
 
         public void Dispose() { db.Dispose(); }
@@ -270,6 +283,203 @@ namespace Deskmate
             }
         }
 
+        // Conversations and people
+
+        public void SetChannel(long episode, string channel) { db.Exec("UPDATE episodes SET channel=? WHERE id=?", channel, episode); }
+
+        // Chat and mail episodes that ended and were not read into messages yet
+        public List<IngatEpisode> NeedDigest(int limit)
+        {
+            return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE closed=1 AND digested=0 AND channel<>'' AND end-start>=15 ORDER BY start LIMIT ?", limit));
+        }
+
+        public void SetDigested(long episode, int state) { db.Exec("UPDATE episodes SET digested=? WHERE id=?", state, episode); }
+
+        public string ChannelOf(long episode) { return IngatDb.Str(db.Scalar("SELECT channel FROM episodes WHERE id=?", episode)); }
+
+        // Snapshots of what the chat showed, drafts, and sent lines, oldest first
+        public List<string[]> EventsOf(long episode, int max)
+        {
+            var list = new List<string[]>();
+            foreach (var r in db.Query("SELECT t, source, title, text FROM events WHERE episode=? AND source IN ('chat','draft','sent','uia','ocr','clipboard') ORDER BY t LIMIT ?", episode, max))
+                list.Add(new[] { IngatDb.FromUnix(IngatDb.Num(r[0])).ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture), IngatDb.Str(r[1]), IngatDb.Str(r[2]), IngatDb.Str(r[3]) });
+            return list;
+        }
+
+        // One row per person; a new spelling of a known name becomes an alias
+        public long Person(string name, DateTime seenUtc)
+        {
+            string norm = IngatChat.Norm(name);
+            if (norm.Length < 2) return 0;
+            var row = db.Query("SELECT id FROM people WHERE norm=? OR ('|' || aliases || '|') LIKE ?", norm, "%|" + norm + "|%");
+            if (row.Count > 0)
+            {
+                long id = IngatDb.Num(row[0][0]);
+                db.Exec("UPDATE people SET last=MAX(COALESCE(last,0),?), mentions=mentions+1 WHERE id=?", seenUtc, id);
+                return id;
+            }
+            db.Exec("INSERT INTO people(name,norm,last,mentions) VALUES(?,?,?,1)", name.Trim(), norm, seenUtc);
+            return db.LastId;
+        }
+
+        // Lookup only: 0 when nobody by that name or alias is known
+        public long FindPerson(string name)
+        {
+            string norm = IngatChat.Norm(name);
+            if (norm.Length < 2) return 0;
+            return db.Long("SELECT id FROM people WHERE norm=? OR ('|' || aliases || '|') LIKE ? LIMIT 1", norm, "%|" + norm + "|%");
+        }
+
+        public void AddAlias(long person, string alias)
+        {
+            string norm = IngatChat.Norm(alias);
+            if (person == 0 || norm.Length < 2) return;
+            var cur = IngatDb.Str(db.Scalar("SELECT aliases FROM people WHERE id=?", person));
+            if (("|" + cur + "|").Contains("|" + norm + "|") || IngatDb.Str(db.Scalar("SELECT norm FROM people WHERE id=?", person)) == norm) return;
+            db.Exec("UPDATE people SET aliases=? WHERE id=?", cur.Length == 0 ? norm : cur + "|" + norm, person);
+        }
+
+        public void SetAbout(long person, string about) { if (person != 0 && !string.IsNullOrEmpty(about)) db.Exec("UPDATE people SET about=? WHERE id=?", about, person); }
+
+        public long Conversation(string app, string name, string kind, long person, DateTime seenUtc)
+        {
+            string norm = IngatChat.Norm(name);
+            if (norm.Length < 1) return 0;
+            var row = db.Query("SELECT id FROM conversations WHERE app=? AND norm=?", app, norm);
+            if (row.Count > 0)
+            {
+                long id = IngatDb.Num(row[0][0]);
+                db.Exec("UPDATE conversations SET last=MAX(COALESCE(last,0),?), person=CASE WHEN ?<>0 THEN ? ELSE person END WHERE id=?", seenUtc, person, person, id);
+                return id;
+            }
+            db.Exec("INSERT INTO conversations(app,name,norm,kind,person,last) VALUES(?,?,?,?,?,?)", app, name.Trim(), norm, kind, person, seenUtc);
+            return db.LastId;
+        }
+
+        public void SetDigest(long conversation, string digest) { db.Exec("UPDATE conversations SET digest=?, digest_t=? WHERE id=?", digest, DateTime.UtcNow, conversation); }
+
+        // False when this exact line is already known in this conversation
+        public bool AddMessage(long conversation, DateTime t, string sender, bool mine, string text, long episode)
+        {
+            text = (text ?? "").Trim();
+            if (conversation == 0 || text.Length == 0) return false;
+            if (text.Length > 2000) text = text.Substring(0, 2000);
+            string hash = Json.Sha256(conversation + "|" + IngatChat.Norm(sender) + "|" + (mine ? "1" : "0") + "|" + text).Substring(0, 20);
+            if (db.Long("SELECT COUNT(*) FROM messages WHERE hash=?", hash) > 0) return false;
+            db.Exec("INSERT INTO messages(conversation,t,sender,mine,text,hash,episode) VALUES(?,?,?,?,?,?,?)", conversation, t, sender, mine, text, hash, episode);
+            long id = db.LastId;
+            db.Exec("INSERT INTO messages_fts(rowid,sender,text,conv) SELECT ?, ?, ?, name FROM conversations WHERE id=?", id, sender, text, conversation);
+            return true;
+        }
+
+        public void AddCommitment(long conversation, long person, string who, string what, string due, DateTime t)
+        {
+            if (string.IsNullOrEmpty(what)) return;
+            string hash = Json.Sha256(conversation + "|" + IngatChat.Norm(who) + "|" + IngatChat.Norm(what)).Substring(0, 20);
+            db.Exec("INSERT OR IGNORE INTO commitments(conversation,person,who,what,due,t,hash) VALUES(?,?,?,?,?,?,?)", conversation, person, who ?? "", what, due ?? "", t, hash);
+        }
+
+        public void SetCommitmentDone(long id, bool done) { db.Exec("UPDATE commitments SET done=? WHERE id=?", done, id); }
+
+        public void LinkPerson(long episode, long person) { if (person != 0) db.Exec("INSERT OR IGNORE INTO episode_people(episode,person) VALUES(?,?)", episode, person); }
+
+        // People named in a question: whole name, alias, or first name of a known person
+        public List<long> PeopleIn(string text)
+        {
+            var found = new List<long>();
+            string all = IngatChat.Norm(text);
+            var words = new HashSet<string>();
+            foreach (var w in Regex.Split(text ?? "", @"[^\p{L}\p{N}]+")) if (w.Length >= 3) words.Add(IngatChat.Norm(w));
+            foreach (var r in db.Query("SELECT id, norm, aliases, name FROM people ORDER BY mentions DESC LIMIT 2000"))
+            {
+                string norm = IngatDb.Str(r[1]);
+                bool hit = norm.Length >= 4 && all.Contains(norm);
+                if (!hit) foreach (var a in IngatDb.Str(r[2]).Split('|')) if (a.Length >= 4 && all.Contains(a)) { hit = true; break; }
+                if (!hit)
+                {
+                    var first = Regex.Split(IngatDb.Str(r[3]), @"\s+")[0];
+                    string fn = IngatChat.Norm(first);
+                    hit = fn.Length >= 3 && words.Contains(fn) && !IngatTime.Stop(first);
+                }
+                if (hit) { found.Add(IngatDb.Num(r[0])); if (found.Count == 3) break; }
+            }
+            return found;
+        }
+
+        public List<Dictionary<string, object>> People(int limit)
+        {
+            var list = new List<Dictionary<string, object>>();
+            foreach (var r in db.Query("SELECT p.id, p.name, p.about, p.last, p.mentions, (SELECT GROUP_CONCAT(DISTINCT c.app) FROM conversations c WHERE c.person=p.id), " +
+                "(SELECT COUNT(*) FROM commitments k WHERE k.person=p.id AND k.done=0) FROM people p ORDER BY p.last DESC LIMIT ?", limit))
+                list.Add(new Dictionary<string, object>
+                {
+                    { "id", IngatDb.Num(r[0]) }, { "name", IngatDb.Str(r[1]) }, { "about", IngatDb.Str(r[2]) },
+                    { "last", Local(r[3]) }, { "apps", IngatDb.Str(r[5]) }, { "openPromises", IngatDb.Num(r[6]) },
+                });
+            return list;
+        }
+
+        static string Local(object unix) { long s = IngatDb.Num(unix); return s == 0 ? "" : IngatDb.FromUnix(s).ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture); }
+
+        // Everything about one person, across apps: who, where you talk, the latest lines, open promises
+        public Dictionary<string, object> PersonView(long person, int messages)
+        {
+            var p = db.Query("SELECT name, about, aliases, last FROM people WHERE id=?", person);
+            if (p.Count == 0) return null;
+            var convs = new List<object>();
+            foreach (var r in db.Query("SELECT id, app, name, kind, digest, last FROM conversations WHERE person=? OR norm=? ORDER BY last DESC LIMIT 12", person, IngatChat.Norm(IngatDb.Str(p[0][0]))))
+                convs.Add(new Dictionary<string, object> { { "id", IngatDb.Num(r[0]) }, { "app", IngatDb.Str(r[1]) }, { "name", IngatDb.Str(r[2]) }, { "kind", IngatDb.Str(r[3]) }, { "digest", IngatDb.Str(r[4]) }, { "last", Local(r[5]) } });
+            var msgs = new List<object>();
+            var rows = db.Query("SELECT m.t, m.sender, m.mine, m.text, c.app, c.name FROM messages m JOIN conversations c ON c.id=m.conversation WHERE c.person=? ORDER BY m.t DESC, m.id DESC LIMIT ?", person, messages);
+            for (int i = rows.Count - 1; i >= 0; i--)
+            {
+                var r = rows[i];
+                msgs.Add(new Dictionary<string, object> { { "time", Local(r[0]) }, { "from", IngatDb.Num(r[2]) != 0 ? "me" : IngatDb.Str(r[1]) }, { "text", IngatDb.Str(r[3]) }, { "app", IngatDb.Str(r[4]) }, { "conversation", IngatDb.Str(r[5]) } });
+            }
+            return new Dictionary<string, object>
+            {
+                { "id", person }, { "name", IngatDb.Str(p[0][0]) }, { "about", IngatDb.Str(p[0][1]) }, { "last", Local(p[0][3]) },
+                { "conversations", convs.ToArray() }, { "messages", msgs.ToArray() }, { "promises", Commitments(person, false, 15).ToArray() },
+            };
+        }
+
+        public List<Dictionary<string, object>> Commitments(long person, bool all, int limit)
+        {
+            var list = new List<Dictionary<string, object>>();
+            string where = (person != 0 ? "k.person=" + person.ToString(CultureInfo.InvariantCulture) : "1=1") + (all ? "" : " AND k.done=0");
+            foreach (var r in db.Query("SELECT k.id, k.who, k.what, k.due, k.t, k.done, c.app, c.name, p.name FROM commitments k LEFT JOIN conversations c ON c.id=k.conversation LEFT JOIN people p ON p.id=k.person WHERE " + where + " ORDER BY k.t DESC LIMIT ?", limit))
+                list.Add(new Dictionary<string, object>
+                {
+                    { "id", IngatDb.Num(r[0]) }, { "who", IngatDb.Str(r[1]) }, { "what", IngatDb.Str(r[2]) }, { "due", IngatDb.Str(r[3]) }, { "when", Local(r[4]) },
+                    { "done", IngatDb.Num(r[5]) != 0 }, { "app", IngatDb.Str(r[6]) }, { "conversation", IngatDb.Str(r[7]) }, { "person", IngatDb.Str(r[8]) },
+                });
+            return list;
+        }
+
+        // Words in messages, across every chat
+        public List<Dictionary<string, object>> SearchMessages(string q, DateTime fromUtc, DateTime toUtc, int limit)
+        {
+            var list = new List<Dictionary<string, object>>();
+            string fts = FtsQuery(q);
+            if (fts.Length == 0) return list;
+            foreach (var r in db.Query("SELECT m.t, m.sender, m.mine, m.text, c.app, c.name FROM messages_fts JOIN messages m ON m.id=messages_fts.rowid JOIN conversations c ON c.id=m.conversation " +
+                "WHERE messages_fts MATCH ? AND m.t>=? AND m.t<=? ORDER BY bm25(messages_fts) LIMIT ?", fts, fromUtc, toUtc, limit))
+                list.Add(new Dictionary<string, object> { { "time", Local(r[0]) }, { "from", IngatDb.Num(r[2]) != 0 ? "me" : IngatDb.Str(r[1]) }, { "text", IngatDb.Str(r[3]) }, { "app", IngatDb.Str(r[4]) }, { "conversation", IngatDb.Str(r[5]) } });
+            return list;
+        }
+
+        public long ConversationPerson(long conversation) { return db.Long("SELECT person FROM conversations WHERE id=?", conversation); }
+
+        public long FindConversation(string app, string name)
+        {
+            string norm = IngatChat.Norm(name);
+            if (norm.Length == 0) return 0;
+            long id = db.Long("SELECT id FROM conversations WHERE app=? AND norm=?", app, norm);
+            return id != 0 ? id : db.Long("SELECT id FROM conversations WHERE norm=? ORDER BY last DESC LIMIT 1", norm);
+        }
+
+        public string ConversationDigest(long conversation) { return IngatDb.Str(db.Scalar("SELECT digest FROM conversations WHERE id=?", conversation)); }
+
         // Meetings come from Rapat's transcript files
 
         public bool HasMeeting(string path) { return db.Long("SELECT COUNT(*) FROM meetings WHERE path=?", path) > 0; }
@@ -299,7 +509,12 @@ namespace Deskmate
             db.Exec("DELETE FROM episodes_fts WHERE rowid IN (SELECT id FROM episodes WHERE end<?)", cut);
             db.Exec("DELETE FROM embeddings WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
             db.Exec("DELETE FROM meetings WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
+            db.Exec("DELETE FROM episode_people WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
             db.Exec("DELETE FROM episodes WHERE end<?", cut);
+            // Messages follow episodes; people and promises stay while anything still points at them
+            db.Exec("DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE t<?)", cut);
+            db.Exec("DELETE FROM messages WHERE t<?", cut);
+            db.Exec("DELETE FROM commitments WHERE done=1 AND t<?", cut);
         }
 
         // Forget a stretch of time entirely
@@ -312,6 +527,10 @@ namespace Deskmate
                 db.Exec("DELETE FROM embeddings WHERE episode IN (" + ids + ")", fromUtc, toUtc);
                 db.Exec("DELETE FROM meetings WHERE episode IN (" + ids + ")", fromUtc, toUtc);
                 db.Exec("DELETE FROM events WHERE t>=? AND t<=?", fromUtc, toUtc);
+                db.Exec("DELETE FROM episode_people WHERE episode IN (" + ids + ")", fromUtc, toUtc);
+                db.Exec("DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE t>=? AND t<=?)", fromUtc, toUtc);
+                db.Exec("DELETE FROM messages WHERE t>=? AND t<=?", fromUtc, toUtc);
+                db.Exec("DELETE FROM commitments WHERE t>=? AND t<=?", fromUtc, toUtc);
                 int n = db.Exec("DELETE FROM episodes WHERE end>=? AND start<=?", fromUtc, toUtc);
                 var from = fromUtc.ToLocalTime().Date;
                 for (var d = from; d <= toUtc.ToLocalTime().Date; d = d.AddDays(1))
@@ -322,7 +541,8 @@ namespace Deskmate
 
         public void ForgetAll()
         {
-            db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;DELETE FROM meetings;DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM facts");
+            db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;DELETE FROM meetings;DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM facts;" +
+                "DELETE FROM messages_fts;DELETE FROM messages;DELETE FROM commitments;DELETE FROM conversations;DELETE FROM episode_people;DELETE FROM people");
             db.Exec("VACUUM");
         }
 
@@ -339,6 +559,10 @@ namespace Deskmate
                 { "meetings", db.Long("SELECT COUNT(*) FROM episodes WHERE kind='meeting'") },
                 { "days", db.Long("SELECT COUNT(*) FROM daily") },
                 { "facts", db.Long("SELECT COUNT(*) FROM facts") },
+                { "people", db.Long("SELECT COUNT(*) FROM people") },
+                { "conversations", db.Long("SELECT COUNT(*) FROM conversations") },
+                { "messages", db.Long("SELECT COUNT(*) FROM messages") },
+                { "promises", db.Long("SELECT COUNT(*) FROM commitments WHERE done=0") },
                 { "bytes", bytes },
             };
         }

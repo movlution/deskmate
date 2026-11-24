@@ -165,6 +165,38 @@ namespace Deskmate
                     d["transcript"] = ep.Body;
                     return d;
                 }
+                case "GET /composing":
+                    return svc.ComposingNow();
+                case "GET /brief":
+                    return svc.BriefNow();
+                case "GET /people":
+                    return new Dictionary<string, object> { { "people", store.People(Clamp(Get(q, "limit"), 50, 1, 500)).ToArray() } };
+                case "GET /person":
+                {
+                    long id;
+                    if (!long.TryParse(Get(q, "id"), out id) || id == 0)
+                    {
+                        id = store.FindPerson(Get(q, "name"));
+                        if (id == 0) { var found = store.PeopleIn(Get(q, "name")); if (found.Count > 0) id = found[0]; }
+                    }
+                    var view = id == 0 ? null : store.PersonView(id, Clamp(Get(q, "messages"), 30, 1, 200));
+                    return view ?? new Dictionary<string, object> { { "error", "unknown person" } };
+                }
+                case "GET /promises":
+                {
+                    long pid = Get(q, "person").Length > 0 ? store.FindPerson(Get(q, "person")) : 0;
+                    if (Get(q, "person").Length > 0 && pid == 0) return new Dictionary<string, object> { { "promises", new object[0] } };
+                    return new Dictionary<string, object> { { "promises", store.Commitments(pid, Get(q, "all") == "1", Clamp(Get(q, "limit"), 50, 1, 300)).ToArray() } };
+                }
+                case "GET /messages":
+                {
+                    DateTime from, to;
+                    Span(q, out from, out to);
+                    return new Dictionary<string, object> { { "messages", store.SearchMessages(Get(q, "q"), from, to, Clamp(Get(q, "limit"), 20, 1, 100)).ToArray() } };
+                }
+                case "POST /promise":
+                    store.SetCommitmentDone((long)Json.Num(body, "id", 0), Json.Str(body, "done").ToLowerInvariant() != "false");
+                    return new Dictionary<string, object> { { "ok", true } };
                 case "GET /facts":
                     return new Dictionary<string, object> { { "facts", store.Facts().ToArray() } };
                 case "POST /ask":

@@ -27,6 +27,7 @@ namespace Deskmate
         {
             var now = DateTime.UtcNow;
             IngatRapatTick(now);
+            IngatAssistTick(now);
             if ((now - ingatTickUtc).TotalSeconds < 15) return;
             ingatTickUtc = now;
             if (!IngatOn) return;
@@ -131,6 +132,45 @@ namespace Deskmate
                     {
                         ingatAsking = false;
                         if (line != null && pet != null && !pet.IsDisposed) pet.ShowChatBubble(PetAskName, line, false, delegate { OpenPetAsk(); }, 15);
+                    });
+                }
+            });
+        }
+
+        // Writing a message: the pet says who this is and what is still open with them, once per conversation per 30 minutes
+        DateTime ingatAssistUtc;
+        volatile bool ingatAssistBusy;
+        readonly Dictionary<string, DateTime> ingatBriefed = new Dictionary<string, DateTime>();
+
+        void IngatAssistTick(DateTime now)
+        {
+            if ((now - ingatAssistUtc).TotalSeconds < 4 || ingatAssistBusy) return;
+            ingatAssistUtc = now;
+            if (!IngatOn || !settings.GetBool("ingat.assist", true) || !settings.GetBool("ingat.chat", true) || pet == null || pet.IsDisposed || !pet.CanShowBubble) return;
+            ingatAssistBusy = true;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                string brief = null, key = null;
+                try
+                {
+                    var c = IngatClient.Get("/composing", 1500);
+                    if (c == null || Json.Num(c, "chars", 0) < 3) return;
+                    key = Json.Str(c, "app") + "|" + (Json.Str(c, "conversation").Length > 0 ? Json.Str(c, "conversation") : Json.Str(c, "title"));
+                    DateTime last;
+                    lock (ingatBriefed) if (ingatBriefed.TryGetValue(key, out last) && (DateTime.UtcNow - last).TotalMinutes < 30) return;
+                    lock (ingatBriefed) ingatBriefed[key] = DateTime.UtcNow;
+                    var r = IngatClient.Get("/brief", 90000);
+                    if (r != null) brief = Json.Str(r, "brief");
+                }
+                catch (Exception ex) { Log.Write("ingat assist: " + ex.Message); }
+                finally
+                {
+                    Post(delegate
+                    {
+                        ingatAssistBusy = false;
+                        if (string.IsNullOrEmpty(brief) || pet == null || pet.IsDisposed || petAskBusy) return;
+                        pet.PopEmote(PetEmote.Bang);
+                        pet.ShowChatBubble(PetAskName, brief, false, delegate { OpenPetAsk(); }, Math.Max(15, Math.Min(35, 6 + brief.Length * 0.08)));
                     });
                 }
             });

@@ -22,7 +22,70 @@ namespace Deskmate
             TestStoreAndSearch();
             TestRetentionAndForget();
             TestMcpWithoutService();
+            TestChatDetection();
+            TestPeopleAndMessages();
             return "Ingatan checks passed";
+        }
+
+        static void TestChatDetection()
+        {
+            Assert(IngatChat.Kind("whatsapp.root", "", "WhatsApp") == "chat", "whatsapp desktop");
+            Assert(IngatChat.Kind("chrome", "https://web.whatsapp.com/", "WhatsApp") == "chat", "whatsapp web");
+            Assert(IngatChat.Kind("chrome", "https://mail.google.com/mail/u/0", "Inbox") == "mail", "gmail");
+            Assert(IngatChat.Kind("chrome", "https://x.com/home", "Home / X") == "", "x feed is not chat");
+            Assert(IngatChat.Kind("chrome", "https://x.com/messages/1", "Messages / X") == "chat", "x dms are chat");
+            Assert(IngatChat.Kind("code", "", "Ai.cs - Deskmate") == "", "editor is not chat");
+            Assert(IngatChat.Conversation("Budi Santoso - Discord") == "Budi Santoso", "discord dm: " + IngatChat.Conversation("Budi Santoso - Discord"));
+            Assert(IngatChat.Conversation("#general | Tim Deskmate - Discord") == "general", "discord channel");
+            Assert(IngatChat.Conversation("(3) Rina - Telegram") == "Rina", "unread count stripped");
+            Assert(IngatChat.Conversation("WhatsApp") == "", "title without a name");
+            Assert(IngatChat.Norm("Pak Budi 😀") == IngatChat.Norm("budi"), "title and emoji ignored: " + IngatChat.Norm("Pak Budi 😀"));
+        }
+
+        static void TestPeopleAndMessages()
+        {
+            string path = TempDb();
+            using (var store = new IngatStore(path))
+            {
+                var t = DateTime.UtcNow.AddMinutes(-20);
+                long budi = store.Person("Budi Santoso", t);
+                Assert(budi != 0 && store.Person("budi santoso", t) == budi, "same person, any case");
+                store.AddAlias(budi, "Bud");
+                Assert(store.FindPerson("Bud") == budi && store.FindPerson("Nobody") == 0, "alias lookup");
+                long wa = store.Conversation("WhatsApp", "Budi Santoso", "person", budi, t);
+                long dc = store.Conversation("Discord", "budi.s", "person", budi, t.AddMinutes(5));
+                Assert(wa != dc && store.Conversation("WhatsApp", "Budi Santoso", "person", budi, t) == wa, "one conversation per app and name");
+                long ep = store.Open(t, "WhatsApp", "whatsapp.root", "", "WhatsApp", "", "");
+                store.SetChannel(ep, "chat");
+                Assert(store.AddMessage(wa, t, "Budi Santoso", false, "Laporan keuangan sudah dikirim belum?", ep), "message saved");
+                Assert(!store.AddMessage(wa, t.AddSeconds(5), "Budi Santoso", false, "Laporan keuangan sudah dikirim belum?", ep), "same line once");
+                store.AddMessage(dc, t.AddMinutes(5), "me", true, "Nanti malam aku kirim draft desainnya ya", ep);
+                store.AddCommitment(dc, budi, "me", "kirim draft desain", "nanti malam", t.AddMinutes(5));
+                store.AddCommitment(dc, budi, "me", "kirim draft desain", "nanti malam", t.AddMinutes(6));
+                store.LinkPerson(ep, budi);
+                store.Close(ep, t.AddMinutes(3));
+
+                Assert(store.PeopleIn("apa yang Budi minta kemarin?").Contains(budi), "first name in a question");
+                Assert(store.PeopleIn("apa yang aku kerjakan").Count == 0, "no person named");
+                var view = store.PersonView(budi, 10);
+                Assert(Json.Arr(view, "conversations").Length == 2, "conversations across apps");
+                Assert(Json.Arr(view, "messages").Length == 2 && Json.Str(Json.Arr(view, "messages")[1], "from") == "me", "messages in order, mine marked");
+                Assert(Json.Arr(view, "promises").Length == 1, "promise kept once");
+                var found = store.SearchMessages("laporan keuangan", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 5);
+                Assert(found.Count == 1 && Json.Str(found[0], "app") == "WhatsApp", "message search across apps");
+                Assert(store.NeedDigest(5).Count == 1, "chat episode waits for its digest");
+                store.SetDigested(ep, 1);
+                Assert(store.NeedDigest(5).Count == 0, "digested once");
+                long pid = (long)store.Commitments(budi, false, 5)[0]["id"];
+                store.SetCommitmentDone(pid, true);
+                Assert(store.Commitments(budi, false, 5).Count == 0 && store.Commitments(budi, true, 5).Count == 1, "promise done");
+                Assert((long)store.Stats()["people"] == 1 && (long)store.Stats()["messages"] == 2, "stats count people and messages");
+
+                store.Forget(DateTime.UtcNow.AddHours(-1), DateTime.UtcNow);
+                Assert((long)store.Stats()["messages"] == 0 && store.SearchMessages("laporan", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 5).Count == 0, "forget removes messages and their index");
+            }
+            // Reopening an existing database adds columns only once
+            using (var again = new IngatStore(path)) Assert((long)again.Stats()["people"] == 1, "reopen keeps data");
         }
 
         static void TestRedaction()
