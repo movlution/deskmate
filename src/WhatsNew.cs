@@ -20,6 +20,19 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.12.0",
+                Items = new[]
+                {
+                    new[] { "Pet bisa dibawa ke mana saja", "Seret pet ke mana pun di layar; saat dilepas ia jatuh kembali. Pilih Area jalan › Bawah layar agar pet berjalan selebar layar dan melompat naik ke dock.", "" },
+                    new[] { "Bar aksi pet", "Klik pet untuk membuka tombol besar: elus, lompat, kejar, tidur, tanya, chat, dan pengaturan.", "" },
+                    new[] { "Pet yang bereaksi", "Pet kaget oleh notifikasi, senang saat pekerjaan selesai, bergoyang saat musik, tenang saat fokus, dan tidur saat Anda pergi.", "" },
+                    new[] { "Teman pet online", "Sampai empat pet berbagi satu dock lewat internet, lengkap dengan chat, emote, dan pet buatan sendiri.", "" },
+                    new[] { "Ingatan", "Deskmate bisa mengingat apa yang Anda kerjakan di laptop ini dan menjawab pertanyaan tentangnya. Mati secara bawaan; nyalakan di Pengaturan › Ingatan.", "" },
+                    new[] { "Pemasang per pengguna", "Deskmate kini punya installer tanpa admin yang tercantum di Pengaturan › Aplikasi dan membersihkan dirinya saat dicopot.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.11.1",
                 Items = new[]
                 {

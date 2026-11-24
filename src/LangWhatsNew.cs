@@ -8,6 +8,18 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.12.0 ("Ingatan" is translated with the Ingatan settings)
+            en.Add("Pet bisa dibawa ke mana saja", "Carry the pet anywhere");
+            en.Add("Seret pet ke mana pun di layar; saat dilepas ia jatuh kembali. Pilih Area jalan › Bawah layar agar pet berjalan selebar layar dan melompat naik ke dock.", "Drag the pet anywhere on the screen; let go and it drops back down. Choose Walking area › Screen bottom to let it walk the full width and hop up onto the Dock.");
+            en.Add("Bar aksi pet", "Pet action bar");
+            en.Add("Klik pet untuk membuka tombol besar: elus, lompat, kejar, tidur, tanya, chat, dan pengaturan.", "Click the pet for big buttons: pet, hop, chase, nap, ask, chat, and settings.");
+            en.Add("Pet yang bereaksi", "A pet that reacts");
+            en.Add("Pet kaget oleh notifikasi, senang saat pekerjaan selesai, bergoyang saat musik, tenang saat fokus, dan tidur saat Anda pergi.", "The pet startles at notifications, cheers when work finishes, bobs to music, stays calm during focus, and naps while you're away.");
+            en.Add("Teman pet online", "Pet friends online");
+            en.Add("Sampai empat pet berbagi satu dock lewat internet, lengkap dengan chat, emote, dan pet buatan sendiri.", "Up to four pets share one Dock over the internet, with chat, emotes, and custom pets.");
+            en.Add("Deskmate bisa mengingat apa yang Anda kerjakan di laptop ini dan menjawab pertanyaan tentangnya. Mati secara bawaan; nyalakan di Pengaturan › Ingatan.", "Deskmate can remember what you work on, on this laptop, and answer questions about it. Off by default; turn it on in Settings › Memory.");
+            en.Add("Pemasang per pengguna", "Per-user installer");
+            en.Add("Deskmate kini punya installer tanpa admin yang tercantum di Pengaturan › Aplikasi dan membersihkan dirinya saat dicopot.", "Deskmate now has an installer that needs no admin, appears in Settings › Apps, and cleans up after itself when removed.");
             // What's new 2.11.x
             en.Add("Dock selalu di atas", "Dock stays on top");
             en.Add("Dock, pet, dan notch di layar lain kembali ke atas dalam sedetik bila ada aplikasi yang menutupinya.", "The Dock, the pet, and the notch on other screens come back on top within a second when an app covers them.");
