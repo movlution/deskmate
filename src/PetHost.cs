@@ -49,6 +49,9 @@ namespace Deskmate
             public TcpClient Tcp;
             public NetworkStream Stream;
             public readonly object WriteLock = new object();
+            // Frames waiting for the writer; Writing is true while a pool thread drains them
+            public readonly Queue<byte[]> Outbox = new Queue<byte[]>();
+            public bool Writing, Dead;
             public readonly Queue<long> ChatTicks = new Queue<long>();
             public readonly Queue<long> StateTicks = new Queue<long>();
         }
@@ -122,8 +125,13 @@ namespace Deskmate
             }
             foreach (var g in list)
             {
-                try { SendFrame(g, 0x8, new byte[0]); } catch (Exception) { }
-                try { g.Tcp.Close(); } catch (Exception) { }
+                // Stop runs on the UI thread: say goodbye only if the socket is free right now
+                if (Monitor.TryEnter(g.WriteLock, 50))
+                {
+                    try { WriteFrame(g, Frame(0x8, new byte[0])); } catch (Exception) { }
+                    finally { Monitor.Exit(g.WriteLock); }
+                }
+                Kill(g);
             }
         }
 
@@ -164,6 +172,8 @@ namespace Deskmate
             {
                 var stream = tcp.GetStream();
                 stream.ReadTimeout = 6000;
+                // A guest that stops reading fails its writer after this, instead of holding it forever
+                stream.WriteTimeout = 10000;
                 if (!PerformHandshake(stream)) return;
 
                 conn = new GuestConn { Tcp = tcp, Stream = stream };
@@ -335,9 +345,10 @@ namespace Deskmate
             }
         }
 
+        // Runs on the guest's own thread, so it writes directly: the socket closes right after
         void SendErrorAndClose(GuestConn conn, string code, string msg)
         {
-            SendText(conn, PetPacket.EncodeError(code, msg));
+            try { SendFrame(conn, 0x1, Encoding.UTF8.GetBytes(PetPacket.EncodeError(code, msg))); } catch (Exception) { }
             try { SendFrame(conn, 0x8, new byte[0]); } catch (Exception) { }
         }
 
@@ -453,31 +464,88 @@ namespace Deskmate
             return true;
         }
 
+        // Enough for a full custom pet transfer (about 50 chunks) plus live traffic. A guest this far
+        // behind is not reading, so it is dropped rather than queuing without bound.
+        internal const int MaxOutbox = 256;
+
+        // Never blocks the caller: BroadcastFromHost runs on the UI thread, and a slow tunnel or a
+        // guest that stopped reading must not freeze the pet. One pool thread per guest writes in order.
         static void SendText(GuestConn conn, string text)
         {
             if (conn == null || string.IsNullOrEmpty(text)) return;
-            try { SendFrame(conn, 0x1, Encoding.UTF8.GetBytes(text)); }
-            catch (Exception) { }
-        }
-
-        static void SendFrame(GuestConn conn, byte opcode, byte[] payload)
-        {
-            lock (conn.WriteLock)
+            byte[] frame = Frame(0x1, Encoding.UTF8.GetBytes(text));
+            bool start = false, overflow = false;
+            lock (conn.Outbox)
             {
-                int len = payload.Length;
-                byte[] header;
-                if (len < 126)
-                {
-                    header = new byte[] { (byte)(0x80 | opcode), (byte)len };
-                }
+                if (conn.Dead) return;
+                if (conn.Outbox.Count >= MaxOutbox) { conn.Dead = true; conn.Outbox.Clear(); overflow = true; }
                 else
                 {
-                    header = new byte[] { (byte)(0x80 | opcode), 126, (byte)(len >> 8), (byte)(len & 0xFF) };
+                    conn.Outbox.Enqueue(frame);
+                    if (!conn.Writing) { conn.Writing = true; start = true; }
                 }
-                conn.Stream.Write(header, 0, header.Length);
-                if (len > 0) conn.Stream.Write(payload, 0, len);
-                conn.Stream.Flush();
             }
+            if (overflow) { Log.Write("pet host: guest not reading, dropped"); Kill(conn); return; }
+            if (start) ThreadPool.QueueUserWorkItem(_ => Drain(conn));
+        }
+
+        static void Drain(GuestConn conn)
+        {
+            while (true)
+            {
+                byte[] frame;
+                lock (conn.Outbox)
+                {
+                    if (conn.Dead || conn.Outbox.Count == 0) { conn.Writing = false; return; }
+                    frame = conn.Outbox.Dequeue();
+                }
+                try
+                {
+                    lock (conn.WriteLock) WriteFrame(conn, frame);
+                }
+                catch (Exception)
+                {
+                    lock (conn.Outbox) { conn.Dead = true; conn.Outbox.Clear(); conn.Writing = false; }
+                    Kill(conn);
+                    return;
+                }
+            }
+        }
+
+        // Closing the socket ends the guest's read loop, which then reports the leave
+        static void Kill(GuestConn conn)
+        {
+            lock (conn.Outbox) conn.Dead = true;
+            try { conn.Tcp.Close(); } catch (Exception) { }
+        }
+
+        static byte[] Frame(byte opcode, byte[] payload)
+        {
+            int len = payload.Length, head = len < 126 ? 2 : 4;
+            var frame = new byte[head + len];
+            frame[0] = (byte)(0x80 | opcode);
+            if (len < 126) frame[1] = (byte)len;
+            else
+            {
+                frame[1] = 126;
+                frame[2] = (byte)(len >> 8);
+                frame[3] = (byte)(len & 0xFF);
+            }
+            Buffer.BlockCopy(payload, 0, frame, head, len);
+            return frame;
+        }
+
+        // Caller holds WriteLock
+        static void WriteFrame(GuestConn conn, byte[] frame)
+        {
+            conn.Stream.Write(frame, 0, frame.Length);
+        }
+
+        // Direct write for the guest's own thread (pong, error, close)
+        static void SendFrame(GuestConn conn, byte opcode, byte[] payload)
+        {
+            byte[] frame = Frame(opcode, payload);
+            lock (conn.WriteLock) WriteFrame(conn, frame);
         }
     }
 

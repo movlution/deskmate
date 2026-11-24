@@ -321,6 +321,9 @@ namespace Deskmate
         ClientWebSocket ws;
         CancellationTokenSource cts;
         readonly SemaphoreSlim sendLock = new SemaphoreSlim(1, 1);
+        readonly System.Collections.Concurrent.ConcurrentQueue<string> outbox = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        const int MaxOutbox = 256;
+        int outboxCount, draining;
         volatile bool connected;
         volatile bool stopped;
 
@@ -421,11 +424,40 @@ namespace Deskmate
             }
         }
 
+        // One drain task at a time sends in order: a newer position never overtakes an older one,
+        // and a walking pet costs no task per message. A host this far behind is not reading.
         public void Send(string json)
         {
             if (!connected || stopped || ws == null || cts == null) return;
-            var token = cts.Token;
-            Task.Run(() => SendAsync(json, token));
+            if (Interlocked.Increment(ref outboxCount) > MaxOutbox)
+            {
+                Interlocked.Decrement(ref outboxCount);
+                return;
+            }
+            outbox.Enqueue(json);
+            if (Interlocked.CompareExchange(ref draining, 1, 0) == 0)
+            {
+                var token = cts.Token;
+                Task.Run(() => DrainAsync(token));
+            }
+        }
+
+        async Task DrainAsync(CancellationToken token)
+        {
+            while (true)
+            {
+                string json;
+                while (outbox.TryDequeue(out json))
+                {
+                    Interlocked.Decrement(ref outboxCount);
+                    if (token.IsCancellationRequested) continue;
+                    try { await SendAsync(json, token).ConfigureAwait(false); }
+                    catch (Exception) { }
+                }
+                Interlocked.Exchange(ref draining, 0);
+                // A message queued between the last TryDequeue and the reset still needs a drainer
+                if (outbox.IsEmpty || Interlocked.CompareExchange(ref draining, 1, 0) != 0) return;
+            }
         }
 
         async Task SendAsync(string json, CancellationToken token)

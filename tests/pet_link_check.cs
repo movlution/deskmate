@@ -27,7 +27,9 @@ namespace Deskmate
             TestRelayFilter();
             TestConnectionCap();
             TestAssetHashAndSignature();
-            return "PetLinkCheck OK (invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature)";
+            TestSlowGuestDoesNotBlockHost();
+            TestClientSendsInOrder();
+            return "PetLinkCheck OK (invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
         }
 
         // A guest may only send peer traffic; room, join, leave and err must never reach other guests
@@ -100,6 +102,89 @@ namespace Deskmate
                     foreach (var c in held) try { c.Close(); } catch (Exception) { }
                 }
             }
+        }
+
+        // BroadcastFromHost runs on the UI thread: a guest that joined and then stopped reading must
+        // neither freeze it nor make the host queue without bound
+        static void TestSlowGuestDoesNotBlockHost()
+        {
+            using (var host = new PetHost())
+            {
+                host.Start(new PetPeerProfile { Name = "Host" }, false, 0);
+                var left = new ManualResetEventSlim(false);
+                var joined = new ManualResetEventSlim(false);
+                host.PeerJoined += p => joined.Set();
+                host.PeerLeft += id => left.Set();
+                using (var tcp = new System.Net.Sockets.TcpClient("127.0.0.1", host.Port))
+                {
+                    tcp.ReceiveBufferSize = 4096;
+                    var s = tcp.GetStream();
+                    byte[] req = Encoding.ASCII.GetBytes("GET /ws HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+                        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n");
+                    s.Write(req, 0, req.Length);
+                    var head = new StringBuilder();
+                    while (!head.ToString().EndsWith("\r\n\r\n", StringComparison.Ordinal)) head.Append((char)s.ReadByte());
+                    byte[] hello = MaskedText(PetPacket.EncodeHello(host.Pin, new PetPeerProfile { Name = "Sleepy" }));
+                    s.Write(hello, 0, hello.Length);
+                    Assert(joined.Wait(5000), "raw guest joined");
+
+                    // From here on the guest never reads. 2000 x 16 KB is far more than socket buffers hold.
+                    string big = PetPacket.EncodeChat("h", new string('x', 200), -1);
+                    var chunk = new string('y', 16 * 1024);
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    for (int i = 0; i < 2000; i++)
+                        host.BroadcastFromHost(i % 2 == 0 ? big : "{\"t\":\"state\",\"pad\":\"" + chunk + "\"}");
+                    sw.Stop();
+                    Assert(sw.ElapsedMilliseconds < 1000, "broadcast must not block on a stalled guest: " + sw.ElapsedMilliseconds + " ms");
+                    Assert(left.Wait(15000), "a guest that stops reading is dropped");
+                }
+            }
+        }
+
+        // State packets from one client must arrive in the order they were sent
+        static void TestClientSendsInOrder()
+        {
+            using (var host = new PetHost())
+            {
+                host.Start(new PetPeerProfile { Name = "Host" }, false, 0);
+                var seen = new List<double>();
+                var done = new ManualResetEventSlim(false);
+                host.MessageFromGuest += (id, msg) =>
+                {
+                    if (PetPacket.Str(msg, "t") != "state") return;
+                    lock (seen)
+                    {
+                        seen.Add(PetPacket.Num(msg, "x", -1));
+                        if (seen.Count == 25) done.Set();
+                    }
+                };
+                var ready = new ManualResetEventSlim(false);
+                using (var c = new PetLinkClient())
+                {
+                    c.MessageReceived += m => { if (PetPacket.Str(m, "t") == "room") ready.Set(); };
+                    c.Connect(new Uri("ws://127.0.0.1:" + host.Port + "/ws"), host.Pin, new PetPeerProfile { Name = "A" });
+                    Assert(ready.Wait(5000), "client joined");
+                    // 25 is under the host's 30-per-3-s state budget
+                    for (int i = 0; i < 25; i++) c.Send(PetPacket.EncodeState("", i / 100.0, 1, 1, false));
+                    Assert(done.Wait(5000), "all states arrived");
+                    lock (seen)
+                        for (int i = 1; i < seen.Count; i++)
+                            Assert(seen[i] > seen[i - 1], "state " + i + " arrived out of order");
+                }
+            }
+        }
+
+        static byte[] MaskedText(string text)
+        {
+            byte[] p = Encoding.UTF8.GetBytes(text);
+            var mask = new byte[] { 1, 2, 3, 4 };
+            var ms = new MemoryStream();
+            ms.WriteByte(0x81);
+            if (p.Length < 126) ms.WriteByte((byte)(0x80 | p.Length));
+            else { ms.WriteByte(0x80 | 126); ms.WriteByte((byte)(p.Length >> 8)); ms.WriteByte((byte)p.Length); }
+            ms.Write(mask, 0, 4);
+            for (int i = 0; i < p.Length; i++) ms.WriteByte((byte)(p[i] ^ mask[i & 3]));
+            return ms.ToArray();
         }
 
         static void TestAssetHashAndSignature()

@@ -53,11 +53,31 @@ namespace Deskmate
                 if (string.IsNullOrEmpty(dir)) return "";
                 string json = Path.Combine(dir, "pet.json"), png = Path.Combine(dir, "sheet.png");
                 if (!File.Exists(json) || !File.Exists(png)) return "";
-                long jl = new FileInfo(json).Length, pl = new FileInfo(png).Length;
+                var ji = new FileInfo(json);
+                var pi = new FileInfo(png);
+                long jl = ji.Length, pl = pi.Length;
                 totalBytes = jl + pl;
                 if (jl > (1 << 20) || pl > (8 << 20)) return "";
-                return ComputeHashBytes(File.ReadAllBytes(json), File.ReadAllBytes(png));
+                // Hashing reads up to 9 MB on the UI thread; do it again only when a file changed
+                string stamp = jl + "|" + pl + "|" + ji.LastWriteTimeUtc.Ticks + "|" + pi.LastWriteTimeUtc.Ticks;
+                string key = Path.GetFullPath(dir).ToLowerInvariant();
+                lock (hashes)
+                {
+                    KeyValuePair<string, string> hit;
+                    if (hashes.TryGetValue(key, out hit) && hit.Key == stamp) return hit.Value;
+                }
+                string hash = ComputeHashBytes(File.ReadAllBytes(json), File.ReadAllBytes(png));
+                lock (hashes)
+                {
+                    if (hashes.Count >= 32) hashes.Clear();
+                    hashes[key] = new KeyValuePair<string, string>(stamp, hash);
+                }
+                return hash;
             }
+
+            // folder -> (size and write-time stamp, hash)
+            static readonly Dictionary<string, KeyValuePair<string, string>> hashes =
+                new Dictionary<string, KeyValuePair<string, string>>(StringComparer.Ordinal);
 
             // Frame shown t seconds into a mode; pace above 1 plays it faster
             public int Frame(PetMode m, double t, double pace)
@@ -165,7 +185,27 @@ namespace Deskmate
                 return px;
             }
 
+            // Ten built-in sheets at most (2 animals x 5 furs). Sharing one instance means a repeated
+            // choice, a friend's identical pet, or a profile update never repaints art or rebuilds an atlas.
+            static readonly Dictionary<string, PetSheet> builtIns = new Dictionary<string, PetSheet>(StringComparer.Ordinal);
+
             public static PetSheet BuiltIn(string kind, string color)
+            {
+                kind = kind == "dog" ? "dog" : "cat";
+                // Unknown furs paint orange, so they share its sheet (and a peer can't grow the cache)
+                if (color != "brown" && color != "gray" && color != "black" && color != "cream") color = "orange";
+                string key = kind + "|" + color;
+                lock (builtIns)
+                {
+                    PetSheet cached;
+                    if (builtIns.TryGetValue(key, out cached)) return cached;
+                    cached = PaintBuiltIn(kind, color);
+                    builtIns[key] = cached;
+                    return cached;
+                }
+            }
+
+            static PetSheet PaintBuiltIn(string kind, string color)
             {
                 var s = new PetSheet { W = PetArt.Grid, H = PetArt.Grid };
                 int[] pal = PetArt.Palette(color);

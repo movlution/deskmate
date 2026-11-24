@@ -315,6 +315,7 @@ namespace Deskmate
             {
                 var sheet = PetSheet.LoadBytes(jsonBytes, pngBytes);
                 SavePetCache(hash, jsonBytes, pngBytes);
+                RememberPeerSheet(hash, sheet);
                 string waiting;
                 if (pendingPeerAssets.TryGetValue(peerId, out waiting) && waiting == hash) pendingPeerAssets.Remove(peerId);
                 PetWindow win;
@@ -389,15 +390,28 @@ namespace Deskmate
             return true;
         }
 
+        // Decoded friends' pets by hash, so a profile update or rejoin doesn't decode the PNG again.
+        // The same instance also lets PetWindow.Use skip rebuilding its atlas. A room holds 3 friends.
+        static readonly Dictionary<string, PetSheet> peerSheets = new Dictionary<string, PetSheet>(StringComparer.Ordinal);
+
+        static void RememberPeerSheet(string hash, PetSheet sheet)
+        {
+            if (peerSheets.Count >= 6 && !peerSheets.ContainsKey(hash)) peerSheets.Clear();
+            peerSheets[hash] = sheet;
+        }
+
         static PetSheet TryLoadPetCache(string hash)
         {
             if (!IsAssetHash(hash)) return null;
+            PetSheet sheet;
+            if (peerSheets.TryGetValue(hash, out sheet)) return sheet;
             try
             {
                 string dir = Path.Combine(PetSheet.CacheFolder, hash);
                 if (!Directory.Exists(dir)) return null;
-                var sheet = PetSheet.Load(dir);
+                sheet = PetSheet.Load(dir);
                 try { Directory.SetLastWriteTimeUtc(dir, DateTime.UtcNow); } catch (Exception) { }
+                RememberPeerSheet(hash, sheet);
                 return sheet;
             }
             catch (Exception) { return null; }
