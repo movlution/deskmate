@@ -43,7 +43,7 @@ namespace Deskmate
 
         void ApplyClips()
         {
-            bool want = ClipsOn || ShotsOn || ScreenTextArmed;
+            bool want = ClipsOn || ShotsOn || ScreenTextArmed || (IngatOn && settings.GetBool("ingat.clip", true));
             if (!ClipsOn)
             {
                 ClearClips(clips);
@@ -95,6 +95,7 @@ namespace Deskmate
             }
             bool hasText = data.GetDataPresent(DataFormats.UnicodeText);
             bool hasBitmap = data.GetDataPresent(DataFormats.Bitmap);
+            if (hasText) IngatClipboard(data);
             if (hasBitmap && !hasText && TakeScreenText(data)) return;
             if ((sequence == 0 || sequence != imageClipSequence) && (ClipsOn || (!hasText && ShotsOn)))
             {

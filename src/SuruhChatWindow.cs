@@ -100,6 +100,13 @@ namespace Deskmate
 
             protected override void OnFormClosed(FormClosedEventArgs e) { pulse.Stop(); base.OnFormClosed(e); }
 
+            // A question placed by another feature (the pet's Ingatan button)
+            public void SetDraft(string text)
+            {
+                input.Text = text ?? "";
+                FocusInput();
+            }
+
             public void FocusInput()
             {
                 if (!input.CanFocus) return;

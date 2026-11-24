@@ -138,6 +138,7 @@ namespace Deskmate
             else if (key == "capture.show") ApplyGlass();
             else if (key == "shelf" || key == "convert") InitShelfDrop();
             else if (key == "wall.sync") WallToggle(on);
+            else if (key == "ingat" || key == "ingat.clip") ApplyIngat();
             else if (key.StartsWith("dockbar.", StringComparison.Ordinal)) ApplyDock();
             Kick();
         }

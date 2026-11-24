@@ -166,6 +166,7 @@ namespace Deskmate
             // Running timers tick in their live areas
             TimerTick(nowUtc);
             TickRapat();
+            IngatTick();
             TickOneShots();
             GoogleWorkTick(nowUtc);
             redraw |= EdgeTick();

@@ -27,6 +27,7 @@ namespace Deskmate
             "theme.voice", "weather", "clock.24", "look.custom", "look.bg", "look.text", "look.accent", "wall.sync", "sound.agent", "phone.notifs", "phone.otp",
             "sound.drink", "sound.eyes", "sound.stretch", "sound.pray", "sound.pray.before", "ibadah.count",
             "notif.banner", NotifAppRulesKey, "share.mode", "idle.left", "idle.right", "tidy", "tidy.layout", "tidy.nudge", "ai.text", "ai.stt", "calendar.holidays",
+            "ingat", "ingat.text", "ingat.ocr", "ingat.clip", "ingat.rapat", "ingat.pet", "ingat.ai", "ingat.embed", "ingat.block.apps", "ingat.block.sites", "ingat.keep.events", "ingat.keep.days",
         };
 
         // Kept on reset: identity, links, internal state

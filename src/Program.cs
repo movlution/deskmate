@@ -16,6 +16,9 @@ namespace Deskmate
             if (args.Length > 0 && args[0] == "--notify") return NotifyCommand.Run(args);
             if (args.Length > 0 && args[0] == "--run") return RunCommand.Run(args);
             if (args.Length > 0 && args[0] == "--statusline") return StatusLine.Run(args);
+            // Ingatan: the memory service, and its MCP face for other assistants
+            if (args.Length > 0 && args[0] == "--ingat") return IngatService.Run(args);
+            if (args.Length > 0 && args[0] == "--mcp") return IngatMcp.Run(args);
             return RunIsland();
         }
 

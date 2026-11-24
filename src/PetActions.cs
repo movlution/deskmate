@@ -44,6 +44,10 @@ namespace Deskmate
             public static readonly string[] Chat = {
                 "#######", "#.....#", "#.#.#.#", "#.....#", "#######", ".##....", "#......"
             };
+            // A clock face: what happened earlier
+            public static readonly string[] Memory = {
+                ".#####.", "#..#..#", "#..#..#", "#..####", "#.....#", "#.....#", ".#####."
+            };
             public static readonly string[] Gear = {
                 "...#...", ".#####.", ".#...#.", "##.#.##", ".#...#.", ".#####.", "...#..."
             };
@@ -321,6 +325,8 @@ namespace Deskmate
                 };
                 if (Isle != null && Isle.PetRoomConnected)
                     list.Add(new PetAction(PetIcons.Chat, Lang.T("Chat"), true, () => { Isle.OpenPetChatInput(this); }));
+                if (Isle != null && Isle.IngatOn)
+                    list.Add(new PetAction(PetIcons.Memory, Lang.T("Ingat"), true, () => { Isle.AskIngat(""); }));
                 list.Add(new PetAction(PetIcons.Gear, Lang.T("Atur"), true, () => { if (Isle != null) Isle.OpenPrefs("pet"); }));
                 return list;
             }

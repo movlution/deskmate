@@ -323,8 +323,8 @@ namespace Deskmate
                 Fn("add_note", "Save a quick note.", new Dictionary<string, object> { { "text", P("string", "Note text") } }, new[] { "text" }),
                 Fn("read_deskmate", "Read Deskmate data only when relevant to the current question. Call once per relevant section. Do not combine reads with actions.", new Dictionary<string, object>
                 {
-                    { "section", P("string", "tasks, notes, schedule, reminders, timer, media, shelf, clipboard, or messages") },
-                    { "query", P("string", "Optional title or text filter. Omit for an overview.") },
+                    { "section", P("string", "tasks, notes, schedule, reminders, timer, media, shelf, clipboard, messages, or activity (Ingatan: the user's recorded computer activity, for questions about what they did, saw, read, or discussed earlier)") },
+                    { "query", P("string", "Optional title or text filter. Omit for an overview. For activity: the user's question about their past activity, with any time words.") },
                 }, new[] { "section" }),
                 Fn("open_deskmate", "Open a Deskmate feature on explicit request.", new Dictionary<string, object>
                 {
@@ -351,7 +351,12 @@ namespace Deskmate
             var reads = reply.Calls.FindAll(c => c.Key == "read_deskmate");
             if (reads.Count == 0) return reply;
 
-            var data = (string)Invoke(new Func<string>(() => ReadAskSections(reads)));
+            // Activity memory answers over HTTP and may take a while: here on the worker, not the UI thread
+            var memory = reads.FindAll(c => Json.Str(c.Value, "section").Trim().ToLowerInvariant() == "activity");
+            reads.RemoveAll(c => Json.Str(c.Value, "section").Trim().ToLowerInvariant() == "activity");
+            var data = reads.Count > 0 ? (string)Invoke(new Func<string>(() => ReadAskSections(reads))) : "[]";
+            if (memory.Count > 0)
+                data += "\n\nIngatan activity memory (JSON): " + Json.Encode(new { section = "activity", data = ReadIngatActivity(Json.Str(memory[0].Value, "query").Trim()) });
             var followUp = new List<KeyValuePair<string, string>>(turns);
             int last = followUp.Count - 1;
             followUp[last] = new KeyValuePair<string, string>("user", turns[last].Value + "\n\nDeskmate data (JSON): " + data);

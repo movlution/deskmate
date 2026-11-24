@@ -22,6 +22,7 @@ namespace Deskmate
             AddCombo(d);
             AddWhatsNew(d);
             AddPet(d);
+            AddIngat(d);
             return d;
         }
 

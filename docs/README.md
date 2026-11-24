@@ -12,6 +12,7 @@ Indeks panduan dan catatan teknis. Semua dokumen ditulis dalam bahasa Indonesia.
 | [`hp.md`](hp.md) | Menyambungkan Tepi Android lewat Wi-Fi. |
 | [`teleprompter.md`](teleprompter.md) | Naskah, kecepatan, dan pintasan teleprompter. |
 | [`skrip.md`](skrip.md) | Memanggil Deskmate dari skrip. |
+| [`ingatan.md`](ingatan.md) | Memori aktivitas lokal: cara kerja, bertanya, MCP, rapat, dan privasi. |
 | [`paket-tema.md`](paket-tema.md) | Format `theme.ini` dan kunci warnanya. |
 | [`privasi-keamanan.md`](privasi-keamanan.md) | Data yang disimpan, dikirim, dan tidak pernah keluar. |
 | [`performa.md`](performa.md) | Anggaran performa dan perilaku saat idle. |
