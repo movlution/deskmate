@@ -26,6 +26,9 @@ namespace Deskmate
             AddPetText(en, "Sedang", "Medium");
             AddPetText(en, "Besar", "Large");
             AddPetText(en, "Kecepatan jalan", "Walking speed");
+            AddPetText(en, "Area jalan", "Walking area");
+            AddPetText(en, "Bawah layar", "Screen bottom");
+            AddPetText(en, "Di bawah layar, pet berjalan selebar layar dan melompat naik ke dock", "Along the screen bottom the pet walks the full width and hops up onto the dock");
             AddPetText(en, "Reaksi", "Reactions");
             AddPetText(en, "Kejar kursor otomatis", "Automatic cursor chase");
             AddPetText(en, "Sapukan kursor cepat ke samping di sepanjang dock untuk mengajak pet berlari sebentar", "Sweep the cursor quickly along the dock to make the pet chase briefly");

@@ -63,6 +63,8 @@ namespace Deskmate
             Point pressAt;
             int pressButton;
             double pressX;
+            // Screen Y of the paws when the press began; a drag keeps the paws this far from the pointer
+            int pressFeet;
             bool autoChase, autoFullscreen;
             double nextAutoSample, nextAutoFullscreen, nextDockFullscreen;
 
@@ -80,7 +82,7 @@ namespace Deskmate
                 if (scratch)
                 {
                     if (emote == null || emote.IsDisposed) emote = new PetEmoteWindow { Owner = this };
-                    emote.Pop(PetEmote.Scratch, (int)Math.Round(iconX), lane.Y - 3, Math.Max(1, f), now, false);
+                    emote.Pop(PetEmote.Scratch, (int)Math.Round(iconX), StandY - 3, Math.Max(1, f), now, false);
                 }
                 lastT = now;
                 Frame();
@@ -114,6 +116,7 @@ namespace Deskmate
                     pressAt = Cursor.Position;
                     pressButton = SystemInformation.MouseButtonsSwapped ? 0x02 : 0x01;
                     pressX = brain.X;
+                    pressFeet = drawnY != int.MinValue ? drawnY + (sheet.Base + 1) * f : StandY;
                     if (emote != null) emote.Stop();
                 }
                 lastT = clock.Elapsed.TotalSeconds;
@@ -128,7 +131,20 @@ namespace Deskmate
                 Point at = Cursor.Position;
                 if (KeyState(pressButton) >= 0) { EndPetPress(at); return; }
                 if (!brain.Holding && PetBrain.DragThreshold(pressAt, at, scale)) brain.BeginHold();
-                if (brain.Holding) brain.MoveHeld(pressX + at.X - pressAt.X, 8 * scale + pressAt.Y - at.Y);
+                if (brain.Holding) CarryTo(at);
+            }
+
+            // Anywhere on the pet's screen: the paws follow the pointer, lifted a little on pickup, never
+            // below the ground under them and never above the top of the work area
+            void CarryTo(Point at)
+            {
+                double left = work.Left, right = Math.Max(work.Left, work.Right - cw);
+                double x = Math.Max(left, Math.Min(right, pressX + at.X - pressAt.X));
+                bool onDock;
+                int ground = GroundAt(x + cw / 2.0, out onDock);
+                double feet = pressFeet - 8 * scale + (at.Y - pressAt.Y);
+                double maxLift = ground - work.Top - (sheet.Base + 1 - sheet.Top) * f;
+                brain.MoveHeldFree(x, ground - feet, left, right, maxLift);
             }
 
             void EndPetPress(Point at)
@@ -161,7 +177,7 @@ namespace Deskmate
 
             bool CanProbeAutoChase(double now)
             {
-                return autoChase && !floor.IsEmpty && !PlayBlocked && brain.CanProbeAuto(now);
+                return autoChase && (!floor.IsEmpty || screenArea) && !PlayBlocked && brain.CanProbeAuto(now);
             }
 
             // Logical px around the lane's top edge: the bar below it, a strip above it
@@ -176,10 +192,10 @@ namespace Deskmate
                     at.Y >= lane.Y - (above + margin) * scale && at.Y <= lane.Y + (ChaseBelow + margin) * scale;
             }
 
-            bool InAutoChaseBand(Point at) { return !floor.IsEmpty && InChaseBand(lane, cw, scale, at, AutoAbove, 0); }
+            bool InAutoChaseBand(Point at) { return (!floor.IsEmpty || screenArea) && InChaseBand(StandLane, cw, scale, at, AutoAbove, 0); }
 
             // Near enough that a sweep could begin: sample quickly; otherwise a slow glance is enough
-            bool AutoChaseNear(Point at) { return !floor.IsEmpty && InChaseBand(lane, cw, scale, at, AutoAbove, AutoNear); }
+            bool AutoChaseNear(Point at) { return (!floor.IsEmpty || screenArea) && InChaseBand(StandLane, cw, scale, at, AutoAbove, AutoNear); }
 
             void ProbeAutoChase(double now)
             {

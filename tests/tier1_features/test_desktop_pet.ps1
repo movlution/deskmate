@@ -579,6 +579,30 @@ Describe "Tier 1 Feature Suite: Desktop Pet" {
         Assert-Equal $b.X 50 "No horizontal drift after release"
     }
 
+    It "Carried anywhere on screen, a pet released outside the lane falls back into it" {
+        $b = New-Brain 7 50 300
+        $b.X = 100
+        Assert-True ($b.BeginHold()) "The grab starts"
+        $b.MoveHeldFree(900, 500, 0, 1000, 400)
+        Assert-Equal $b.X 900 "A carry can leave the lane"
+        Assert-Equal $b.Lift 400 "Lift stops at the top of the screen"
+        $b.MoveHeldFree(1200, -20, 0, 1000, 400)
+        Assert-Equal $b.X 1000 "A carry stays on the screen"
+        Assert-Equal $b.Lift 0 "A carry never goes below the ground"
+        $b.MoveHeldFree(900, 400, 0, 1000, 400)
+        $b.EndHold()
+        $b.Step(0.05)
+        Assert-True ($b.X -lt 900 -and $b.X -gt 300) "Drifts back toward the lane while falling"
+        Assert-True ($b.Lift -lt 400 -and $b.Lift -gt 0) "Falls"
+        for ($i = 0; $i -lt 100 -and $b.Manipulating; $i++) { $b.Step(0.02) }
+        Assert-False $b.Manipulating "Lands"
+        Assert-Equal $b.X 300 "Lands inside the lane"
+        $b.Step(0.1)
+        Assert-True ($b.Lift -gt 3.6) "A long fall bounces higher than a short drop"
+        for ($i = 0; $i -lt 10; $i++) { $b.Step(0.1) }
+        Assert-Equal $b.Lift 0 "Settles after one bounce"
+    }
+
     It "Interrupted drag lands without a bounce and never resumes" {
         $b = New-Brain 7 0 500
         $b.Calm = $true

@@ -22,6 +22,8 @@ namespace Deskmate
         int PetHeight { get { string s = settings.Get("pet.size", "m"); return s == "s" ? 32 : s == "l" ? 64 : 48; } }
         // Percent of the base walking speed
         int PetSpeed { get { return Math.Max(50, Math.Min(200, settings.GetInt("pet.speed", 100))); } }
+        // "screen": the whole bottom of the screen, hopping onto a floating dock; "dock": the dock's top edge only
+        bool PetScreenArea { get { return settings.Get("pet.area", "dock") == "screen"; } }
 
         void SetPetChoice(string key, object value)
         {
@@ -52,6 +54,7 @@ namespace Deskmate
             }
             // Owned by the dock: always just above it, and the dock's later windows stay above both
             pet.Owner = dock;
+            pet.SetArea(PetScreenArea);
             pet.Floor(dock != null ? dock.PetFloor() : Rectangle.Empty, dock != null);
             pet.SetAutoChase(settings.GetBool("pet.autoChase", false));
             ApplyRemotePets(work, s, mon, dock);
@@ -211,7 +214,9 @@ namespace Deskmate
             double dockHopFrom, dockHopTo, nextDockTrick;
             bool dockHop;
             bool held;
-            double heldLift, dropHeight, dropTime;
+            double heldLift, dropHeight, dropTime, dropFromX, dropToX;
+            // Logical px per second squared: a drop from the top of a 1080p screen takes about a second
+            public const double Gravity = 1600;
             readonly Random rnd;
 
             public PetBrain(int seed) { rnd = new Random(seed); }
@@ -324,9 +329,16 @@ namespace Deskmate
 
             public void MoveHeld(double x, double lift)
             {
+                MoveHeldFree(x, lift, Left, Right, 96 * Scale);
+            }
+
+            // Carried anywhere in left..right and up to maxLift; a release outside the lane
+            // drifts back into it while falling
+            public void MoveHeldFree(double x, double lift, double left, double right, double maxLift)
+            {
                 if (!held) return;
-                X = Clamp(x);
-                heldLift = Math.Max(0, Math.Min(96 * Scale, lift));
+                X = Math.Max(left, Math.Min(Math.Max(left, right), x));
+                heldLift = Math.Max(0, Math.Min(Math.Max(0, maxLift), lift));
             }
 
             public void EndHold()
@@ -335,7 +347,9 @@ namespace Deskmate
                 held = false;
                 dropHeight = heldLift;
                 dropTime = 0;
-                if (dropHeight <= 0) CancelHold();
+                dropFromX = X;
+                dropToX = Clamp(X);
+                if (dropHeight <= 0) { X = dropToX; CancelHold(); }
             }
 
             public void CancelHold()
@@ -467,12 +481,16 @@ namespace Deskmate
                     if (NoWalk || Calm) { CancelHold(); return; }
                     if (held) return;
                     dropTime += Math.Min(dt, 0.05);
-                    heldLift = dropHeight - 800 * Scale * dropTime * dropTime;
+                    heldLift = dropHeight - Gravity * Scale * dropTime * dropTime;
+                    double fall = Math.Sqrt(dropHeight / (Gravity * Scale));
+                    X = dropFromX + (dropToX - dropFromX) * Math.Min(1, fall > 0 ? dropTime / fall : 1);
                     if (heldLift <= 0)
                     {
+                        X = dropToX;
                         CancelHold();
                         hopT = 0;
-                        hopScale = 0.4;
+                        // A long fall lands with a bigger bounce
+                        hopScale = 0.4 + 0.4 * Math.Min(1, Math.Max(0, dropHeight - 96 * Scale) / (400 * Scale));
                     }
                     return;
                 }
@@ -551,6 +569,13 @@ namespace Deskmate
             DockPacer pacer;
             // floor: dock top edge in screen px, or Empty; lane: walkable left edges (X..Right) on ground Y
             Rectangle work, floor, lane;
+            // screenArea: the lane is the whole work area bottom and a floating dock is a step to hop onto.
+            // groundY: the ground drawn last, climb included; standY: the same without the climb's arc.
+            bool screenArea, groundKnown, groundOnDock;
+            int groundY = int.MinValue, standY = int.MinValue;
+            double climbT = -1;
+            int climbFrom;
+            const double ClimbTime = 0.36;
             readonly Func<bool> away;
             PetSheet sheet;
             int height = 48;
@@ -589,7 +614,68 @@ namespace Deskmate
                 }
             }
             public int DrawnCenterX { get { return drawnX == int.MinValue ? lane.Left + cw / 2 : drawnX + cw / 2; } }
-            public int BubbleAnchorY { get { return sheet == null ? lane.Y : lane.Y - (sheet.Base + 1 - sheet.Top) * f; } }
+            public int BubbleAnchorY { get { return sheet == null ? StandY : StandY - (sheet.Base + 1 - sheet.Top) * f; } }
+
+            // Where the pet's feet are for bubbles and bars: the ground it stands on, or under the paws while carried
+            int StandY
+            {
+                get
+                {
+                    if (IsRemote || standY == int.MinValue) return lane.Y;
+                    if (brain.Manipulating && drawnY != int.MinValue && sheet != null) return drawnY + (sheet.Base + 1) * f;
+                    return standY;
+                }
+            }
+
+            // The lane at the height the pet stands now, for the chase band
+            Rectangle StandLane { get { return new Rectangle(lane.X, StandY, lane.Width, 0); } }
+
+            // The flat top of a dock that floats above the work area bottom, wide enough to stand on
+            bool DockStep { get { return screenArea && !IsRemote && !floor.IsEmpty && floor.Top < work.Bottom - 2 && floor.Width >= cw; } }
+
+            // Screen Y of the ground under a sprite centred at centerX
+            int GroundAt(double centerX, out bool onDock)
+            {
+                onDock = DockStep && centerX >= floor.Left && centerX <= floor.Right;
+                if (onDock) return floor.Top;
+                return screenArea && !IsRemote ? work.Bottom : lane.Y;
+            }
+
+            // The ground to draw on. Walking onto or off a floating dock hops between the two heights;
+            // a dock that rises or sinks under the pet carries it along without a hop.
+            int Ground(double centerX)
+            {
+                bool onDock;
+                int target = GroundAt(centerX, out onDock);
+                standY = target;
+                if (!groundKnown || brain.Manipulating || groundY == int.MinValue)
+                {
+                    groundKnown = true;
+                    groundOnDock = onDock;
+                    climbT = -1;
+                    return groundY = target;
+                }
+                if (onDock != groundOnDock)
+                {
+                    groundOnDock = onDock;
+                    climbFrom = groundY;
+                    climbT = 0;
+                }
+                if (climbT < 0) return groundY = target;
+                double u = Math.Min(1, climbT / ClimbTime);
+                double arc = 4 * u * (1 - u) * Math.Max(10 * scale, Math.Abs(target - climbFrom) * 0.45);
+                return groundY = (int)Math.Round(climbFrom + (target - climbFrom) * u - arc);
+            }
+
+            // Dock only, or the whole screen bottom with the dock as a step
+            public void SetArea(bool screen)
+            {
+                if (screen == screenArea) return;
+                screenArea = screen;
+                groundKnown = false;
+                climbT = -1;
+                if (IsHandleCreated && sheet != null && placed) Settle();
+            }
             public Rectangle WorkArea { get { return work; } }
             public float UiScale { get { return scale; } }
             public bool CanShowBubble { get { return placed && !hidden && !closing && Visible && !Native.IsFullscreenOn(monitor); } }
@@ -786,7 +872,8 @@ namespace Deskmate
             // keeps its lane (or waits for the first frame; Watch falls back after 3 s)
             public void Floor(Rectangle f, bool dockPresent)
             {
-                if (f.IsEmpty && dockPresent) return;
+                // Walking the screen bottom, a hidden dock simply stops being a step
+                if (f.IsEmpty && dockPresent && !(screenArea && !IsRemote && placed)) return;
                 if (f == floor && placed) return;
                 floor = f;
                 Settle();
@@ -795,14 +882,20 @@ namespace Deskmate
             void Settle()
             {
                 if (sheet == null) return;
-                lane = Lane(work, floor, cw);
+                lane = screenArea && !IsRemote ? Lane(work, Rectangle.Empty, cw) : Lane(work, floor, cw);
                 brain.Bounds(lane.Left, lane.Right, !placed);
                 if (IsRemote)
                 {
                     remoteX = RemoteTargetX;
                     remotePlaced = true;
                 }
-                if (placed) { Draw(); return; }
+                if (placed)
+                {
+                    Draw();
+                    // A dock that slid in under the pet starts a hop, which needs frames
+                    if (climbT >= 0 && !hidden) Schedule();
+                    return;
+                }
                 placed = true;
                 lastT = clock.Elapsed.TotalSeconds;
                 drawnCell = -1;
@@ -890,6 +983,11 @@ namespace Deskmate
                     if (!petPressed) ProbeAutoChase(now);
                 }
                 wasMoving = brain.Moving;
+                if (climbT >= 0)
+                {
+                    climbT += Math.Min(dt, 0.1);
+                    if (climbT >= ClimbTime) climbT = -1;
+                }
                 Draw();
                 PublishLocalState();
                 if (caught) Emote(PetEmote.Spark);
@@ -917,7 +1015,7 @@ namespace Deskmate
                     rest.Start();
                     return;
                 }
-                if (petPressed || brain.Moving || (emote != null && emote.Active))
+                if (petPressed || brain.Moving || climbT >= 0 || (emote != null && emote.Active))
                 {
                     rest.Stop();
                     pacer.Want();
@@ -953,7 +1051,7 @@ namespace Deskmate
                     c = sheet.Frame(brain.Mode, poseTime, brain.Pace);
                     row = brain.Dir > 0 ? 0 : 1;
                     // The lowest opaque row of the sheet stands on the ground
-                    y = lane.Y - (sheet.Base + 1) * f - (int)Math.Round(brain.Lift);
+                    y = Ground(brain.X + cw / 2.0) - (sheet.Base + 1) * f - (int)Math.Round(brain.Lift);
                 }
                 bool art = c != drawnCell || row != drawnRow;
                 if (!art && x == drawnX && y == drawnY) return;

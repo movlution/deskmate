@@ -69,7 +69,7 @@ namespace Deskmate
             {
                 // Use the standing height for Y so hopping or breathing doesn't jiggle the buttons.
                 int x = drawnX + cw / 2;
-                int y = lane.Y - (sheet.Base + 1 - sheet.Top) * f;
+                int y = StandY - (sheet.Base + 1 - sheet.Top) * f;
                 return b.MoveAbove(work, new Point(x, y));
             }
 

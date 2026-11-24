@@ -54,6 +54,13 @@ namespace Deskmate
                 sizeRow.Glyph = (char)0xE740;
                 add(sizeRow);
 
+                bool screenArea = settings.Get("pet.area", "dock") == "screen";
+                var areaSeg = Seg(new[] { Lang.T("Dock"), Lang.T("Bawah layar") }, screenArea ? 1 : 0,
+                    i => change("pet.area", i == 1 ? "screen" : "dock"));
+                var areaRow = Row(Lang.T("Area jalan"), Lang.T("Di bawah layar, pet berjalan selebar layar dan melompat naik ke dock"), areaSeg);
+                areaRow.Glyph = (char)0xE707;
+                add(areaRow);
+
                 var speed = Slider(50, 200, 10, island.PetSpeed, v => v + "%", v => change("pet.speed", v));
                 var speedRow = Row(Lang.T("Kecepatan jalan"), null, speed);
                 speedRow.Glyph = (char)0xEC4A;
@@ -71,7 +78,7 @@ namespace Deskmate
                 {
                     bool on = petOn.Checked;
                     bool custom = ids[kindPop.Selected].StartsWith("custom:", StringComparison.Ordinal);
-                    kindPop.Enabled = sizeSeg.Enabled = speed.Enabled = react.Enabled = chase.Enabled = on;
+                    kindPop.Enabled = sizeSeg.Enabled = areaSeg.Enabled = speed.Enabled = react.Enabled = chase.Enabled = on;
                     colorPop.Enabled = on && !custom;
                     SetPetDetail(kindRow, on && island.petError != null
                         ? Lang.T("Gagal dimuat, memakai kucing") + ": " + Lang.T(island.petError) : "");
