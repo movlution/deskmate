@@ -38,7 +38,7 @@ namespace Deskmate
     }
 
     // Activity memory on disk: events → episodes → days → facts
-    sealed class IngatStore : IDisposable
+    sealed partial class IngatStore : IDisposable
     {
         public static string Dir { get { return Path.Combine(Settings.Dir, "ingat"); } }
         public static string DbPath { get { return Path.Combine(Dir, "ingat.db"); } }
@@ -59,6 +59,8 @@ namespace Deskmate
                 "CREATE INDEX IF NOT EXISTS episodes_start ON episodes(start);" +
                 "CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, t INTEGER, episode INTEGER, source TEXT, app TEXT, title TEXT, url TEXT, text TEXT, hash TEXT);" +
                 "CREATE INDEX IF NOT EXISTS events_t ON events(t);" +
+                // Per-episode lookups (duplicate check on every capture, DropTiny, EventsOf) without scanning all events
+                "CREATE INDEX IF NOT EXISTS events_episode ON events(episode, hash);" +
                 "CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(title, url, body, summary, app, tokenize='unicode61 remove_diacritics 2');" +
                 "CREATE TABLE IF NOT EXISTS embeddings(episode INTEGER PRIMARY KEY, model TEXT, vec BLOB);" +
                 "CREATE TABLE IF NOT EXISTS daily(date TEXT PRIMARY KEY, summary TEXT, made INTEGER);" +
@@ -88,9 +90,16 @@ namespace Deskmate
                 try { db.Exec("ALTER TABLE " + p[0] + " ADD COLUMN " + p[1]); }
                 catch (InvalidOperationException) { }
             }
+            MigrateFacts();
+            MigrateVectors();
+            MigrateTrigram();
         }
 
-        public void Dispose() { db.Dispose(); }
+        public void Dispose()
+        {
+            try { FlushIndex(); } catch (InvalidOperationException) { }
+            db.Dispose();
+        }
 
         // Episodes
 
@@ -112,6 +121,11 @@ namespace Deskmate
         }
 
         public void Touch(long id, DateTime t, string title, string url, string text, IngatSnapshot snap)
+        {
+            db.Tx(() => TouchTx(id, t, title, url, text, snap));
+        }
+
+        void TouchTx(long id, DateTime t, string title, string url, string text, IngatSnapshot snap)
         {
             var rows = db.Query("SELECT body, kind, context, exe, title, url FROM episodes WHERE id=?", id);
             if (rows.Count == 0) return;
@@ -139,24 +153,76 @@ namespace Deskmate
 
             db.Exec("UPDATE episodes SET end=?, title=CASE WHEN ?<>'' THEN ? ELSE title END, url=CASE WHEN ?<>'' THEN ? ELSE url END, kind=?, body=?, context=? WHERE id=?",
                 t, title ?? "", title ?? "", url ?? "", url ?? "", nextKind, body, ctx.Encode(), id);
-            // The open episode must be findable too, not only once it closes
-            Reindex(id);
+            // The open episode must be findable too, not only once it closes: reindexed at most every
+            // ReindexSeconds while it grows, and always before a search reads the index
+            MarkDirty(id);
+        }
+
+        // Rewriting a 12 KB FTS row on every capture is the hot path's main cost; batch it instead
+        const double ReindexSeconds = 30;
+        readonly Dictionary<long, DateTime> dirty = new Dictionary<long, DateTime>();
+
+        void MarkDirty(long id)
+        {
+            lock (db.Gate)
+            {
+                DateTime since;
+                if (!dirty.TryGetValue(id, out since)) { dirty[id] = DateTime.UtcNow; return; }
+                if ((DateTime.UtcNow - since).TotalSeconds < ReindexSeconds) return;
+                dirty.Remove(id);
+                Reindex(id);
+            }
+        }
+
+        // Pending episodes reach the index before anything reads it
+        void FlushIndex()
+        {
+            lock (db.Gate)
+            {
+                if (dirty.Count == 0) return;
+                var ids = new List<long>(dirty.Keys);
+                dirty.Clear();
+                db.Tx(() => { foreach (var id in ids) Reindex(id); });
+            }
         }
 
         public void Close(long id, DateTime t)
         {
-            db.Exec("UPDATE episodes SET end=MAX(end,?), closed=1 WHERE id=?", t, id);
-            Reindex(id);
+            lock (db.Gate)
+            {
+                dirty.Remove(id);
+                db.Tx(() =>
+                {
+                    db.Exec("UPDATE episodes SET end=MAX(end,?), closed=1 WHERE id=?", t, id);
+                    Reindex(id);
+                });
+            }
+            VecMoved(id);
         }
 
         // Whatever a crash left open is closed at its last sighting
-        public void CloseStale() { db.Exec("UPDATE episodes SET closed=1 WHERE closed=0"); }
+        // and indexed again, since a crash can leave its last ReindexSeconds of text out of the index
+        public void CloseStale()
+        {
+            db.Tx(() =>
+            {
+                foreach (var r in db.Query("SELECT id FROM episodes WHERE closed=0")) Reindex(IngatDb.Num(r[0]));
+                db.Exec("UPDATE episodes SET closed=1 WHERE closed=0");
+            });
+        }
 
         // Brief pass-throughs under 8 s without typed/copied/sent actions are dropped; quick reference lookups stay
         public void DropTiny(long id)
         {
             int dropped = db.Exec("DELETE FROM episodes WHERE id=? AND end-start<8 AND kind<>'meeting' AND NOT EXISTS(SELECT 1 FROM events WHERE episode=episodes.id AND source IN ('sent','typed','clipboard'))", id);
-            if (dropped > 0) { db.Exec("DELETE FROM episodes_fts WHERE rowid=?", id); db.Exec("DELETE FROM events WHERE episode=?", id); }
+            if (dropped > 0)
+            {
+                lock (db.Gate) dirty.Remove(id);
+                db.Exec("DELETE FROM episodes_fts WHERE rowid=?", id);
+                if (triOn) db.Exec("DELETE FROM episodes_tri WHERE rowid=?", id);
+                db.Exec("DELETE FROM events WHERE episode=?", id);
+                VecDrop();
+            }
         }
 
         public void Reindex(long id)
@@ -170,7 +236,87 @@ namespace Deskmate
             string sumIdx = (IngatDb.Str(r[4]) + " " + ctx.SearchSummary()).Trim();
             db.Exec("INSERT INTO episodes_fts(rowid,title,url,body,summary,app) VALUES(?,?,?,?,?,?)",
                 id, titleIdx, IngatDb.Str(r[2]), IngatDb.Str(r[3]), sumIdx, IngatDb.Str(r[5]));
+            TriIndex(id, titleIdx, sumIdx);
         }
+
+        // Substring index over the short fields (titles, summaries, steps, anchors): "kirim" finds "dikirim",
+        // "deskm" finds "Deskmate". Bodies stay out: a trigram index of 12 KB bodies would outgrow the data.
+        // Windows builds whose SQLite has no trigram tokenizer simply go without it.
+        bool triOn;
+
+        void MigrateTrigram()
+        {
+            try
+            {
+                bool fresh = db.Long("SELECT COUNT(*) FROM sqlite_master WHERE name='episodes_tri'") == 0;
+                db.Exec("CREATE VIRTUAL TABLE IF NOT EXISTS episodes_tri USING fts5(title, summary, tokenize='trigram')");
+                triOn = true;
+                // Episodes from before the index are filled in by the worker, oldest first, up to the id they had then
+                if (fresh) SetMeta("tri.upto", db.Long("SELECT COALESCE(MAX(id),0) FROM episodes").ToString(CultureInfo.InvariantCulture));
+            }
+            catch (InvalidOperationException ex) { triOn = false; Log.Write("ingat: indeks trigram tidak tersedia (" + Fmt.OneLine(ex.Message, 80) + ")"); }
+        }
+
+        void TriIndex(long id, string title, string summary)
+        {
+            if (!triOn) return;
+            db.Exec("DELETE FROM episodes_tri WHERE rowid=?", id);
+            db.Exec("INSERT INTO episodes_tri(rowid,title,summary) VALUES(?,?,?)", id, title, summary);
+        }
+
+        void TriDelete(string where, params object[] args)
+        {
+            if (triOn) db.Exec("DELETE FROM episodes_tri WHERE rowid IN (SELECT id FROM episodes WHERE " + where + ")", args);
+        }
+
+        // One worker step: false when nothing is left to fill
+        public bool BackfillTrigram(int max)
+        {
+            if (!triOn) return false;
+            long upto, through;
+            long.TryParse(Meta("tri.upto"), out upto);
+            long.TryParse(Meta("tri.through"), out through);
+            if (through >= upto) return false;
+            db.Tx(() =>
+            {
+                long last = through;
+                foreach (var r in db.Query("SELECT id, title, project, summary, context FROM episodes WHERE id>? AND id<=? ORDER BY id LIMIT ?", through, upto, max))
+                {
+                    last = IngatDb.Num(r[0]);
+                    var ctx = IngatContext.Parse(IngatDb.Str(r[4]));
+                    TriIndex(last, (IngatDb.Str(r[1]) + " " + IngatDb.Str(r[2]) + " " + ctx.SearchTitles()).Trim(), (IngatDb.Str(r[3]) + " " + ctx.SearchSummary()).Trim());
+                }
+                SetMeta("tri.through", (last == through ? upto : last).ToString(CultureInfo.InvariantCulture));
+            });
+            return true;
+        }
+
+        // Words of 3+ letters as substrings of titles and summaries, best first
+        public List<IngatEpisode> SearchSubstring(string q, DateTime fromUtc, DateTime toUtc, int limit)
+        {
+            var list = new List<IngatEpisode>();
+            if (!triOn) return list;
+            var parts = new List<string>();
+            foreach (var t in QueryTerms(q))
+            {
+                string w = t.Replace("\"", "");
+                if (w.Length < 3) continue;
+                parts.Add("\"" + w + "\"");
+                foreach (var f in IdForms(w)) parts.Add("\"" + f + "\"");
+            }
+            if (parts.Count == 0) return list;
+            FlushIndex();
+            foreach (var r in db.Query("SELECT " + ColsE + ", bm25(episodes_tri) AS s FROM episodes_tri JOIN episodes e ON e.id=episodes_tri.rowid " +
+                "WHERE episodes_tri MATCH ? AND e.end>=? AND e.start<=? ORDER BY s LIMIT ?", string.Join(" OR ", parts), fromUtc, toUtc, limit))
+            {
+                var ep = Read(r);
+                ep.Score = r[13] is double ? -(double)r[13] : 0;
+                list.Add(ep);
+            }
+            return list;
+        }
+
+        const string ColsE = "e.id,e.start,e.end,e.app,e.exe,e.project,e.title,e.url,e.kind,e.summary,e.body,e.closed,e.context";
 
         public void SetSummary(long id, string summary, string kind)
         {
@@ -247,7 +393,8 @@ namespace Deskmate
         }
 
         // Words become quoted OR terms: no FTS syntax from user text reaches SQLite
-        public static string FtsQuery(string q)
+        // Lowercase topic words of a question: no stop words, no time phrases, at most 12
+        public static List<string> QueryTerms(string q)
         {
             var terms = new List<string>();
             var sb = new StringBuilder();
@@ -260,14 +407,61 @@ namespace Deskmate
                 if (!terms.Contains(w.ToLowerInvariant())) terms.Add(w.ToLowerInvariant());
                 if (terms.Count == 12) break;
             }
+            return terms;
+        }
+
+        public static string FtsQuery(string q)
+        {
+            var terms = QueryTerms(q);
             if (terms.Count == 0) return "";
-            for (int i = 0; i < terms.Count; i++) terms[i] = "\"" + terms[i].Replace("\"", "") + "\"";
-            return string.Join(" OR ", terms);
+            var parts = new List<string>();
+            foreach (var t in terms)
+            {
+                string w = t.Replace("\"", "");
+                // Prefix match on longer words: "embedding" finds "embeddings", "kirim" finds "kirimkan"
+                parts.Add("\"" + w + "\"" + (Prefixable(w) ? "*" : ""));
+                // unicode61 has no Indonesian stemmer: also look for the bare forms, so "dikirimkan" finds "dikirim" and "kirim"
+                foreach (var f in IdForms(w))
+                    if (!IngatTime.Stop(f)) parts.Add("\"" + f + "\"*");
+            }
+            return string.Join(" OR ", parts);
+        }
+
+        static bool Prefixable(string w)
+        {
+            if (w.Length < 4) return false;
+            foreach (char c in w) if (char.IsLetter(c)) return true;
+            return false;
+        }
+
+        static readonly string[] IdPrefixes = { "ter", "ber", "di", "ke", "se" };
+        static readonly string[] IdSuffixes = { "nya", "kan", "lah", "kah", "an" };
+
+        // Conservative: one common affix each side, and the root keeps at least 5 letters.
+        // me-/pe- are left alone: their sound changes (mengirim → kirim) need a dictionary to undo.
+        public static string IdRoot(string w)
+        {
+            var forms = IdForms(w);
+            return forms.Count > 0 ? forms[forms.Count - 1] : w;
+        }
+
+        // The word without its suffix, then without its prefix too; the word itself is not included
+        static List<string> IdForms(string w)
+        {
+            var forms = new List<string>();
+            foreach (char c in w) if (!char.IsLetter(c)) return forms;
+            string r = w;
+            foreach (var s in IdSuffixes)
+                if (r.Length - s.Length >= 5 && r.EndsWith(s, StringComparison.Ordinal)) { r = r.Substring(0, r.Length - s.Length); forms.Add(r); break; }
+            foreach (var p in IdPrefixes)
+                if (r.Length - p.Length >= 5 && r.StartsWith(p, StringComparison.Ordinal)) { forms.Add(r.Substring(p.Length)); break; }
+            return forms;
         }
 
         public List<IngatEpisode> Search(string q, DateTime fromUtc, DateTime toUtc, int limit)
         {
             string fts = FtsQuery(q);
+            FlushIndex();
             // No topic words ("what was I doing?"): the latest moments, not the oldest
             if (fts.Length == 0) return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE end>=? AND start<=? ORDER BY start DESC LIMIT ?", fromUtc, toUtc, limit));
             var rows = db.Query("SELECT e.id,e.start,e.end,e.app,e.exe,e.project,e.title,e.url,e.kind,e.summary,e.body,e.closed,e.context, bm25(episodes_fts, 4.0, 2.0, 1.0, 3.0, 2.0) AS s " +
@@ -295,32 +489,7 @@ namespace Deskmate
             return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE closed=1 AND embedded=0 AND summary<>'' ORDER BY start DESC LIMIT ?", limit));
         }
 
-        public void SaveVector(long id, string model, float[] vec)
-        {
-            var bytes = new byte[vec.Length * 4];
-            Buffer.BlockCopy(vec, 0, bytes, 0, bytes.Length);
-            db.Exec("INSERT OR REPLACE INTO embeddings(episode,model,vec) VALUES(?,?,?)", id, model, bytes);
-            db.Exec("UPDATE episodes SET embedded=1 WHERE id=?", id);
-        }
-
-        public bool HasVectors(string model) { return db.Long("SELECT COUNT(*) FROM embeddings WHERE model=?", model) > 0; }
-
-        // Embedding failed for good (no server, too long): stop asking
-        public void SkipVector(long id) { db.Exec("UPDATE episodes SET embedded=2 WHERE id=?", id); }
-
-        public List<KeyValuePair<long, float[]>> Vectors(string model, DateTime fromUtc, DateTime toUtc)
-        {
-            var list = new List<KeyValuePair<long, float[]>>();
-            foreach (var r in db.Query("SELECT v.episode, v.vec FROM embeddings v JOIN episodes e ON e.id=v.episode WHERE v.model=? AND e.end>=? AND e.start<=?", model, fromUtc, toUtc))
-            {
-                var b = r[1] as byte[];
-                if (b == null || b.Length < 4) continue;
-                var v = new float[b.Length / 4];
-                Buffer.BlockCopy(b, 0, v, 0, b.Length);
-                list.Add(new KeyValuePair<long, float[]>(IngatDb.Num(r[0]), v));
-            }
-            return list;
-        }
+        // Vectors live in IngatVectors.cs
 
         // Days and facts
 
@@ -328,21 +497,7 @@ namespace Deskmate
         public bool HasDaily(string date) { return db.Long("SELECT COUNT(*) FROM daily WHERE date=?", date) > 0; }
         public void SaveDaily(string date, string summary) { db.Exec("INSERT OR REPLACE INTO daily(date,summary,made) VALUES(?,?,?)", date, summary, DateTime.UtcNow); }
 
-        public List<string> Facts()
-        {
-            var list = new List<string>();
-            foreach (var r in db.Query("SELECT text FROM facts ORDER BY updated DESC LIMIT 40")) list.Add(IngatDb.Str(r[0]));
-            return list;
-        }
-
-        public void ReplaceFacts(List<string> facts)
-        {
-            lock (db.Gate)
-            {
-                db.Exec("DELETE FROM facts");
-                foreach (var f in facts) db.Exec("INSERT INTO facts(text,updated) VALUES(?,?)", f, DateTime.UtcNow);
-            }
-        }
+        // Facts live in IngatFacts.cs
 
         // Conversations and people
 
@@ -372,7 +527,8 @@ namespace Deskmate
         {
             string norm = IngatChat.Norm(name);
             if (norm.Length < 2) return 0;
-            var row = db.Query("SELECT id FROM people WHERE norm=? OR ('|' || aliases || '|') LIKE ?", norm, "%|" + norm + "|%");
+            var row = db.Query("SELECT id FROM people WHERE norm=?", norm);
+            if (row.Count == 0) row = db.Query("SELECT id FROM people WHERE ('|' || aliases || '|') LIKE ? LIMIT 1", "%|" + norm + "|%");
             if (row.Count > 0)
             {
                 long id = IngatDb.Num(row[0][0]);
@@ -387,7 +543,9 @@ namespace Deskmate
         {
             string norm = IngatChat.Norm(name);
             if (norm.Length < 2) return 0;
-            return db.Long("SELECT id FROM people WHERE norm=? OR ('|' || aliases || '|') LIKE ? LIMIT 1", norm, "%|" + norm + "|%");
+            // norm is UNIQUE, so the exact match uses its index; only a miss scans the aliases
+            long id = db.Long("SELECT id FROM people WHERE norm=?", norm);
+            return id != 0 ? id : db.Long("SELECT id FROM people WHERE ('|' || aliases || '|') LIKE ? LIMIT 1", "%|" + norm + "|%");
         }
 
         public void AddAlias(long person, string alias)
@@ -675,10 +833,18 @@ namespace Deskmate
         // Raw events go first; episodes keep the gist much longer
         public void Retain(int eventDays, int episodeDays)
         {
+            db.Tx(() => RetainTx(eventDays, episodeDays));
+            VecDrop();
+            DecayFacts(DateTime.UtcNow.AddDays(-Math.Max(1, episodeDays)));
+        }
+
+        void RetainTx(int eventDays, int episodeDays)
+        {
             db.Exec("DELETE FROM events WHERE t<?", DateTime.UtcNow.AddDays(-Math.Max(1, eventDays)));
             var cut = DateTime.UtcNow.AddDays(-Math.Max(1, episodeDays));
             db.Exec("DELETE FROM episodes_fts WHERE rowid IN (SELECT id FROM episodes WHERE end<?)", cut);
-            db.Exec("DELETE FROM embeddings WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
+            TriDelete("end<?", cut);
+            db.Exec("DELETE FROM chunks WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
             // A meeting keeps a blank tombstone row: the transcript file stays in rapat\, and the scan would bring it back otherwise
             db.Exec("UPDATE meetings SET episode=0, title='' WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
             db.Exec("DELETE FROM episode_people WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
@@ -692,28 +858,38 @@ namespace Deskmate
         // Forget a stretch of time entirely
         public int Forget(DateTime fromUtc, DateTime toUtc)
         {
-            lock (db.Gate)
-            {
-                const string ids = "SELECT id FROM episodes WHERE end>=? AND start<=?";
-                db.Exec("DELETE FROM episodes_fts WHERE rowid IN (" + ids + ")", fromUtc, toUtc);
-                db.Exec("DELETE FROM embeddings WHERE episode IN (" + ids + ")", fromUtc, toUtc);
-                db.Exec("UPDATE meetings SET episode=0, title='' WHERE episode IN (" + ids + ")", fromUtc, toUtc);
-                db.Exec("DELETE FROM events WHERE t>=? AND t<=?", fromUtc, toUtc);
-                db.Exec("DELETE FROM episode_people WHERE episode IN (" + ids + ")", fromUtc, toUtc);
-                db.Exec("DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE t>=? AND t<=?)", fromUtc, toUtc);
-                db.Exec("DELETE FROM messages WHERE t>=? AND t<=?", fromUtc, toUtc);
-                db.Exec("DELETE FROM commitments WHERE t>=? AND t<=?", fromUtc, toUtc);
-                int n = db.Exec("DELETE FROM episodes WHERE end>=? AND start<=?", fromUtc, toUtc);
-                var from = fromUtc.ToLocalTime().Date;
-                for (var d = from; d <= toUtc.ToLocalTime().Date; d = d.AddDays(1))
-                    db.Exec("DELETE FROM daily WHERE date=?", d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-                return n;
-            }
+            int forgotten = 0;
+            db.Tx(() => forgotten = ForgetTx(fromUtc, toUtc));
+            VecDrop();
+            return forgotten;
+        }
+
+        int ForgetTx(DateTime fromUtc, DateTime toUtc)
+        {
+            const string ids = "SELECT id FROM episodes WHERE end>=? AND start<=?";
+            db.Exec("DELETE FROM episodes_fts WHERE rowid IN (" + ids + ")", fromUtc, toUtc);
+            TriDelete("end>=? AND start<=?", fromUtc, toUtc);
+            db.Exec("DELETE FROM chunks WHERE episode IN (" + ids + ")", fromUtc, toUtc);
+            db.Exec("UPDATE meetings SET episode=0, title='' WHERE episode IN (" + ids + ")", fromUtc, toUtc);
+            db.Exec("DELETE FROM events WHERE t>=? AND t<=?", fromUtc, toUtc);
+            db.Exec("DELETE FROM episode_people WHERE episode IN (" + ids + ")", fromUtc, toUtc);
+            db.Exec("DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE t>=? AND t<=?)", fromUtc, toUtc);
+            db.Exec("DELETE FROM messages WHERE t>=? AND t<=?", fromUtc, toUtc);
+            db.Exec("DELETE FROM commitments WHERE t>=? AND t<=?", fromUtc, toUtc);
+            int n = db.Exec("DELETE FROM episodes WHERE end>=? AND start<=?", fromUtc, toUtc);
+            var from = fromUtc.ToLocalTime().Date;
+            for (var d = from; d <= toUtc.ToLocalTime().Date; d = d.AddDays(1))
+                db.Exec("DELETE FROM daily WHERE date=?", d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            ForgetFactsTx(fromUtc, toUtc);
+            return n;
         }
 
         public void ForgetAll()
         {
-            db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;UPDATE meetings SET episode=0, title='';DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM facts;" +
+            lock (db.Gate) dirty.Clear();
+            VecDrop();
+            if (triOn) db.Exec("DELETE FROM episodes_tri");
+            db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;DELETE FROM chunks;UPDATE meetings SET episode=0, title='';DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM facts;DELETE FROM facts_fts;" +
                 "DELETE FROM messages_fts;DELETE FROM messages;DELETE FROM commitments;DELETE FROM conversations;DELETE FROM episode_people;DELETE FROM people");
             db.Exec("VACUUM");
         }
@@ -730,7 +906,7 @@ namespace Deskmate
                 { "embedded", db.Long("SELECT COUNT(*) FROM episodes WHERE embedded=1") },
                 { "meetings", db.Long("SELECT COUNT(*) FROM episodes WHERE kind='meeting'") },
                 { "days", db.Long("SELECT COUNT(*) FROM daily") },
-                { "facts", db.Long("SELECT COUNT(*) FROM facts") },
+                { "facts", FactCount() },
                 { "people", db.Long("SELECT COUNT(*) FROM people") },
                 { "conversations", db.Long("SELECT COUNT(*) FROM conversations") },
                 { "messages", db.Long("SELECT COUNT(*) FROM messages") },

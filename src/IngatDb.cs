@@ -55,6 +55,32 @@ namespace Deskmate
 
         public object Gate { get { return gate; } }
 
+        int txDepth;
+
+        // Runs work as one transaction under the gate: one WAL commit instead of one per statement.
+        // Nested calls join the outer transaction; an exception rolls the whole thing back.
+        public void Tx(Action work)
+        {
+            lock (gate)
+            {
+                if (txDepth > 0) { txDepth++; try { work(); } finally { txDepth--; } return; }
+                Exec("BEGIN IMMEDIATE");
+                txDepth = 1;
+                bool ok = false;
+                try { work(); ok = true; }
+                finally
+                {
+                    txDepth = 0;
+                    try { Exec(ok ? "COMMIT" : "ROLLBACK"); }
+                    catch (InvalidOperationException)
+                    {
+                        // A failed COMMIT leaves the transaction open: close it so the connection stays usable
+                        if (ok) { try { Exec("ROLLBACK"); } catch (InvalidOperationException) { } throw; }
+                    }
+                }
+            }
+        }
+
         string Error()
         {
             var p = sqlite3_errmsg16(db);

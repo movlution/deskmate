@@ -31,6 +31,9 @@ namespace Deskmate
             TestProject();
             TestTimeWords();
             TestFtsQuery();
+            TestFastPaths();
+            TestFacts();
+            TestRecallQuality();
             TestStoreAndSearch();
             TestRetentionAndForget();
             TestForgottenMeetingsStayForgotten();
@@ -203,9 +206,234 @@ namespace Deskmate
 
         static void TestFtsQuery()
         {
-            Assert(IngatStore.FtsQuery("apa yang saya baca soal WASAPI kemarin?") == "\"wasapi\"", "stop words gone: " + IngatStore.FtsQuery("apa yang saya baca soal WASAPI kemarin?"));
+            Assert(IngatStore.FtsQuery("apa yang saya baca soal WASAPI kemarin?") == "\"wasapi\"*", "stop words gone: " + IngatStore.FtsQuery("apa yang saya baca soal WASAPI kemarin?"));
             Assert(!IngatStore.FtsQuery("a\" OR 1=1 -- NEAR(x)").Contains("NEAR("), "no fts syntax passes");
             Assert(IngatStore.FtsQuery("apa yang") == "", "nothing to search");
+            Assert(IngatStore.IdRoot("dikirim") == "kirim" && IngatStore.IdRoot("kirimkan") == "kirim" && IngatStore.IdRoot("kirim") == "kirim", "id affixes: " + IngatStore.IdRoot("dikirim"));
+            Assert(IngatStore.FtsQuery("dikirim") == "\"dikirim\"* OR \"kirim\"*", "root joins the query: " + IngatStore.FtsQuery("dikirim"));
+        }
+
+        static IngatFactOp Op(string op, long id, string text) { return new IngatFactOp { Op = op, Id = id, Text = text ?? "" }; }
+
+        static long FactId(IngatStore store, string text)
+        {
+            foreach (var d in store.FactDetails()) if (Json.Str(d, "text") == text) return (long)Json.Num(d, "id", 0);
+            return 0;
+        }
+
+        // Long-term facts: small operations, dedupe, archive limits, relevance, decay, forgetting, and the old schema
+        static void TestFacts()
+        {
+            string path = TempDb();
+            // A database from before structured facts
+            using (var old = new IngatDb(path))
+            {
+                old.Exec("CREATE TABLE facts(id INTEGER PRIMARY KEY, text TEXT, updated INTEGER)");
+                old.Exec("INSERT INTO facts(text,updated) VALUES(?,?)", "Sering memakai Visual Studio Code", DateTime.UtcNow.AddDays(-2));
+            }
+            using (var store = new IngatStore(path))
+            {
+                Assert(store.FactCount() == 1 && store.Facts()[0] == "Sering memakai Visual Studio Code", "old facts survive the migration");
+                Assert(store.FactsFor("visual studio", 5).Count == 1, "migrated fact is searchable");
+
+                var n = store.ApplyFactOps(new List<IngatFactOp>
+                {
+                    Op("add", 0, "Mengembangkan game Unity bernama Mainra"),
+                    Op("add", 0, "Rapat tim setiap Senin pagi"),
+                    Op("add", 0, "Mengembangkan game Unity yang bernama Mainra"),
+                    Op("reinforce", 999, ""),
+                    Op("frobnicate", 1, "x"),
+                }, "2026-11-20");
+                Assert(n[0] == 2 && n[2] == 0, "the same fact twice in one day is stored once: +" + n[0] + " =" + n[2]);
+                long unity = FactId(store, "Mengembangkan game Unity bernama Mainra"), rapat = FactId(store, "Rapat tim setiap Senin pagi");
+                Assert(unity != 0 && rapat != 0 && store.FactCount() == 3, "facts stored");
+
+                n = store.ApplyFactOps(new List<IngatFactOp> { Op("update", rapat, "Rapat tim setiap Selasa pagi"), Op("add", 0, "Mengembangkan game Unity yang bernama Mainra") }, "2026-11-21");
+                Assert(n[1] == 1 && n[2] == 1 && n[0] == 0 && FactId(store, "Rapat tim setiap Selasa pagi") == rapat, "update keeps the id; reworded add on a later day reinforces");
+                var unityRow = store.FactDetails().Find(d => (long)Json.Num(d, "id", 0) == unity);
+                Assert(Json.Num(unityRow, "seen", 0) == 2 && Json.Arr(unityRow, "days").Length == 2, "reinforced: seen 2x over two days");
+
+                var top = store.FactsFor("kapan rapat timnya?", 1);
+                Assert(top.Count == 1, "k is honoured");
+                Assert(store.FactsFor("kapan rapat timnya?", 4).Contains("Rapat tim setiap Selasa pagi"), "relevant fact reaches the prompt");
+
+                n = store.ApplyFactOps(new List<IngatFactOp> { Op("delete", rapat, "") }, "2026-11-22");
+                Assert(n[3] == 1 && !store.Facts().Contains("Rapat tim setiap Selasa pagi"), "delete archives");
+                n = store.ApplyFactOps(new List<IngatFactOp> { Op("add", 0, "Rapat tim setiap Selasa pagi") }, "2026-11-23");
+                Assert(n[2] == 1 && FactId(store, "Rapat tim setiap Selasa pagi") == rapat, "archived fact comes back on its own id");
+
+                // One confused answer cannot archive everything
+                var adds = new List<IngatFactOp>();
+                for (int i = 0; i < 12; i++) adds.Add(Op("add", 0, "Proyek" + i + "x memakai alat" + i + "y"));
+                n = store.ApplyFactOps(adds, "2026-11-23");
+                Assert(n[0] == IngatStore.MaxFactAdds, "adds capped: " + n[0]);
+                var dels = new List<IngatFactOp>();
+                foreach (var d in store.FactDetails()) if ((long)Json.Num(d, "id", 0) != unity) dels.Add(Op("delete", (long)Json.Num(d, "id", 0), ""));
+                n = store.ApplyFactOps(dels, "2026-11-24");
+                Assert(n[3] == IngatStore.MaxFactArchives && store.FactCount() > 0, "archives capped: " + n[3]);
+
+                // Forgetting a day takes what only that day taught; facts other days confirmed stay
+                var d20 = new DateTime(2026, 11, 20, 12, 0, 0, DateTimeKind.Local).ToUniversalTime();
+                var d23 = new DateTime(2026, 11, 23, 12, 0, 0, DateTimeKind.Local).ToUniversalTime();
+                long before = store.FactCount();
+                store.Forget(d23.AddHours(-1), d23);
+                Assert(FactId(store, "Mengembangkan game Unity bernama Mainra") == unity, "fact from other days kept");
+                Assert(store.FactCount() < before, "facts only from the forgotten day go");
+                store.Forget(d20.AddHours(-1), d20);
+                unityRow = store.FactDetails().Find(d => (long)Json.Num(d, "id", 0) == unity);
+                Assert(unityRow != null && Json.Arr(unityRow, "days").Length == 1, "forgotten day leaves the sources");
+            }
+            // Nothing confirmed for half a year: faded out, and gone once older than the window
+            using (var db = new IngatDb(path)) db.Exec("UPDATE facts SET last=?", DateTime.UtcNow.AddDays(-400));
+            using (var store = new IngatStore(path))
+            {
+                int faded = store.DecayFacts(DateTime.UtcNow.AddDays(-180));
+                Assert(faded > 0 && store.FactCount() == 0, "stale facts fade");
+                using (var db = new IngatDb(path)) Assert(db.Long("SELECT COUNT(*) FROM facts") == 0, "old archived facts purged");
+            }
+
+            Assert(IngatBrain.ParseFactOps(Json.Parse("[\"a fact\", \"another\"]")).Count == 2, "old array reply still works");
+            var ops = IngatBrain.ParseFactOps(Json.Parse("{\"ops\":[{\"op\":\"update\",\"id\":7,\"text\":\"t\"},{\"op\":\"reinforce\",\"id\":3}]}"));
+            Assert(ops.Count == 2 && ops[0].Id == 7 && ops[1].Op == "reinforce", "ops parsed");
+            Assert(IngatBrain.ParseFactOps(Json.Parse("{\"summary\":\"x\"}")) == null && IngatBrain.ParseFactOps(null) == null, "unreadable reply is not an empty update");
+        }
+
+        // Phase 2: chunked meaning, int8 cache, adaptive cut, recency and weight, substring index
+        static void TestRecallQuality()
+        {
+            // Chunks: a short body is one chunk; a full body is covered to its end in at most MaxChunks overlapping windows
+            var ep = new IngatEpisode { Title = "f.cs", App = "Code", Summary = "ringkas", Body = "pendek" };
+            Assert(IngatBrain.EmbedChunks(ep).Count == 1 && IngatBrain.EmbedChunks(ep)[0].Contains("ringkas"), "short body: one chunk with header");
+            var sb = new StringBuilder();
+            for (int i = 0; i < 1200; i++) sb.Append("kata").Append(i).Append(' ');
+            ep.Body = sb.ToString();
+            var chunks = IngatBrain.EmbedChunks(ep);
+            Assert(chunks.Count >= 2 && chunks.Count <= IngatStore.MaxChunks, "long body chunked: " + chunks.Count);
+            Assert(chunks[chunks.Count - 1].Contains("kata1199"), "last words reach a chunk");
+            Assert(chunks[0].Contains("ringkas") && !chunks[1].Contains("ringkas") && chunks[1].Contains("f.cs"), "full header once, short header after");
+
+            // int8 keeps cosine close
+            var rng = new Random(3);
+            var a = new float[768];
+            var b = new float[768];
+            double na = 0, nb = 0;
+            for (int i = 0; i < 768; i++) { a[i] = (float)(rng.NextDouble() - 0.5); b[i] = a[i] + (float)(rng.NextDouble() - 0.5) * 0.8f; na += a[i] * a[i]; nb += b[i] * b[i]; }
+            for (int i = 0; i < 768; i++) { a[i] /= (float)Math.Sqrt(na); b[i] /= (float)Math.Sqrt(nb); }
+            float scale;
+            var q = IngatStore.QuantizeForCheck(b, out scale);
+            double exact = IngatStore.Dot(a, b), approx = 0;
+            for (int i = 0; i < 768; i++) approx += a[i] * q[i];
+            approx *= scale;
+            Assert(Math.Abs(exact - approx) < 0.02, "int8 cosine error " + Math.Abs(exact - approx));
+
+            // Adaptive cut: few candidates keep the above-average ones; many need to stand out; a set value wins
+            var few = new List<KeyValuePair<long, double>> { new KeyValuePair<long, double>(1, 0.9), new KeyValuePair<long, double>(2, 0.5), new KeyValuePair<long, double>(3, 0.4) };
+            double cutFew = IngatBrain.SemanticCut(few, 0);
+            Assert(cutFew > 0.5 && cutFew < 0.9, "few: above average " + cutFew);
+            var many = new List<KeyValuePair<long, double>>();
+            for (int i = 0; i < 50; i++) many.Add(new KeyValuePair<long, double>(i, 0.3 + (i % 5) * 0.01));
+            many.Add(new KeyValuePair<long, double>(99, 0.8));
+            double cutMany = IngatBrain.SemanticCut(many, 0);
+            Assert(cutMany < 0.8 && cutMany > 0.34, "many: only the outlier clears " + cutMany);
+            Assert(IngatBrain.SemanticCut(many, 0.5) == 0.5, "fixed value overrides");
+
+            // Recent and weighty moments rank a little higher, but never by more than a few rank steps
+            var now = DateTime.UtcNow;
+            var fresh = new IngatEpisode { StartUtc = now.AddMinutes(-30), EndUtc = now, Kind = "coding" };
+            var stale = new IngatEpisode { StartUtc = now.AddDays(-30).AddMinutes(-30), EndUtc = now.AddDays(-30), Kind = "coding" };
+            var meet = new IngatEpisode { StartUtc = now.AddMinutes(-30), EndUtc = now, Kind = "meeting" };
+            Assert(IngatBrain.Boost(fresh, now) > IngatBrain.Boost(stale, now) && IngatBrain.Boost(meet, now) > IngatBrain.Boost(fresh, now), "recency and weight");
+            Assert(IngatBrain.Boost(meet, now) < 1.0 / 60, "boost stays below one top rank");
+
+            string path = TempDb();
+            using (var store = new IngatStore(path))
+            {
+                var t0 = now.AddDays(-20);
+                long old = store.Open(t0, "Code", "code", "Deskmate", "Recorder.cs", "", "");
+                store.Touch(old, t0.AddMinutes(20), "Recorder.cs", "", "loopback capture wasapi buffer");
+                store.Close(old, t0.AddMinutes(20));
+                long fresh2 = store.Open(now.AddMinutes(-40), "Code", "code", "Deskmate", "Recorder.cs", "", "");
+                store.Touch(fresh2, now.AddMinutes(-20), "Recorder.cs", "", "loopback capture wasapi buffer");
+                store.Close(fresh2, now.AddMinutes(-20));
+                store.SetSummary(fresh2, "Laporan sudah dikirim ke tim", "coding");
+
+                // Substring index: a root word finds its affixed form in a summary
+                var subs = store.SearchSubstring("kirim", now.AddDays(-30), now, 5);
+                Assert(subs.Count == 1 && subs[0].Id == fresh2, "trigram finds 'dikirim' from 'kirim'");
+                Assert(store.Search("kirim", now.AddDays(-30), now, 5).Count == 0, "word index alone would miss it");
+
+                var settings = new Settings();
+                settings.Set("ingat.ai", "off");
+                var brain = new IngatBrain(store, settings);
+                var hits = brain.Search("wasapi", now.AddDays(-30), now.AddMinutes(1), 5);
+                Assert(hits.Count == 2 && hits[0].Id == fresh2, "equal matches: the recent one first");
+                Assert(brain.Search("kirim", now.AddDays(-30), now.AddMinutes(1), 5)[0].Id == fresh2, "brain fuses the substring list");
+
+                // Chunks: the best chunk speaks for its episode; the range still filters
+                store.SaveVectors(old, "m", new List<float[]> { new float[] { 1, 0 }, new float[] { 0, 1 } });
+                store.SaveVectors(fresh2, "m", new List<float[]> { new float[] { 0.6f, 0.8f } });
+                var near = store.Nearest("m", new float[] { 0, 1 }, now.AddDays(-30), now.AddMinutes(1));
+                Assert(near.Count == 2 && near[0].Key == old && near[0].Value > 0.98, "max over chunks: " + (near.Count > 0 ? near[0].Value.ToString() : "none"));
+                Assert(store.Nearest("m", new float[] { 0, 1 }, now.AddDays(-2), now.AddMinutes(1)).Count == 1, "range filters chunks");
+                Assert(store.Vectors("m", now.AddDays(-30), now.AddMinutes(1)).Count == 3, "three chunks stored");
+                store.SaveVectors(old, "m", new List<float[]> { new float[] { 1, 0 } });
+                Assert(store.Vectors("m", now.AddDays(-30), now.AddMinutes(1)).Count == 2, "re-embedding replaces old chunks");
+                Assert(store.Nearest("m", new float[] { 0, 1 }, now.AddDays(-30), now.AddMinutes(1))[0].Key == fresh2, "cache follows the replacement");
+            }
+
+            // Episodes from before the substring index are filled in by the worker
+            using (var db = new IngatDb(path))
+            {
+                db.Exec("DROP TABLE episodes_tri");
+                db.Exec("DELETE FROM meta WHERE k LIKE 'tri.%'");
+            }
+            using (var store = new IngatStore(path))
+            {
+                Assert(store.SearchSubstring("kirim", now.AddDays(-30), now, 5).Count == 0, "new index starts empty");
+                Assert(store.BackfillTrigram(1) && store.BackfillTrigram(500), "backfill works in steps");
+                while (store.BackfillTrigram(500)) { }
+                Assert(store.SearchSubstring("kirim", now.AddDays(-30), now, 5).Count == 1, "backfilled episode found");
+            }
+        }
+
+        // Phase 1 speedups must not change what search sees
+        static void TestFastPaths()
+        {
+            string path = TempDb();
+            using (var store = new IngatStore(path))
+            {
+                var t0 = DateTime.UtcNow.AddMinutes(-10);
+                long a = store.Open(t0, "Notepad", "notepad", "", "catatan", "", "");
+                store.Touch(a, t0.AddSeconds(5), "catatan", "", "pertama zebrafish");
+                // Second touch lands inside the reindex window: a search still has to see it
+                store.Touch(a, t0.AddSeconds(6), "catatan", "", "kedua quokka");
+                Assert(store.Search("quokka", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 5).Count == 1, "deferred reindex flushed before search");
+                Assert(store.Search("dikirimkan", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 5).Count == 0, "no false hit");
+                store.Touch(a, t0.AddSeconds(7), "catatan", "", "laporan dikirim ke klien");
+                Assert(store.Search("dikirimkan", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 5).Count == 1, "affixed query finds the root form");
+                store.Close(a, t0.AddMinutes(1));
+
+                store.SaveVector(a, "m", new float[] { 1f, 0f });
+                Assert(store.HasVectors("m") && store.Vectors("m", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow).Count == 1, "cached vector visible");
+                Assert(store.Vectors("m", DateTime.UtcNow.AddDays(-9), DateTime.UtcNow.AddDays(-8)).Count == 0, "cache honours the range");
+                long b = store.Open(t0.AddMinutes(2), "Notepad", "notepad", "", "dua", "", "");
+                store.Close(b, t0.AddMinutes(3));
+                store.SaveVector(b, "m", new float[] { 0f, 1f });
+                Assert(store.Vectors("m", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow).Count == 2, "new vector joins the cache");
+                store.Forget(t0.AddMinutes(2), t0.AddMinutes(3));
+                Assert(store.Vectors("m", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow).Count == 1, "forgotten vector leaves the cache");
+                store.ForgetAll();
+                Assert(!store.HasVectors("m"), "forget all clears the cache");
+            }
+            using (var db = new IngatDb(path))
+            {
+                db.Exec("CREATE TABLE IF NOT EXISTS tx(v INTEGER)");
+                try { db.Tx(() => { db.Exec("INSERT INTO tx(v) VALUES(1)"); db.Tx(() => db.Exec("INSERT INTO tx(v) VALUES(2)")); throw new InvalidOperationException("boom"); }); }
+                catch (InvalidOperationException) { }
+                Assert(db.Long("SELECT COUNT(*) FROM tx") == 0, "failed transaction rolls back, nested included");
+                db.Tx(() => db.Exec("INSERT INTO tx(v) VALUES(3)"));
+                Assert(db.Long("SELECT COUNT(*) FROM tx") == 1, "connection usable after rollback");
+            }
         }
 
         static string TempDb()

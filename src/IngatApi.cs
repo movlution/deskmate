@@ -233,7 +233,8 @@ namespace Deskmate
                     store.SetCommitmentDone((long)Json.Num(body, "id", 0), Json.Str(body, "done").ToLowerInvariant() != "false");
                     return new Dictionary<string, object> { { "ok", true } };
                 case "GET /facts":
-                    return new Dictionary<string, object> { { "facts", store.Facts().ToArray() } };
+                    // "facts" stays a list of strings for older clients; "detail" adds strength, sources, and kind
+                    return new Dictionary<string, object> { { "facts", store.Facts().ToArray() }, { "detail", store.FactDetails().ToArray() } };
                 case "POST /ask":
                     svc.EnsureFresh(900);
                     return svc.Brain.Ask(Fmt.OneLine(Json.Str(body, "q"), 500), svc.Now());
