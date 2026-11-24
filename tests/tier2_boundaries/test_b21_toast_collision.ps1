@@ -57,33 +57,22 @@ Describe "Tier 2 Boundary Suite: Feature 21 - Toast Notification Collision Bound
     }
 
     It "Dispatches toast notification via CLI process invocation with long payloads" {
-        $cli = Find-DeskmateCliBinary
-        Assert-NotNull $cli "Deskmate CLI binary must be found"
+        $binPath = Find-DeskmateBinary
+        Assert-NotNull $binPath "Deskmate binary must be found"
 
         $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-        $pinfo.FileName = $cli.FileName
-        $prefix = if ($cli.PrefixArgs -and $cli.PrefixArgs.Count -gt 0) {
-            (($cli.PrefixArgs | ForEach-Object { '"' + $_ + '"' }) -join " ") + " "
-        } else { "" }
-        $pinfo.Arguments = $prefix + '--notify "CLI Long App Title Exceeding Normal Limits" "Comprehensive test payload with multiple detailed parameters"'
+        $pinfo.FileName = $binPath
+        $pinfo.Arguments = '--notify "CLI Long App Title Exceeding Normal Limits" "Comprehensive test payload with multiple detailed parameters"'
         $pinfo.UseShellExecute = $false
         $pinfo.CreateNoWindow = $true
         $pinfo.RedirectStandardOutput = $true
         $pinfo.RedirectStandardError = $true
 
         $proc = [System.Diagnostics.Process]::Start($pinfo)
-        try {
-            $errTask = $proc.StandardError.ReadToEndAsync()
-            [void]$proc.StandardOutput.ReadToEnd()
-            [void]$errTask.GetAwaiter().GetResult()
-            [void]$proc.WaitForExit(5000)
+        [void]$proc.WaitForExit(5000)
 
-            Assert-True $proc.HasExited "Process must exit within 5 seconds"
-            # In single-instance or plugin CLI dispatch, --notify dispatches to mutex/pipe or exits cleanly
-            Assert-True ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 1 -or $proc.ExitCode -eq 2) "Exit code must be standard integer"
-        }
-        finally {
-            $proc.Dispose()
-        }
+        Assert-True $proc.HasExited "Process must exit within 5 seconds"
+        # In single-instance or plugin CLI dispatch, --notify dispatches to mutex/pipe or exits cleanly
+        Assert-True ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 1 -or $proc.ExitCode -eq 2) "Exit code must be standard integer"
     }
 }

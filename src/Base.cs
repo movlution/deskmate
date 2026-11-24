@@ -6,8 +6,7 @@ using System.IO;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Encodings.Web;
-using System.Text.Json;
+using System.Web.Script.Serialization;
 using Microsoft.Win32;
 
 namespace Deskmate
@@ -97,18 +96,7 @@ namespace Deskmate
         // Test copies run beside the real island
         public static string MutexName
         {
-            get { return TestMode ? @"Local\DeskmateIsland-" + StableHash(Dir.ToLowerInvariant()) : @"Local\DeskmateIsland"; }
-        }
-
-        // string.GetHashCode is randomized per process on modern .NET; the name must match across processes
-        static int StableHash(string s)
-        {
-            unchecked
-            {
-                uint h = 2166136261;
-                foreach (char c in s) h = (h ^ c) * 16777619;
-                return (int)(h & 0x7fffffff);
-            }
+            get { return TestMode ? @"Local\DeskmateIsland-" + (Dir.ToLowerInvariant().GetHashCode() & 0x7fffffff) : @"Local\DeskmateIsland"; }
         }
 
         readonly Dictionary<string, string> values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -253,9 +241,7 @@ namespace Deskmate
         static string TaskXml()
         {
             var id = System.Security.Principal.WindowsIdentity.GetCurrent();
-            string exe = Environment.ProcessPath ?? "";
-            if (exe.Length == 0) throw new InvalidOperationException("executable path unknown");
-            string dir = Path.GetDirectoryName(exe) ?? "";
+            string exe = System.Windows.Forms.Application.ExecutablePath;
             Func<string, string> x = System.Security.SecurityElement.Escape;
             return "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n"
                 + "<Task version=\"1.3\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\r\n"
@@ -264,7 +250,7 @@ namespace Deskmate
                 + "  <Settings><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"
                 + "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><Priority>4</Priority></Settings>\r\n"
                 + "  <Triggers><LogonTrigger><UserId>" + x(id.Name) + "</UserId></LogonTrigger></Triggers>\r\n"
-                + "  <Actions Context=\"Author\"><Exec><Command>" + x(exe) + "</Command><WorkingDirectory>" + x(dir) + "</WorkingDirectory></Exec></Actions>\r\n"
+                + "  <Actions Context=\"Author\"><Exec><Command>" + x(exe) + "</Command><WorkingDirectory>" + x(Path.GetDirectoryName(exe)) + "</WorkingDirectory></Exec></Actions>\r\n"
                 + "</Task>\r\n";
         }
 
@@ -373,80 +359,18 @@ namespace Deskmate
         public static float Lerp(float a, float b, float t) { return a + (b - a) * t; }
     }
 
-    // Loose JSON access over System.Text.Json output
+    // Loose JSON access over JavaScriptSerializer output
     static class Json
     {
-        const int MaxJsonLength = 16 * 1024 * 1024;
-        static readonly JsonDocumentOptions ParseOptions = new JsonDocumentOptions
-        {
-            MaxDepth = 100,
-            AllowTrailingCommas = false,
-            CommentHandling = JsonCommentHandling.Disallow
-        };
-        static readonly JsonSerializerOptions EncodeOptions = new JsonSerializerOptions
-        {
-            IncludeFields = true,
-            MaxDepth = 100,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        };
-
         public static object Parse(string text)
         {
-            if (string.IsNullOrWhiteSpace(text)) return null;
-            if (text.Length > MaxJsonLength) throw new ArgumentException("JSON length exceeds maximum.");
-            try
-            {
-                using (var doc = JsonDocument.Parse(text, ParseOptions))
-                    return ReadNode(doc.RootElement);
-            }
-            catch (JsonException ex)
-            {
-                throw new ArgumentException(ex.Message, ex);
-            }
-        }
-
-        static object ReadNode(JsonElement el)
-        {
-            switch (el.ValueKind)
-            {
-                case JsonValueKind.Object:
-                    var d = new Dictionary<string, object>();
-                    foreach (var prop in el.EnumerateObject())
-                        d[prop.Name] = ReadNode(prop.Value);
-                    return d;
-                case JsonValueKind.Array:
-                    var arr = new object[el.GetArrayLength()];
-                    int idx = 0;
-                    foreach (var item in el.EnumerateArray())
-                        arr[idx++] = ReadNode(item);
-                    return arr;
-                case JsonValueKind.String:
-                    return el.GetString();
-                case JsonValueKind.Number:
-                    int iv;
-                    if (el.TryGetInt32(out iv)) return iv;
-                    long lv;
-                    if (el.TryGetInt64(out lv)) return lv;
-                    string raw = el.GetRawText();
-                    decimal mv;
-                    if (raw.IndexOf('e') < 0 && raw.IndexOf('E') < 0 && el.TryGetDecimal(out mv)) return mv;
-                    double dv;
-                    if (el.TryGetDouble(out dv) && double.IsFinite(dv)) return dv;
-                    throw new ArgumentException("Invalid JSON number.");
-                case JsonValueKind.True:
-                    return true;
-                case JsonValueKind.False:
-                    return false;
-                default:
-                    return null;
-            }
+            if (string.IsNullOrEmpty(text)) return null;
+            return new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 }.DeserializeObject(text);
         }
 
         public static string Encode(object value)
         {
-            string json = JsonSerializer.Serialize(value, EncodeOptions);
-            if (json.Length > MaxJsonLength) throw new InvalidOperationException("JSON length exceeds maximum.");
-            return json;
+            return new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 }.Serialize(value);
         }
 
         // Sorted keys: same request, same text

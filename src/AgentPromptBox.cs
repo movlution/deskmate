@@ -41,7 +41,7 @@ namespace Deskmate
             int recall = -1, shape, sig;
 
             TextBox field { get { return well.Box; } }
-            public string Prompt { get { return this.field.Text; } }
+            public string Prompt { get { return field.Text; } }
 
             static string TemplatesFile { get { return Path.Combine(Settings.Dir, "templat-chat.txt"); } }
 

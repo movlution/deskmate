@@ -5,19 +5,6 @@
 
 $ErrorActionPreference = "Stop"
 
-$script:c2m4OwnedTmp = $null
-$script:c2m4PrevDir = $env:DESKMATE_DIR
-$script:c2m4PrevHome = $env:DESKMATE_HOME
-$script:c2m4PrevDry = $env:DESKMATE_DOCK_DRY
-if ([string]::IsNullOrEmpty($env:DESKMATE_DIR)) {
-    $script:c2m4OwnedTmp = Join-Path ([IO.Path]::GetTempPath()) ("deskmate-c2m4-" + [Guid]::NewGuid().ToString("N"))
-    $c2m4Home = Join-Path $script:c2m4OwnedTmp "home"
-    New-Item -ItemType Directory -Path $script:c2m4OwnedTmp, $c2m4Home -Force | Out-Null
-    $env:DESKMATE_DIR = $script:c2m4OwnedTmp
-    $env:DESKMATE_HOME = $c2m4Home
-    $env:DESKMATE_DOCK_DRY = "1"
-}
-
 $commonDir = Join-Path $PSScriptRoot "common"
 . (Join-Path $commonDir "TestHarness.ps1")
 . (Join-Path $commonDir "DeskmateLoader.ps1")
@@ -35,7 +22,7 @@ Write-Host "==========================================================" -Foregro
 # 1. Initialize Loader & Types
 $binPath = Find-DeskmateBinary
 if (-not $binPath) {
-    throw "Deskmate reflection binary not found! Please build before running tests."
+    throw "Deskmate.exe not found! Please build before running tests."
 }
 Initialize-DeskmateLoader | Out-Null
 
@@ -657,9 +644,8 @@ Describe "6. Action Buttons Response ('clear', 'x', 'quiet') & Offscreen Hit Tes
 
         Assert-True ($hits.Count -ge 44) "Rendered hits must contain at least 44 targets (prev, next, 42 days, quiet, gear)"
 
-        # Find target day for today dynamically
-        $today = Get-Date
-        $todayStr = "d" + $today.ToString("yyyyMMdd")
+        # Find target day for today: November 13, 2026
+        $todayStr = "d" + (2026 * 10000 + 11 * 100 + 13)
         $target = $null
         foreach ($h in $hits) {
             if ($h.Value -eq $todayStr) {
@@ -695,20 +681,13 @@ Describe "6. Action Buttons Response ('clear', 'x', 'quiet') & Offscreen Hit Tes
         $selectedDayProp = $calType.GetProperty("selectedDay", $flags)
         $sel = $selectedDayProp.GetValue($cal)
         Assert-NotNull $sel "selectedDay must be populated after simulated click"
-        Assert-Equal $sel.Day $today.Day "selectedDay must match clicked day ($($today.Day))"
-        Assert-Equal $sel.Month $today.Month "selectedDay must match clicked month ($($today.Month))"
-        Assert-Equal $sel.Year $today.Year "selectedDay must match clicked year ($($today.Year))"
+        Assert-Equal $sel.Day 13 "selectedDay must match clicked day (13)"
+        Assert-Equal $sel.Month 11 "selectedDay must match clicked month (11)"
+        Assert-Equal $sel.Year 2026 "selectedDay must match clicked year (2026)"
 
         # Down must be cleared after mouse up
         Assert-False ($downMethod.Invoke($cal, [object[]]@($todayStr))) "Down() must be false after mouse up"
     }
-}
-
-if ($script:c2m4OwnedTmp) {
-    $env:DESKMATE_DIR = $script:c2m4PrevDir
-    $env:DESKMATE_HOME = $script:c2m4PrevHome
-    $env:DESKMATE_DOCK_DRY = $script:c2m4PrevDry
-    Remove-Item -LiteralPath $script:c2m4OwnedTmp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # ----------------- Execution Summary -----------------

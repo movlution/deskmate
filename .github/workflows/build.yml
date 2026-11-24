@@ -17,17 +17,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 10.0.x
       - name: Build Deskmate.exe from source
         shell: cmd
         run: build.cmd
       - name: Smoke test
-        shell: pwsh
+        shell: powershell
         run: .\tests\run_e2e.ps1 -TestFile .\tests\smoke_test.ps1
       - name: Feature regression checks
-        shell: pwsh
+        shell: powershell
         run: .\tests\run_feature_checks.ps1
       - name: SHA-256
         shell: pwsh

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Text.Json;
 using System.Windows.Forms;
 
 namespace Deskmate
@@ -9,11 +8,6 @@ namespace Deskmate
     partial class Island
     {
         const string NotifAppRulesKey = "notif.appRules";
-        static readonly JsonSerializerOptions NotifAppRulesJsonOptions = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            IncludeFields = true
-        };
 
         public sealed class NotifAppRule
         {
@@ -35,7 +29,8 @@ namespace Deskmate
                     string raw = settings.Get(NotifAppRulesKey, "");
                     if (raw.Length > 0)
                     {
-                        var saved = JsonSerializer.Deserialize<Dictionary<string, NotifAppRule>>(raw, NotifAppRulesJsonOptions);
+                        var saved = new System.Web.Script.Serialization.JavaScriptSerializer()
+                            .Deserialize<Dictionary<string, NotifAppRule>>(raw);
                         if (saved != null)
                             foreach (var pair in saved)
                                 if (!string.IsNullOrWhiteSpace(pair.Key) && pair.Value != null)
@@ -168,7 +163,7 @@ namespace Deskmate
             if (windows)
                 menu.Items.Add(Lang.T("Buka pengaturan Windows"), null, delegate
                 {
-                    try { Process.Start(new ProcessStartInfo("ms-settings:notifications") { UseShellExecute = true }); }
+                    try { Process.Start("ms-settings:notifications"); }
                     catch (Exception ex) { Log.Write("ms-settings: " + ex.Message); }
                 });
             return menu;

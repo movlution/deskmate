@@ -92,8 +92,7 @@ namespace Deskmate
         // 8.3 path: no quotes for Codex
         internal static string Exe()
         {
-            string path = Environment.ProcessPath ?? "";
-            if (path.Length == 0) return "";
+            string path = System.Reflection.Assembly.GetEntryAssembly().Location;
             if (path.IndexOf(' ') < 0) return path;
             var sb = new StringBuilder(520);
             if (GetShortPathName(path, sb, sb.Capacity) > 0 && sb.ToString().IndexOf(' ') < 0) return sb.ToString();

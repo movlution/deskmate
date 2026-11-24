@@ -516,7 +516,7 @@ namespace Deskmate
         [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc cb, IntPtr l);
         [DllImport("shell32.dll")] static extern int SHQueryUserNotificationState(out int state);
 
-        static readonly string SelfExe = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? "").ToLowerInvariant();
+        static readonly string SelfExe = Path.GetFileNameWithoutExtension(Process.GetCurrentProcess().MainModule.FileName).ToLowerInvariant();
 
         public static double IdleSeconds()
         {

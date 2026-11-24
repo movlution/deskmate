@@ -74,57 +74,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+if (-not $BinaryPath) { $BinaryPath = Join-Path $root 'Deskmate.exe' }
 if (-not $OutDir) { $OutDir = Join-Path $PSScriptRoot 'out\surfaces' }
-
-function Resolve-SurfaceBinary([string]$Requested) {
-    $resolveInfo = {
-        param([string]$p)
-        $rp = (Resolve-Path -LiteralPath $p).Path
-        $ext = [IO.Path]::GetExtension($rp)
-        $hasMeta = $false
-        try { [void][Reflection.AssemblyName]::GetAssemblyName($rp); $hasMeta = $true } catch [BadImageFormatException] { $hasMeta = $false }
-        if (-not $hasMeta) {
-            $sibDll = [IO.Path]::ChangeExtension($rp, '.dll')
-            if (Test-Path -LiteralPath $sibDll -PathType Leaf) {
-                return @{ Path = (Resolve-Path -LiteralPath $sibDll).Path; IsCore = $true }
-            }
-            throw "Single-file executable '$rp' cannot be loaded for reflection. Pass an unpacked Deskmate.dll."
-        }
-        $rt = [IO.Path]::ChangeExtension($rp, '.runtimeconfig.json')
-        $isCore = ($ext -ieq '.dll') -or (Test-Path -LiteralPath $rt -PathType Leaf)
-        return @{ Path = $rp; IsCore = $isCore }
-    }
-
-    if ($Requested) {
-        if (-not (Test-Path -LiteralPath $Requested -PathType Leaf)) { throw "Binary not found: $Requested" }
-        return (& $resolveInfo $Requested)
-    }
-
-    $dllCandidates = @(
-        (Join-Path $root 'bin\x64\Release\net10.0-windows10.0.19041.0\Deskmate.dll'),
-        (Join-Path $root 'bin\Release\net10.0-windows10.0.19041.0\Deskmate.dll'),
-        (Join-Path $root 'bin\x64\Debug\net10.0-windows10.0.19041.0\Deskmate.dll'),
-        (Join-Path $root 'bin\Debug\net10.0-windows10.0.19041.0\Deskmate.dll'),
-        (Join-Path $root 'artifacts\test\Deskmate.dll')
-    )
-    foreach ($c in $dllCandidates) {
-        if (Test-Path -LiteralPath $c -PathType Leaf) { return (& $resolveInfo $c) }
-    }
-
-    $rootExe = Join-Path $root 'Deskmate.exe'
-    if (Test-Path -LiteralPath $rootExe -PathType Leaf) {
-        return (& $resolveInfo $rootExe)
-    }
-    throw "No Deskmate binary found in bin/, artifacts/test/, or $rootExe"
-}
 
 # ---------------------------------------------------------------------------
 # Parent: isolate in a fresh 64-bit STA child process
 # ---------------------------------------------------------------------------
 if ($env:DESKMATE_SURFACES_CHILD -ne '1') {
-    $resolvedBin = Resolve-SurfaceBinary $BinaryPath
-    $BinaryPath = $resolvedBin.Path
-    $isCoreTarget = $resolvedBin.IsCore
+    $BinaryPath = (Resolve-Path -LiteralPath $BinaryPath).Path
     # An accent that does not parse would make Ink.SetAccent fall back to Grafit without a word,
     # so a shell-quoted or hash-less value ("'#AE9DEB'", "AE9DEB") silently rendered monochrome.
     # Normalise what is clearly meant, refuse the rest.
@@ -151,19 +108,7 @@ if ($env:DESKMATE_SURFACES_CHILD -ne '1') {
         'DESKMATE_SURFACES_ACCENT', 'DESKMATE_SURFACES_SEED'
     $saved = @{}
     foreach ($n in $names) { $saved[$n] = [Environment]::GetEnvironmentVariable($n) }
-    if ($isCoreTarget) {
-        if ($PSVersionTable.PSEdition -eq 'Core') {
-            $ps = (Get-Process -Id $PID).Path
-        }
-        else {
-            $pwshCmd = Get-Command pwsh.exe -ErrorAction SilentlyContinue
-            if (-not $pwshCmd) { throw "Target '$BinaryPath' requires pwsh.exe (PowerShell 7+), which was not found on PATH." }
-            $ps = $pwshCmd.Source
-        }
-    }
-    else {
-        $ps = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    }
+    $ps = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
         $env:DESKMATE_SURFACES_CHILD = '1'
@@ -193,17 +138,10 @@ if ($env:DESKMATE_SURFACES_CHILD -ne '1') {
 # ---------------------------------------------------------------------------
 if ($Only.Count -eq 1 -and $Only[0] -like '*,*') { $Only = $Only[0] -split ',' }
 
-Add-Type -AssemblyName System.Drawing, System.Windows.Forms, PresentationCore, PresentationFramework, WindowsBase, WindowsFormsIntegration
-if ($PSVersionTable.PSEdition -eq 'Core') {
-    $wpfRefs = [AppDomain]::CurrentDomain.GetAssemblies() |
-        Where-Object { -not $_.IsDynamic -and $_.Location -and $_.GetName().Name -match '^(System\.|Presentation|Windows|Microsoft\.Win32)' } |
-        Select-Object -ExpandProperty Location -Unique
-}
-else {
-    $wpfRefs = @('System.Windows.Forms', 'System.Drawing', 'System.Xaml',
-        [Windows.Media.Visual].Assembly.Location, [Windows.Controls.Control].Assembly.Location,
-        [Windows.DependencyObject].Assembly.Location, [Windows.Forms.Integration.ElementHost].Assembly.Location)
-}
+Add-Type -AssemblyName PresentationCore, PresentationFramework, WindowsBase, WindowsFormsIntegration
+$wpfRefs = @('System.Windows.Forms', 'System.Drawing', 'System.Xaml',
+    [Windows.Media.Visual].Assembly.Location, [Windows.Controls.Control].Assembly.Location,
+    [Windows.DependencyObject].Assembly.Location, [Windows.Forms.Integration.ElementHost].Assembly.Location)
 Add-Type -ReferencedAssemblies $wpfRefs -TypeDefinition @'
 using System;
 using System.Drawing;

@@ -5,19 +5,6 @@
 
 $ErrorActionPreference = "Stop"
 
-$script:c2m3OwnedTmp = $null
-$script:c2m3PrevDir = $env:DESKMATE_DIR
-$script:c2m3PrevHome = $env:DESKMATE_HOME
-$script:c2m3PrevDry = $env:DESKMATE_DOCK_DRY
-if ([string]::IsNullOrEmpty($env:DESKMATE_DIR)) {
-    $script:c2m3OwnedTmp = Join-Path ([IO.Path]::GetTempPath()) ("deskmate-c2m3-" + [Guid]::NewGuid().ToString("N"))
-    $c2m3Home = Join-Path $script:c2m3OwnedTmp "home"
-    New-Item -ItemType Directory -Path $script:c2m3OwnedTmp, $c2m3Home -Force | Out-Null
-    $env:DESKMATE_DIR = $script:c2m3OwnedTmp
-    $env:DESKMATE_HOME = $c2m3Home
-    $env:DESKMATE_DOCK_DRY = "1"
-}
-
 $commonDir = Join-Path $PSScriptRoot "common"
 . (Join-Path $commonDir "TestHarness.ps1")
 . (Join-Path $commonDir "DeskmateLoader.ps1")
@@ -29,10 +16,10 @@ Write-Host "==========================================================" -Foregro
 Write-Host "  CHALLENGER 2: EMPIRICAL ADVERSARIAL STRESS HARNESS (M3)  " -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# Ensure Deskmate reflection binary is loaded
+# Ensure Deskmate.exe is loaded
 $binPath = Find-DeskmateBinary
 if (-not $binPath) {
-    throw "Deskmate reflection binary not found! Please build before running tests."
+    throw "Deskmate.exe not found! Please build before running tests."
 }
 Initialize-DeskmateLoader | Out-Null
 
@@ -289,34 +276,6 @@ Describe "1. Toast Notification Meta Text Collision Stress Harness" {
 
 Describe "2. Parts.EmptyState Unification & Geometry Stress Harness" {
 
-    $callSitePayloads = @(
-        @{ Source = "Panel.cs:174"; Icon = "IcoTerminal"; Title = "Server hook mati"; Detail = "localhost:8000 · agent.port di settings.ini" },
-        @{ Source = "Panel.cs:183"; Icon = "IcoTerminal"; Title = "Belum ada sesi agen"; Detail = "Belum terhubung · tray > Hubungkan agen" },
-        @{ Source = "Panel.cs:302"; Icon = "IcoCalendar"; Title = "Tugas gagal dimuat"; Detail = "Gagal menghubungi server Kulia. Periksa koneksi internet." },
-        @{ Source = "Panel.cs:317"; Icon = "IcoCalendar"; Title = "Tidak ada tugas aktif"; Detail = "Diperbarui tiap 15 menit" },
-        @{ Source = "Panel.cs:398"; Icon = "IcoBell"; Title = "Notifikasi pesan dimatikan"; Detail = "Saklarnya ada di menu klik kanan" },
-        @{ Source = "Panel.cs:403"; Icon = "IcoLock"; Title = "Akses notifikasi ditolak"; Detail = "Pengaturan Windows > Privasi > Notifikasi" },
-        @{ Source = "Panel.cs:414"; Icon = "IcoBell"; Title = "Pesan tidak bisa dibaca"; Detail = "Notifikasi Windows tidak menjawab. Deskmate mencoba lagi otomatis." },
-        @{ Source = "Panel.cs:417"; Icon = "IcoBell"; Title = "Belum ada pesan"; Detail = "WhatsApp, Telegram, Discord, Teams, email" },
-        @{ Source = "Shelf.cs:248"; Icon = "Rack"; Title = "Rak mati"; Detail = "Berkas yang diseret ke island tidak ditahan" },
-        @{ Source = "Shelf.cs:255"; Icon = "Rack"; Title = "Rak kosong"; Detail = "Seret berkas ke island, atau pilih dari folder" },
-        @{ Source = "Shelf.cs:261"; Icon = "Rack"; Title = "Rak kosong"; Detail = "Seret berkas ke island, atau pilih dari folder" },
-        @{ Source = "Clips.cs:118"; Icon = "Clip"; Title = "Riwayat clipboard mati"; Detail = "Teks yang disalin hanya disimpan di memori dan hilang saat Deskmate ditutup" },
-        @{ Source = "Clips.cs:123"; Icon = "Clip"; Title = "Belum ada yang disalin"; Detail = "Teks yang kamu salin muncul di sini" },
-        @{ Source = "ConvertPage.cs:112"; Icon = "Convert"; Title = "Ubah format mati"; Detail = "Berkas yang diseret ke island hanya bisa ditaruh di rak" },
-        @{ Source = "Schedule.cs:93"; Icon = "IcoCalendar"; Title = "Jadwal gagal dimuat"; Detail = "Koneksi ke kalender Google terputus. Silakan coba beberapa saat lagi." },
-        @{ Source = "Schedule.cs:98"; Icon = "IcoCalendar"; Title = "Memuat jadwal…"; Detail = "" },
-        @{ Source = "Schedule.cs:104"; Icon = "IcoCalendar"; Title = "Jadwal kosong"; Detail = "3 minggu ke depan kosong" },
-        @{ Source = "Music.cs:294"; Icon = "Music"; Title = "Tidak ada yang diputar"; Detail = "Spotify, YouTube Music, Apple Music, browser, VLC, dan pemutar lain" },
-        @{ Source = "Handset.cs:272"; Icon = "Phone"; Title = "HP belum tersambung"; Detail = "Tepi di Android, satu Wi-Fi dengan laptop" },
-        @{ Source = "Sources.cs:987"; Icon = "IcoCalendar"; Title = "Belum ada yang tersambung"; Detail = "Kulia, Notion, Todoist, atau kalender iCal" }
-    )
-
-    $stringFormatCenter = New-Object System.Drawing.StringFormat
-    $stringFormatCenter.Alignment = [System.Drawing.StringAlignment]::Center
-    $stringFormatCenter.LineAlignment = [System.Drawing.StringAlignment]::Center
-    $stringFormatCenter.Trimming = [System.Drawing.StringTrimming]::EllipsisWord
-
     It "Verifies Parts.EmptyState dynamic vertical centering across all container heights" {
         $testHeights = @(150.0, 180.0, 200.0, 252.0, 300.0, 372.0, 400.0, 500.0, 600.0)
         $panelTop = 44.0
@@ -355,7 +314,35 @@ Describe "2. Parts.EmptyState Unification & Geometry Stress Harness" {
     }
 
     It "Tests multi-line Indonesian detail text wrapping across all 20 call site payloads" {
+        $callSitePayloads = @(
+            @{ Source = "Panel.cs:174"; Icon = "IcoTerminal"; Title = "Server hook mati"; Detail = "localhost:8000 · agent.port di settings.ini" },
+            @{ Source = "Panel.cs:183"; Icon = "IcoTerminal"; Title = "Belum ada sesi agen"; Detail = "Belum terhubung · tray > Hubungkan agen" },
+            @{ Source = "Panel.cs:302"; Icon = "IcoCalendar"; Title = "Tugas gagal dimuat"; Detail = "Gagal menghubungi server Kulia. Periksa koneksi internet." },
+            @{ Source = "Panel.cs:317"; Icon = "IcoCalendar"; Title = "Tidak ada tugas aktif"; Detail = "Diperbarui tiap 15 menit" },
+            @{ Source = "Panel.cs:398"; Icon = "IcoBell"; Title = "Notifikasi pesan dimatikan"; Detail = "Saklarnya ada di menu klik kanan" },
+            @{ Source = "Panel.cs:403"; Icon = "IcoLock"; Title = "Akses notifikasi ditolak"; Detail = "Pengaturan Windows > Privasi > Notifikasi" },
+            @{ Source = "Panel.cs:414"; Icon = "IcoBell"; Title = "Pesan tidak bisa dibaca"; Detail = "Notifikasi Windows tidak menjawab. Deskmate mencoba lagi otomatis." },
+            @{ Source = "Panel.cs:417"; Icon = "IcoBell"; Title = "Belum ada pesan"; Detail = "WhatsApp, Telegram, Discord, Teams, email" },
+            @{ Source = "Shelf.cs:248"; Icon = "Rack"; Title = "Rak mati"; Detail = "Berkas yang diseret ke island tidak ditahan" },
+            @{ Source = "Shelf.cs:255"; Icon = "Rack"; Title = "Rak kosong"; Detail = "Seret berkas ke island, atau pilih dari folder" },
+            @{ Source = "Shelf.cs:261"; Icon = "Rack"; Title = "Rak kosong"; Detail = "Seret berkas ke island, atau pilih dari folder" },
+            @{ Source = "Clips.cs:118"; Icon = "Clip"; Title = "Riwayat clipboard mati"; Detail = "Teks yang disalin hanya disimpan di memori dan hilang saat Deskmate ditutup" },
+            @{ Source = "Clips.cs:123"; Icon = "Clip"; Title = "Belum ada yang disalin"; Detail = "Teks yang kamu salin muncul di sini" },
+            @{ Source = "ConvertPage.cs:112"; Icon = "Convert"; Title = "Ubah format mati"; Detail = "Berkas yang diseret ke island hanya bisa ditaruh di rak" },
+            @{ Source = "Schedule.cs:93"; Icon = "IcoCalendar"; Title = "Jadwal gagal dimuat"; Detail = "Koneksi ke kalender Google terputus. Silakan coba beberapa saat lagi." },
+            @{ Source = "Schedule.cs:98"; Icon = "IcoCalendar"; Title = "Memuat jadwal…"; Detail = "" },
+            @{ Source = "Schedule.cs:104"; Icon = "IcoCalendar"; Title = "Jadwal kosong"; Detail = "3 minggu ke depan kosong" },
+            @{ Source = "Music.cs:294"; Icon = "Music"; Title = "Tidak ada yang diputar"; Detail = "Spotify, YouTube Music, Apple Music, browser, VLC, dan pemutar lain" },
+            @{ Source = "Handset.cs:272"; Icon = "Phone"; Title = "HP belum tersambung"; Detail = "Tepi di Android, satu Wi-Fi dengan laptop" },
+            @{ Source = "Sources.cs:987"; Icon = "IcoCalendar"; Title = "Belum ada yang tersambung"; Detail = "Kulia, Notion, Todoist, atau kalender iCal" }
+        )
+
         Assert-Equal $callSitePayloads.Count 20 "Must cover all 20 call site payloads"
+
+        $stringFormatCenter = New-Object System.Drawing.StringFormat
+        $stringFormatCenter.Alignment = [System.Drawing.StringAlignment]::Center
+        $stringFormatCenter.LineAlignment = [System.Drawing.StringAlignment]::Center
+        $stringFormatCenter.Trimming = [System.Drawing.StringTrimming]::EllipsisWord
 
         $bmp = New-Object System.Drawing.Bitmap(360, 400)
         try {
@@ -621,13 +608,6 @@ Write-Host "==========================================================" -Foregro
 Write-Host "Total Tests: $($global:TestContext.Total)"
 Write-Host "Passed:      $($global:TestContext.Passed)" -ForegroundColor Green
 Write-Host "Failed:      $($global:TestContext.Failed)" -ForegroundColor $(if ($global:TestContext.Failed -gt 0) { "Red" } else { "Green" })
-
-if ($script:c2m3OwnedTmp) {
-    $env:DESKMATE_DIR = $script:c2m3PrevDir
-    $env:DESKMATE_HOME = $script:c2m3PrevHome
-    $env:DESKMATE_DOCK_DRY = $script:c2m3PrevDry
-    Remove-Item -LiteralPath $script:c2m3OwnedTmp -Recurse -Force -ErrorAction SilentlyContinue
-}
 
 if ($global:TestContext.Failed -eq 0) {
     Write-Host ">> VERDICT: APPROVE - All toast collision, empty state, and design token invariants verified empirically." -ForegroundColor Green

@@ -4,23 +4,9 @@
 param([switch]$VerboseReport)
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
-$script:advRunOwnedTmp = $null
-$script:advRunPrevDir = $env:DESKMATE_DIR
-$script:advRunPrevHome = $env:DESKMATE_HOME
-$script:advRunPrevDry = $env:DESKMATE_DOCK_DRY
-if ([string]::IsNullOrEmpty($env:DESKMATE_DIR)) {
-    $script:advRunOwnedTmp = Join-Path ([IO.Path]::GetTempPath()) ("deskmate-advrun-" + [Guid]::NewGuid().ToString("N"))
-    $advRunHome = Join-Path $script:advRunOwnedTmp "home"
-    New-Item -ItemType Directory -Path $script:advRunOwnedTmp, $advRunHome -Force | Out-Null
-    $env:DESKMATE_DIR = $script:advRunOwnedTmp
-    $env:DESKMATE_HOME = $advRunHome
-    $env:DESKMATE_DOCK_DRY = "1"
-}
-
 . (Join-Path $commonDir "TestHarness.ps1")
 . (Join-Path $commonDir "DeskmateLoader.ps1")
 
-try {
 Describe "Adversarial Stress Suite: Milestone 1 Color Science & Tokens" {
 
     $islandType = Get-DeskmateType "Island"
@@ -309,14 +295,5 @@ Describe "Adversarial Stress Suite: Milestone 1 Color Science & Tokens" {
         $setPackTyped.Invoke($null, [object[]]@($cleanDict))
         $setAccentMethod.Invoke($null, @(""))
         $applyMethod.Invoke($null, @($false))
-    }
-}
-}
-finally {
-    if ($script:advRunOwnedTmp) {
-        $env:DESKMATE_DIR = $script:advRunPrevDir
-        $env:DESKMATE_HOME = $script:advRunPrevHome
-        $env:DESKMATE_DOCK_DRY = $script:advRunPrevDry
-        Remove-Item -LiteralPath $script:advRunOwnedTmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

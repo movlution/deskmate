@@ -242,8 +242,8 @@ namespace Deskmate
             {
                 // Test runs and copies in temp folders leave the menu alone
                 if (Environment.GetEnvironmentVariable("DESKMATE_DIR") != null) return;
-                string exe = Environment.ProcessPath;
-                if (string.IsNullOrEmpty(exe) || exe.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase)) return;
+                string exe = Process.GetCurrentProcess().MainModule.FileName;
+                if (exe.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase)) return;
                 string lnk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Deskmate.lnk");
                 if (File.Exists(lnk) && string.Equals(ReadLink(lnk).Target, exe, StringComparison.OrdinalIgnoreCase)) return;
                 object o = new ShellLinkObject();

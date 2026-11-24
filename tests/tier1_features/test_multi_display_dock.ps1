@@ -25,18 +25,6 @@ Describe "Multi-Display Dock & Subsystem Integration Suite" {
     $taskbarType = Get-DeskmateType "Taskbar"
     $nativeType = Get-DeskmateType "Native"
 
-    function Set-ScreenField {
-        param($ScreenObj, [string[]]$CandidateNames, $Value, [System.Reflection.BindingFlags]$BindingFlags)
-        foreach ($name in $CandidateNames) {
-            $fld = [System.Windows.Forms.Screen].GetField($name, $BindingFlags)
-            if ($fld) {
-                $fld.SetValue($ScreenObj, $Value)
-                return
-            }
-        }
-        throw "None of Screen fields [$($CandidateNames -join ', ')] were found on System.Windows.Forms.Screen."
-    }
-
     function New-MockScreen {
         param(
             [string]$DeviceName,
@@ -49,10 +37,10 @@ Describe "Multi-Display Dock & Subsystem Integration Suite" {
         )
         $s = [System.Runtime.Serialization.FormatterServices]::GetUninitializedObject([System.Windows.Forms.Screen])
         $nonPublicFlags = [System.Reflection.BindingFlags]'NonPublic,Instance'
-        Set-ScreenField $s @("_bounds", "bounds") ([System.Drawing.Rectangle]::new($X, $Y, $Width, $Height)) $nonPublicFlags
-        Set-ScreenField $s @("_workingArea", "workingArea") ([System.Drawing.Rectangle]::new($X, $Y, $Width, $WorkHeight)) $nonPublicFlags
-        Set-ScreenField $s @("_primary", "primary") $Primary $nonPublicFlags
-        Set-ScreenField $s @("_deviceName", "deviceName") $DeviceName $nonPublicFlags
+        [System.Windows.Forms.Screen].GetField("bounds", $nonPublicFlags).SetValue($s, [System.Drawing.Rectangle]::new($X, $Y, $Width, $Height))
+        [System.Windows.Forms.Screen].GetField("workingArea", $nonPublicFlags).SetValue($s, [System.Drawing.Rectangle]::new($X, $Y, $Width, $WorkHeight))
+        [System.Windows.Forms.Screen].GetField("primary", $nonPublicFlags).SetValue($s, $Primary)
+        [System.Windows.Forms.Screen].GetField("deviceName", $nonPublicFlags).SetValue($s, $DeviceName)
         return $s
     }
 

@@ -1,5 +1,5 @@
 # TestHarness.ps1
-# Pure PowerShell (pwsh 7+ / Windows PowerShell 5.1) E2E Test Assertion and Execution Framework
+# Pure PowerShell & .NET 4.8 E2E Test Assertion and Execution Framework
 # Zero external dependencies.
 
 Add-Type -AssemblyName System.Drawing

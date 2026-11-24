@@ -46,9 +46,7 @@ namespace Deskmate
             ingatStartedUtc = DateTime.UtcNow;
             try
             {
-                string exe = Environment.ProcessPath;
-                if (string.IsNullOrEmpty(exe)) return;
-                var psi = new ProcessStartInfo(exe, "--ingat --parent " + Process.GetCurrentProcess().Id)
+                var psi = new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName, "--ingat --parent " + Process.GetCurrentProcess().Id)
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,

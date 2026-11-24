@@ -3,13 +3,11 @@ param(
     [Parameter(Mandatory = $true)][string]$HarnessPath,
     [Parameter(Mandatory = $true)][string]$LoaderPath,
     [string]$BinaryPath,
-    [string]$CliBinaryPath,
     [switch]$VerboseOutput
 )
 
 # One fresh process per suite keeps assembly state and Settings.Dir isolated.
 if ($BinaryPath) { $env:DESKMATE_TEST_BINARY = $BinaryPath }
-if ($CliBinaryPath) { $env:DESKMATE_CLI_BINARY = $CliBinaryPath }
 . $HarnessPath
 . $LoaderPath
 Set-TestVerbose ([bool]$VerboseOutput)

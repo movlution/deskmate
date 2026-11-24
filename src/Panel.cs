@@ -419,7 +419,7 @@ namespace Deskmate
             {
                 EmptyState(new RectangleF(0, PanelTop, w, h - PanelTop), Ink.IcoLock, Lang.T("Akses notifikasi ditolak"), Lang.T("Pengaturan Windows > Privasi > Notifikasi"), Lang.T("Buka pengaturan"), "notifPerm", delegate
                 {
-                    try { Process.Start(new ProcessStartInfo("ms-settings:privacy-notifications") { UseShellExecute = true }); } catch (Exception ex) { Log.Write("settings: " + ex.Message); }
+                    try { Process.Start("ms-settings:privacy-notifications"); } catch (Exception ex) { Log.Write("settings: " + ex.Message); }
                 }, PillKind.Secondary);
                 return;
             }

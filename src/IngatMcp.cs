@@ -204,7 +204,7 @@ namespace Deskmate
         // For the settings button: a ready-to-paste client config
         public static string ConfigJson()
         {
-            string exe = Environment.ProcessPath ?? "";
+            string exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
             return "{\n  \"mcpServers\": {\n    \"deskmate\": {\n      \"command\": " + Json.Encode(exe) + ",\n      \"args\": [\"--mcp\"]\n    }\n  }\n}";
         }
     }

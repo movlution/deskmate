@@ -25,15 +25,7 @@ namespace Deskmate
             Check(!Painter.NotifEmoji("Hello", 0), "Ordinary text");
             Check(Fmt.OneLine("\u2068Raven\u2069\n message", 300) == "Raven message", "Direction controls removed");
             Check(Fmt.OneLine("ab\U0001F3A4", 3) == "ab", "Truncation keeps whole emoji");
-            if (Environment.Version.Major >= 8)
-            {
-                Check(Fmt.OneLine("a\U0001F469\u200D\U0001F4BB", 4) == "a", "Truncation keeps UAX #29 ZWJ emoji intact");
-                Check(Fmt.OneLine("a\U0001F469\u200Dx", 4) == "a\U0001F469", "Truncation drops trailing joiner");
-            }
-            else
-            {
-                Check(Fmt.OneLine("a\U0001F469\u200D\U0001F4BB", 4) == "a\U0001F469", "Truncation drops trailing joiner");
-            }
+            Check(Fmt.OneLine("a\U0001F469\u200D\U0001F4BB", 4) == "a\U0001F469", "Truncation drops trailing joiner");
             Check(Fmt.OneLine("\U0001F3A4", 0) == "", "Empty truncation");
             using (var image = new Bitmap(420, 80))
             using (var g = Graphics.FromImage(image))

@@ -16,19 +16,6 @@ Write-Host "==========================================================" -Foregro
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 
-$script:c1eOwnedTmp = $null
-$script:c1ePrevDir = $env:DESKMATE_DIR
-$script:c1ePrevHome = $env:DESKMATE_HOME
-$script:c1ePrevDry = $env:DESKMATE_DOCK_DRY
-if ([string]::IsNullOrEmpty($env:DESKMATE_DIR)) {
-    $script:c1eOwnedTmp = Join-Path ([IO.Path]::GetTempPath()) ("deskmate-c1e-" + [Guid]::NewGuid().ToString("N"))
-    $c1eHome = Join-Path $script:c1eOwnedTmp "home"
-    New-Item -ItemType Directory -Path $script:c1eOwnedTmp, $c1eHome -Force | Out-Null
-    $env:DESKMATE_DIR = $script:c1eOwnedTmp
-    $env:DESKMATE_HOME = $c1eHome
-    $env:DESKMATE_DOCK_DRY = "1"
-}
-
 $commonDir = Join-Path $PSScriptRoot "common"
 . (Join-Path $commonDir "TestHarness.ps1")
 . (Join-Path $commonDir "DeskmateLoader.ps1")
@@ -601,13 +588,6 @@ Write-Host "==========================================================" -Foregro
 Write-Host "Total Tests: $($global:passCount + $global:failCount)"
 Write-Host "Passed:      $global:passCount" -ForegroundColor Green
 Write-Host "Failed:      $global:failCount" -ForegroundColor $(if ($global:failCount -eq 0) { "Green" } else { "Red" })
-
-if ($script:c1eOwnedTmp) {
-    $env:DESKMATE_DIR = $script:c1ePrevDir
-    $env:DESKMATE_HOME = $script:c1ePrevHome
-    $env:DESKMATE_DOCK_DRY = $script:c1ePrevDry
-    Remove-Item -LiteralPath $script:c1eOwnedTmp -Recurse -Force -ErrorAction SilentlyContinue
-}
 
 if ($global:failCount -eq 0) {
     Write-Host "`n>> VERDICT: APPROVE - All interactive states and theme propagation passed empirical stress tests." -ForegroundColor Green

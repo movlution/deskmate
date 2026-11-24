@@ -1,20 +1,29 @@
 @echo off
-rem Builds Deskmate.exe (.NET 10, self-contained, single file) with the .NET SDK
-rem Optional: build.cmd [output.exe]
+rem Builds Deskmate.exe with the C# compiler bundled in Windows (.NET Framework 4.8)
+rem Optional: build.cmd [output.exe] [extra source files]
 setlocal
+set FW=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319
+set WMD=%WINDIR%\System32\WinMetadata
 set ROOT=%~dp0
 set OUT=%~1
 if "%OUT%"=="" set OUT=%ROOT%Deskmate.exe
-set STAGE=%ROOT%artifacts\publish
+set EXTRA=
+if not "%~2"=="" set EXTRA="%~2"
 
-dotnet publish "%ROOT%Deskmate.csproj" -c Release --nologo -v q -o "%STAGE%"
+"%FW%\csc.exe" /nologo /target:winexe /optimize+ /platform:x64 /warn:4 ^
+  /out:"%OUT%" ^
+  /win32manifest:"%ROOT%src\app.manifest" /win32icon:"%ROOT%src\Deskmate.ico" /resource:"%ROOT%src\Deskmate.ico",Deskmate.ico ^
+  /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll /r:System.Security.dll /r:System.Management.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:Microsoft.VisualBasic.dll ^
+  /r:"%WMD%\Windows.Foundation.winmd" /r:"%WMD%\Windows.Media.winmd" /r:"%WMD%\Windows.Storage.winmd" /r:"%WMD%\Windows.Networking.winmd" ^
+  /r:"%WMD%\Windows.UI.winmd" /r:"%WMD%\Windows.ApplicationModel.winmd" /r:"%WMD%\Windows.Devices.winmd" /r:"%WMD%\Windows.Graphics.winmd" /r:"%WMD%\Windows.Data.winmd" /r:"%WMD%\Windows.Globalization.winmd" ^
+  /r:"%FW%\System.Runtime.dll" /r:"%FW%\System.Runtime.InteropServices.WindowsRuntime.dll" /r:"%FW%\System.Runtime.WindowsRuntime.dll" ^
+  /r:System.Numerics.dll /r:"%FW%\System.Numerics.Vectors.dll" ^
+  /r:"%FW%\System.Xaml.dll" /r:"%FW%\WPF\WindowsBase.dll" /r:"%FW%\WPF\PresentationCore.dll" ^
+  /r:"%FW%\WPF\PresentationFramework.dll" /r:"%FW%\WPF\WindowsFormsIntegration.dll" ^
+  /r:"%FW%\WPF\UIAutomationClient.dll" /r:"%FW%\WPF\UIAutomationTypes.dll" ^
+  "%ROOT%src\*.cs" %EXTRA%
 if errorlevel 1 (
   echo Build gagal.
-  exit /b 1
-)
-copy /y "%STAGE%\Deskmate.exe" "%OUT%" >nul
-if errorlevel 1 (
-  echo Build gagal: tidak bisa menyalin ke %OUT%
   exit /b 1
 )
 echo Build OK: %OUT%

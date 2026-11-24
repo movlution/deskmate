@@ -431,9 +431,7 @@ public static class F29PassHelper {
             $timer.Interval = 50
             $timer.Start()
             $events = $timer.GetType()
-            $tickField = $events.GetField("_onTimer", $flags)
-            if (-not $tickField) { $tickField = $events.GetField("onTimer", $flags) }
-            $tick = $tickField.GetValue($timer)
+            $tick = $events.GetField("onTimer", $flags).GetValue($timer)
             Assert-NotNull $tick "The production toast timer Tick delegate must be registered"
             $tick.DynamicInvoke($timer, [EventArgs]::Empty)
             Assert-NotNull ($islandType.GetField("toast", $flags).GetValue($isle)) "An early hover tick must not dismiss the interactive toast"
@@ -466,9 +464,7 @@ public static class F29PassHelper {
             $timer.Interval = 50
             $timer.Start()
             $events = $timer.GetType()
-            $tickField = $events.GetField("_onTimer", $flags)
-            if (-not $tickField) { $tickField = $events.GetField("onTimer", $flags) }
-            $tick = $tickField.GetValue($timer)
+            $tick = $events.GetField("onTimer", $flags).GetValue($timer)
             $tick.DynamicInvoke($timer, [EventArgs]::Empty)
             Assert-Null ($islandType.GetField("toast", $flags).GetValue($isle)) "A non-hovered expired toast must be dismissed"
             Assert-False $timer.Enabled "Dismissal must not reschedule the toast timer"

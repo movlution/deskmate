@@ -9,7 +9,7 @@ Add-Type -AssemblyName System.Windows.Forms
 # 1. Architecture Validation
 function Assert-DeskmateArchitecture {
     if ([IntPtr]::Size -ne 8) {
-        throw "Deskmate E2E Test Runner requires 64-bit PowerShell ([IntPtr]::Size == 8). You are currently running in a 32-bit (x86) process. Please launch 64-bit pwsh.exe (or Windows PowerShell 5.1 for NetFx builds)."
+        throw "Deskmate E2E Test Runner requires 64-bit PowerShell ([IntPtr]::Size == 8). You are currently running in a 32-bit (x86) process. Please launch 64-bit PowerShell (e.g. C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe)."
     }
 }
 
@@ -20,215 +20,24 @@ Assert-DeskmateArchitecture
 if ($null -eq $global:DeskmateAssembly) {
     $global:DeskmateAssembly = $null
     $global:DeskmateAssemblyPath = ""
-    $global:DeskmateCliPath = ""
-}
-
-if ($PSVersionTable.PSEdition -eq 'Core' -and -not ('DeskmateAlcResolver' -as [type])) {
-    Add-Type -TypeDefinition @'
-using System;
-using System.Collections.Concurrent;
-using System.IO;
-using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Runtime.Loader;
-
-public static class DeskmateAlcResolver
-{
-    private static readonly ConcurrentDictionary<string, AssemblyDependencyResolver> Resolvers =
-        new ConcurrentDictionary<string, AssemblyDependencyResolver>(StringComparer.OrdinalIgnoreCase);
-    private static int Hooked;
-
-    public static void Register(string assemblyPath)
-    {
-        string fullPath = Path.GetFullPath(assemblyPath);
-        Resolvers.TryAdd(fullPath, new AssemblyDependencyResolver(fullPath));
-        if (System.Threading.Interlocked.CompareExchange(ref Hooked, 1, 0) == 0)
-        {
-            AssemblyLoadContext.Default.Resolving += OnResolving;
-            AssemblyLoadContext.Default.ResolvingUnmanagedDll += OnResolvingUnmanagedDll;
-        }
-    }
-
-    private static Assembly OnResolving(AssemblyLoadContext context, AssemblyName name)
-    {
-        foreach (var resolver in Resolvers.Values)
-        {
-            string path = resolver.ResolveAssemblyToPath(name);
-            if (!string.IsNullOrEmpty(path) && File.Exists(path))
-            {
-                return context.LoadFromAssemblyPath(path);
-            }
-        }
-        return null;
-    }
-
-    private static IntPtr OnResolvingUnmanagedDll(Assembly assembly, string unmanagedDllName)
-    {
-        foreach (var resolver in Resolvers.Values)
-        {
-            string path = resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
-            if (!string.IsNullOrEmpty(path) && File.Exists(path))
-            {
-                IntPtr handle;
-                if (NativeLibrary.TryLoad(path, out handle))
-                {
-                    return handle;
-                }
-            }
-        }
-        return IntPtr.Zero;
-    }
-}
-'@
-}
-
-function Get-DeskmateBinaryInfo {
-    param([Parameter(Mandatory = $true)][string]$Path)
-
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "Test binary not found: $Path"
-    }
-
-    $resolved = (Resolve-Path -LiteralPath $Path).Path
-    $ext = [IO.Path]::GetExtension($resolved)
-    $hasMetadata = $false
-    try {
-        [void][System.Reflection.AssemblyName]::GetAssemblyName($resolved)
-        $hasMetadata = $true
-    }
-    catch [System.BadImageFormatException] {
-        $hasMetadata = $false
-    }
-
-    if (-not $hasMetadata) {
-        $sibDll = [IO.Path]::ChangeExtension($resolved, ".dll")
-        if ((Test-Path -LiteralPath $sibDll -PathType Leaf)) {
-            $dllManaged = $false
-            try {
-                [void][System.Reflection.AssemblyName]::GetAssemblyName($sibDll)
-                $dllManaged = $true
-            }
-            catch [System.BadImageFormatException] {
-                $dllManaged = $false
-            }
-            if ($dllManaged) {
-                return [PSCustomObject]@{
-                    Kind         = 'NetCoreAppHost'
-                    Path         = $resolved
-                    AssemblyPath = (Resolve-Path -LiteralPath $sibDll).Path
-                    CliPath      = $resolved
-                }
-            }
-        }
-        return [PSCustomObject]@{
-            Kind         = 'SingleFileAppHost'
-            Path         = $resolved
-            AssemblyPath = $null
-            CliPath      = $resolved
-        }
-    }
-
-    $rtConfig = [IO.Path]::ChangeExtension($resolved, ".runtimeconfig.json")
-    if ($ext -ieq ".dll" -or (Test-Path -LiteralPath $rtConfig -PathType Leaf)) {
-        $sibExe = [IO.Path]::ChangeExtension($resolved, ".exe")
-        $cliExe = if (Test-Path -LiteralPath $sibExe -PathType Leaf) { (Resolve-Path -LiteralPath $sibExe).Path } else { $null }
-        return [PSCustomObject]@{
-            Kind         = 'NetCoreDll'
-            Path         = $resolved
-            AssemblyPath = $resolved
-            CliPath      = $cliExe
-        }
-    }
-
-    return [PSCustomObject]@{
-        Kind         = 'NetFxExe'
-        Path         = $resolved
-        AssemblyPath = $resolved
-        CliPath      = $resolved
-    }
 }
 
 function Find-DeskmateBinary {
     param([string]$ExplicitPath = "")
 
-    $isCore = ($PSVersionTable.PSEdition -eq 'Core')
     $requested = if ($ExplicitPath) { $ExplicitPath } else { $env:DESKMATE_TEST_BINARY }
     if ($requested) {
         if (-not (Test-Path -LiteralPath $requested -PathType Leaf)) {
             throw "Test binary not found: $requested"
         }
         $resolved = (Resolve-Path -LiteralPath $requested).Path
-        $ext = [IO.Path]::GetExtension($resolved)
-        if ($ext -ine ".exe" -and $ext -ine ".dll") {
-            throw "Test binary must be an .exe or .dll file: $resolved"
+        if ([IO.Path]::GetExtension($resolved) -ine ".exe") {
+            throw "Test binary must be an .exe file: $resolved"
         }
-
-        $info = Get-DeskmateBinaryInfo -Path $resolved
-        switch ($info.Kind) {
-            'SingleFileAppHost' {
-                throw "Single-file executable '$resolved' has no IL manifest and cannot be loaded for reflection. Pass an unpacked Deskmate.dll (e.g. from dotnet build) for reflection tests, or use Find-DeskmateCliBinary for CLI execution."
-            }
-            'NetCoreAppHost' {
-                if (-not $isCore) {
-                    throw "Target '$resolved' is a .NET Core/.NET 10 binary and requires pwsh (PowerShell 7+)."
-                }
-                if (-not $global:DeskmateCliPath) { $global:DeskmateCliPath = $info.CliPath }
-                return $info.AssemblyPath
-            }
-            'NetCoreDll' {
-                if (-not $isCore) {
-                    throw "Target '$resolved' is a .NET Core/.NET 10 assembly and requires pwsh (PowerShell 7+)."
-                }
-                if ($info.CliPath -and -not $global:DeskmateCliPath) { $global:DeskmateCliPath = $info.CliPath }
-                return $info.AssemblyPath
-            }
-            'NetFxExe' {
-                if ($isCore) {
-                    throw "Target '$resolved' is a .NET Framework 4.8 assembly and cannot be safely reflected under pwsh (Core). Run under Windows PowerShell 5.1 (powershell.exe) or pass a .NET 10 Deskmate.dll."
-                }
-                if (-not $global:DeskmateCliPath) { $global:DeskmateCliPath = $info.CliPath }
-                return $info.AssemblyPath
-            }
-        }
+        return $resolved
     }
 
     $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-    if ($isCore) {
-        $candidateDlls = @(
-            (Join-Path $projectRoot "bin\x64\Release\net10.0-windows10.0.19041.0\Deskmate.dll"),
-            (Join-Path $projectRoot "bin\Release\net10.0-windows10.0.19041.0\Deskmate.dll"),
-            (Join-Path $projectRoot "bin\x64\Debug\net10.0-windows10.0.19041.0\Deskmate.dll"),
-            (Join-Path $projectRoot "bin\Debug\net10.0-windows10.0.19041.0\Deskmate.dll"),
-            (Join-Path $projectRoot "artifacts\test\Deskmate.dll"),
-            (Join-Path (Get-Location) "Deskmate.dll")
-        )
-        foreach ($loc in $candidateDlls) {
-            if (Test-Path -LiteralPath $loc -PathType Leaf) {
-                $info = Get-DeskmateBinaryInfo -Path $loc
-                if ($info.Kind -eq 'NetCoreDll') {
-                    if ($info.CliPath -and -not $global:DeskmateCliPath) { $global:DeskmateCliPath = $info.CliPath }
-                    return $info.AssemblyPath
-                }
-            }
-        }
-
-        $rootExe = Join-Path $projectRoot "Deskmate.exe"
-        if (Test-Path -LiteralPath $rootExe -PathType Leaf) {
-            $exeInfo = Get-DeskmateBinaryInfo -Path $rootExe
-            if ($exeInfo.Kind -eq 'NetCoreAppHost') {
-                if (-not $global:DeskmateCliPath) { $global:DeskmateCliPath = $exeInfo.CliPath }
-                return $exeInfo.AssemblyPath
-            }
-            if ($exeInfo.Kind -eq 'SingleFileAppHost') {
-                throw "Found single-file '$rootExe' which cannot be loaded for reflection, and no unpacked Deskmate.dll was found in bin/ or artifacts/test/. Build unpacked Deskmate.dll or pass -BinaryPath <path-to-Deskmate.dll>."
-            }
-            if ($exeInfo.Kind -eq 'NetFxExe') {
-                throw "Found .NET Framework 4.8 '$rootExe' while running under pwsh (Core). Build .NET 10 Deskmate.dll or run under Windows PowerShell 5.1."
-            }
-        }
-        return $null
-    }
-
     $candidateLocations = @(
         (Join-Path $projectRoot "Deskmate.exe"),
         (Join-Path (Get-Location) "Deskmate.exe")
@@ -236,62 +45,8 @@ function Find-DeskmateBinary {
 
     foreach ($loc in $candidateLocations) {
         if (Test-Path -LiteralPath $loc -PathType Leaf) {
-            $info = Get-DeskmateBinaryInfo -Path $loc
-            if ($info.Kind -ne 'NetFxExe') {
-                throw "Target '$($info.Path)' is a .NET Core/.NET 10 binary and requires pwsh (PowerShell 7+)."
-            }
-            if (-not $global:DeskmateCliPath) { $global:DeskmateCliPath = $info.CliPath }
-            return $info.AssemblyPath
+            return (Resolve-Path -LiteralPath $loc).Path
         }
-    }
-
-    return $null
-}
-
-function Find-DeskmateCliBinary {
-    param([string]$ExplicitPath = "")
-
-    $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-    $candidates = New-Object System.Collections.Generic.List[string]
-    if ($ExplicitPath) { $candidates.Add($ExplicitPath) }
-    if ($env:DESKMATE_CLI_BINARY) { $candidates.Add($env:DESKMATE_CLI_BINARY) }
-    if ($global:DeskmateCliPath) { $candidates.Add($global:DeskmateCliPath) }
-    if ($global:DeskmateAssemblyPath) {
-        $sibExe = [IO.Path]::ChangeExtension($global:DeskmateAssemblyPath, ".exe")
-        $candidates.Add($sibExe)
-    }
-    $candidates.Add((Join-Path $projectRoot "Deskmate.exe"))
-    $candidates.Add((Join-Path $projectRoot "artifacts\publish\Deskmate.exe"))
-    $candidates.Add((Join-Path $projectRoot "bin\x64\Release\net10.0-windows10.0.19041.0\Deskmate.exe"))
-    $candidates.Add((Join-Path $projectRoot "bin\Release\net10.0-windows10.0.19041.0\Deskmate.exe"))
-    $candidates.Add((Join-Path (Get-Location) "Deskmate.exe"))
-
-    foreach ($cand in $candidates) {
-        if ($cand -and (Test-Path -LiteralPath $cand -PathType Leaf)) {
-            $resolved = (Resolve-Path -LiteralPath $cand).Path
-            $ext = [IO.Path]::GetExtension($resolved)
-            if ($ext -ieq ".exe") {
-                return @{ FileName = $resolved; PrefixArgs = @() }
-            }
-            if ($ext -ieq ".dll") {
-                $dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
-                $dotnetPath = if ($dotnetCmd) { $dotnetCmd.Source } else { "dotnet" }
-                return @{ FileName = $dotnetPath; PrefixArgs = @($resolved) }
-            }
-        }
-    }
-
-    $dllPath = $global:DeskmateAssemblyPath
-    if (-not $dllPath) {
-        try { $dllPath = Find-DeskmateBinary } catch { $dllPath = $null }
-    }
-    if ($dllPath -and (Test-Path -LiteralPath $dllPath -PathType Leaf)) {
-        if ([IO.Path]::GetExtension($dllPath) -ieq ".exe") {
-            return @{ FileName = $dllPath; PrefixArgs = @() }
-        }
-        $dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
-        $dotnetPath = if ($dotnetCmd) { $dotnetCmd.Source } else { "dotnet" }
-        return @{ FileName = $dotnetPath; PrefixArgs = @($dllPath) }
     }
 
     return $null
@@ -305,19 +60,7 @@ function Initialize-DeskmateLoader {
 
     $binPath = Find-DeskmateBinary $Path
     if (-not $binPath) {
-        throw "Deskmate reflection binary not found. Please build Deskmate (dotnet build Deskmate.csproj -c Release, or build.cmd for NetFx baseline) before running tests."
-    }
-
-    $info = Get-DeskmateBinaryInfo -Path $binPath
-    $isCore = ($PSVersionTable.PSEdition -eq 'Core')
-    if ($info.Kind -eq 'SingleFileAppHost') {
-        throw "Single-file executable '$binPath' has no IL manifest and cannot be loaded for reflection."
-    }
-    if ($info.Kind -eq 'NetCoreDll' -and -not $isCore) {
-        throw "Target '$binPath' is a .NET Core/.NET 10 assembly and requires pwsh (PowerShell 7+)."
-    }
-    if ($info.Kind -eq 'NetFxExe' -and $isCore) {
-        throw "Target '$binPath' is a .NET Framework 4.8 assembly and cannot be safely reflected under pwsh (Core). Run under Windows PowerShell 5.1."
+        throw "Deskmate.exe not found. Please run 'build.cmd' at the project root to compile Deskmate.exe before running tests."
     }
 
     if ($global:DeskmateAssembly -and (-not $ForceReload)) {
@@ -327,33 +70,17 @@ function Initialize-DeskmateLoader {
         return $global:DeskmateAssembly
     }
 
-    if ($isCore) {
-        [DeskmateAlcResolver]::Register($binPath)
-    }
-
-    # Load assembly via LoadFrom after registering AssemblyDependencyResolver
+    # Load assembly bytes or direct assembly via LoadFrom
     $global:DeskmateAssemblyPath = $binPath
     $global:DeskmateAssembly = [System.Reflection.Assembly]::LoadFrom($binPath)
     return $global:DeskmateAssembly
 }
 
-# Auto-initialize loader if a compatible Deskmate reflection binary exists.
-# Never swallow compatibility, single-file, or load failures.
-$autoBinPath = $null
-$missingBinary = $false
+# Auto-initialize loader if Deskmate.exe exists
 try {
-    $autoBinPath = Find-DeskmateBinary
-}
-catch {
-    if ($_.Exception.Message -like "Test binary not found:*") {
-        $missingBinary = $true
-    }
-    else {
-        throw
-    }
-}
-if ($autoBinPath -and -not $missingBinary) {
-    [void](Initialize-DeskmateLoader -Path $autoBinPath)
+    [void](Initialize-DeskmateLoader)
+} catch {
+    # If binary doesn't exist yet, defer until explicit initialization or rebuild
 }
 
 # 3. Reflection Helpers
@@ -374,12 +101,7 @@ function Get-DeskmateType {
     if ($t) { return $t }
 
     # Check case-insensitive / partial match among all loaded types
-    try {
-        $all = $global:DeskmateAssembly.GetTypes()
-    }
-    catch [System.Reflection.ReflectionTypeLoadException] {
-        $all = $_.Exception.Types | Where-Object { $null -ne $_ }
-    }
+    $all = $global:DeskmateAssembly.GetTypes()
     foreach ($candidate in $all) {
         if ($candidate.Name -ieq $TypeName -or $candidate.FullName -ieq $TypeName -or $candidate.FullName -ieq "Deskmate.$TypeName") {
             return $candidate

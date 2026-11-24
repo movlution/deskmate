@@ -7,23 +7,9 @@
 # 4. Prefs.cs preset accent serialization, restoring across sessions, and rapid theme toggling under multi-window loads
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
-$script:advM2OwnedTmp = $null
-$script:advM2PrevDir = $env:DESKMATE_DIR
-$script:advM2PrevHome = $env:DESKMATE_HOME
-$script:advM2PrevDry = $env:DESKMATE_DOCK_DRY
-if ([string]::IsNullOrEmpty($env:DESKMATE_DIR)) {
-    $script:advM2OwnedTmp = Join-Path ([IO.Path]::GetTempPath()) ("deskmate-advm2-" + [Guid]::NewGuid().ToString("N"))
-    $advM2Home = Join-Path $script:advM2OwnedTmp "home"
-    New-Item -ItemType Directory -Path $script:advM2OwnedTmp, $advM2Home -Force | Out-Null
-    $env:DESKMATE_DIR = $script:advM2OwnedTmp
-    $env:DESKMATE_HOME = $advM2Home
-    $env:DESKMATE_DOCK_DRY = "1"
-}
-
 . (Join-Path $commonDir "TestHarness.ps1")
 . (Join-Path $commonDir "DeskmateLoader.ps1")
 
-try {
 Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
 
     $inkType = Get-DeskmateType "Ink"
@@ -535,14 +521,5 @@ Describe "Adversarial Suite M2: Regression & Boundary Stress Testing" {
 
         $dialogs[0].Dispose()
         $dialogs[1].Dispose()
-    }
-}
-}
-finally {
-    if ($script:advM2OwnedTmp) {
-        $env:DESKMATE_DIR = $script:advM2PrevDir
-        $env:DESKMATE_HOME = $script:advM2PrevHome
-        $env:DESKMATE_DOCK_DRY = $script:advM2PrevDry
-        Remove-Item -LiteralPath $script:advM2OwnedTmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

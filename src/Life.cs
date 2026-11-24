@@ -126,8 +126,7 @@ namespace Deskmate
                         {
                             rebuild = true;
                             // Local build newer than asset: keep
-                            string exe = Environment.ProcessPath;
-                            if (digest == null || digest == OwnDigest() || string.IsNullOrEmpty(exe) || uploaded <= System.IO.File.GetLastWriteTimeUtc(exe)) tag = null;
+                            if (digest == null || digest == OwnDigest() || uploaded <= System.IO.File.GetLastWriteTimeUtc(Application.ExecutablePath)) tag = null;
                         }
                     }
                 }

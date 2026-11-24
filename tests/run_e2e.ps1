@@ -1,14 +1,14 @@
 # run_e2e.ps1
 # Master End-to-End Test Runner CLI for Deskmate
 # Usage:
-#   .\tests\run_e2e.ps1 [-Tier <1-4>] [-Feature <1-99>] [-Rebuild] [-BinaryPath <path>] [-TestFile <path>] [-VerboseOutput]
+#   .\tests\run_e2e.ps1 [-Tier <1-4>] [-Feature <1-35>] [-Rebuild] [-BinaryPath <path>] [-TestFile <path>] [-VerboseOutput]
 
 [CmdletBinding()]
 param(
     [ValidateRange(1, 4)]
     [int]$Tier,
 
-    [ValidateRange(1, 99)]
+    [ValidateRange(1, 35)]
     [int]$Feature,
 
     [switch]$Rebuild,
@@ -31,33 +31,24 @@ $projectRoot = Split-Path -Parent $scriptDir
 
 # 2. Rebuild step if requested
 if ($Rebuild) {
-    $csprojPath = Join-Path $projectRoot "Deskmate.csproj"
+    Write-Host "[BUILD] Executing build.cmd to compile fresh Deskmate.exe..." -ForegroundColor Cyan
     $buildCmd = Join-Path $projectRoot "build.cmd"
+    if (-not (Test-Path $buildCmd)) {
+        Write-Host "[ERROR] build.cmd not found at $buildCmd" -ForegroundColor Red
+        exit 1
+    }
+
     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+    $pinfo.FileName = "cmd.exe"
+    $pinfo.Arguments = "/c `"$buildCmd`""
     $pinfo.WorkingDirectory = $projectRoot
     $pinfo.UseShellExecute = $false
     $pinfo.RedirectStandardOutput = $true
     $pinfo.RedirectStandardError = $true
 
-    if ($PSVersionTable.PSEdition -eq 'Core' -and (Test-Path -LiteralPath $csprojPath -PathType Leaf)) {
-        Write-Host "[BUILD] Executing dotnet build on Deskmate.csproj (Release)..." -ForegroundColor Cyan
-        $pinfo.FileName = "dotnet"
-        $pinfo.Arguments = "build `"$csprojPath`" -c Release --nologo"
-    }
-    elseif (Test-Path -LiteralPath $buildCmd -PathType Leaf) {
-        Write-Host "[BUILD] Executing build.cmd to compile fresh Deskmate binary..." -ForegroundColor Cyan
-        $pinfo.FileName = "cmd.exe"
-        $pinfo.Arguments = "/c `"$buildCmd`""
-    }
-    else {
-        Write-Host "[ERROR] Neither Deskmate.csproj nor build.cmd found at $projectRoot" -ForegroundColor Red
-        exit 1
-    }
-
     $p = [System.Diagnostics.Process]::Start($pinfo)
-    $errTask = $p.StandardError.ReadToEndAsync()
     $stdout = $p.StandardOutput.ReadToEnd()
-    $stderr = $errTask.GetAwaiter().GetResult()
+    $stderr = $p.StandardError.ReadToEnd()
     $p.WaitForExit()
 
     if ($p.ExitCode -ne 0) {
@@ -71,9 +62,7 @@ if ($Rebuild) {
 }
 
 $previousBinary = $env:DESKMATE_TEST_BINARY
-$previousCliBinary = $env:DESKMATE_CLI_BINARY
 $previousDeskmateDir = $env:DESKMATE_DIR
-$previousDeskmateHome = $env:DESKMATE_HOME
 $previousDry = $env:DESKMATE_DOCK_DRY
 if ($BinaryPath) {
     if (-not (Test-Path -LiteralPath $BinaryPath -PathType Leaf)) {
@@ -81,47 +70,15 @@ if ($BinaryPath) {
         exit 1
     }
     $BinaryPath = (Resolve-Path -LiteralPath $BinaryPath).Path
-    $binExt = [IO.Path]::GetExtension($BinaryPath)
-    if ($binExt -ine ".exe" -and $binExt -ine ".dll") {
-        Write-Host "[ERROR] Test binary must be an .exe or .dll file: $BinaryPath" -ForegroundColor Red
-        exit 1
-    }
-    $hasMetadata = $false
-    try {
-        [void][System.Reflection.AssemblyName]::GetAssemblyName($BinaryPath)
-        $hasMetadata = $true
-    }
-    catch [System.BadImageFormatException] {
-        $hasMetadata = $false
-    }
-    if (-not $hasMetadata) {
-        $sibDll = [IO.Path]::ChangeExtension($BinaryPath, ".dll")
-        if (Test-Path -LiteralPath $sibDll -PathType Leaf) {
-            $env:DESKMATE_CLI_BINARY = $BinaryPath
-            $BinaryPath = (Resolve-Path -LiteralPath $sibDll).Path
-        }
-        else {
-            Write-Host "[ERROR] Single-file executable '$BinaryPath' cannot be loaded for reflection. Pass an unpacked Deskmate.dll." -ForegroundColor Red
-            exit 1
-        }
-    }
-    $rtConfig = [IO.Path]::ChangeExtension($BinaryPath, ".runtimeconfig.json")
-    $isNetCoreTarget = ($binExt -ieq ".dll") -or (Test-Path -LiteralPath $rtConfig -PathType Leaf) -or ([IO.Path]::GetExtension($BinaryPath) -ieq ".dll")
-    if ($isNetCoreTarget -and $PSVersionTable.PSEdition -ne 'Core') {
-        Write-Host "[ERROR] Target '$BinaryPath' is a .NET Core/.NET 10 assembly and requires pwsh (PowerShell 7+)." -ForegroundColor Red
-        exit 1
-    }
-    if ((-not $isNetCoreTarget) -and $PSVersionTable.PSEdition -eq 'Core') {
-        Write-Host "[ERROR] Target '$BinaryPath' is a .NET Framework 4.8 assembly and requires Windows PowerShell 5.1 (powershell.exe)." -ForegroundColor Red
+    if ([IO.Path]::GetExtension($BinaryPath) -ine ".exe") {
+        Write-Host "[ERROR] Test binary must be an .exe file: $BinaryPath" -ForegroundColor Red
         exit 1
     }
     $env:DESKMATE_TEST_BINARY = $BinaryPath
 }
 $testData = Join-Path ([IO.Path]::GetTempPath()) ("Deskmate\tests\" + [Guid]::NewGuid().ToString("N"))
-$testHome = Join-Path $testData "home"
-New-Item -ItemType Directory -Path $testData, $testHome -Force | Out-Null
+New-Item -ItemType Directory -Path $testData -Force | Out-Null
 $env:DESKMATE_DIR = $testData
-$env:DESKMATE_HOME = $testHome
 $env:DESKMATE_DOCK_DRY = "1"
 try {
 # 3. Load Common Infrastructure
@@ -224,13 +181,11 @@ foreach ($tf in $testFilesToRun) {
     $fileSw = [System.Diagnostics.Stopwatch]::StartNew()
 
     $suiteData = Join-Path $testData ([IO.Path]::GetFileNameWithoutExtension($tf.Name))
-    $suiteHome = Join-Path $suiteData "home"
-    New-Item -ItemType Directory -Path $suiteData, $suiteHome -Force | Out-Null
+    New-Item -ItemType Directory -Path $suiteData -Force | Out-Null
     $suiteInfo = New-Object System.Diagnostics.ProcessStartInfo
     $suiteInfo.FileName = (Get-Process -Id $PID).Path
-    $suiteInfo.Arguments = "-NoProfile -NonInteractive -STA -ExecutionPolicy Bypass -File `"$scriptDir\common\Invoke-Suite.ps1`" -TestPath `"$($tf.Path)`" -HarnessPath `"$harnessPath`" -LoaderPath `"$loaderPath`""
+    $suiteInfo.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$scriptDir\common\Invoke-Suite.ps1`" -TestPath `"$($tf.Path)`" -HarnessPath `"$harnessPath`" -LoaderPath `"$loaderPath`""
     if ($BinaryPath) { $suiteInfo.Arguments += " -BinaryPath `"$BinaryPath`"" }
-    if ($env:DESKMATE_CLI_BINARY) { $suiteInfo.Arguments += " -CliBinaryPath `"$($env:DESKMATE_CLI_BINARY)`"" }
     if ($VerboseOutput) { $suiteInfo.Arguments += " -VerboseOutput" }
     $suiteInfo.WorkingDirectory = $projectRoot
     $suiteInfo.UseShellExecute = $false
@@ -238,13 +193,11 @@ foreach ($tf in $testFilesToRun) {
     $suiteInfo.RedirectStandardOutput = $true
     $suiteInfo.RedirectStandardError = $true
     $suiteInfo.EnvironmentVariables["DESKMATE_DIR"] = $suiteData
-    $suiteInfo.EnvironmentVariables["DESKMATE_HOME"] = $suiteHome
     $suiteInfo.EnvironmentVariables["DESKMATE_DOCK_DRY"] = "1"
 
     $suiteProcess = [System.Diagnostics.Process]::Start($suiteInfo)
-    $errTask = $suiteProcess.StandardError.ReadToEndAsync()
     $suiteOutput = $suiteProcess.StandardOutput.ReadToEnd()
-    $suiteError = $errTask.GetAwaiter().GetResult()
+    $suiteError = $suiteProcess.StandardError.ReadToEnd()
     $suiteProcess.WaitForExit()
     $fileSw.Stop()
 
@@ -340,9 +293,7 @@ if ($grandStatus -eq "PASS") {
 }
 finally {
     $env:DESKMATE_TEST_BINARY = $previousBinary
-    $env:DESKMATE_CLI_BINARY = $previousCliBinary
     $env:DESKMATE_DIR = $previousDeskmateDir
-    $env:DESKMATE_HOME = $previousDeskmateHome
     $env:DESKMATE_DOCK_DRY = $previousDry
     if (Test-Path -LiteralPath $testData) {
         Remove-Item -LiteralPath $testData -Recurse -Force -ErrorAction SilentlyContinue

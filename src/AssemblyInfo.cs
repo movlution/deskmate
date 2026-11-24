@@ -1,8 +1,4 @@
 using System.Reflection;
-using System.Runtime.CompilerServices;
-#if NET
-using System.Runtime.Versioning;
-#endif
 
 // File properties shown by Windows
 [assembly: AssemblyTitle("Deskmate")]
@@ -13,8 +9,3 @@ using System.Runtime.Versioning;
 [assembly: AssemblyVersion(Deskmate.Island.AppVersion)]
 [assembly: AssemblyFileVersion(Deskmate.Island.AppVersion)]
 [assembly: AssemblyInformationalVersion(Deskmate.Island.AppVersion)]
-[assembly: InternalsVisibleTo("Deskmate.Tests")]
-#if NET
-[assembly: TargetPlatform("Windows10.0.19041.0")]
-[assembly: SupportedOSPlatform("Windows10.0.19041.0")]
-#endif

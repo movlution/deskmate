@@ -135,7 +135,7 @@ namespace Deskmate
         {
             Uri u;
             if (!Uri.TryCreate(url, UriKind.Absolute, out u) || (u.Scheme != Uri.UriSchemeHttps && u.Scheme != Uri.UriSchemeHttp)) return;
-            try { Process.Start(new ProcessStartInfo(u.AbsoluteUri) { UseShellExecute = true }); } catch (Exception ex) { Log.Write("open url: " + ex.Message); }
+            try { Process.Start(u.AbsoluteUri); } catch (Exception ex) { Log.Write("open url: " + ex.Message); }
         }
     }
 }

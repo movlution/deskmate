@@ -3,53 +3,26 @@
 # Verifies compilation, assembly loading, reflection helpers, headless offscreen rendering, and CLI invocation.
 
 $commonDir = Join-Path $PSScriptRoot "common"
-$script:smokeOwnedTmp = $null
-$script:smokePrevDir = $env:DESKMATE_DIR
-$script:smokePrevHome = $env:DESKMATE_HOME
-$script:smokePrevDry = $env:DESKMATE_DOCK_DRY
-if ([string]::IsNullOrEmpty($env:DESKMATE_DIR)) {
-    $script:smokeOwnedTmp = Join-Path ([IO.Path]::GetTempPath()) ("deskmate-smoke-" + [Guid]::NewGuid().ToString("N"))
-    $smokeHome = Join-Path $script:smokeOwnedTmp "home"
-    New-Item -ItemType Directory -Path $script:smokeOwnedTmp, $smokeHome -Force | Out-Null
-    $env:DESKMATE_DIR = $script:smokeOwnedTmp
-    $env:DESKMATE_HOME = $smokeHome
-    $env:DESKMATE_DOCK_DRY = "1"
-}
-
 . (Join-Path $commonDir "TestHarness.ps1")
 . (Join-Path $commonDir "DeskmateLoader.ps1")
 
-try {
 Describe "Smoke Test Suite: Environment & Binary Integrity" {
     It "Validates 64-bit runtime environment" {
         Assert-Equal ([IntPtr]::Size) 8 "Process must be 64-bit ([IntPtr]::Size == 8)"
     }
 
-    It "Validates Deskmate reflection binary exists on disk and is non-empty" {
+    It "Validates Deskmate.exe binary exists on disk and is non-empty" {
         $binPath = Find-DeskmateBinary
-        Assert-NotNull $binPath "Deskmate reflection binary must be located"
+        Assert-NotNull $binPath "Deskmate.exe must be located"
         $file = Get-Item $binPath
-        Assert-True ($file.Length -gt 500000) "Deskmate reflection binary size must exceed 500KB (actual: $($file.Length) bytes)"
+        Assert-True ($file.Length -gt 500000) "Deskmate.exe size must exceed 500KB (actual: $($file.Length) bytes)"
     }
 
-    It "Loads Deskmate assembly into reflection cache" {
+    It "Loads Deskmate.exe assembly into reflection cache" {
         $asm = Initialize-DeskmateLoader
         Assert-NotNull $asm "Assembly must be loaded"
-        try { $types = $asm.GetTypes() }
-        catch [System.Reflection.ReflectionTypeLoadException] { $types = $_.Exception.Types | Where-Object { $null -ne $_ } }
+        $types = $asm.GetTypes()
         Assert-True ($types.Length -gt 100) "Assembly must contain application types (found: $($types.Length))"
-    }
-
-    It "Embeds Deskmate.ico manifest resource stream" {
-        $asm = Initialize-DeskmateLoader
-        $icoStream = $asm.GetManifestResourceStream("Deskmate.ico")
-        try {
-            Assert-NotNull $icoStream "Embedded manifest resource 'Deskmate.ico' must be present"
-            Assert-True ($icoStream.Length -gt 0) "Embedded 'Deskmate.ico' stream must be non-empty"
-        }
-        finally {
-            if ($icoStream) { $icoStream.Dispose() }
-        }
     }
 }
 
@@ -247,43 +220,23 @@ Describe "Smoke Test Suite: Release Notes" {
 }
 
 Describe "Smoke Test Suite: Process & CLI Argument Execution" {
-    It "Invokes Deskmate CLI --notify without parameters and captures expected exit code" {
-        $cli = Find-DeskmateCliBinary
-        Assert-NotNull $cli "Deskmate CLI binary path resolved"
+    It "Invokes Deskmate.exe --notify without parameters and captures expected exit code" {
+        $binPath = Find-DeskmateBinary
+        Assert-NotNull $binPath "Deskmate.exe binary path resolved"
 
         $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-        $pinfo.FileName = $cli.FileName
-        $prefix = if ($cli.PrefixArgs -and $cli.PrefixArgs.Count -gt 0) {
-            (($cli.PrefixArgs | ForEach-Object { '"' + $_ + '"' }) -join " ") + " "
-        } else { "" }
-        $pinfo.Arguments = $prefix + "--notify"
+        $pinfo.FileName = $binPath
+        $pinfo.Arguments = "--notify"
         $pinfo.UseShellExecute = $false
         $pinfo.CreateNoWindow = $true
         $pinfo.RedirectStandardOutput = $true
         $pinfo.RedirectStandardError = $true
 
         $proc = [System.Diagnostics.Process]::Start($pinfo)
-        try {
-            $errTask = $proc.StandardError.ReadToEndAsync()
-            [void]$proc.StandardOutput.ReadToEnd()
-            [void]$errTask.GetAwaiter().GetResult()
-            [void]$proc.WaitForExit(5000)
+        [void]$proc.WaitForExit(5000)
 
-            Assert-True $proc.HasExited "Process must exit within 5 seconds"
-            # Code 2 indicates missing mandatory arguments in Plugin.cs:63-83
-            Assert-Equal $proc.ExitCode 2 "Deskmate CLI --notify without parameters must exit with code 2"
-        }
-        finally {
-            $proc.Dispose()
-        }
-    }
-}
-}
-finally {
-    if ($script:smokeOwnedTmp) {
-        $env:DESKMATE_DIR = $script:smokePrevDir
-        $env:DESKMATE_HOME = $script:smokePrevHome
-        $env:DESKMATE_DOCK_DRY = $script:smokePrevDry
-        Remove-Item -LiteralPath $script:smokeOwnedTmp -Recurse -Force -ErrorAction SilentlyContinue
+        Assert-True $proc.HasExited "Process must exit within 5 seconds"
+        # Code 2 indicates missing mandatory arguments in Plugin.cs:63-83
+        Assert-Equal $proc.ExitCode 2 "Deskmate.exe --notify without parameters must exit with code 2"
     }
 }
