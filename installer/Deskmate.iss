@@ -6,9 +6,13 @@
   #define SourceExe AddBackslash(SourcePath) + "..\Deskmate.exe"
 #endif
 #define AppVersion GetVersionNumbersString(SourceExe)
+; Test builds pass their own /DAppGuid so they never replace the real install's Apps entry
+#ifndef AppGuid
+  #define AppGuid "4AAF7005-4904-4C42-83E7-288DF10790FE"
+#endif
 
 [Setup]
-AppId={{4AAF7005-4904-4C42-83E7-288DF10790FE}
+AppId={{{#AppGuid}}
 AppName=Deskmate
 AppVersion={#AppVersion}
 AppVerName=Deskmate {#AppVersion}
@@ -110,6 +114,12 @@ en.PurgeData=Also delete Deskmate's data (settings, notes, Ingatan, pets) in:%n%
 [Tasks]
 Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
 
+[InstallDelete]
+; Updates overwrite in place: no backups of replaced builds are kept
+Type: files; Name: "{app}\Deskmate.new.exe"
+Type: files; Name: "{app}\Deskmate.old.exe"
+Type: files; Name: "{app}\Deskmate.previous-*.exe"
+
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "Deskmate.exe"; Flags: ignoreversion
 
@@ -123,9 +133,10 @@ Filename: "{app}\Deskmate.exe"; Parameters: "--adopt"; StatusMsg: "{cm:Adopting}
 Filename: "{app}\Deskmate.exe"; Description: "{cm:Launch}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; Updater leftovers beside the exe
+; Updater leftovers and backups of replaced builds beside the exe
 Type: files; Name: "{app}\Deskmate.new.exe"
 Type: files; Name: "{app}\Deskmate.old.exe"
+Type: files; Name: "{app}\Deskmate.previous-*.exe"
 Type: dirifempty; Name: "{app}"
 
 [Code]

@@ -157,16 +157,15 @@ namespace Deskmate
             }
         }
 
-        // Leftover from the previous version
+        // Leftovers from the previous version; updates overwrite, so no backups are kept
         static void CleanUpdate()
         {
             string dir = Path.GetDirectoryName(Application.ExecutablePath);
-            foreach (var name in new[] { "Deskmate.old.exe", "Deskmate.new.exe" })
-                try
-                {
-                    string leftover = Path.Combine(dir, name);
-                    if (File.Exists(leftover)) File.Delete(leftover);
-                }
+            var leftovers = new List<string> { Path.Combine(dir, "Deskmate.old.exe"), Path.Combine(dir, "Deskmate.new.exe") };
+            try { leftovers.AddRange(Directory.GetFiles(dir, "Deskmate.previous-*.exe")); }
+            catch (Exception ex) { Log.Write("update cleanup: " + ex.Message); }
+            foreach (var leftover in leftovers)
+                try { if (File.Exists(leftover)) File.Delete(leftover); }
                 catch (Exception ex) { Log.Write("update cleanup: " + ex.Message); }
         }
     }
