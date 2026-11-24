@@ -37,6 +37,14 @@ namespace Deskmate
             return true;
         }
 
+        // Ours in any profile, even with another copy's path
+        public static bool Linked()
+        {
+            foreach (var dir in HookSetup.Profiles())
+                if (IsOurs(HookSetup.Get(HookSetup.Load(Path.Combine(dir, "settings.json")), "statusLine"))) return true;
+            return false;
+        }
+
         public static string Install()
         {
             // Bash would expand these inside quotes

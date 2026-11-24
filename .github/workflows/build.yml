@@ -26,11 +26,20 @@ jobs:
       - name: Feature regression checks
         shell: powershell
         run: .\tests\run_feature_checks.ps1
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - name: Build per-user installer
+        shell: cmd
+        run: build-installer.cmd "%CD%\Deskmate.exe"
       - name: SHA-256
         shell: pwsh
-        run: (Get-FileHash Deskmate.exe -Algorithm SHA256).Hash
+        run: Get-FileHash Deskmate.exe, release\Deskmate-Setup.exe -Algorithm SHA256 | Format-Table Hash, Path -AutoSize
       - uses: actions/upload-artifact@v7
         with:
           name: Deskmate
-          path: Deskmate.exe
+          path: |
+            Deskmate.exe
+            release/Deskmate-Setup.exe
           if-no-files-found: error

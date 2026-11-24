@@ -19,6 +19,10 @@ namespace Deskmate
             // Ingatan: the memory service, and its MCP face for other assistants
             if (args.Length > 0 && args[0] == "--ingat") return IngatService.Run(args);
             if (args.Length > 0 && args[0] == "--mcp") return IngatMcp.Run(args);
+            // Installer: close, take over, let go
+            if (args.Length > 0 && args[0] == "--quit") return Lifecycle.Quit(args);
+            if (args.Length > 0 && args[0] == "--adopt") return Lifecycle.Adopt(args);
+            if (args.Length > 0 && args[0] == "--uninstall") return Lifecycle.Uninstall(args);
             return RunIsland();
         }
 

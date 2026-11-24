@@ -4,9 +4,11 @@
 
 Dynamic island dan dock untuk Windows. Lihat musik, notifikasi, jadwal, dan tugas dari desktop.
 
-[**Unduh Deskmate.exe**](https://github.com/movlution/deskmate/releases/latest/download/Deskmate.exe) · [Catatan rilis](https://github.com/movlution/deskmate/releases/latest)
+[**Unduh installer**](https://github.com/movlution/deskmate/releases/latest/download/Deskmate-Setup.exe) · [EXE portable](https://github.com/movlution/deskmate/releases/latest/download/Deskmate.exe) · [Catatan rilis](https://github.com/movlution/deskmate/releases/latest)
 
-Jalankan EXE, lalu arahkan kursor ke island di tepi atas layar. Mendukung Windows 10 versi 2004 ke atas dan Windows 11 (64-bit).
+Jalankan installer, lalu arahkan kursor ke island di tepi atas layar. Mendukung Windows 10 versi 2004 ke atas dan Windows 11 (64-bit).
+
+Installer memasang Deskmate untuk akun Anda saja di `%LOCALAPPDATA%\Programs\Deskmate`, tanpa izin admin, dan update di dalam aplikasi tetap berjalan. Copot lewat **Settings → Apps**: hook agent, statusline, dan autostart ikut dibersihkan, dan Anda bisa memilih menyimpan atau menghapus data di `%APPDATA%\Deskmate`. Versi portable tetap bisa dipakai; jangan hapus EXE-nya sebelum menutup Deskmate dan menjalankan `Deskmate.exe --uninstall`.
 
 ## Fitur utama
 
@@ -21,7 +23,7 @@ Jalankan EXE, lalu arahkan kursor ke island di tepi atas layar. Mendukung Window
 
 ## Build sendiri
 
-Butuh Windows 10/11 64-bit dan .NET Framework 4.8. Jalankan `build.cmd` untuk menghasilkan `Deskmate.exe`.
+Butuh Windows 10/11 64-bit dan .NET Framework 4.8. Jalankan `build.cmd` untuk menghasilkan `Deskmate.exe`. Untuk installer, pasang Inno Setup 6 (`winget install JRSoftware.InnoSetup`) lalu jalankan `build-installer.cmd`; hasilnya `release\Deskmate-Setup.exe`.
 
 ## Struktur
 
@@ -29,6 +31,7 @@ Butuh Windows 10/11 64-bit dan .NET Framework 4.8. Jalankan `build.cmd` untuk me
 - `tests/` — harness E2E PowerShell, suite tier 1–4, dan pemeriksaan ad-hoc.
 - `docs/` — panduan fitur, pengaturan, integrasi, dan privasi.
 - `build.cmd` — kompilasi dengan `csc` bawaan Windows.
+- `installer/Deskmate.iss`, `build-installer.cmd` — installer per-user (Inno Setup 6); `src/Lifecycle.cs` berisi `--quit`, `--adopt`, dan `--uninstall` yang dipanggil installer.
 - `TEST_INFRA.md` — spesifikasi harness pengujian.
 
 Inti island dipecah menjadi beberapa partial class:
