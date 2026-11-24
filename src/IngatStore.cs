@@ -125,6 +125,29 @@ namespace Deskmate
             db.Tx(() => TouchTx(id, t, title, url, text, snap));
         }
 
+        // Still on the same thing with nothing new to merge: only the end time moves. SQLite rewrites the
+        // whole record on any UPDATE, 12 KB body overflow pages included, so the open episode's end is
+        // saved at most every EndSeconds; Close writes the exact end, CloseStale covers a crash.
+        const double EndSeconds = 30;
+        long endId;
+        DateTime endSavedUtc;
+
+        public void TouchEnd(long id, DateTime t)
+        {
+            lock (db.Gate)
+            {
+                if (id == endId && (DateTime.UtcNow - endSavedUtc).TotalSeconds < EndSeconds) return;
+                db.Exec("UPDATE episodes SET end=? WHERE id=?", t, id);
+                EndSaved(id);
+            }
+        }
+
+        void EndSaved(long id)
+        {
+            endId = id;
+            endSavedUtc = DateTime.UtcNow;
+        }
+
         void TouchTx(long id, DateTime t, string title, string url, string text, IngatSnapshot snap)
         {
             var rows = db.Query("SELECT body, kind, context, exe, title, url FROM episodes WHERE id=?", id);
@@ -151,8 +174,17 @@ namespace Deskmate
                 else if (nextKind.Length == 0) nextKind = guessed;
             }
 
+            string nextCtx = ctx.Encode();
+            // A reread that found only what the episode already holds: nothing to rewrite but the end time
+            if (body == IngatDb.Str(rows[0][0]) && nextCtx == rawCtx && nextKind == curKind &&
+                effTitle == IngatDb.Str(rows[0][4]) && effUrl == IngatDb.Str(rows[0][5]))
+            {
+                TouchEnd(id, t);
+                return;
+            }
             db.Exec("UPDATE episodes SET end=?, title=CASE WHEN ?<>'' THEN ? ELSE title END, url=CASE WHEN ?<>'' THEN ? ELSE url END, kind=?, body=?, context=? WHERE id=?",
-                t, title ?? "", title ?? "", url ?? "", url ?? "", nextKind, body, ctx.Encode(), id);
+                t, title ?? "", title ?? "", url ?? "", url ?? "", nextKind, body, nextCtx, id);
+            lock (db.Gate) EndSaved(id);
             // The open episode must be findable too, not only once it closes: reindexed at most every
             // ReindexSeconds while it grows, and always before a search reads the index
             MarkDirty(id);

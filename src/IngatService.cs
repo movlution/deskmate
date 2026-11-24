@@ -398,10 +398,15 @@ namespace Deskmate
                 else if (!read && look && !Fullscreen(hwnd))
                 {
                     lastLookUtc = now;
-                    shot = IngatText.Snap(hwnd);
-                    if (shot != null)
+                    // Foreground window: fingerprint straight off the screen; full PrintWindow only when it is behind something
+                    var st = IngatText.ScreenStamp(hwnd);
+                    if (!st.Valid)
                     {
-                        var st = IngatText.Stamp(shot);
+                        shot = IngatText.Snap(hwnd);
+                        if (shot != null) st = IngatText.Stamp(shot);
+                    }
+                    if (st.Valid)
+                    {
                         // First look after a read without a screenshot only sets the baseline
                         if (stampStale) { lastStamp = st; stampStale = false; }
                         else if (IngatText.Changed(lastStamp, st)) read = true;
@@ -437,8 +442,7 @@ namespace Deskmate
                             }
                         }
                     }
-                    if (shot != null) { lastStamp = IngatText.Stamp(shot); stampStale = false; }
-                    else stampStale = true;
+                    Rebase(hwnd, shot);
                     lastReadUtc = lastLookUtc = now;
                     Interlocked.Exchange(ref lastReadTicks, DateTime.UtcNow.Ticks);
                     read = false;
@@ -477,8 +481,7 @@ namespace Deskmate
                             }
                         }
                     }
-                    if (shot != null) { lastStamp = IngatText.Stamp(shot); stampStale = false; }
-                    else stampStale = true;
+                    Rebase(hwnd, shot);
                     lastReadUtc = lastLookUtc = now;
                     Interlocked.Exchange(ref lastReadTicks, DateTime.UtcNow.Ticks);
                 }
@@ -545,10 +548,17 @@ namespace Deskmate
                     current = Store.Get(id);
                     currentKey = key;
                 }
-                Store.Touch(current.Id, now, cleanTitle, url, text, snap != null && !snap.Secret ? snap : null);
-                if (text.Length > 0 || titleChanged || newWindow) Store.AddEvent(now, current.Id, source, app, cleanTitle, url, text);
-                TrackDraft(now, hwnd, field, draft, app, channel, conversation, cleanTitle, url);
-                current = Store.Get(current.Id) ?? current;
+                // Most looks see nothing new: same episode, title and URL, no text read. Only the end time moves then;
+                // the full Touch (body merge, context re-encode, row rewrite) would write back what is already there.
+                bool unchanged = join && !newWindow && !titleChanged && text.Length == 0 && snap == null && url == current.Url;
+                if (unchanged) Store.TouchEnd(current.Id, now);
+                else
+                {
+                    Store.Touch(current.Id, now, cleanTitle, url, text, snap != null && !snap.Secret ? snap : null);
+                    if (text.Length > 0 || titleChanged || newWindow) Store.AddEvent(now, current.Id, source, app, cleanTitle, url, text);
+                }
+                bool drafted = TrackDraft(now, hwnd, field, draft, app, channel, conversation, cleanTitle, url);
+                if (!unchanged || drafted) current = Store.Get(current.Id) ?? current;
                 current.EndUtc = now;
                 if (snap != null)
                 {
@@ -582,8 +592,10 @@ namespace Deskmate
         Dictionary<string, object> composing;
         DateTime composingSinceUtc;
 
-        void TrackDraft(DateTime now, IntPtr hwnd, string field, string draft, string app, string channel, string conversation, string title, string url)
+        // True when the episode row itself changed (a sent message went into its body)
+        bool TrackDraft(DateTime now, IntPtr hwnd, string field, string draft, string app, string channel, string conversation, string title, string url)
         {
+            bool touched = false;
             string d = draft ?? "";
             // Same window, same box, same tab or chat: anything else emptying is a switch, not a send
             bool sameField = hwnd == lastDraftHwnd && field.Length > 0 && field == lastDraftField && title == lastDraftTitle;
@@ -592,6 +604,7 @@ namespace Deskmate
                 // The text left the box: in a chat that means it was sent
                 Store.AddEvent(now, current.Id, channel.Length > 0 ? "sent" : "typed", app, title, url, lastDraft);
                 Store.Touch(current.Id, now, "", "", (channel.Length > 0 ? "Aku menulis: " : "") + lastDraft);
+                touched = true;
                 if (channel == "chat" && conversation.Length > 0)
                 {
                     long conv = Store.FindConversation(app, conversation);
@@ -621,6 +634,16 @@ namespace Deskmate
             lastDraftHwnd = hwnd;
             lastDraftField = field;
             lastDraftTitle = title;
+            return touched;
+        }
+
+        // Stamp baseline after a read: off the screen when the window is in front, else from the shot already taken
+        void Rebase(IntPtr hwnd, Bitmap shot)
+        {
+            var st = IngatText.ScreenStamp(hwnd);
+            if (!st.Valid && shot != null) st = IngatText.Stamp(shot);
+            if (st.Valid) { lastStamp = st; stampStale = false; }
+            else stampStale = true;
         }
 
         public Dictionary<string, object> ComposingNow()
