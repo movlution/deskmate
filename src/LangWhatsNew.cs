@@ -8,6 +8,11 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.13.1
+            en.Add("Incognito Chrome dilewati", "Chrome Incognito is skipped");
+            en.Add("Ingatan kini mengenali jendela Incognito dan Tamu di Chrome, yang judulnya tidak menyebut mode itu, dan tidak mencatatnya.", "Memory now recognizes Chrome Incognito and Guest windows, whose titles don't mention the mode, and doesn't record them.");
+            en.Add("Lupakan benar-benar lupa", "Forget really forgets");
+            en.Add("Rapat yang dilupakan tidak muncul lagi, dan layar yang sedang terbuka ikut dilupakan bila masuk rentangnya.", "Forgotten meetings no longer come back, and the screen that is open now is forgotten too when it falls in the range.");
             // What's new 2.13.0
             en.Add("Geser island dengan mouse", "Drag the island with the mouse");
             en.Add("Seret island ke mana pun di sepanjang tepi layar; posisinya tersimpan saat dilepas. Bisa dimatikan di Pengaturan › Island › Posisi.", "Drag the island anywhere along the screen edge; it stays where you let go. Turn it off in Settings › Island › Position.");

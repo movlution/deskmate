@@ -20,6 +20,15 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.13.1",
+                Items = new[]
+                {
+                    new[] { "Incognito Chrome dilewati", "Ingatan kini mengenali jendela Incognito dan Tamu di Chrome, yang judulnya tidak menyebut mode itu, dan tidak mencatatnya.", "" },
+                    new[] { "Lupakan benar-benar lupa", "Rapat yang dilupakan tidak muncul lagi, dan layar yang sedang terbuka ikut dilupakan bila masuk rentangnya.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.13.0",
                 Items = new[]
                 {
