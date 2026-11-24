@@ -20,6 +20,16 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.14.0",
+                Items = new[]
+                {
+                    new[] { "AI tanpa kunci API", "Pakai Codex CLI atau Claude Code yang sudah masuk di laptop ini sebagai layanan AI, lengkap dengan alat Deskmate: pengingat, timer, tugas, dan Ingatan.", "" },
+                    new[] { "Pilih model dari daftar", "Tombol Pilih di Pengaturan › AI mengambil daftar model dari layanannya, lengkap dengan pencarian.", "" },
+                    new[] { "Ingatan lebih cepat dan tahan lama", "Pencarian menemukan lebih banyak, dan fakta jangka panjang berubah sedikit demi sedikit tanpa tertimpa jawaban AI yang keliru.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.13.1",
                 Items = new[]
                 {

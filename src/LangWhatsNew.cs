@@ -8,6 +8,13 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.14.0
+            en.Add("AI tanpa kunci API", "AI without an API key");
+            en.Add("Pakai Codex CLI atau Claude Code yang sudah masuk di laptop ini sebagai layanan AI, lengkap dengan alat Deskmate: pengingat, timer, tugas, dan Ingatan.", "Use the Codex CLI or Claude Code already signed in on this laptop as your AI provider, with Deskmate's tools: reminders, timers, tasks, and Memory.");
+            en.Add("Pilih model dari daftar", "Pick the model from a list");
+            en.Add("Tombol Pilih di Pengaturan › AI mengambil daftar model dari layanannya, lengkap dengan pencarian.", "The Select button in Settings › AI fetches the provider's model list, with search.");
+            en.Add("Ingatan lebih cepat dan tahan lama", "Faster, longer-lasting Memory");
+            en.Add("Pencarian menemukan lebih banyak, dan fakta jangka panjang berubah sedikit demi sedikit tanpa tertimpa jawaban AI yang keliru.", "Search finds more, and long-term facts change a little at a time instead of being overwritten by a wrong AI answer.");
             // What's new 2.13.1
             en.Add("Incognito Chrome dilewati", "Chrome Incognito is skipped");
             en.Add("Ingatan kini mengenali jendela Incognito dan Tamu di Chrome, yang judulnya tidak menyebut mode itu, dan tidak mencatatnya.", "Memory now recognizes Chrome Incognito and Guest windows, whose titles don't mention the mode, and doesn't record them.");
