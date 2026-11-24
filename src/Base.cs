@@ -109,15 +109,23 @@ namespace Deskmate
 
         public void Load()
         {
-            lock (values) LoadLocked();
+            // Parse outside the lock into a scratch map, then swap in atomically: concurrent readers never see a half-loaded or cleared state, and a failed read keeps the old values
+            var fresh = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (!ParseInto(fresh)) return;
+            string banner;
+            if (fresh.TryGetValue("notif.banner", out banner) && banner == "tepi") fresh["notif.banner"] = "deskmate";
+            lock (values)
+            {
+                values.Clear();
+                foreach (var kv in fresh) values[kv.Key] = kv.Value;
+            }
         }
 
-        void LoadLocked()
+        bool ParseInto(Dictionary<string, string> values)
         {
-            values.Clear();
             try
             {
-                if (!File.Exists(FilePath)) return;
+                if (!File.Exists(FilePath)) return true;
                 // Shared read; saves may replace it
                 using (var fs = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                 using (var sr = new StreamReader(fs, Encoding.UTF8))
@@ -132,9 +140,8 @@ namespace Deskmate
                     }
                 }
             }
-            catch (Exception ex) { Log.Write("settings load: " + ex.Message); }
-            string banner;
-            if (values.TryGetValue("notif.banner", out banner) && banner == "tepi") values["notif.banner"] = "deskmate";
+            catch (Exception ex) { Log.Write("settings load: " + ex.Message); return false; }
+            return true;
         }
 
         public void Save()
