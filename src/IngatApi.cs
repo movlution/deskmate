@@ -114,6 +114,7 @@ namespace Deskmate
                 case "GET /status":
                     var st = store.Stats();
                     st["state"] = svc.State;
+                    st["live"] = svc.LiveFocus();
                     st["paused"] = svc.Paused;
                     st["thinking"] = svc.Brain.Thinking;
                     st["embedModel"] = svc.Brain.EmbedModel;
@@ -123,13 +124,21 @@ namespace Deskmate
                     try { using (var self = System.Diagnostics.Process.GetCurrentProcess()) st["privateMb"] = (int)(self.PrivateMemorySize64 / 1048576); } catch (Exception) { }
                     return st;
                 case "GET /now":
+                    if (Get(q, "fresh") != "0") svc.EnsureFresh(750);
                     return svc.Now();
+                case "GET /context":
+                    return svc.ContextNow(Clamp(Get(q, "recent"), 6, 1, 20));
                 case "GET /search":
                 {
+                    svc.EnsureFresh(650);
                     DateTime from, to;
                     Span(q, out from, out to);
                     var hits = svc.Brain.Search(Get(q, "q"), from, to, Clamp(Get(q, "limit"), 10, 1, 40));
-                    return new Dictionary<string, object> { { "results", Jsons(hits, Get(q, "text") == "1") } };
+                    return new Dictionary<string, object>
+                    {
+                        { "results", Jsons(hits, Get(q, "text") == "1") },
+                        { "structured", IngatStructure.GroupTimeline(hits) },
+                    };
                 }
                 case "GET /timeline":
                 {
@@ -140,6 +149,7 @@ namespace Deskmate
                     {
                         { "date", day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) },
                         { "recap", store.Daily(day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)) },
+                        { "structured", IngatStructure.GroupTimeline(eps) },
                         { "episodes", Jsons(eps, false) },
                     };
                 }
@@ -225,9 +235,11 @@ namespace Deskmate
                 case "GET /facts":
                     return new Dictionary<string, object> { { "facts", store.Facts().ToArray() } };
                 case "POST /ask":
-                    return svc.Brain.Ask(Fmt.OneLine(Json.Str(body, "q"), 500));
+                    svc.EnsureFresh(900);
+                    return svc.Brain.Ask(Fmt.OneLine(Json.Str(body, "q"), 500), svc.Now());
                 case "POST /chat":
                 {
+                    svc.EnsureFresh(900);
                     var history = new List<KeyValuePair<string, string>>();
                     foreach (var o in Json.Arr(body, "history"))
                     {
@@ -355,15 +367,32 @@ namespace Deskmate
             return true;
         }
 
-        // Null when the service is off or did not answer
+        // Null when the service is off or did not answer; briefly waits if the service process just acquired its mutex
         public static Dictionary<string, object> Call(string method, string path, object body, int timeoutMs)
         {
-            string b, token;
-            if (!Running() || !Endpoint(out b, out token)) return null;
-            var r = Web.Send(method, b + path, new Dictionary<string, string> { { "X-Deskmate-Token", token } }, body == null ? null : Json.Encode(body), timeoutMs);
-            if (r.Status == 0) { readUtc = DateTime.MinValue; return null; }
-            try { return Json.Parse(r.Body) as Dictionary<string, object>; }
-            catch (ArgumentException) { return null; }
+            if (!Running()) return null;
+            string payload = body == null ? null : Json.Encode(body);
+            var bootWait = System.Diagnostics.Stopwatch.StartNew();
+            int maxBootMs = Math.Min(Math.Max(120, timeoutMs / 2), 900);
+            while (true)
+            {
+                string b, token;
+                if (Endpoint(out b, out token))
+                {
+                    int left = Math.Max(200, timeoutMs - (int)bootWait.ElapsedMilliseconds);
+                    var r = Web.Send(method, b + path, new Dictionary<string, string> { { "X-Deskmate-Token", token } }, payload, left);
+                    if (r.Status != 0)
+                    {
+                        try { return Json.Parse(r.Body) as Dictionary<string, object>; }
+                        catch (ArgumentException) { return null; }
+                    }
+                    readUtc = DateTime.MinValue;
+                }
+                else readUtc = DateTime.MinValue;
+
+                if (bootWait.ElapsedMilliseconds >= maxBootMs || !Running()) return null;
+                Thread.Sleep(80);
+            }
         }
 
         public static Dictionary<string, object> Get(string path, int timeoutMs) { return Call("GET", path, null, timeoutMs); }

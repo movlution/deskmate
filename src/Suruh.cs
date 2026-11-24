@@ -323,8 +323,8 @@ namespace Deskmate
                 Fn("add_note", "Save a quick note.", new Dictionary<string, object> { { "text", P("string", "Note text") } }, new[] { "text" }),
                 Fn("read_deskmate", "Read Deskmate data only when relevant to the current question. Call once per relevant section. Do not combine reads with actions.", new Dictionary<string, object>
                 {
-                    { "section", P("string", "tasks, notes, schedule, reminders, timer, media, shelf, clipboard, messages, or activity (Ingatan: the user's recorded computer activity, for questions about what they did, saw, read, or discussed earlier)") },
-                    { "query", P("string", "Optional title or text filter. Omit for an overview. For activity: the user's question about their past activity, with any time words.") },
+                    { "section", P("string", "tasks, notes, schedule, reminders, timer, media, shelf, clipboard, messages, or activity (Ingatan: live on-screen context and recorded computer activity, for questions about what is on screen right now or what the user did, saw, read, or discussed)") },
+                    { "query", P("string", "Optional title or text filter. Omit for an overview. For activity: the user's question about their current screen or past activity, with any time words.") },
                 }, new[] { "section" }),
                 Fn("open_deskmate", "Open a Deskmate feature on explicit request.", new Dictionary<string, object>
                 {

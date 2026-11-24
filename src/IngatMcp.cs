@@ -102,13 +102,15 @@ namespace Deskmate
                         { "limit", P("integer", "Maximum results, 1-40 (default 10)") },
                         { "include_text", P("boolean", "Include captured screen text excerpts") },
                     }, new[] { "query" }),
-                Tool("ask_memory", "Ask a natural-language question about the user's past activity; Deskmate answers from its memory with the moments it used.",
-                    new Dictionary<string, object> { { "question", P("string", "The question, e.g. 'what was I debugging yesterday afternoon?'") } }, new[] { "question" }),
-                Tool("get_timeline", "List the user's activity episodes for one day, with the day recap when available.",
+                Tool("ask_memory", "Ask a natural-language question about the user's current screen or past activity; Deskmate answers from its live context and memory with the structured moments it used.",
+                    new Dictionary<string, object> { { "question", P("string", "The question, e.g. 'what am I looking at right now?' or 'what was I debugging yesterday afternoon?'") } }, new[] { "question" }),
+                Tool("get_timeline", "List the user's activity episodes for one day, with structured project/category breakdown and day recap when available.",
                     new Dictionary<string, object> { { "date", P("string", "Local date yyyy-MM-dd (default today)") } }, new string[0]),
-                Tool("current_context", "What the user is working on right now: current app, window, project, and how long they have been at it.",
+                Tool("current_context", "What the user is working on right now: live structured screen snapshot (focus, headings, anchors, excerpt), active episode trail, and streak minutes.",
                     new Dictionary<string, object>(), new string[0]),
-                Tool("get_episode", "Full detail of one activity episode by id, including captured text.",
+                Tool("get_screen_context", "Capture and return the full structured workspace context right now: live screen regions, active episode steps, recent episodes, and today's project breakdown.",
+                    new Dictionary<string, object> { { "recent", P("integer", "How many recent episodes to include, 1-20 (default 6)") } }, new string[0]),
+                Tool("get_episode", "Full detail of one activity episode by id, including structured steps, anchors, points, and captured text.",
                     new Dictionary<string, object> { { "id", P("integer", "Episode id from another tool") } }, new[] { "id" }),
                 Tool("list_meetings", "Recorded meetings (transcribed calls) in the last N days.",
                     new Dictionary<string, object> { { "days", P("integer", "How many days back (default 14)") } }, new string[0]),
@@ -152,6 +154,9 @@ namespace Deskmate
                     break;
                 case "current_context":
                     r = IngatClient.Get("/now", 10000);
+                    break;
+                case "get_screen_context":
+                    r = IngatClient.Get("/context?recent=" + ((int)Json.Num(a, "recent", 6)).ToString(CultureInfo.InvariantCulture), 10000);
                     break;
                 case "get_episode":
                     r = IngatClient.Get("/episode?id=" + ((long)Json.Num(a, "id", 0)).ToString(CultureInfo.InvariantCulture), 10000);

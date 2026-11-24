@@ -109,7 +109,7 @@ namespace Deskmate
                 string line = null;
                 try
                 {
-                    var now = IngatClient.Get("/now", 5000);
+                    var now = IngatClient.Get("/now?fresh=0", 5000);
                     if (now == null) return;
                     if (wantRecap && Json.Str(now, "state") == "on")
                     {
@@ -159,7 +159,7 @@ namespace Deskmate
 
         void IngatAssistTick(DateTime now)
         {
-            if ((now - ingatAssistUtc).TotalSeconds < 4 || ingatAssistBusy) return;
+            if ((now - ingatAssistUtc).TotalSeconds < 2.5 || ingatAssistBusy) return;
             ingatAssistUtc = now;
             if (!IngatOn || !settings.GetBool("ingat.assist", true) || !settings.GetBool("ingat.chat", true) || pet == null || pet.IsDisposed || !pet.CanShowBubble) return;
             ingatAssistBusy = true;
@@ -220,7 +220,14 @@ namespace Deskmate
             if (!IngatClient.Running()) return new { status = "Ingatan is off. The user can turn it on in Settings › Ingatan." };
             var r = IngatClient.Call("POST", "/ask", new Dictionary<string, object> { { "q", query.Length > 0 ? query : "apa yang saya kerjakan hari ini?" } }, 120000);
             if (r == null) return new { status = "Ingatan did not answer" };
-            return new { answer = Json.Str(r, "answer"), moments = Json.Arr(r, "sources") };
+            return new
+            {
+                answer = Json.Str(r, "answer"),
+                screen = Json.Obj(r, "screen"),
+                active = Json.Obj(r, "active"),
+                moments = Json.Arr(r, "sources"),
+                structured = Json.Obj(r, "structured"),
+            };
         }
     }
 }

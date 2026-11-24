@@ -124,6 +124,13 @@ namespace Deskmate
                         double mb = Json.Num(st, "bytes", 0) / 1048576.0;
                         text = mode + " · " + Lang.F("{0} episode", Json.Str(st, "episodes")) + " · " + Lang.F("{0} rapat", Json.Str(st, "meetings")) + " · " +
                                mb.ToString("0.0", CultureInfo.InvariantCulture) + " MB" + " · RAM " + Json.Str(st, "privateMb") + " MB";
+                        var live = Json.Obj(st, "live");
+                        if (live != null && state == "on")
+                        {
+                            string at = Json.Str(live, "app"), fo = Fmt.OneLine(Json.Str(live, "focus"), 50);
+                            if (fo.Length == 0) fo = Fmt.OneLine(Json.Str(live, "title"), 50);
+                            if (at.Length > 0) text = Lang.F("Sekarang: {0}", at + (fo.Length > 0 ? " › " + fo : "")) + " · " + text;
+                        }
                     }
                     try { BeginInvoke(new Action(delegate { if (IsDisposed) return; row.Detail = text; row.Invalidate(); })); } catch (Exception) { }
                 });

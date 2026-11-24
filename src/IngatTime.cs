@@ -11,16 +11,34 @@ namespace Deskmate
         static readonly HashSet<string> stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             // Indonesian
-            "apa", "yang", "saya", "aku", "kamu", "tadi", "kemarin", "lusa", "hari", "ini", "itu", "pagi", "siang", "sore", "malam", "minggu", "bulan", "lalu", "kapan",
-            "di", "ke", "dari", "dan", "atau", "untuk", "dengan", "soal", "tentang", "mengenai", "sedang", "lagi", "sudah", "pernah", "baca", "buka", "kerja", "kerjakan",
-            "dikerjakan", "lakukan", "dilakukan", "mana", "siapa", "berapa", "ada", "tidak", "bisa", "jam", "pukul", "terakhir", "barusan", "dong", "ya", "sih", "nih", "kok",
+            "apa", "yang", "saya", "aku", "kamu", "gue", "gw", "tadi", "kemarin", "lusa", "hari", "ini", "itu", "pagi", "siang", "sore", "malam",
+            "minggu", "bulan", "lalu", "kapan", "sekarang", "saat", "baru", "saja", "barusan", "terakhir", "selama", "semua", "sama",
+            "di", "ke", "dari", "dan", "atau", "untuk", "buat", "dengan", "soal", "tentang", "mengenai", "sedang", "lagi", "sudah", "pernah",
+            "baca", "kubaca", "dibaca", "buka", "kubuka", "dibuka", "membuka", "kerja", "kerjakan", "kukerjakan", "dikerjakan", "mengerjakan",
+            "lakukan", "kulakukan", "dilakukan", "ngapain", "lihat", "kulihat", "dilihat", "melihat", "tampil", "terlihat", "jelaskan", "ceritakan",
+            "rangkum", "rangkuman", "ringkas", "ringkasan", "rekap", "aktivitas", "kegiatan", "konteks", "memori", "ingatan",
+            "layar", "jendela", "aplikasi", "halaman", "mana", "siapa", "berapa", "ada", "tidak", "bisa", "jam", "menit", "mnt", "detik", "pukul",
+            "dong", "ya", "sih", "nih", "kok",
             // English
-            "what", "which", "the", "a", "an", "i", "me", "my", "you", "did", "do", "was", "were", "is", "are", "today", "yesterday", "this", "that", "morning", "afternoon",
-            "evening", "night", "week", "month", "last", "ago", "when", "about", "on", "in", "at", "to", "of", "for", "and", "or", "with", "read", "open", "opened", "work",
-            "worked", "working", "doing", "earlier", "recently", "have", "has", "been",
+            "what", "which", "the", "a", "an", "i", "im", "am", "me", "my", "you", "did", "do", "does", "was", "were", "is", "are",
+            "today", "yesterday", "this", "that", "morning", "afternoon", "evening", "night", "week", "month", "last", "ago", "when",
+            "now", "right", "just", "current", "currently", "earlier", "recently", "have", "has", "been", "all",
+            "about", "on", "in", "at", "to", "of", "for", "and", "or", "with", "from",
+            "read", "reading", "open", "opened", "opening", "work", "worked", "working", "doing", "look", "looking", "see", "seeing", "saw", "shown", "showing",
+            "summarize", "summary", "recap", "explain", "activity", "activities", "context", "memory",
+            "screen", "window", "app", "application", "page", "minutes", "minute", "mins", "min", "hours", "hour", "days", "day",
         };
 
+        static readonly Regex SpanWordsRx = new Regex(
+            @"\b\d+\s*(menit|mnt|minutes?|mins?|jam|hours?|hrs?|hari|days?)\s*(terakhir|yang lalu|lalu|ago|last)?\b",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
         public static bool Stop(string w) { return stop.Contains(w); }
+
+        public static string StripSpans(string q)
+        {
+            return string.IsNullOrEmpty(q) ? "" : SpanWordsRx.Replace(q, " ");
+        }
 
         // Null range: no time named, search everything
         public static bool Range(string q, DateTime nowLocal, out DateTime fromLocal, out DateTime toLocal)
@@ -43,7 +61,10 @@ namespace Deskmate
             if (has("bulan lalu") || has("last month")) { var first = new DateTime(today.Year, today.Month, 1); fromLocal = first.AddMonths(-1); toLocal = first; return true; }
             if (has("bulan ini") || has("this month")) { fromLocal = new DateTime(today.Year, today.Month, 1); toLocal = nowLocal; return true; }
 
-            var hours = Regex.Match(s, "(\\d+)\\s*(jam|hours?)\\s*(terakhir|lalu|yang lalu|ago|last)?");
+            var mins = Regex.Match(s, "(\\d+)\\s*(menit|mnt|minutes?|mins?)\\s*(terakhir|lalu|yang lalu|ago|last)?");
+            if (mins.Success && day == DateTime.MinValue) { fromLocal = nowLocal.AddMinutes(-int.Parse(mins.Groups[1].Value, CultureInfo.InvariantCulture)); toLocal = nowLocal; return true; }
+
+            var hours = Regex.Match(s, "(\\d+)\\s*(jam|hours?|hrs?)\\s*(terakhir|lalu|yang lalu|ago|last)?");
             if (hours.Success && day == DateTime.MinValue) { fromLocal = nowLocal.AddHours(-int.Parse(hours.Groups[1].Value, CultureInfo.InvariantCulture)); toLocal = nowLocal; return true; }
 
             if (day == DateTime.MinValue) return false;

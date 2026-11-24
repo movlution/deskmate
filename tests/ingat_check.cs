@@ -1,12 +1,24 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+using System.Windows.Forms;
 
 namespace Deskmate
 {
-    // Ingatan without the screen: storage, search, privacy, time words, MCP framing
+    // Ingatan: storage, search, privacy, time words, UIA snapshots, OCR, and live service/MCP
     public static class IngatCheck
     {
+        [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern bool TextOut(IntPtr hdc, int x, int y, string lpString, int c);
+        [DllImport("gdi32.dll")] static extern uint SetTextColor(IntPtr hdc, int crColor);
+        [DllImport("gdi32.dll")] static extern uint SetBkColor(IntPtr hdc, int crColor);
+        [DllImport("gdi32.dll")] static extern bool PatBlt(IntPtr hdc, int x, int y, int w, int h, uint rop);
+
         static void Assert(bool ok, string msg)
         {
             if (!ok) throw new Exception("Assertion failed: " + msg);
@@ -25,6 +37,12 @@ namespace Deskmate
             TestChatDetection();
             TestPeopleAndMessages();
             TestDirectionAndState();
+            TestStructuredClassificationAndAnchors();
+            TestRollingBodyAndStructuredEpisode();
+            TestLiveQueriesAndStructuredFallback();
+            TestDualZoneStampAndInMemoryOcr();
+            TestLiveUiaSnapshotAndChat();
+            TestLiveServiceAndMcp();
             return "Ingatan checks passed";
         }
 
@@ -258,6 +276,495 @@ namespace Deskmate
         {
             Assert(!IngatClient.Running() || true, "client probe does not throw");
             Assert(IngatMcp.ConfigJson().Contains("--mcp"), "config names the flag");
+        }
+
+        static void TestStructuredClassificationAndAnchors()
+        {
+            Assert(IngatStructure.Classify("code", "", "IngatService.cs - Deskmate - Visual Studio Code", "") == "coding", "vscode is coding");
+            Assert(IngatStructure.Classify("pwsh", "", "Administrator: PowerShell", "") == "coding", "terminal is coding");
+            Assert(IngatStructure.Classify("chrome", "https://github.com/reval/deskmate/pull/12", "PR #12", "") == "coding", "github is coding");
+            Assert(IngatStructure.Classify("chrome", "https://learn.microsoft.com/en-us/windows/win32", "Win32 Docs", "") == "reading", "docs site is reading");
+            Assert(IngatStructure.Classify("chrome", "https://docs.google.com/document/d/abc", "Proposal", "") == "writing", "gdocs is writing");
+            Assert(IngatStructure.Classify("figma", "", "Deskmate UI", "") == "design", "figma is design");
+            Assert(IngatStructure.Classify("spotify", "", "Spotify", "") == "media", "spotify is media");
+            Assert(IngatStructure.Classify("whatsapp.root", "", "WhatsApp", "") == "chat", "whatsapp is chat");
+            // 'meeting' is reserved for Rapat transcripts so Stats()['meetings'] stays accurate
+            Assert(IngatStructure.Classify("chrome", "https://meet.google.com/abc-defg-hij", "Meet", "") != "meeting", "browser meet does not spoof rapat transcript");
+            Assert(IngatStructure.Classify("", "", "", "") == "other", "empty input safe");
+
+            Assert(IngatStructure.CleanLine("Minimize") == "" && IngatStructure.CleanLine("Tutup") == "", "window chrome stripped");
+            Assert(IngatStructure.CleanLine("\uE81C  Ingatan   aktif \r\t ") == "Ingatan aktif", "icon glyph and spacing cleaned");
+            Assert(IngatStructure.CleanLine("   ---   ") == "" && IngatStructure.CleanLine(null) == "", "non-alnum and null dropped");
+
+            var anchors = IngatStructure.ExtractAnchors(
+                "IngatStore.cs - Deskmate",
+                "https://learn.microsoft.com/windows/win32/uiauto?secret=123",
+                "Error CS0103 pada src/IngatText.cs saat jalankan git status dan NullReferenceException dengan key sk-ant-api03-abcdefghijklmnopqrstuvwx",
+                12);
+            Assert(anchors.Contains("learn.microsoft.com/windows/win32"), "url slug anchor");
+            Assert(anchors.Contains("IngatStore.cs") && anchors.Contains("src/IngatText.cs"), "file anchors");
+            Assert(anchors.Contains("CS0103") && anchors.Contains("NullReferenceException"), "diagnostic anchors");
+            foreach (var a in anchors) Assert(!a.Contains("sk-ant") && !a.Contains("secret=123"), "anchors redacted: " + a);
+
+            // Snapshot formatting, redaction, and secret clearing
+            var snap = new IngatSnapshot
+            {
+                Source = "uia", App = "Visual Studio Code", Exe = "code", Project = "Deskmate",
+                Title = "IngatService.cs - Deskmate", Url = "https://example.com/docs?token=abc#top",
+                Kind = "coding", Focus = "IngatService.cs › Capture()",
+            };
+            snap.Headings.Add("Capture Loop");
+            snap.Anchors.Add("IngatService.cs");
+            snap.MainLines.Add("void Capture(bool force) mail budi@contoh.com");
+            snap.NavLines.Add("Explorer");
+            snap.RedactAll();
+            Assert(snap.Url == "https://example.com/docs", "snapshot cleans url");
+            string formatted = snap.FormatText(2000);
+            Assert(formatted.Contains("[Fokus]") && formatted.Contains("[Bagian]") && formatted.Contains("[Konteks]") && formatted.Contains("[Isi]") && formatted.Contains("[Navigasi]"), "structured sections formatted");
+            Assert(!formatted.Contains("budi@contoh.com"), "snapshot redacts body");
+            var sj = snap.ToJson();
+            Assert(Json.Str(sj, "focus").Contains("Capture") && Json.Arr(sj, "anchors").Length == 1 && Json.Str(sj, "excerpt").Length > 0, "snapshot json structured");
+            snap.ClearSecret();
+            Assert(snap.Secret && snap.FormatText(2000) == "" && snap.Focus == "" && snap.MainLines.Count == 0, "secret wipes snapshot");
+        }
+
+        static void TestRollingBodyAndStructuredEpisode()
+        {
+            // Scrolling: 95% identical lines must not duplicate
+            var sb = new StringBuilder();
+            for (int i = 1; i <= 40; i++) sb.Append("Baris dokumen tetap nomor ").Append(i).Append('\n');
+            string screen1 = sb.ToString().TrimEnd();
+            string screen2 = screen1 + "\nBaris baru setelah scroll 41\nBaris baru setelah scroll 42";
+            string merged = IngatStructure.MergeBody(screen1, screen2, IngatStore.BodyCap);
+            Assert(merged.Length < screen1.Length + 80 && merged.Contains("scroll 42"), "scroll deduplicates existing lines");
+
+            // Long multi-hour episodes must roll instead of freezing at BodyCap
+            string rolling = "Pembuka proyek awal yang penting";
+            for (int step = 0; step < 60; step++)
+            {
+                var chunk = new StringBuilder();
+                for (int line = 0; line < 10; line++)
+                    chunk.Append("Langkah ").Append(step).Append(" baris unik nomor ").Append(line).Append(" dengan isi cukup panjang untuk uji kapasitas memori").Append('\n');
+                rolling = IngatStructure.MergeBody(rolling, chunk.ToString(), IngatStore.BodyCap);
+            }
+            Assert(rolling.Length <= IngatStore.BodyCap, "rolling body stays within cap: " + rolling.Length);
+            Assert(rolling.Contains("Pembuka proyek awal") && rolling.Contains("Langkah 59 baris unik nomor 9"), "rolling body keeps opening context and latest lines");
+
+            using (var store = new IngatStore(TempDb()))
+            {
+                var t0 = DateTime.UtcNow.AddMinutes(-25);
+                long ep = store.Open(t0, "Visual Studio Code", "code", "Deskmate", "IngatService.cs - Deskmate", "", "");
+                Assert(store.Get(ep).Kind == "coding", "auto kind set on open");
+
+                var snap1 = new IngatSnapshot { Source = "uia", Kind = "coding", Focus = "HookLoop" };
+                snap1.Headings.Add("Window Events");
+                snap1.Anchors.Add("IngatService.cs");
+                snap1.Anchors.Add("CS0168");
+                snap1.MainLines.Add("SetWinEventHook untuk fokus dan scroll");
+                store.Touch(ep, t0.AddMinutes(3), "IngatService.cs - Deskmate", "", snap1.FormatText(2000), snap1);
+
+                var snap2 = new IngatSnapshot { Source = "uia", Kind = "coding", Focus = "ReadSnapshot" };
+                snap2.Headings.Add("Cached UIA");
+                snap2.Anchors.Add("IngatText.cs");
+                snap2.MainLines.Add("CacheRequest mempercepat pembacaan pohon UIA");
+                store.Touch(ep, t0.AddMinutes(8), "IngatText.cs - Deskmate", "", snap2.FormatText(2000), snap2);
+                store.Close(ep, t0.AddMinutes(10));
+
+                var loaded = store.Get(ep);
+                var json = loaded.ToJson(true);
+                Assert(Json.Str(json, "focus") == "ReadSnapshot", "latest focus tracked");
+                Assert(Json.Arr(json, "steps").Length == 2, "distinct file steps recorded: " + Json.Arr(json, "steps").Length);
+                Assert(Json.Arr(json, "anchors").Length >= 3, "anchors accumulated across touches");
+
+                // Search finds the episode by project name, by an earlier file step, and by diagnostic code
+                Assert(store.Search("Deskmate", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 5).Count == 1, "project name indexed in FTS");
+                Assert(store.Search("IngatService", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 5).Count == 1, "earlier step title still searchable after title changed");
+                Assert(store.Search("CS0168", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 5).Count == 1, "extracted anchor searchable");
+
+                // AI summary with structured points and anchors upgrades context
+                store.SetSummary(ep, "Mempercepat pembacaan layar dan menyusun episode terstruktur.", "coding",
+                    new[] { "Menambah CacheRequest di IngatText.cs", "Menyimpan jejak langkah di IngatStore.cs" },
+                    new[] { "IngatStore.cs" });
+                var afterAi = store.Get(ep).ToJson(false);
+                Assert(Json.Arr(afterAi, "points").Length == 2 && Json.Arr(afterAi, "anchors").Length >= 4, "curated AI points and anchors saved");
+                Assert(store.Search("IngatStore", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 5).Count == 1, "new AI anchor reindexed");
+
+                // DropTiny boundaries: 10s lookup stays; 3s with clipboard event stays; 4s empty pass-through drops
+                long quickLookup = store.Open(t0.AddMinutes(12), "Google Chrome", "chrome", "", "WinEvent Constants", "https://learn.microsoft.com/win32", "");
+                store.Close(quickLookup, t0.AddMinutes(12).AddSeconds(10));
+                store.DropTiny(quickLookup);
+                Assert(store.Get(quickLookup) != null, "10s reference lookup kept");
+
+                long quickCopy = store.Open(t0.AddMinutes(13), "Google Chrome", "chrome", "", "Stack Overflow", "", "");
+                store.AddEvent(t0.AddMinutes(13).AddSeconds(2), quickCopy, "clipboard", "Google Chrome", "Stack Overflow", "", "EVENT_SYSTEM_SCROLLINGEND = 0x0013");
+                store.Close(quickCopy, t0.AddMinutes(13).AddSeconds(3));
+                store.DropTiny(quickCopy);
+                Assert(store.Get(quickCopy) != null, "3s episode with clipboard action kept");
+
+                long passThrough = store.Open(t0.AddMinutes(14), "Explorer", "explorer", "", "Desktop", "", "");
+                store.Close(passThrough, t0.AddMinutes(14).AddSeconds(4));
+                store.DropTiny(passThrough);
+                Assert(store.Get(passThrough) == null, "4s empty pass-through dropped");
+
+                // Timeline structured grouping
+                var grouped = IngatStructure.GroupTimeline(store.Timeline(DateTime.UtcNow.AddHours(-1), DateTime.UtcNow, 20));
+                Assert(Json.Arr(grouped, "byProject").Length >= 2 && Json.Arr(grouped, "byKind").Length >= 2, "timeline grouped by project and kind");
+            }
+        }
+
+        static void TestDualZoneStampAndInMemoryOcr()
+        {
+            Assert(IngatText.ReadSnapshot(IntPtr.Zero, "code", "", false).Source == "window", "zero hwnd safe");
+
+            using (var a = new Bitmap(400, 300))
+            using (var b = new Bitmap(400, 300))
+            {
+                using (var ga = Graphics.FromImage(a))
+                using (var gb = Graphics.FromImage(b))
+                {
+                    ga.Clear(Color.FromArgb(24, 24, 28));
+                    gb.Clear(Color.FromArgb(24, 24, 28));
+                    // Identical outer frame (sidebar + top bar)
+                    ga.FillRectangle(Brushes.DimGray, 0, 0, 70, 300);
+                    gb.FillRectangle(Brushes.DimGray, 0, 0, 70, 300);
+                    ga.FillRectangle(Brushes.DarkSlateBlue, 0, 0, 400, 28);
+                    gb.FillRectangle(Brushes.DarkSlateBlue, 0, 0, 400, 28);
+                    // Different inner viewport content (simulating scrolled text/chat)
+                    ga.FillRectangle(Brushes.WhiteSmoke, 110, 60, 220, 40);
+                    gb.FillRectangle(Brushes.WhiteSmoke, 120, 190, 180, 55);
+                }
+                var sa = IngatText.Stamp(a);
+                var saCopy = IngatText.Stamp(a);
+                var sb = IngatText.Stamp(b);
+                Assert(sa.Valid && !IngatText.Changed(sa, saCopy), "identical frame unchanged");
+                Assert(IngatText.Changed(sa, sb), "inner content shift detected despite static chrome");
+            }
+
+            if (Ocr.Available)
+            {
+                using (var bmp = new Bitmap(520, 140))
+                {
+                    using (var g = Graphics.FromImage(bmp))
+                    {
+                        g.Clear(Color.White);
+                        using (var f = new Font("Segoe UI", 22f, FontStyle.Bold))
+                            g.DrawString("DESKMATE INGATAN 2026", f, Brushes.Black, 40, 42);
+                    }
+                    string placed = IngatText.OcrPlaced(bmp);
+                    Assert(placed.IndexOf("DESKMATE", StringComparison.OrdinalIgnoreCase) >= 0 && placed.StartsWith("[", StringComparison.Ordinal), "in-memory placed OCR reads text: " + placed);
+                    if (Directory.Exists(IngatStore.Dir))
+                        Assert(Directory.GetFiles(IngatStore.Dir, "ocr-*.png").Length == 0, "no temp OCR png files written to disk");
+                }
+
+                // Classic GDI rendering leaves alpha = 0 in 32bpp bitmaps; SoftwareBitmap(Alpha=Ignore) must read it cleanly
+                using (var gdiBmp = new Bitmap(600, 140, PixelFormat.Format32bppArgb))
+                {
+                    using (var g = Graphics.FromImage(gdiBmp))
+                    {
+                        IntPtr hdc = g.GetHdc();
+                        PatBlt(hdc, 0, 0, 600, 140, 0x00FF0062);
+                        SetBkColor(hdc, 0xFFFFFF);
+                        SetTextColor(hdc, 0x000000);
+                        TextOut(hdc, 40, 50, "DESKMATE GDI WINDOW 2026", 24);
+                        g.ReleaseHdc(hdc);
+                    }
+                    string gdiText = IngatText.OcrPlaced(gdiBmp);
+                    Assert(gdiText.IndexOf("DESKMATE", StringComparison.OrdinalIgnoreCase) >= 0, "GDI alpha=0 bitmap OCR works: " + gdiText);
+                }
+
+                // 4K screenshot OCR must downscale cleanly without >30 MB LOH bloat
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                long before = GC.GetTotalMemory(false);
+                using (var bmp4k = new Bitmap(3840, 2160, PixelFormat.Format32bppArgb))
+                {
+                    using (var g4 = Graphics.FromImage(bmp4k))
+                    {
+                        g4.Clear(Color.White);
+                        using (var f = new Font("Segoe UI", 36f))
+                            g4.DrawString("DESKMATE 4K SCREEN", f, Brushes.Black, 120, 120);
+                    }
+                    string t4k = IngatText.OcrPlaced(bmp4k);
+                    long deltaMb = (GC.GetTotalMemory(false) - before) / 1048576;
+                    Assert(t4k.IndexOf("DESKMATE", StringComparison.OrdinalIgnoreCase) >= 0, "4K OCR reads text: " + t4k);
+                    Assert(deltaMb < 28, "4K OCR keeps managed memory delta bounded: " + deltaMb + " MB");
+                }
+            }
+        }
+
+        static void TestLiveQueriesAndStructuredFallback()
+        {
+            var now = new DateTime(2026, 11, 24, 15, 0, 0, DateTimeKind.Local);
+            DateTime f, t;
+            Assert(IngatTime.Range("15 menit terakhir saya ngapain?", now, out f, out t) && f == now.AddMinutes(-15) && t == now, "minute range parsed");
+            Assert(IngatStore.FtsQuery("15 menit terakhir saya ngapain?") == "", "minute range query leaves no spurious numeric FTS token");
+            Assert(IngatStore.FtsQuery("apa yang sedang kubuka di layar sekarang?") == "", "live screen question in ID has no spurious FTS keywords");
+            Assert(IngatStore.FtsQuery("what am I looking at on screen right now?") == "", "live screen question in EN has no spurious FTS keywords");
+            Assert(IngatStore.FtsQuery("rangkum aktivitas saya hari ini") == "", "broad recap question has no spurious FTS keywords");
+
+            // Emoji surrogate safety and metadata deduplication in MergeBody
+            string baseBody = "[Fokus] Awal\n[Bagian] Satu\nBaris utama emoji 😀🚀🔥 nomor satu";
+            string nextBody = "[Fokus] Kedua\n[Bagian] Satu · Dua\n[Navigasi] Berkas.cs\nBaris utama emoji 😀🚀🔥 nomor satu\nBaris baru setelah scroll 😀🚀";
+            string merged = IngatStructure.MergeBody(baseBody, nextBody, 95);
+            Assert(!merged.Contains("[Navigasi]") && !merged.Contains("[Fokus] Kedua"), "MergeBody skips repeated metadata headers");
+            for (int i = 0; i < merged.Length; i++)
+            {
+                if (char.IsHighSurrogate(merged[i])) Assert(i + 1 < merged.Length && char.IsLowSurrogate(merged[i + 1]), "high surrogate paired");
+                if (char.IsLowSurrogate(merged[i])) Assert(i > 0 && char.IsHighSurrogate(merged[i - 1]), "low surrogate paired");
+            }
+
+            // Structured fallback when AI is off: live screen context + project summary must still answer cleanly
+            using (var store = new IngatStore(TempDb()))
+            {
+                var settings = new Settings();
+                settings.Set("ingat.ai", "off");
+                var brain = new IngatBrain(store, settings);
+
+                var snap = new IngatSnapshot
+                {
+                    Source = "uia", App = "Visual Studio Code", Exe = "code", Project = "Deskmate",
+                    Title = "IngatText.cs - Deskmate", Kind = "coding", Focus = "WalkStructured",
+                };
+                snap.Anchors.Add("IngatText.cs");
+                snap.Anchors.Add("CS0103");
+                snap.MainLines.Add("CacheRequest element-only scope");
+                var liveNow = new Dictionary<string, object> { { "state", "on" }, { "screen", snap.ToJson() } };
+
+                var liveOnlyAns = brain.Ask("apa yang sedang kubuka di layar sekarang?", liveNow);
+                string ansText = Json.Str(liveOnlyAns, "answer");
+                Assert(ansText.Contains("[Layar aktif]") && ansText.Contains("WalkStructured") && ansText.Contains("CS0103"),
+                    "fallback Ask includes live screen focus and anchors even with zero stored episodes: " + ansText);
+                Assert(Json.Obj(liveOnlyAns, "screen") != null, "Ask response exposes structured screen object");
+
+                // Broad day recap without AI must return main episodes even if one unrelated episode had literal word 'aktivitas'
+                var t0 = DateTime.UtcNow.AddMinutes(-50);
+                long noise = store.Open(t0, "Chrome", "chrome", "", "Artikel aktivitas harian", "", "reading");
+                store.Touch(noise, t0.AddMinutes(1), "Artikel aktivitas harian", "", "Tips mencatat aktivitas");
+                store.Close(noise, t0.AddMinutes(1));
+                long mainWork = store.Open(t0.AddMinutes(3), "Visual Studio Code", "code", "Deskmate", "IngatService.cs - Deskmate", "", "coding");
+                store.Touch(mainWork, t0.AddMinutes(30), "IngatService.cs - Deskmate", "", "Perbaikan EnsureFresh dan UIA");
+                store.Close(mainWork, t0.AddMinutes(30));
+
+                var recapAns = brain.Ask("rangkum aktivitas saya hari ini", liveNow);
+                Assert(Json.Arr(recapAns, "sources").Length >= 2 && Json.Str(recapAns, "answer").Contains("Deskmate"),
+                    "broad recap includes main coding episode instead of matching literal word 'aktivitas'");
+
+                // Chat without AI falls back to the live screen instead of a bare "cannot think"
+                var chatLive = brain.Chat("sekarang aku lagi buka apa?", new List<KeyValuePair<string, string>>(), "Rubah", "cat", liveNow);
+                string chatText = Json.Str(chatLive, "answer");
+                Assert(chatText.Contains("Visual Studio Code") && chatText.Contains("WalkStructured"), "Chat fallback without AI answers from live screen: " + chatText);
+                var chatNone = brain.Chat("sekarang aku lagi buka apa?", new List<KeyValuePair<string, string>>(), "Rubah", "cat", new Dictionary<string, object>());
+                Assert(!Json.Str(chatNone, "answer").Contains("[Layar aktif]") && chatText.Contains("[Layar aktif]"), "Chat fallback without live context has no screen line");
+
+                // Fallback labels are localized
+                bool wasEnglish = Lang.English;
+                try
+                {
+                    Lang.English = true;
+                    string en = Json.Str(brain.Ask("apa yang sedang kubuka di layar sekarang?", liveNow), "answer");
+                    Assert(en.Contains("[Live screen]") && !en.Contains("[Layar aktif]"), "English fallback label: " + en);
+                    var enRecap = Json.Str(brain.Ask("rangkum aktivitas saya hari ini", liveNow), "answer");
+                    Assert(!enRecap.Contains(" mnt)") && !enRecap.Contains("Ringkasan:"), "English recap has no Indonesian labels: " + enRecap);
+                }
+                finally { Lang.English = wasEnglish; }
+
+                // Settings.Load must be safe against concurrent readers: no torn or empty reads
+                var shared = new Settings();
+                shared.Set("ingat.probe", "1");
+                shared.Save();
+                shared.Load();
+                int torn = 0;
+                var stop = false;
+                var readers = new List<Thread>();
+                for (int i = 0; i < 3; i++)
+                {
+                    var rt = new Thread(delegate () { while (!stop) if (shared.Get("ingat.probe", "") != "1") Interlocked.Increment(ref torn); });
+                    rt.Start();
+                    readers.Add(rt);
+                }
+                for (int i = 0; i < 300; i++) shared.Load();
+                stop = true;
+                foreach (var rt in readers) rt.Join();
+                Assert(torn == 0, "Settings.Load concurrent with reads never exposes a cleared state: " + torn);            }
+        }
+
+        static IngatSnapshot RunFormSnapshot(Func<Form> makeForm, string exe, bool chatMode, out long elapsedMs)
+        {
+            IngatSnapshot snap = null;
+            long ms = 0;
+            Exception err = null;
+            var thread = new Thread(delegate ()
+            {
+                try
+                {
+                    using (var form = makeForm())
+                    {
+                        form.StartPosition = FormStartPosition.Manual;
+                        form.Location = new Point(40, 40);
+                        form.ShowInTaskbar = false;
+                        form.Opacity = 0.02;
+                        form.Shown += delegate
+                        {
+                            IntPtr hwnd = form.Handle;
+                            var worker = new Thread(delegate ()
+                            {
+                                var sw = Stopwatch.StartNew();
+                                snap = IngatText.ReadSnapshot(hwnd, exe, form.Text, chatMode);
+                                sw.Stop();
+                                ms = sw.ElapsedMilliseconds;
+                                try { form.BeginInvoke(new Action(form.Close)); } catch (Exception) { }
+                            });
+                            worker.SetApartmentState(ApartmentState.MTA);
+                            worker.Start();
+                        };
+                        Application.Run(form);
+                    }
+                }
+                catch (Exception ex) { err = ex; }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join(15000);
+            if (err != null) throw err;
+            elapsedMs = ms;
+            return snap;
+        }
+
+        static void TestLiveUiaSnapshotAndChat()
+        {
+            long ms;
+            // 1. Heavy 700-item sidebar TreeView must not starve deeply nested main editor content
+            var heavy = RunFormSnapshot(delegate
+            {
+                var form = new Form { Text = "IngatService.cs - Deskmate - Visual Studio Code", Size = new Size(1200, 800) };
+                var tree = new TreeView { Bounds = new Rectangle(0, 40, 200, 720) };
+                for (int i = 1; i <= 700; i++) tree.Nodes.Add("sidebar_item_" + i + ".txt");
+                form.Controls.Add(tree);
+                var mainPanel = new Panel { Bounds = new Rectangle(240, 40, 920, 720) };
+                var p1 = new Panel { Bounds = new Rectangle(0, 0, 900, 700) }; mainPanel.Controls.Add(p1);
+                var p2 = new Panel { Bounds = new Rectangle(0, 0, 900, 700) }; p1.Controls.Add(p2);
+                var p3 = new Panel { Bounds = new Rectangle(0, 0, 900, 700) }; p2.Controls.Add(p3);
+                p3.Controls.Add(new Label { Text = "Error CS0103 di src/IngatText.cs baris utama", Bounds = new Rectangle(20, 30, 620, 40) });
+                form.Controls.Add(mainPanel);
+                return form;
+            }, "code", false, out ms);
+
+            string heavyFmt = heavy.FormatText(4000);
+            Assert(heavy.Source == "uia" && heavyFmt.Contains("Error CS0103 di src/IngatText.cs baris utama"),
+                "heavy 700-node sidebar did not starve main editor (" + ms + "ms): " + heavyFmt);
+            Assert(heavy.Anchors.Contains("CS0103") && heavy.Anchors.Contains("src/IngatText.cs"), "anchors extracted from live UIA window");
+            Assert(heavy.NavLines.Count > 0 && heavy.NavLines.Count <= 12, "sidebar tree items capped into NavLines: " + heavy.NavLines.Count);
+
+            // 2. Split editor panes on both left (~22% width) and right must both stay in MainLines
+            var split = RunFormSnapshot(delegate
+            {
+                var form = new Form { Text = "Split - Deskmate - Visual Studio Code", Size = new Size(1400, 800) };
+                form.Controls.Add(new Label { Text = "Panel kiri kode utama pertama", Bounds = new Rectangle(30, 140, 280, 40) });
+                form.Controls.Add(new Label { Text = "Panel kanan kode utama kedua", Bounds = new Rectangle(360, 140, 600, 40) });
+                return form;
+            }, "code", false, out ms);
+            Assert(split.MainLines.Contains("Panel kiri kode utama pertama") && split.MainLines.Contains("Panel kanan kode utama kedua"),
+                "both split editor panes captured in MainLines (" + ms + "ms)");
+
+            // 3. Password field inside window immediately marks snapshot secret and wipes content
+            var pwSnap = RunFormSnapshot(delegate
+            {
+                var form = new Form { Text = "Pengaturan Akun", Size = new Size(800, 500) };
+                form.Controls.Add(new Label { Text = "Teks biasa yang tidak boleh bocor", Bounds = new Rectangle(40, 40, 400, 30) });
+                form.Controls.Add(new TextBox { Text = "rahasia123", UseSystemPasswordChar = true, Bounds = new Rectangle(40, 100, 300, 30) });
+                return form;
+            }, "app", false, out ms);
+            Assert(pwSnap.Secret && pwSnap.FormatText(2000) == "" && pwSnap.MainLines.Count == 0, "password control triggers secret wipe");
+
+            // 4. Narrow single-pane WhatsApp window detects header conversation name and [x0-x1] bubble positions
+            var chatSnap = RunFormSnapshot(delegate
+            {
+                var form = new Form { Text = "WhatsApp", Size = new Size(480, 750) };
+                form.Controls.Add(new Label { Text = "Budi Santoso", Bounds = new Rectangle(68, 24, 180, 28) });
+                form.Controls.Add(new Label { Text = "Proposal sudah dikirim?", Bounds = new Rectangle(24, 160, 220, 30) });
+                form.Controls.Add(new Label { Text = "Sudah aku kirim barusan", Bounds = new Rectangle(220, 220, 230, 30) });
+                return form;
+            }, "whatsapp.root", true, out ms);
+            string chatFmt = chatSnap.FormatText(4000);
+            Assert(chatSnap.Focus == "Budi Santoso", "narrow chat header detected: [" + chatSnap.Focus + "]");
+            Assert(chatFmt.Contains("Proposal sudah dikirim?") && chatFmt.Contains("Sudah aku kirim barusan"), "chat bubbles captured in order: " + chatFmt);
+        }
+
+        static void TestLiveServiceAndMcp()
+        {
+            string exe = typeof(IngatCheck).Assembly.Location;
+            if (!File.Exists(exe)) return;
+
+            var settings = new Settings();
+            settings.Set("ingat", "1");
+            settings.Set("ingat.ai", "off");
+            settings.Save();
+
+            int selfPid = Process.GetCurrentProcess().Id;
+            var psi = new ProcessStartInfo(exe, "--ingat --parent " + selfPid)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.EnvironmentVariables["DESKMATE_DIR"] = Settings.Dir;
+
+            using (var proc = Process.Start(psi))
+            {
+                try
+                {
+                    Dictionary<string, object> st = null;
+                    var sw = Stopwatch.StartNew();
+                    while (sw.ElapsedMilliseconds < 8000)
+                    {
+                        st = IngatClient.Get("/status", 1500);
+                        if (st != null) break;
+                        Thread.Sleep(100);
+                    }
+                    Assert(st != null && st.ContainsKey("state"), "ingat service came up fast");
+
+                    var ctx = IngatClient.Get("/context?recent=4", 3000);
+                    Assert(ctx != null && ctx.ContainsKey("today") && ctx.ContainsKey("recent"), "live /context endpoint returns structured workspace");
+
+                    var tl = IngatClient.Get("/timeline", 3000);
+                    Assert(tl != null && Json.Obj(tl, "structured") != null, "live /timeline includes structured grouping");
+
+                    var sr = IngatClient.Get("/search?q=wasapi", 3000);
+                    Assert(sr != null && Json.Obj(sr, "structured") != null, "live /search includes structured grouping");
+
+                    var ask = IngatClient.Call("POST", "/ask", new Dictionary<string, object> { { "q", "apa yang saya kerjakan hari ini?" } }, 5000);
+                    Assert(ask != null && ask.ContainsKey("answer") && Json.Obj(ask, "structured") != null, "live /ask returns structured metadata");
+
+                    var liveAsk = IngatClient.Call("POST", "/ask", new Dictionary<string, object> { { "q", "apa yang sedang kubuka di layar sekarang?" } }, 5000);
+                    Assert(liveAsk != null && Json.Str(liveAsk, "answer").Length > 0, "live /ask answers screen-now query cleanly");
+
+                    // MCP subprocess over stdio against the running service
+                    var mcpPsi = new ProcessStartInfo(exe, "--mcp")
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardInput = true,
+                        RedirectStandardOutput = true,
+                    };
+                    mcpPsi.EnvironmentVariables["DESKMATE_DIR"] = Settings.Dir;
+                    using (var mcp = Process.Start(mcpPsi))
+                    {
+                        mcp.StandardInput.WriteLine("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}");
+                        mcp.StandardInput.WriteLine("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_screen_context\",\"arguments\":{\"recent\":3}}}");
+                        mcp.StandardInput.Close();
+                        string mcpOut = mcp.StandardOutput.ReadToEnd();
+                        mcp.WaitForExit(5000);
+                        Assert(mcpOut.Contains("get_screen_context") && mcpOut.Contains("current_context"), "MCP exposes get_screen_context tool");
+                        Assert(mcpOut.Contains("inboxWaiting") && !mcpOut.Contains("\"isError\":true"), "MCP get_screen_context call succeeded: " + mcpOut);
+                    }
+                }
+                finally
+                {
+                    settings.Set("ingat", "0");
+                    settings.Save();
+                    try { if (!proc.WaitForExit(2000)) proc.Kill(); } catch (Exception) { }
+                }
+            }
         }
     }
 }

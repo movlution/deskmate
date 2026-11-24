@@ -17,9 +17,9 @@ Deskmate.exe --mcp (stdio)        ──┼──► API lokal 127.0.0.1 + token
 ```
 
 - **Proses sendiri.** `--ingat` berjalan sebagai proses terpisah berprioritas rendah. Deskmate menyalakannya saat Ingatan aktif dan menyalakannya lagi kalau berhenti mendadak (paling banyak tiga kali per jam). Proses ini berhenti sendiri saat Deskmate ditutup atau Ingatan dimatikan.
-- **Dipicu event.** Pergantian jendela dan judul (tab browser, file di editor) memicu pembacaan. Pergantian yang tidak bertahan 1,5 detik diabaikan. Selama kamu di jendela yang sama, Deskmate mengambil sidik gambar kecil (dHash) tiap 5 detik. Teks dibaca ulang hanya kalau gambarnya berubah cukup jauh atau sudah lewat 30 detik.
-- **Teks dulu, gambar belakangan.** Teks diambil lewat UI Automation. OCR bawaan Windows hanya dipakai kalau aplikasinya tidak memberi teks, dan dilewati saat baterai di bawah 25% atau saat game/presentasi memenuhi layar. Gambar layar tidak pernah disimpan.
-- **Episode.** Aktivitas di aplikasi yang sama dan proyek yang sama (ditebak dari judul VS Code, JetBrains, Unity, terminal) atau situs yang sama digabung menjadi satu episode, selama jedanya di bawah 2 menit. Tidak ada input selama 3 menit menutup episode. Episode di bawah 20 detik dibuang.
+- **Dipicu event & responsif.** Pergantian jendela, pergantian judul/tab, perpindahan fokus kontrol, dan akhir scroll memicu pembacaan dalam beberapa ratus milidetik (pergantian kilat Alt+Tab di bawah ~350 ms tetap dilewati). Selama aktif di jendela yang sama, Deskmate memeriksa sidik gambar dua zona (seluruh jendela + area isi utama) tiap ~1,8 detik (melambat ke 5 detik saat diam), serta menyegarkan konteks layar seketika saat kamu bertanya. Event scroll/fokus langsung membaca UIA tanpa menunggu sidik gambar berubah (jendela gelap/seragam tidak terlewat); tangkapan jendela (`PrintWindow`) hanya diambil saat butuh OCR atau saat pemeriksaan sidik gambar berikutnya, bukan setiap pembacaan. Kesegaran 400 ms dihitung dari pembacaan nyata terakhir. Tanpa AI, jawaban Ingat dan Chat tetap memakai layar aktif (label ikut bahasa), dan baris Status di pengaturan menampilkan aplikasi/fokus layar saat ini.
+- **Teks dulu, gambar belakangan, tersusun rapi.** Teks diambil lewat UI Automation ter-cache (fokus aktif, bagian/heading, jangkar berkas/kode/perintah, isi utama sesuai urutan baca di layar, dan navigasi samping dipisah). OCR bawaan Windows dijalankan langsung di memori tanpa berkas sementara saat aplikasi tidak memberi teks, dan dilewati saat baterai di bawah 25% atau layar penuh. Gambar layar tidak pernah disimpan.
+- **Episode terstruktur.** Aktivitas di aplikasi yang sama dan proyek/percakapan/situs yang sama digabung menjadi satu episode selama jedanya di bawah 2 menit, lengkap dengan jejak langkah (`steps`), fokus, jangkar (`anchors`), poin kunci (`points`), dan kategori otomatis (`kind`). Teks baru saat scroll digabung tanpa menduplikasi baris lama dan tanpa membeku di episode panjang. Tidak ada input selama 3 menit menutup episode; lintasan singkat di bawah 8 detik tanpa aksi dibuang.
 - **Memori bertingkat.** Detail mentah (14 hari) → episode beserta ringkasannya (180 hari) → rekap harian dan fakta jangka panjang (tanpa batas). Batasnya bisa diatur.
 
 ## Bertanya
@@ -42,7 +42,7 @@ Deskmate.exe --mcp (stdio)        ──┼──► API lokal 127.0.0.1 + token
 claude mcp add deskmate -- "C:\path\Deskmate.exe" --mcp
 ```
 
-  Tool yang tersedia: `search_activity`, `ask_memory`, `get_timeline`, `current_context`, `get_episode`, `list_meetings`, `get_meeting_transcript`, `get_facts`, `list_people`, `get_person`, `search_messages`, `get_promises`, `get_inbox`, `get_conversation`. Semuanya hanya membaca.
+  Tool yang tersedia: `search_activity`, `ask_memory`, `get_timeline`, `current_context`, `get_screen_context`, `get_episode`, `list_meetings`, `get_meeting_transcript`, `get_facts`, `list_people`, `get_person`, `search_messages`, `get_promises`, `get_inbox`, `get_conversation`. Semuanya hanya membaca.
 
 Pencarian menggabungkan BM25 (SQLite FTS5) dengan kemiripan makna (embedding) memakai *reciprocal rank fusion*. Kata waktu seperti "tadi pagi", "kemarin", "minggu lalu", "3 jam terakhir", atau "yesterday afternoon" otomatis menjadi rentang waktu.
 
@@ -114,9 +114,10 @@ Semua request wajib membawa header `X-Deskmate-Token`.
 | Metode | Jalur | Isi |
 |---|---|---|
 | GET | `/status` | Jumlah episode, ukuran database, status, dan provider |
-| GET | `/now` | Episode yang sedang berjalan dan lama `streakMinutes` |
-| GET | `/search?q=&from=&to=&limit=&text=1` | Pencarian hibrida |
-| GET | `/timeline?date=yyyy-MM-dd` | Episode sehari dan rekapnya |
+| GET | `/now` | Konteks layar terstruktur saat ini (`screen`), episode aktif, dan `streakMinutes` |
+| GET | `/context?recent=` | Konteks ruang kerja lengkap: layar aktif, jejak langkah episode, momen terbaru, dan ringkasan hari ini |
+| GET | `/search?q=&from=&to=&limit=&text=1` | Pencarian hibrida beserta pengelompokan terstruktur (`structured`) |
+| GET | `/timeline?date=yyyy-MM-dd` | Episode sehari, pengelompokan per proyek/jenis (`structured`), dan rekapnya |
 | GET | `/episode?id=` | Detail satu episode beserta teksnya |
 | GET | `/meetings?days=` dan `/meeting?id=` | Daftar rapat dan transkripnya |
 | GET | `/facts` | Fakta jangka panjang |

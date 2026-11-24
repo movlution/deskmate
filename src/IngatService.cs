@@ -12,18 +12,22 @@ using System.Windows.Forms;
 namespace Deskmate
 {
     // Deskmate.exe --ingat --parent <pid>: the activity memory service, like PiecesOS beside its apps.
-    // Its own process: a slow UI Automation call or a model on the CPU never touches the dock.
+    // Its own process: UI Automation and local models never touch the dock's frame budget.
     sealed class IngatService
     {
         public static string MutexName { get { return Settings.MutexName.Replace("DeskmateIsland", "DeskmateIngat"); } }
         public static string ApiFile { get { return Path.Combine(IngatStore.Dir, "api.json"); } }
 
-        // A switch to another window must hold this long to count
-        const int SettleMs = 1500;
+        // Short settle skips Alt+Tab pass-throughs while catching real switches fast
+        const int SwitchSettleMs = 350;
+        const int InteractSettleMs = 220;
+        const int MaxDeferMs = 800;
+        const int ComposeMs = 800;
+        const int ActiveLookMs = 1800, IdleLookMs = 5000;
+        const int ActiveRereadMs = 12000, IdleRereadMs = 30000;
         // Same app or project after a gap this short continues the episode
         const double JoinSeconds = 120;
         const double AwaySeconds = 180;
-        const int LookMs = 5000, RereadMs = 30000;
 
         public static int Run(string[] args)
         {
@@ -55,20 +59,35 @@ namespace Deskmate
         }
 
         readonly int parentPid;
+        readonly int selfPid = Process.GetCurrentProcess().Id;
         readonly Settings settings = new Settings();
         public readonly IngatStore Store;
         public readonly IngatBrain Brain;
         IngatApi api;
         readonly AutoResetEvent nudge = new AutoResetEvent(false);
+        readonly AutoResetEvent workNudge = new AutoResetEvent(false);
         volatile bool stopping;
+        volatile bool loopReady;
 
-        // Current episode, guarded by gate
+        // Synchronous fresh-capture coordination for live API/MCP queries
+        readonly object freshGate = new object();
+        long captureStartSeq;
+        long captureDoneSeq;
+        long freshTargetSeq;
+        bool freshWanted;
+        long lastReadTicks;
+        bool stampStale;
+
+        // Current episode and latest structured screen snapshot, guarded by gate
         readonly object gate = new object();
         IngatEpisode current;
+        IngatSnapshot latestSnap;
         string currentKey = "";
+        string lastConversation = "";
         IntPtr currentHwnd;
+        IntPtr lastUserHwnd;
         DateTime lastSeenUtc;
-        ulong lastHash;
+        IngatStamp lastStamp;
         DateTime lastReadUtc, lastLookUtc;
         DateTime pausedUntilUtc = DateTime.MinValue;
         public string State = "on";
@@ -89,6 +108,9 @@ namespace Deskmate
         void Shut()
         {
             stopping = true;
+            nudge.Set();
+            workNudge.Set();
+            lock (freshGate) Monitor.PulseAll(freshGate);
             lock (gate) CloseCurrent(DateTime.UtcNow);
             if (api != null) api.Stop();
             try { if (File.Exists(ApiFile)) File.Delete(ApiFile); } catch (Exception) { }
@@ -110,23 +132,99 @@ namespace Deskmate
             var worker = new Thread(Prof.Wrap(WorkLoop)) { IsBackground = true, Name = "ingat worker", Priority = ThreadPriority.Lowest };
             worker.Start();
 
+            // Capture immediately on startup so current_context is populated right away
+            loopReady = true;
+            RunCapture(true);
+
             // Capture runs here: one thread, so UI Automation never overlaps itself
-            DateTime settingsCheck = DateTime.MinValue;
+            DateTime settingsCheck = DateTime.UtcNow;
             while (!stopping)
             {
-                // Typing in a chat: look more often so the sent line is caught whole
-                nudge.WaitOne(Composing ? 1500 : LookMs);
+                int wait = NextWaitMs();
+                if (wait > 0) nudge.WaitOne(wait);
+                if (stopping) break;
                 if (ParentGone()) { Log.Write("ingat: Deskmate sudah tutup"); break; }
-                if ((DateTime.UtcNow - settingsCheck).TotalSeconds >= 10)
+                if ((DateTime.UtcNow - settingsCheck).TotalSeconds >= 8)
                 {
                     settingsCheck = DateTime.UtcNow;
                     settings.Load();
                     if (!settings.GetBool("ingat", false)) break;
                 }
-                try { Capture(); }
-                catch (Exception ex) { Log.Write("ingat capture: " + ex.Message); }
+                bool force;
+                lock (freshGate) force = freshWanted;
+                RunCapture(force);
             }
             stopping = true;
+            lock (freshGate) Monitor.PulseAll(freshGate);
+        }
+
+        int NextWaitMs()
+        {
+            lock (freshGate) if (freshWanted) return 0;
+            int baseWait = Composing ? ComposeMs : IdleSeconds() < 15 ? ActiveLookMs : IdleLookMs;
+            lock (eventGate)
+            {
+                if (dueUtc == DateTime.MinValue) return baseWait;
+                int left = (int)Math.Ceiling((dueUtc - DateTime.UtcNow).TotalMilliseconds);
+                return left <= 0 ? 0 : Math.Min(baseWait, Math.Max(15, left));
+            }
+        }
+
+        void RunCapture(bool force)
+        {
+            long seq;
+            lock (freshGate) seq = ++captureStartSeq;
+            bool completed = false;
+            try { completed = Capture(force); }
+            catch (Exception ex) { Log.Write("ingat capture: " + ex.Message); completed = true; }
+            if (!completed) return;
+            lock (freshGate)
+            {
+                if (seq > captureDoneSeq) captureDoneSeq = seq;
+                if (captureDoneSeq >= freshTargetSeq) freshWanted = false;
+                Monitor.PulseAll(freshGate);
+            }
+        }
+
+        bool ForegroundNeedsRefresh()
+        {
+            IntPtr fg = Native.GetForegroundWindow();
+            if (fg != IntPtr.Zero)
+            {
+                int pid;
+                Native.GetWindowThreadProcessId(fg, out pid);
+                if (pid != selfPid && (parentPid <= 0 || pid != parentPid) && fg != currentHwnd) return true;
+            }
+            lock (gate) return latestSnap == null && current == null;
+        }
+
+        // Requests an immediate single-thread capture when a caller asks for live context
+        public void EnsureFresh(int maxWaitMs)
+        {
+            if (stopping || !loopReady || Paused) return;
+            bool pending;
+            lock (eventGate) pending = contentDirty || dueUtc > DateTime.MinValue;
+            if (!pending && !ForegroundNeedsRefresh() && (DateTime.UtcNow.Ticks - Interlocked.Read(ref lastReadTicks)) < 400 * TimeSpan.TicksPerMillisecond) return;
+
+            long want;
+            lock (freshGate)
+            {
+                want = captureStartSeq + 1;
+                if (want > freshTargetSeq) freshTargetSeq = want;
+                freshWanted = true;
+            }
+            nudge.Set();
+
+            var sw = Stopwatch.StartNew();
+            lock (freshGate)
+            {
+                while (!stopping && captureDoneSeq < want)
+                {
+                    int rem = maxWaitMs - (int)sw.ElapsedMilliseconds;
+                    if (rem <= 0) break;
+                    Monitor.Wait(freshGate, rem);
+                }
+            }
         }
 
         bool ParentGone()
@@ -144,31 +242,86 @@ namespace Deskmate
             return Convert.ToBase64String(b).TrimEnd('=').Replace('+', '-').Replace('/', '_');
         }
 
-        // Window events
+        // Window, focus, title, and scroll events
 
         Native.WinEventProc proc;
-        DateTime changedUtc = DateTime.MinValue;
+        readonly object eventGate = new object();
+        IntPtr eventHwnd;
+        DateTime switchUtc = DateTime.MinValue;
+        DateTime deferSinceUtc = DateTime.MinValue;
+        DateTime dueUtc = DateTime.MinValue;
+        DateTime lastInteractNudgeUtc = DateTime.MinValue;
+        bool contentDirty;
+
+        [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
 
         void HookLoop()
         {
             proc = OnWinEvent;
-            // Foreground switches, and title changes (browser tabs, editor files)
-            var h1 = Native.SetWinEventHook(3, 3, IntPtr.Zero, proc, 0, 0, 0);
-            var h2 = Native.SetWinEventHook(0x800C, 0x800C, IntPtr.Zero, proc, 0, 0, 0);
+            // WINEVENT_SKIPOWNPROCESS (2): foreground switches, scrolling end, focus moves, and window title changes
+            var hFg = Native.SetWinEventHook(0x0003, 0x0003, IntPtr.Zero, proc, 0, 0, 2);
+            var hScroll = Native.SetWinEventHook(0x0013, 0x0013, IntPtr.Zero, proc, 0, 0, 2);
+            var hFocus = Native.SetWinEventHook(0x8005, 0x8005, IntPtr.Zero, proc, 0, 0, 2);
+            var hName = Native.SetWinEventHook(0x800C, 0x800C, IntPtr.Zero, proc, 0, 0, 2);
             Application.Run();
-            Native.UnhookWinEvent(h1);
-            Native.UnhookWinEvent(h2);
+            Native.UnhookWinEvent(hFg);
+            Native.UnhookWinEvent(hScroll);
+            Native.UnhookWinEvent(hFocus);
+            Native.UnhookWinEvent(hName);
         }
 
         void OnWinEvent(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
         {
-            // Name change: only the window itself, not its children
-            if (evt == 0x800C && (idObject != 0 || hwnd != Native.GetForegroundWindow())) return;
-            changedUtc = DateTime.UtcNow;
-            ThreadPool.QueueUserWorkItem(delegate { Thread.Sleep(SettleMs); nudge.Set(); });
+            if (hwnd == IntPtr.Zero) return;
+            // Name change: only the top-level window title, never noisy child text mutations
+            if (evt == 0x800C && idObject != 0) return;
+
+            IntPtr fg = Native.GetForegroundWindow();
+            if (fg == IntPtr.Zero) return;
+            int fgPid;
+            Native.GetWindowThreadProcessId(fg, out fgPid);
+            // Opening Deskmate's own Pet/Suruh/Island overlay must not clobber the user's active window settle state
+            if (fgPid == selfPid || (parentPid > 0 && fgPid == parentPid)) return;
+            if (hwnd != fg)
+            {
+                if (evt == 0x0003 || evt == 0x800C) return;
+                IntPtr root = GetAncestor(hwnd, 2);
+                if (root != fg) return;
+            }
+
+            var now = DateTime.UtcNow;
+            bool wake = false;
+            lock (eventGate)
+            {
+                if (evt == 0x0003 && fg != eventHwnd)
+                {
+                    eventHwnd = fg;
+                    lastUserHwnd = fg;
+                    switchUtc = now;
+                    deferSinceUtc = now;
+                    contentDirty = true;
+                    dueUtc = now.AddMilliseconds(SwitchSettleMs);
+                    wake = true;
+                }
+                else
+                {
+                    // Focus, scroll, or title change inside the active window: debounce briefly, cap max deferral so it never starves
+                    contentDirty = true;
+                    if ((now - lastInteractNudgeUtc).TotalMilliseconds >= 160)
+                    {
+                        lastInteractNudgeUtc = now;
+                        if (deferSinceUtc == DateTime.MinValue) deferSinceUtc = now;
+                        var want = now.AddMilliseconds(InteractSettleMs);
+                        var ceiling = deferSinceUtc.AddMilliseconds(MaxDeferMs);
+                        dueUtc = want < ceiling ? want : ceiling;
+                        wake = true;
+                    }
+                }
+            }
+            if (wake) nudge.Set();
         }
 
-        // One look at the screen
+        // One look at the screen; returns false only when skipped while waiting for settle debounce
 
         public bool Paused { get { return DateTime.UtcNow < pausedUntilUtc; } }
 
@@ -176,106 +329,199 @@ namespace Deskmate
         {
             pausedUntilUtc = minutes <= 0 ? DateTime.MinValue : DateTime.UtcNow.AddMinutes(minutes);
             Store.SetMeta("paused.until", IngatDb.Unix(pausedUntilUtc).ToString(CultureInfo.InvariantCulture));
-            if (minutes > 0) lock (gate) CloseCurrent(DateTime.UtcNow);
+            if (minutes > 0)
+            {
+                lock (gate) { latestSnap = null; CloseCurrent(DateTime.UtcNow); }
+            }
             nudge.Set();
         }
 
         public DateTime PausedUntilUtc { get { return pausedUntilUtc; } }
 
-        void Capture()
+        bool Capture(bool force)
         {
             var now = DateTime.UtcNow;
-            if ((now - changedUtc).TotalMilliseconds < SettleMs - 50) return;
-            if (Paused) { State = "paused"; return; }
-            if (IdleSeconds() >= AwaySeconds) { State = "away"; lock (gate) CloseCurrent(lastSeenUtc); return; }
+            bool interactDirty = false;
+            lock (eventGate)
+            {
+                if (!force)
+                {
+                    if ((now - switchUtc).TotalMilliseconds < SwitchSettleMs - 30) return false;
+                    if (dueUtc > now && (now - deferSinceUtc).TotalMilliseconds < MaxDeferMs) return false;
+                }
+                interactDirty = contentDirty;
+                contentDirty = false;
+                dueUtc = DateTime.MinValue;
+                deferSinceUtc = DateTime.MinValue;
+            }
 
-            IntPtr hwnd = Native.GetForegroundWindow();
-            if (hwnd == IntPtr.Zero) return;
+            if (Paused) { State = "paused"; lock (gate) latestSnap = null; return true; }
+            double idle = IdleSeconds();
+            if (idle >= AwaySeconds) { State = "away"; lock (gate) { latestSnap = null; CloseCurrent(lastSeenUtc); } return true; }
+
             int pid;
-            string exe = Exe(ref hwnd, out pid);
-            // Deskmate's own windows (pet, island, settings) are not activity, and must not cut the episode in two
-            if (exe.Length == 0 || pid == Process.GetCurrentProcess().Id || exe == SelfExe) return;
+            string exe;
+            // When the user opens Pet/Suruh to ask about their screen, Deskmate owns focus: read the target window right behind it
+            IntPtr hwnd = ResolveTargetWindow(force || interactDirty, out pid, out exe);
+            if (hwnd == IntPtr.Zero) return true;
             string title = Title(hwnd);
-            if (title.Length == 0 || exe == "explorer" && (title == "Program Manager" || title.Length == 0)) return;
+            if (title.Length == 0 || exe == "explorer" && (title == "Program Manager" || title == "Windows Input Experience")) return true;
+            lastUserHwnd = hwnd;
 
             var blockedApps = List("ingat.block.apps");
             var blockedSites = List("ingat.block.sites");
             if (IngatPrivacy.BlockedApp(exe, blockedApps) || IngatPrivacy.PrivateWindow(title, "", blockedSites))
             {
                 State = "private";
-                lock (gate) CloseCurrent(now);
-                return;
+                lock (gate) { latestSnap = null; CloseCurrent(now); }
+                return true;
             }
             State = "on";
 
             bool newWindow = hwnd != currentHwnd;
-            bool titleChanged = current == null || current.Title != IngatPrivacy.Redact(title);
-            bool due = (now - lastReadUtc).TotalMilliseconds >= RereadMs;
-            // While typing the loop runs faster; the heavy read still waits its 5 s
-            bool look = settings.GetBool("ingat.text", true) && (now - lastLookUtc).TotalMilliseconds >= LookMs - 200;
+            string cleanTitle = IngatPrivacy.Redact(title);
+            bool titleChanged = current == null || current.Title != cleanTitle;
+            int rereadMs = idle < 15 ? ActiveRereadMs : IdleRereadMs;
+            int lookMs = idle < 15 ? ActiveLookMs : IdleLookMs;
+            bool due = (now - lastReadUtc).TotalMilliseconds >= rereadMs;
+            bool look = settings.GetBool("ingat.text", true) && (interactDirty || (now - lastLookUtc).TotalMilliseconds >= lookMs - 150);
 
-            // Text: on arrival, on a new title, or when the picture changed enough
             string text = "", url = "", source = "window";
+            IngatSnapshot snap = null;
             Bitmap shot = null;
             try
             {
-                bool read = settings.GetBool("ingat.text", true) && (newWindow || titleChanged || due);
-                if (!read && look && !Fullscreen(hwnd))
+                bool wantText = settings.GetBool("ingat.text", true);
+                bool read = wantText && (newWindow || titleChanged || due || force);
+                // Scroll/focus events read UIA directly: the dHash gate can miss changes in dark or uniform windows
+                if (!read && wantText && interactDirty) read = true;
+                else if (!read && look && !Fullscreen(hwnd))
                 {
                     lastLookUtc = now;
                     shot = IngatText.Snap(hwnd);
-                    if (shot != null && IngatText.Distance(IngatText.Hash(shot), lastHash) > 10) read = true;
+                    if (shot != null)
+                    {
+                        var st = IngatText.Stamp(shot);
+                        // First look after a read without a screenshot only sets the baseline
+                        if (stampStale) { lastStamp = st; stampStale = false; }
+                        else if (IngatText.Changed(lastStamp, st)) read = true;
+                    }
                 }
-                // Chats are read with each line's position, so sent and received can be told apart
+
                 string guess = settings.GetBool("ingat.chat", true) ? IngatChat.Kind(exe, current != null && !newWindow ? current.Url : "", title) : "";
                 if (read && guess == "chat")
                 {
-                    bool secret;
-                    text = IngatText.ReadChat(hwnd, exe, out url, out secret);
+                    snap = IngatText.ReadSnapshot(hwnd, exe, title, true);
+                    url = snap.Url;
                     source = "chat";
-                    if (secret) { text = ""; source = "window"; }
-                    else if (text.Length < 200 && settings.GetBool("ingat.ocr", true) && !LowPower())
+                    if (snap.Secret)
                     {
-                        if (shot == null) shot = IngatText.Snap(hwnd);
-                        if (shot != null) { string seen = IngatText.OcrPlaced(shot); if (seen.Length > text.Length) text = seen; }
+                        text = "";
+                        source = "window";
                     }
-                    if (shot == null) shot = IngatText.Snap(hwnd);
-                    if (shot != null) lastHash = IngatText.Hash(shot);
+                    else
+                    {
+                        text = snap.FormatText(IngatText.ChatMaxChars);
+                        if (text.Length < 200 && settings.GetBool("ingat.ocr", true) && !LowPower())
+                        {
+                            if (shot == null) shot = IngatText.Snap(hwnd);
+                            if (shot != null)
+                            {
+                                string seen = IngatText.OcrPlaced(shot);
+                                if (seen.Length > text.Length)
+                                {
+                                    snap.MainLines.Clear();
+                                    IngatStructure.FromPlacedOcr(seen, snap, true);
+                                    text = snap.FormatText(IngatText.ChatMaxChars);
+                                }
+                            }
+                        }
+                    }
+                    if (shot != null) { lastStamp = IngatText.Stamp(shot); stampStale = false; }
+                    else stampStale = true;
                     lastReadUtc = lastLookUtc = now;
+                    Interlocked.Exchange(ref lastReadTicks, DateTime.UtcNow.Ticks);
                     read = false;
                 }
                 if (read)
                 {
-                    bool secret;
-                    text = IngatText.Read(hwnd, exe, out url, out secret);
+                    snap = IngatText.ReadSnapshot(hwnd, exe, title, false);
+                    url = snap.Url;
                     source = "uia";
-                    if (secret) { text = ""; source = "window"; }
-                    // Nothing readable: let OCR look, unless saving battery or a game owns the screen
-                    else if (text.Length < 80 && settings.GetBool("ingat.ocr", true) && !LowPower() && !Fullscreen(hwnd))
+                    if (snap.Secret)
                     {
-                        if (shot == null) shot = IngatText.Snap(hwnd);
-                        if (shot != null) { string seen = IngatText.Ocr(shot); if (seen.Length > text.Length) { text = seen; source = "ocr"; } }
+                        text = "";
+                        source = "window";
                     }
-                    if (shot == null) shot = IngatText.Snap(hwnd);
-                    if (shot != null) lastHash = IngatText.Hash(shot);
+                    else
+                    {
+                        text = snap.FormatText(IngatText.MaxChars);
+                        // Nothing readable via UIA: in-memory placed OCR structures the window without disk writes
+                        if (snap.MainLines.Count == 0 || text.Length < 80)
+                        {
+                            if (settings.GetBool("ingat.ocr", true) && !LowPower() && !Fullscreen(hwnd))
+                            {
+                                if (shot == null) shot = IngatText.Snap(hwnd);
+                                if (shot != null)
+                                {
+                                    string seen = IngatText.OcrPlaced(shot);
+                                    if (seen.Length > text.Length)
+                                    {
+                                        snap.Source = "ocr";
+                                        snap.MainLines.Clear();
+                                        IngatStructure.FromPlacedOcr(seen, snap, false);
+                                        text = snap.FormatText(IngatText.MaxChars);
+                                        source = "ocr";
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (shot != null) { lastStamp = IngatText.Stamp(shot); stampStale = false; }
+                    else stampStale = true;
                     lastReadUtc = lastLookUtc = now;
+                    Interlocked.Exchange(ref lastReadTicks, DateTime.UtcNow.Ticks);
                 }
             }
             finally { if (shot != null) shot.Dispose(); }
 
             url = IngatPrivacy.CleanUrl(url);
             if (url.Length == 0 && current != null && !newWindow) url = current.Url;
-            if (url.Length > 0 && IngatPrivacy.PrivateWindow(title, url, blockedSites)) { State = "private"; lock (gate) CloseCurrent(now); return; }
+            if (url.Length > 0 && IngatPrivacy.PrivateWindow(title, url, blockedSites))
+            {
+                State = "private";
+                lock (gate) { latestSnap = null; CloseCurrent(now); }
+                return true;
+            }
             text = IngatPrivacy.Redact(text);
-            string cleanTitle = IngatPrivacy.Redact(title);
 
             string app = AppName(exe);
             string project = IngatPrivacy.Project(exe, title);
             string host = IngatPrivacy.Host(url);
-            // Chats and mail: each conversation is its own episode when the title names it
+            // Chats and mail: each conversation is its own episode when the title or chat header names it
             string channel = settings.GetBool("ingat.chat", true) ? IngatChat.Kind(exe, url, title) : "";
             string conversation = channel == "chat" ? IngatChat.Conversation(title) : "";
+            if (channel == "chat" && conversation.Length == 0)
+            {
+                if (snap != null && !snap.Secret && snap.Focus.Length >= 2) conversation = snap.Focus;
+                else if (!newWindow && lastConversation.Length > 0) conversation = lastConversation;
+            }
+            if (channel != "chat") lastConversation = "";
+            else if (conversation.Length > 0) lastConversation = conversation;
+
             if (channel.Length > 0 && source != "window") source = "chat";
+            string kind = IngatStructure.Classify(exe, url, title, text);
+
+            if (snap != null && !snap.Secret)
+            {
+                snap.App = app;
+                snap.Project = project;
+                snap.Title = cleanTitle;
+                if (url.Length > 0) snap.Url = url;
+                if (snap.Kind.Length == 0 || snap.Kind == "other") snap.Kind = kind;
+                snap.RedactAll();
+            }
+
             string key = exe + "|" + (project.Length > 0 ? project : conversation.Length > 0 ? "c:" + IngatChat.Norm(conversation) : host.Length > 0 ? host : "");
 
             // What the user is writing: the focused field's own text, never keystrokes
@@ -294,20 +540,37 @@ namespace Deskmate
                 if (!join)
                 {
                     CloseCurrent(lastSeenUtc > DateTime.MinValue && current != null ? lastSeenUtc : now);
-                    long id = Store.Open(now, app, exe, project, cleanTitle, url, "");
+                    long id = Store.Open(now, app, exe, project, cleanTitle, url, kind);
                     if (channel.Length > 0) Store.SetChannel(id, channel);
                     current = Store.Get(id);
                     currentKey = key;
                 }
-                Store.Touch(current.Id, now, cleanTitle, url, text);
+                Store.Touch(current.Id, now, cleanTitle, url, text, snap != null && !snap.Secret ? snap : null);
                 if (text.Length > 0 || titleChanged || newWindow) Store.AddEvent(now, current.Id, source, app, cleanTitle, url, text);
                 TrackDraft(now, hwnd, field, draft, app, channel, conversation, cleanTitle, url);
-                current.Title = cleanTitle;
-                current.Url = url.Length > 0 ? url : current.Url;
+                current = Store.Get(current.Id) ?? current;
                 current.EndUtc = now;
+                if (snap != null)
+                {
+                    latestSnap = snap.Secret ? null : snap;
+                }
+                else if (latestSnap != null && !newWindow)
+                {
+                    latestSnap.Title = cleanTitle;
+                    if (url.Length > 0) latestSnap.Url = url;
+                    latestSnap.CapturedUtc = now;
+                }
+                else if (newWindow)
+                {
+                    latestSnap = new IngatSnapshot
+                    {
+                        Source = "window", App = app, Exe = exe, Project = project, Title = cleanTitle, Url = url, Kind = kind, CapturedUtc = now
+                    };
+                }
                 currentHwnd = hwnd;
                 lastSeenUtc = now;
             }
+            return true;
         }
 
         // Drafts: kept when they settle, and remembered as sent when the field empties in the same window
@@ -369,6 +632,7 @@ namespace Deskmate
         // Heads-up for the message being written now
         public Dictionary<string, object> BriefNow()
         {
+            EnsureFresh(650);
             var c = composing;
             if (c == null) return new Dictionary<string, object> { { "brief", "" } };
             string app = Json.Str(c, "app"), conv = Json.Str(c, "conversation");
@@ -383,7 +647,7 @@ namespace Deskmate
             {
                 if (current == null) return "";
                 var ev = Store.EventsOf(current.Id, 400);
-                for (int i = ev.Count - 1; i >= 0; i--) if (ev[i][1] == "chat" || ev[i][1] == "uia") return ev[i][3];
+                for (int i = ev.Count - 1; i >= 0; i--) if (ev[i][1] == "chat" || ev[i][1] == "uia" || ev[i][1] == "ocr") return ev[i][3];
                 return "";
             }
         }
@@ -395,6 +659,7 @@ namespace Deskmate
             {
                 Store.Close(current.Id, at > current.StartUtc ? at : current.EndUtc);
                 Store.DropTiny(current.Id);
+                workNudge.Set();
             }
             catch (Exception ex) { Log.Write("ingat tutup: " + ex.Message); }
             current = null;
@@ -413,10 +678,34 @@ namespace Deskmate
                 if (current == null) return;
                 Store.AddEvent(DateTime.UtcNow, current.Id, source, current.App, current.Title, current.Url, text);
                 Store.Touch(current.Id, DateTime.UtcNow, "", "", text);
+                current = Store.Get(current.Id) ?? current;
             }
         }
 
-        // What the user is on right now, and how long they have kept at it
+        // Cheap live peek (no timeline query) for the status row: app, title and focus of the screen being read
+        public Dictionary<string, object> LiveFocus()
+        {
+            var d = new Dictionary<string, object>();
+            IngatEpisode ep;
+            IngatSnapshot snap;
+            lock (gate) { ep = current; snap = latestSnap; }
+            if (State != "on") return d;
+            if (snap != null)
+            {
+                var j = snap.ToJson();
+                d["app"] = Json.Str(j, "app");
+                d["title"] = Json.Str(j, "title");
+                d["focus"] = Json.Str(j, "focus");
+            }
+            if (ep != null)
+            {
+                if (!d.ContainsKey("app") || Json.Str(d, "app").Length == 0) d["app"] = ep.App;
+                if (!d.ContainsKey("title") || Json.Str(d, "title").Length == 0) d["title"] = ep.Title;
+            }
+            return d;
+        }
+
+        // What the user is on right now, its structured screen context, and how long they have kept at it
         public Dictionary<string, object> Now()
         {
             var d = new Dictionary<string, object>
@@ -426,7 +715,9 @@ namespace Deskmate
             };
             if (Paused) d["pausedUntil"] = PausedUntilUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
             IngatEpisode ep;
-            lock (gate) ep = current;
+            IngatSnapshot snap;
+            lock (gate) { ep = current; snap = latestSnap; }
+            if (snap != null && State == "on") d["screen"] = snap.ToJson();
             if (ep == null) return d;
             d["episode"] = ep.ToJson(false);
             var c = composing;
@@ -448,26 +739,44 @@ namespace Deskmate
             return d;
         }
 
-        // Background work: summaries, embeddings, days, meetings, retention
+        // Full structured context for live assistants: screen regions, active episode trail, recent moments, and today's breakdown
+        public Dictionary<string, object> ContextNow(int recentLimit)
+        {
+            EnsureFresh(800);
+            var d = Now();
+            var recent = Store.Recent(Math.Max(1, Math.Min(20, recentLimit)));
+            var recJson = new object[recent.Count];
+            for (int i = 0; i < recent.Count; i++) recJson[i] = recent[i].ToJson(false);
+            d["recent"] = recJson;
+
+            var today = DateTime.Today;
+            var todayEps = Store.Timeline(today.ToUniversalTime(), DateTime.UtcNow.AddMinutes(1), 400);
+            d["today"] = IngatStructure.GroupTimeline(todayEps);
+            d["inboxWaiting"] = Store.Inbox(10).Count;
+            d["openPromises"] = Store.Commitments(0, false, 20).Count;
+            return d;
+        }
+
+        // Background work: summaries, embeddings, days, meetings, retention — woken as soon as an episode closes
 
         void WorkLoop()
         {
             DateTime retained = DateTime.MinValue, meetings = DateTime.MinValue;
             while (!stopping)
             {
-                Thread.Sleep(15000);
+                workNudge.WaitOne(5000);
+                if (stopping) break;
                 try
                 {
-                    if ((DateTime.UtcNow - meetings).TotalMinutes >= 2) { meetings = DateTime.UtcNow; ScanMeetings(); }
+                    if ((DateTime.UtcNow - meetings).TotalSeconds >= 45) { meetings = DateTime.UtcNow; ScanMeetings(); }
                     if ((DateTime.UtcNow - retained).TotalHours >= 6)
                     {
                         retained = DateTime.UtcNow;
                         Store.Retain(settings.GetInt("ingat.keep.events", 14), settings.GetInt("ingat.keep.days", 180));
                     }
-                    // Model work waits for a calm moment and wall power
                     if (LowPower()) continue;
-                    if (IdleSeconds() < 20 && !settings.GetBool("ingat.busywork", true)) continue;
-                    for (int round = 0; round < 4 && !stopping && Brain.Work(); round++) { }
+                    if (IdleSeconds() < 10 && !settings.GetBool("ingat.busywork", true)) continue;
+                    for (int round = 0; round < 5 && !stopping && Brain.Work(); round++) { }
                 }
                 catch (Exception ex) { Log.Write("ingat worker: " + ex.Message); }
             }
@@ -482,7 +791,7 @@ namespace Deskmate
             {
                 if (Store.HasMeeting(path)) continue;
                 var info = new FileInfo(path);
-                if ((DateTime.UtcNow - info.LastWriteTimeUtc).TotalSeconds < 30) continue;
+                if ((DateTime.UtcNow - info.LastWriteTimeUtc).TotalSeconds < 20) continue;
                 string name = Path.GetFileNameWithoutExtension(path);
                 DateTime start;
                 if (name.Length < 16 || !DateTime.TryParseExact(name.Substring(0, 16), "yyyy-MM-dd HH.mm", CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out start))
@@ -493,6 +802,7 @@ namespace Deskmate
                 catch (IOException) { continue; }
                 var end = info.LastWriteTimeUtc > start.ToUniversalTime() ? info.LastWriteTimeUtc : start.ToUniversalTime().AddMinutes(1);
                 Store.AddMeeting(path, start.ToUniversalTime(), end, app.Length > 0 ? app : Lang.T("Rapat"), Lang.T("Rapat") + (app.Length > 0 ? " · " + app : ""), IngatPrivacy.Redact(text));
+                workNudge.Set();
             }
         }
 
@@ -507,8 +817,17 @@ namespace Deskmate
         }
 
         [StructLayout(LayoutKind.Sequential)] struct LASTINPUTINFO { public uint cbSize, dwTime; }
+        [StructLayout(LayoutKind.Sequential)] struct WRECT { public int L, T, R, B; }
         [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int max);
+        [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out WRECT r);
+        [DllImport("user32.dll")] static extern IntPtr GetTopWindow(IntPtr h);
+        [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
+        [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int idx);
+        [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int val, int size);
         [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
         [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr p, int flags, StringBuilder s, ref int size);
@@ -517,6 +836,56 @@ namespace Deskmate
         [DllImport("shell32.dll")] static extern int SHQueryUserNotificationState(out int state);
 
         static readonly string SelfExe = Path.GetFileNameWithoutExtension(Process.GetCurrentProcess().MainModule.FileName).ToLowerInvariant();
+
+        bool IsSelfProcess(int pid, string exe)
+        {
+            return pid == selfPid || (parentPid > 0 && pid == parentPid) || exe == SelfExe;
+        }
+
+        bool IsUsableUserWindow(IntPtr h, out int pid, out string exe)
+        {
+            pid = 0;
+            exe = "";
+            if (h == IntPtr.Zero || !IsWindow(h) || !IsWindowVisible(h) || IsIconic(h)) return false;
+            int exStyle = GetWindowLong(h, -20);
+            if ((exStyle & 0x00000080) != 0) return false; // WS_EX_TOOLWINDOW
+            int cloaked;
+            if (DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0) return false;
+            WRECT r;
+            if (!GetWindowRect(h, out r) || (r.R - r.L) < 200 || (r.B - r.T) < 120) return false;
+            string t = Title(h);
+            if (t.Length == 0) return false;
+            IntPtr probe = h;
+            exe = Exe(ref probe, out pid);
+            if (exe.Length == 0 || IsSelfProcess(pid, exe)) return false;
+            if (exe == "explorer" && (t == "Program Manager" || t == "Windows Input Experience")) return false;
+            return true;
+        }
+
+        // Foreground window first; if Deskmate's own Pet/Suruh overlay holds focus during a query, inspect the active user window behind it
+        IntPtr ResolveTargetWindow(bool allowBehindSelf, out int pid, out string exe)
+        {
+            pid = 0;
+            exe = "";
+            IntPtr fg = Native.GetForegroundWindow();
+            if (fg != IntPtr.Zero)
+            {
+                IntPtr probe = fg;
+                exe = Exe(ref probe, out pid);
+                if (exe.Length > 0 && !IsSelfProcess(pid, exe)) return fg;
+            }
+            if (!allowBehindSelf) return IntPtr.Zero;
+
+            IntPtr recent;
+            lock (eventGate) recent = eventHwnd;
+            foreach (var cand in new[] { recent, lastUserHwnd, currentHwnd })
+                if (cand != IntPtr.Zero && IsUsableUserWindow(cand, out pid, out exe)) return cand;
+
+            IntPtr cur = GetTopWindow(IntPtr.Zero);
+            for (int n = 0; cur != IntPtr.Zero && n < 60; n++, cur = GetWindow(cur, 2))
+                if (IsUsableUserWindow(cur, out pid, out exe)) return cur;
+            return IntPtr.Zero;
+        }
 
         public static double IdleSeconds()
         {

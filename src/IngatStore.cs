@@ -12,7 +12,7 @@ namespace Deskmate
     {
         public long Id;
         public DateTime StartUtc, EndUtc;
-        public string App = "", Exe = "", Project = "", Title = "", Url = "", Kind = "", Summary = "", Body = "";
+        public string App = "", Exe = "", Project = "", Title = "", Url = "", Kind = "", Summary = "", Body = "", Context = "";
         public bool Closed;
         public double Score;
 
@@ -31,7 +31,8 @@ namespace Deskmate
             };
             if (Url.Length > 0) d["url"] = Url;
             if (Summary.Length > 0) d["summary"] = Summary;
-            if (withBody && Body.Length > 0) d["text"] = Body.Length > 1500 ? Body.Substring(0, 1500) + "…" : Body;
+            if (Context.Length > 0) IngatContext.Parse(Context).WriteTo(d);
+            if (withBody && Body.Length > 0) d["text"] = Body.Length > 2400 ? Body.Substring(0, 2400) + "…" : Body;
             return d;
         }
     }
@@ -54,7 +55,7 @@ namespace Deskmate
             db.Script(
                 "PRAGMA journal_mode=WAL;" +
                 "PRAGMA synchronous=NORMAL;" +
-                "CREATE TABLE IF NOT EXISTS episodes(id INTEGER PRIMARY KEY, start INTEGER, end INTEGER, app TEXT, exe TEXT, project TEXT, title TEXT, url TEXT, kind TEXT DEFAULT '', summary TEXT DEFAULT '', body TEXT DEFAULT '', closed INTEGER DEFAULT 0, embedded INTEGER DEFAULT 0);" +
+                "CREATE TABLE IF NOT EXISTS episodes(id INTEGER PRIMARY KEY, start INTEGER, end INTEGER, app TEXT, exe TEXT, project TEXT, title TEXT, url TEXT, kind TEXT DEFAULT '', summary TEXT DEFAULT '', body TEXT DEFAULT '', closed INTEGER DEFAULT 0, embedded INTEGER DEFAULT 0, context TEXT DEFAULT '');" +
                 "CREATE INDEX IF NOT EXISTS episodes_start ON episodes(start);" +
                 "CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, t INTEGER, episode INTEGER, source TEXT, app TEXT, title TEXT, url TEXT, text TEXT, hash TEXT);" +
                 "CREATE INDEX IF NOT EXISTS events_t ON events(t);" +
@@ -75,7 +76,7 @@ namespace Deskmate
             // Columns added after the first release: older databases get them here
             foreach (var col in new[]
             {
-                "episodes|channel TEXT DEFAULT ''", "episodes|digested INTEGER DEFAULT 0",
+                "episodes|channel TEXT DEFAULT ''", "episodes|digested INTEGER DEFAULT 0", "episodes|context TEXT DEFAULT ''",
                 // sent | received | draft (written, never sent); said: the time the chat showed
                 "messages|status TEXT DEFAULT ''", "messages|said TEXT DEFAULT ''",
                 // Where a conversation stands: topic, who waits for whom, questions still open, decisions
@@ -95,24 +96,50 @@ namespace Deskmate
 
         public long Open(DateTime t, string app, string exe, string project, string title, string url, string kind)
         {
-            db.Exec("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body) VALUES(?,?,?,?,?,?,?,?,?)", t, t, app, exe, project, title, url, kind, title);
+            string autoKind = string.IsNullOrEmpty(kind) ? IngatStructure.Classify(exe, url, title, "") : kind;
+            var ctx = new IngatContext();
+            ctx.Absorb(t, title, url, "", null);
+            db.Exec("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,context) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                t, t, app ?? "", exe ?? "", project ?? "", title ?? "", url ?? "", autoKind, title ?? "", ctx.Encode());
             long id = db.LastId;
             Reindex(id);
             return id;
         }
 
-        // Later title and URL win; new text joins the body once
+        // Later title and URL win; new lines merge without duplicating scrolled regions, and structured steps/anchors accumulate
         public void Touch(long id, DateTime t, string title, string url, string text)
         {
-            var rows = db.Query("SELECT body FROM episodes WHERE id=?", id);
+            Touch(id, t, title, url, text, null);
+        }
+
+        public void Touch(long id, DateTime t, string title, string url, string text, IngatSnapshot snap)
+        {
+            var rows = db.Query("SELECT body, kind, context, exe, title, url FROM episodes WHERE id=?", id);
             if (rows.Count == 0) return;
             string body = IngatDb.Str(rows[0][0]);
+            string curKind = IngatDb.Str(rows[0][1]);
+            string rawCtx = IngatDb.Str(rows[0][2]);
+            string exe = IngatDb.Str(rows[0][3]);
+            string effTitle = !string.IsNullOrEmpty(title) ? title : IngatDb.Str(rows[0][4]);
+            string effUrl = !string.IsNullOrEmpty(url) ? url : IngatDb.Str(rows[0][5]);
+
             foreach (var piece in new[] { title, url, text })
-                if (!string.IsNullOrEmpty(piece) && body.Length < BodyCap && body.IndexOf(piece, StringComparison.Ordinal) < 0)
-                    body = body.Length == 0 ? piece : body + "\n" + piece;
-            if (body.Length > BodyCap) body = body.Substring(0, BodyCap);
-            db.Exec("UPDATE episodes SET end=?, title=CASE WHEN ?<>'' THEN ? ELSE title END, url=CASE WHEN ?<>'' THEN ? ELSE url END, body=? WHERE id=?",
-                t, title ?? "", title ?? "", url ?? "", url ?? "", body, id);
+                if (!string.IsNullOrEmpty(piece))
+                    body = IngatStructure.MergeBody(body, piece, BodyCap);
+
+            var ctx = IngatContext.Parse(rawCtx);
+            ctx.Absorb(t, effTitle, effUrl, text, snap);
+
+            string nextKind = curKind;
+            if ((nextKind.Length == 0 || nextKind == "other") && curKind != "meeting")
+            {
+                string guessed = snap != null && snap.Kind.Length > 0 ? snap.Kind : IngatStructure.Classify(exe, effUrl, effTitle, text);
+                if (guessed.Length > 0 && guessed != "other") nextKind = guessed;
+                else if (nextKind.Length == 0) nextKind = guessed;
+            }
+
+            db.Exec("UPDATE episodes SET end=?, title=CASE WHEN ?<>'' THEN ? ELSE title END, url=CASE WHEN ?<>'' THEN ? ELSE url END, kind=?, body=?, context=? WHERE id=?",
+                t, title ?? "", title ?? "", url ?? "", url ?? "", nextKind, body, ctx.Encode(), id);
             // The open episode must be findable too, not only once it closes
             Reindex(id);
         }
@@ -126,22 +153,45 @@ namespace Deskmate
         // Whatever a crash left open is closed at its last sighting
         public void CloseStale() { db.Exec("UPDATE episodes SET closed=1 WHERE closed=0"); }
 
-        // Episodes under a minute say nothing on their own
+        // Brief pass-throughs under 8 s without typed/copied/sent actions are dropped; quick reference lookups stay
         public void DropTiny(long id)
         {
-            db.Exec("DELETE FROM episodes WHERE id=? AND end-start<20 AND kind<>'meeting'", id);
+            db.Exec("DELETE FROM episodes WHERE id=? AND end-start<8 AND kind<>'meeting' AND NOT EXISTS(SELECT 1 FROM events WHERE episode=episodes.id AND source IN ('sent','typed','clipboard'))", id);
             if (db.Changes > 0) { db.Exec("DELETE FROM episodes_fts WHERE rowid=?", id); db.Exec("DELETE FROM events WHERE episode=?", id); }
         }
 
         public void Reindex(long id)
         {
             db.Exec("DELETE FROM episodes_fts WHERE rowid=?", id);
-            db.Exec("INSERT INTO episodes_fts(rowid,title,url,body,summary,app) SELECT id,title,url,body,summary,app FROM episodes WHERE id=?", id);
+            var rows = db.Query("SELECT title, project, url, body, summary, app, context FROM episodes WHERE id=?", id);
+            if (rows.Count == 0) return;
+            var r = rows[0];
+            var ctx = IngatContext.Parse(IngatDb.Str(r[6]));
+            string titleIdx = (IngatDb.Str(r[0]) + " " + IngatDb.Str(r[1]) + " " + ctx.SearchTitles()).Trim();
+            string sumIdx = (IngatDb.Str(r[4]) + " " + ctx.SearchSummary()).Trim();
+            db.Exec("INSERT INTO episodes_fts(rowid,title,url,body,summary,app) VALUES(?,?,?,?,?,?)",
+                id, titleIdx, IngatDb.Str(r[2]), IngatDb.Str(r[3]), sumIdx, IngatDb.Str(r[5]));
         }
 
         public void SetSummary(long id, string summary, string kind)
         {
-            db.Exec("UPDATE episodes SET summary=?, kind=CASE WHEN ?<>'' THEN ? ELSE kind END WHERE id=?", summary ?? "", kind ?? "", kind ?? "", id);
+            SetSummary(id, summary, kind, null, null);
+        }
+
+        public void SetSummary(long id, string summary, string kind, string[] points, string[] anchors)
+        {
+            if (points != null || anchors != null)
+            {
+                string raw = IngatDb.Str(db.Scalar("SELECT context FROM episodes WHERE id=?", id));
+                var ctx = IngatContext.Parse(raw);
+                ctx.ApplyAi(points, anchors);
+                db.Exec("UPDATE episodes SET summary=?, kind=CASE WHEN ?<>'' THEN ? ELSE kind END, context=? WHERE id=?",
+                    summary ?? "", kind ?? "", kind ?? "", ctx.Encode(), id);
+            }
+            else
+            {
+                db.Exec("UPDATE episodes SET summary=?, kind=CASE WHEN ?<>'' THEN ? ELSE kind END WHERE id=?", summary ?? "", kind ?? "", kind ?? "", id);
+            }
             Reindex(id);
         }
 
@@ -153,7 +203,7 @@ namespace Deskmate
             db.Exec("INSERT INTO events(t,episode,source,app,title,url,text,hash) VALUES(?,?,?,?,?,?,?,?)", t, episode, source, app, title, url, text, hash);
         }
 
-        const string Cols = "id,start,end,app,exe,project,title,url,kind,summary,body,closed";
+        const string Cols = "id,start,end,app,exe,project,title,url,kind,summary,body,closed,context";
 
         static IngatEpisode Read(object[] r)
         {
@@ -165,6 +215,7 @@ namespace Deskmate
                 App = IngatDb.Str(r[3]), Exe = IngatDb.Str(r[4]), Project = IngatDb.Str(r[5]), Title = IngatDb.Str(r[6]),
                 Url = IngatDb.Str(r[7]), Kind = IngatDb.Str(r[8]), Summary = IngatDb.Str(r[9]), Body = IngatDb.Str(r[10]),
                 Closed = IngatDb.Num(r[11]) != 0,
+                Context = r.Length > 12 ? IngatDb.Str(r[12]) : "",
             };
         }
 
@@ -201,7 +252,7 @@ namespace Deskmate
         {
             var terms = new List<string>();
             var sb = new StringBuilder();
-            foreach (char c in (q ?? "") + " ")
+            foreach (char c in IngatTime.StripSpans(q) + " ")
             {
                 if (char.IsLetterOrDigit(c) || c == '_' || c == '.' || c == '-') { sb.Append(c); continue; }
                 string w = sb.ToString().Trim('.', '-');
@@ -220,14 +271,14 @@ namespace Deskmate
             string fts = FtsQuery(q);
             // No topic words ("what was I doing?"): the latest moments, not the oldest
             if (fts.Length == 0) return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE end>=? AND start<=? ORDER BY start DESC LIMIT ?", fromUtc, toUtc, limit));
-            var rows = db.Query("SELECT e.id,e.start,e.end,e.app,e.exe,e.project,e.title,e.url,e.kind,e.summary,e.body,e.closed, bm25(episodes_fts, 4.0, 2.0, 1.0, 3.0, 2.0) AS s " +
+            var rows = db.Query("SELECT e.id,e.start,e.end,e.app,e.exe,e.project,e.title,e.url,e.kind,e.summary,e.body,e.closed,e.context, bm25(episodes_fts, 4.0, 2.0, 1.0, 3.0, 2.0) AS s " +
                 "FROM episodes_fts JOIN episodes e ON e.id=episodes_fts.rowid WHERE episodes_fts MATCH ? AND e.end>=? AND e.start<=? ORDER BY s LIMIT ?",
                 fts, fromUtc, toUtc, limit);
             var list = new List<IngatEpisode>();
             foreach (var r in rows)
             {
                 var ep = Read(r);
-                ep.Score = r[12] is double ? -(double)r[12] : 0;
+                ep.Score = r[13] is double ? -(double)r[13] : 0;
                 list.Add(ep);
             }
             return list;
@@ -237,7 +288,7 @@ namespace Deskmate
 
         public List<IngatEpisode> NeedSummary(int limit)
         {
-            return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE closed=1 AND summary='' AND end-start>=60 ORDER BY start DESC LIMIT ?", limit));
+            return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE closed=1 AND summary='' AND end-start>=25 ORDER BY start DESC LIMIT ?", limit));
         }
 
         public List<IngatEpisode> NeedEmbedding(int limit)
