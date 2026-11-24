@@ -128,7 +128,7 @@ namespace Deskmate
                         p.Text(WeatherWord(isle.weather.Code), Ink.Small(11f), p.T.Sub, r.X + 35, cy + 10, r.Width - 37, StringAlignment.Near);
                         break;
                     case "battery":
-                        p.Battery(r.X + 9, cy, isle.battery / 100f, isle.battery <= 20 && !isle.onAc ? p.T.Negative : p.T.Text, isle.onAc);
+                        p.Battery(r.X + 9, cy, isle.battery / 100f, isle.battery <= 20 && !isle.onAc ? p.T.Negative : isle.onAc ? p.T.Positive : p.T.Text, isle.onAc);
                         p.Text(Ink.Percent(isle.battery), Ink.Semi(14f), isle.battery <= 20 && !isle.onAc ? p.T.Negative : p.T.Text, r.X + 44, cy - 6, r.Width - 46, StringAlignment.Near);
                         p.Text(isle.onAc ? Lang.T("mengisi daya") : Lang.T("Baterai"), Ink.Small(11f), p.T.Sub, r.X + 44, cy + 10, r.Width - 46, StringAlignment.Near);
                         break;

@@ -202,7 +202,7 @@ namespace Deskmate
                 if (isle.hasBattery)
                 {
                     bool low = isle.battery <= 20 && !isle.onAc;
-                    p.Battery(Pad + 4, cy, isle.battery / 100f, low ? p.T.Negative : p.T.Text, isle.onAc);
+                    p.Battery(Pad + 4, cy, isle.battery / 100f, low ? p.T.Negative : isle.onAc ? p.T.Positive : p.T.Text, isle.onAc);
                     p.Text(Ink.Percent(isle.battery), Ink.Semi(13f), low ? p.T.Negative : p.T.Text, Pad + 40, cy, 60, StringAlignment.Near);
                     p.Text(isle.onAc ? Lang.T("mengisi daya") : Lang.T("Baterai"), Ink.Small(11.5f), p.T.Sub, Pad + 84, cy, 120, StringAlignment.Near);
                 }

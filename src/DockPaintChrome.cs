@@ -131,7 +131,7 @@ namespace Deskmate
                 if (isle.hasBattery)
                 {
                     cx += 24;
-                    p.Battery(cx - 9, cy, isle.battery / 100f, isle.battery <= 20 && !isle.onAc ? p.T.Negative : p.T.Text, isle.onAc);
+                    p.Battery(cx - 9, cy, isle.battery / 100f, isle.battery <= 20 && !isle.onAc ? p.T.Negative : isle.onAc ? p.T.Positive : p.T.Text, isle.onAc);
                 }
             }
 

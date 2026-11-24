@@ -801,7 +801,7 @@ namespace Deskmate
             var semi = Ink.Semi(13.5f);
             string pct = battery + "%";
             float x = CenterStart(w, 44, title, semi, pct, semi, 60);
-            p.Battery(x, cy, batteryFill.Value, p.T.Text, onAc);
+            p.Battery(x, cy, batteryFill.Value, onAc ? p.T.Positive : p.T.Text, onAc);
             p.Text(title, semi, p.T.Text, x + 44, cy, w - x - 60, StringAlignment.Near);
             p.Text(pct, semi, p.T.Sub, x + 44 + p.Measure(title, semi) + 14, cy, 60, StringAlignment.Near);
         }
