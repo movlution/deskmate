@@ -212,6 +212,7 @@ namespace Deskmate
                 Kick();
                 return;
             }
+            if (StepMove()) return;
             if (ShelfDragCheck()) return;
             bool inside = InShape(mouse);
             if (current == View.Prompter) PrompterHover(mouse, inside);
@@ -238,8 +239,8 @@ namespace Deskmate
         void PointerLeave()
         {
             compactHoverExitPending = false;
-            // Dragging slider or file: stay open
-            if (dragId != null || draggingOut) return;
+            // Dragging slider, file or island: stay open
+            if (dragId != null || draggingOut || moving) return;
             if (prompterSizing != 0) return;
             pointerInside = false;
             shellDown = false;
@@ -271,6 +272,7 @@ namespace Deskmate
         {
             base.OnMouseCaptureChanged(e);
             if (prompterSizing != 0 && !Capture) EndPrompterSize();
+            if (!Capture && moving) EndMove();
             if (!Capture)
             {
                 pressedBubble = View.Idle;
@@ -309,6 +311,7 @@ namespace Deskmate
                 pressedId = HitAt(pt);
                 var h = HitById(pressedId);
                 if (h != null && h.Drag != null) { dragId = pressedId; Capture = true; h.Drag(Fraction(h, pt)); }
+                ArmMove(pt, h);
                 if (!expanded && !onBubble && h == null && shell.Contains(pt) && CanExpand())
                     pressedCompactBounds = ToScreenBounds(shell);
                 // Bare pill or a pill-wide hit
@@ -329,6 +332,12 @@ namespace Deskmate
             base.OnMouseUp(e);
             shellDown = false;
             var pt = new PointF(e.X / scale, e.Y / scale);
+            if (e.Button == MouseButtons.Left && EndMove())
+            {
+                Capture = false;
+                pressedId = null;
+                return;
+            }
             if (prompterSizing != 0)
             {
                 EndPrompterSize();

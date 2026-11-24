@@ -28,7 +28,7 @@ namespace Deskmate
         void LoadLayout()
         {
             panelW = Clamp(settings.GetInt("panel.width", 560), 440, 640);
-            shiftPct = Math.Max(-40, Math.Min(40, settings.GetInt("position", 0)));
+            shiftPct = Math.Max(-ShiftMax, Math.Min(ShiftMax, settings.GetInt("position", 0)));
             MigrateTabs();
             AddConvertTab();
             AddVoiceTab();

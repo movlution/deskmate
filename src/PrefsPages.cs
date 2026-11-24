@@ -223,12 +223,13 @@ namespace Deskmate
                         add(PlaceRow());
                         int place = island.placeMode;
                         if (place == PlaceTop)
-                            add(Row(Lang.T("Geser"), null, Slider(-40, 40, 5, settings.GetInt("position", 0), v => v == 0 ? Lang.T("tengah") : (v < 0 ? Lang.T("kiri") : Lang.T("kanan")) + " " + Math.Abs(v) + "%",
+                            add(Row(Lang.T("Geser"), null, Slider(-ShiftMax, ShiftMax, 5, settings.GetInt("position", 0), v => v == 0 ? Lang.T("tengah") : (v < 0 ? Lang.T("kiri") : Lang.T("kanan")) + " " + Math.Abs(v) + "%",
                                 v => { island.SetLayout("position", v); Preview(); })));
                         else if (place == PlaceTopLeft || place == PlaceTopRight)
-                            add(Row(Lang.T("Jarak dari pojok"), null, Slider(0, 240, 4, (int)island.placeInset, v => v + " px", v => island.SetPlaceValue("place.inset", v))));
+                            add(Row(Lang.T("Jarak dari pojok"), null, Slider(0, 320, 4, (int)island.placeInset, v => v + " px", v => island.SetPlaceValue("place.inset", v))));
                         else
                             add(Row(Lang.T("Tinggi"), Lang.T("Dari tepi atas layar"), Slider(0, 100, 2, (int)Math.Round(island.placeY * 100), v => v + "%", v => island.SetPlaceValue("place.y", v))));
+                        add(Row(Lang.T("Geser dengan mouse"), Lang.T("Seret island untuk memindahkannya di sepanjang tepi layar"), Switch("place.drag", true, null)));
                         cap(Lang.T("Bentuk"));
                         add(Row(Lang.T("Menempel di tepi layar"), Lang.T("Bentuk island yang menyatu dengan tepi"), Switch("dock", true, null)));
                         add(Row(Lang.T("Garis cahaya"), Lang.T("Progres timer, unduhan, dan cas di tepi island; kilau saat pesan masuk"), Switch("edge.light", true, null)));

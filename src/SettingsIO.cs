@@ -16,7 +16,7 @@ namespace Deskmate
             "material", "theme", "lyrics", "lyrics.online", "visualizer", "music.view", "notif", "notif.content", "notif.apps", "notif.vip",
             "agent.wait", "agent.quota", "update.check", "accent", "monitor", AllIslandScreensKey, "focus.break", "focus.hold", "dock", "position", "panel.width", "panel.tabs",
             "google.tasks", "google.drive.notes", "tasks.sort",
-            "place", "place.inset", "place.y", "home.cards", "home.sort", "tabs.trigger",
+            "place", "place.inset", "place.y", "place.drag", "home.cards", "home.sort", "tabs.trigger",
             "dockbar.on", "dockbar.replace", "dockbar.reserve", "dockbar.magnify", "dockbar.pins", "dockbar.work",
             "dockbar.w.clock", "dockbar.w.media", "dockbar.w.ai", "dockbar.w.timer", "dockbar.w.weather", "dockbar.w.battery", "dockbar.w.system", "dockbar.style", "dockbar.size", "dockbar.mag", "dockbar.hide", "dockbar.revealdelay", "dockbar.previews", "dockbar.badges", "dockbar.taskview", "dockbar.capture",
             "panel.first", "panel.open", "panel.delay", "tabs.style", "mini", "mini.notif", "island.eyes", "island.follow", "idle.face", "island.except",

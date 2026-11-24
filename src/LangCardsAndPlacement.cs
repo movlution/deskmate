@@ -48,6 +48,8 @@ namespace Deskmate
             en.Add("Sisi kanan", "Right side");
             en.Add("Geser", "Shift");
             en.Add("Jarak dari pojok", "Distance from corner");
+            en.Add("Geser dengan mouse", "Drag with the mouse");
+            en.Add("Seret island untuk memindahkannya di sepanjang tepi layar", "Drag the island to move it along the screen edge");
             en.Add("Tinggi", "Height");
             en.Add("Dari tepi atas layar", "From the top of the screen");
             en.Add("Menempel di tepi layar", "Attach to the screen edge");
