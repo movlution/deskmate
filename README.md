@@ -21,14 +21,14 @@ Jalankan EXE, lalu arahkan kursor ke island di tepi atas layar. Mendukung Window
 
 ## Build sendiri
 
-Butuh Windows 10/11 64-bit dan .NET Framework 4.8. Jalankan `build.cmd` untuk menghasilkan `Deskmate.exe`.
+Butuh Windows 10/11 64-bit dan .NET SDK 10. Jalankan `build.cmd` untuk menghasilkan `Deskmate.exe` (.NET 10, self-contained, satu file; tidak perlu memasang runtime).
 
 ## Struktur
 
 - `src/` — kode aplikasi WinForms/WPF interop dengan UI owner-drawn.
 - `tests/` — harness E2E PowerShell, suite tier 1–4, dan pemeriksaan ad-hoc.
 - `docs/` — panduan fitur, pengaturan, integrasi, dan privasi.
-- `build.cmd` — kompilasi dengan `csc` bawaan Windows.
+- `build.cmd` — `dotnet publish` (.NET 10) ke satu `Deskmate.exe`.
 - `TEST_INFRA.md` — spesifikasi harness pengujian.
 
 Inti island dipecah menjadi beberapa partial class:

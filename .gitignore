@@ -4,6 +4,15 @@
 /Deskmate.exe.backup-*
 /Deskmate.previous-*.exe
 
+# .NET build output
+/bin/
+/obj/
+/artifacts/
+/publish/
+/publish-jit/
+/scratch/
+msbuild.log
+
 # Local release staging and archived local builds
 /release/
 

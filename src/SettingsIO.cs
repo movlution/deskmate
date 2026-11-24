@@ -83,7 +83,12 @@ namespace Deskmate
         // New process waits for this one, like an update
         public void RestartDeskmate()
         {
-            try { Process.Start(new ProcessStartInfo(Application.ExecutablePath, "--after " + Process.GetCurrentProcess().Id) { UseShellExecute = false }); }
+            try
+            {
+                string exe = Environment.ProcessPath;
+                if (string.IsNullOrEmpty(exe)) return;
+                Process.Start(new ProcessStartInfo(exe, "--after " + Process.GetCurrentProcess().Id) { UseShellExecute = false });
+            }
             catch (Exception ex) { Log.Write("restart: " + ex.Message); return; }
             Close();
         }

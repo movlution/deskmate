@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -716,20 +715,9 @@ namespace Deskmate
                 || s.IndexOf("RightWin", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        static readonly MethodInfo AppDataForPkg = ResolveAppDataForPkg();
         static string cachedPkgFamily, cachedLogFile;
         static DateTime cachedPkgMtime, cachedLogMtime;
         static bool cachedPkgValid, cachedPkgUsesWin, cachedLogValid, cachedLogUsesWin;
-
-        static MethodInfo ResolveAppDataForPkg()
-        {
-            try
-            {
-                var t = Type.GetType("Windows.Management.Core.ApplicationDataManager, Windows.Management, ContentType=WindowsRuntime");
-                return t != null ? t.GetMethod("CreateForPackageFamily", new[] { typeof(string) }) : null;
-            }
-            catch { return null; }
-        }
 
         static bool RaycastUsesWinKey(string local)
         {
@@ -746,42 +734,39 @@ namespace Deskmate
                         if (cachedPkgValid && string.Equals(pkgFamily, cachedPkgFamily, StringComparison.OrdinalIgnoreCase) && mtime == cachedPkgMtime)
                             return cachedPkgUsesWin;
 
-                        if (AppDataForPkg != null)
+                        try
                         {
-                            try
+                            var appData = Windows.Management.Core.ApplicationDataManager.CreateForPackageFamily(pkgFamily);
+                            if (appData != null)
                             {
-                                var appData = AppDataForPkg.Invoke(null, new object[] { pkgFamily }) as Windows.Storage.ApplicationData;
-                                if (appData != null)
+                                var values = appData.LocalSettings.Values;
+                                object raw;
+                                string val = null;
+                                if (values.TryGetValue("ActivationHotkey-Production", out raw) && raw != null)
+                                    val = raw.ToString();
+                                if (string.IsNullOrEmpty(val))
                                 {
-                                    var values = appData.LocalSettings.Values;
-                                    object raw;
-                                    string val = null;
-                                    if (values.TryGetValue("ActivationHotkey-Production", out raw) && raw != null)
-                                        val = raw.ToString();
-                                    if (string.IsNullOrEmpty(val))
+                                    foreach (var kv in values)
                                     {
-                                        foreach (var kv in values)
+                                        if (kv.Key != null && kv.Key.StartsWith("ActivationHotkey", StringComparison.Ordinal) && kv.Value != null)
                                         {
-                                            if (kv.Key != null && kv.Key.StartsWith("ActivationHotkey", StringComparison.Ordinal) && kv.Value != null)
-                                            {
-                                                val = kv.Value.ToString();
-                                                if (!string.IsNullOrEmpty(val)) break;
-                                            }
+                                            val = kv.Value.ToString();
+                                            if (!string.IsNullOrEmpty(val)) break;
                                         }
                                     }
-                                    if (!string.IsNullOrEmpty(val))
-                                    {
-                                        bool usesWin = HasWinToken(val);
-                                        cachedPkgFamily = pkgFamily;
-                                        cachedPkgMtime = mtime;
-                                        cachedPkgUsesWin = usesWin;
-                                        cachedPkgValid = true;
-                                        return usesWin;
-                                    }
+                                }
+                                if (!string.IsNullOrEmpty(val))
+                                {
+                                    bool usesWin = HasWinToken(val);
+                                    cachedPkgFamily = pkgFamily;
+                                    cachedPkgMtime = mtime;
+                                    cachedPkgUsesWin = usesWin;
+                                    cachedPkgValid = true;
+                                    return usesWin;
                                 }
                             }
-                            catch { }
                         }
+                        catch { }
                     }
                 }
                 catch { }

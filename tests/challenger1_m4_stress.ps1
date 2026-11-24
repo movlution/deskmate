@@ -9,6 +9,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$script:c1m4OwnedTmp = $null
+$script:c1m4PrevDir = $env:DESKMATE_DIR
+$script:c1m4PrevHome = $env:DESKMATE_HOME
+$script:c1m4PrevDry = $env:DESKMATE_DOCK_DRY
+if ([string]::IsNullOrEmpty($env:DESKMATE_DIR)) {
+    $script:c1m4OwnedTmp = Join-Path ([IO.Path]::GetTempPath()) ("deskmate-c1m4-" + [Guid]::NewGuid().ToString("N"))
+    $c1m4Home = Join-Path $script:c1m4OwnedTmp "home"
+    New-Item -ItemType Directory -Path $script:c1m4OwnedTmp, $c1m4Home -Force | Out-Null
+    $env:DESKMATE_DIR = $script:c1m4OwnedTmp
+    $env:DESKMATE_HOME = $c1m4Home
+    $env:DESKMATE_DOCK_DRY = "1"
+}
+
 $commonDir = Join-Path $PSScriptRoot "common"
 . (Join-Path $commonDir "TestHarness.ps1")
 . (Join-Path $commonDir "DeskmateLoader.ps1")
@@ -23,7 +36,7 @@ Write-Host "==========================================================" -Foregro
 # 1. Initialize Assembly
 $binPath = Find-DeskmateBinary
 if (-not $binPath) {
-    throw "Deskmate.exe not found! Please build before running tests."
+    throw "Deskmate reflection binary not found! Please build before running tests."
 }
 Initialize-DeskmateLoader | Out-Null
 
@@ -435,3 +448,10 @@ Describe "4. Dock Module Interactive Pressed State & Tactile Feedback Verificati
 # Execution Summary
 # --------------------------------------------------------------------------
 Format-TestReport
+if ($script:c1m4OwnedTmp) {
+    $env:DESKMATE_DIR = $script:c1m4PrevDir
+    $env:DESKMATE_HOME = $script:c1m4PrevHome
+    $env:DESKMATE_DOCK_DRY = $script:c1m4PrevDry
+    Remove-Item -LiteralPath $script:c1m4OwnedTmp -Recurse -Force -ErrorAction SilentlyContinue
+}
+exit $(if ($global:TestContext.Failed -gt 0) { 1 } else { 0 })

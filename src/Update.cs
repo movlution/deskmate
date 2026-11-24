@@ -15,7 +15,7 @@ namespace Deskmate
     partial class Island
     {
         const string AssetPrefix = "https://github.com/movlution/deskmate/releases/download/";
-        const long AssetMax = 20 * 1024 * 1024;
+        const long AssetMax = 256L * 1024 * 1024;
         string newAsset, newDigest;
         bool updating;
 
@@ -43,8 +43,10 @@ namespace Deskmate
         static string OwnDigest()
         {
             if (ownDigest != null) return ownDigest;
+            string exe = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exe)) return "";
             using (var sha = SHA256.Create())
-            using (var f = File.OpenRead(Application.ExecutablePath))
+            using (var f = File.OpenRead(exe))
                 ownDigest = BitConverter.ToString(sha.ComputeHash(f)).Replace("-", "").ToLowerInvariant();
             return ownDigest;
         }
@@ -112,7 +114,8 @@ namespace Deskmate
             using (var sha = SHA256.Create()) hash = BitConverter.ToString(sha.ComputeHash(data)).Replace("-", "").ToLowerInvariant();
             if (hash != digest) return "SHA-256 tidak cocok";
 
-            string exe = Application.ExecutablePath, dir = Path.GetDirectoryName(exe);
+            string exe = Environment.ProcessPath, dir = string.IsNullOrEmpty(exe) ? null : Path.GetDirectoryName(exe);
+            if (string.IsNullOrEmpty(dir)) return "lokasi exe tidak diketahui";
             string fresh = Path.Combine(dir, "Deskmate.new.exe"), old = Path.Combine(dir, "Deskmate.old.exe");
             File.WriteAllBytes(fresh, data);
             // Once releases are signed, the next one must be signed by the same publisher
@@ -160,7 +163,9 @@ namespace Deskmate
         // Leftover from the previous version
         static void CleanUpdate()
         {
-            string dir = Path.GetDirectoryName(Application.ExecutablePath);
+            string exe = Environment.ProcessPath;
+            string dir = string.IsNullOrEmpty(exe) ? null : Path.GetDirectoryName(exe);
+            if (string.IsNullOrEmpty(dir)) return;
             foreach (var name in new[] { "Deskmate.old.exe", "Deskmate.new.exe" })
                 try
                 {

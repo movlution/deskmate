@@ -74,7 +74,7 @@ namespace Deskmate
                         Name = name,
                         Uri = page[1],
                         Sub = own ? "Deskmate" : Lang.T("Pengaturan Windows"),
-                        Target = own ? System.Windows.Forms.Application.ExecutablePath : ShellApp.AppsFolderOf(SettingsApp),
+                        Target = own ? (Environment.ProcessPath ?? "") : ShellApp.AppsFolderOf(SettingsApp),
                     }));
                 }
                 ranked.Sort((a, b) => a.Key != b.Key ? a.Key.CompareTo(b.Key) : string.Compare(a.Value.Name, b.Value.Name, StringComparison.CurrentCultureIgnoreCase));

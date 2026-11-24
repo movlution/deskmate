@@ -16,15 +16,31 @@ Write-Host "==========================================================" -Foregro
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 
-$binPath = "d:\PROJECT\Other\tepi\Deskmate.exe"
-if (-not (Test-Path $binPath)) {
-    Write-Error "Deskmate.exe not found at $binPath. Run build.cmd first."
-    exit 1
+$script:c2eOwnedTmp = $null
+$script:c2ePrevDir = $env:DESKMATE_DIR
+$script:c2ePrevHome = $env:DESKMATE_HOME
+$script:c2ePrevDry = $env:DESKMATE_DOCK_DRY
+if ([string]::IsNullOrEmpty($env:DESKMATE_DIR)) {
+    $script:c2eOwnedTmp = Join-Path ([IO.Path]::GetTempPath()) ("deskmate-c2e-" + [Guid]::NewGuid().ToString("N"))
+    $c2eHome = Join-Path $script:c2eOwnedTmp "home"
+    New-Item -ItemType Directory -Path $script:c2eOwnedTmp, $c2eHome -Force | Out-Null
+    $env:DESKMATE_DIR = $script:c2eOwnedTmp
+    $env:DESKMATE_HOME = $c2eHome
+    $env:DESKMATE_DOCK_DRY = "1"
 }
 
-$assembly = [System.Reflection.Assembly]::LoadFrom($binPath)
-$islandType = $assembly.GetType("Deskmate.Island")
-$inkType = $assembly.GetType("Deskmate.Ink")
+$commonDir = Join-Path $PSScriptRoot "common"
+. (Join-Path $commonDir "TestHarness.ps1")
+. (Join-Path $commonDir "DeskmateLoader.ps1")
+
+$binPath = Find-DeskmateBinary
+if (-not $binPath) {
+    Write-Error "Deskmate reflection binary not found. Please build before running tests."
+    exit 1
+}
+$assembly = Initialize-DeskmateLoader
+$islandType = Get-DeskmateType "Island"
+$inkType = Get-DeskmateType "Ink"
 
 if (-not $islandType -or -not $inkType) {
     Write-Error "Could not resolve Deskmate.Island or Deskmate.Ink types."
@@ -262,7 +278,7 @@ foreach ($c in $pureColors) {
 Write-Host "`n--- 3. Testing DockFrost.cs (Dock Frost & Liquid Shaders) ---" -ForegroundColor Yellow
 
 # Inspect DockFrost.cs directly for BaseTint hardcoding
-$dockFrostFile = "d:\PROJECT\Other\tepi\src\DockFrost.cs"
+$dockFrostFile = Join-Path $PSScriptRoot "..\src\DockFrost.cs"
 $dockContent = Get-Content $dockFrostFile -Raw
 $dockUsesCompute = $dockContent.Contains("ComputeFrostTint")
 $dockHasBaseTintFill = $dockContent.Contains("Ink.A(j.Bg, BaseTint)")
@@ -459,5 +475,12 @@ if ($isWin11) {
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "  TEST SUMMARY: $passCount PASSED, $failCount FAILED" -ForegroundColor $(if ($failCount -eq 0) { "Green" } else { "Red" })
 Write-Host "==========================================================" -ForegroundColor Cyan
+
+if ($script:c2eOwnedTmp) {
+    $env:DESKMATE_DIR = $script:c2ePrevDir
+    $env:DESKMATE_HOME = $script:c2ePrevHome
+    $env:DESKMATE_DOCK_DRY = $script:c2ePrevDry
+    Remove-Item -LiteralPath $script:c2eOwnedTmp -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 exit $failCount

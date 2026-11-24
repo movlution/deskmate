@@ -123,7 +123,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             Assert-Equal "general" $section "Default PrefsWindow section must be 'general'"
 
             $sections = $prefsType.GetField("Sections", $flags).GetValue($null)
-            Assert-Equal 14 $sections.Length "Sections must contain the Deskmate card and 13 categories"
+            Assert-Equal 15 $sections.Length "Sections must contain the Deskmate card and 14 categories"
             Assert-Equal "about" $sections[0][0] "First section must be the Deskmate card"
             Assert-Equal ([string][char]1) $sections[0][2] "The card must carry KitRow.MarkGlyph"
 

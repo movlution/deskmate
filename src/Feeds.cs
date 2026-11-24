@@ -247,7 +247,7 @@ namespace Deskmate
             }
         }
 
-        static readonly string SelfPath = System.Reflection.Assembly.GetEntryAssembly().Location;
+        static readonly string SelfPath = Environment.ProcessPath ?? "";
 
         static string Friendly(string key)
         {

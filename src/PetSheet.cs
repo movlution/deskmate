@@ -7,7 +7,6 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using System.Web.Script.Serialization;
 
 namespace Deskmate
 {
@@ -258,7 +257,7 @@ namespace Deskmate
                 if (jsonBytes.Length > 1 << 20 || pngBytes.Length > 8 << 20) throw new InvalidDataException("berkas terlalu besar");
 
                 Dictionary<string, object> root;
-                try { root = new JavaScriptSerializer().DeserializeObject(Encoding.UTF8.GetString(jsonBytes)) as Dictionary<string, object>; }
+                try { root = Json.Parse(Encoding.UTF8.GetString(jsonBytes)) as Dictionary<string, object>; }
                 catch (ArgumentException) { root = null; }
                 catch (InvalidOperationException) { root = null; }
                 if (root == null) throw new InvalidDataException("pet.json tidak terbaca");

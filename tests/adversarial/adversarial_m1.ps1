@@ -4,9 +4,23 @@
 # extreme pastels, zero luminance, and random color fuzzing.
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
+$script:advM1OwnedTmp = $null
+$script:advM1PrevDir = $env:DESKMATE_DIR
+$script:advM1PrevHome = $env:DESKMATE_HOME
+$script:advM1PrevDry = $env:DESKMATE_DOCK_DRY
+if ([string]::IsNullOrEmpty($env:DESKMATE_DIR)) {
+    $script:advM1OwnedTmp = Join-Path ([IO.Path]::GetTempPath()) ("deskmate-advm1-" + [Guid]::NewGuid().ToString("N"))
+    $advM1Home = Join-Path $script:advM1OwnedTmp "home"
+    New-Item -ItemType Directory -Path $script:advM1OwnedTmp, $advM1Home -Force | Out-Null
+    $env:DESKMATE_DIR = $script:advM1OwnedTmp
+    $env:DESKMATE_HOME = $advM1Home
+    $env:DESKMATE_DOCK_DRY = "1"
+}
+
 . (Join-Path $commonDir "TestHarness.ps1")
 . (Join-Path $commonDir "DeskmateLoader.ps1")
 
+try {
 Describe "Adversarial Suite M1: Colors.DerivePalette & Ink.Apply Stress Testing" {
 
     $islandType = Get-DeskmateType "Island"
@@ -388,5 +402,14 @@ Describe "Adversarial Suite M1: Colors.DerivePalette & Ink.Apply Stress Testing"
         $setPackMethod.Invoke($null, [object[]]@($cleanDict))
         $setAccentMethod.Invoke($null, @(""))
         $applyMethod.Invoke($null, @($false))
+    }
+}
+}
+finally {
+    if ($script:advM1OwnedTmp) {
+        $env:DESKMATE_DIR = $script:advM1PrevDir
+        $env:DESKMATE_HOME = $script:advM1PrevHome
+        $env:DESKMATE_DOCK_DRY = $script:advM1PrevDry
+        Remove-Item -LiteralPath $script:advM1OwnedTmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

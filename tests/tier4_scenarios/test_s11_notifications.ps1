@@ -1,4 +1,4 @@
-# test_s11_notifications.ps1
+﻿# test_s11_notifications.ps1
 # Tier 4 scenario S11: long notification copy and CLI dispatch.
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
@@ -101,24 +101,33 @@ Describe "Tier 4 Scenario: S11 Notification Pipeline" {
         try {
             Assert-True ([bool]$relayType.GetMethod("Running", $flags).Invoke($null, @())) "The live-island probe must see the mutex the test just created"
 
+            $cli = Find-DeskmateCliBinary
+            Assert-NotNull $cli "Deskmate CLI binary must resolve for --notify"
+
             $title = ("Outside notification title " * 6).Trim()
             $detail = "The application is alive; the notify command must not fail on a long title."
             $psi = New-Object System.Diagnostics.ProcessStartInfo
-            $psi.FileName = [string]$global:DeskmateAssemblyPath
-            $psi.Arguments = '--notify "' + $title + '" "' + $detail + '"'
+            $psi.FileName = $cli.FileName
+            $prefix = if ($cli.PrefixArgs -and $cli.PrefixArgs.Count -gt 0) {
+                (($cli.PrefixArgs | ForEach-Object { '"' + $_ + '"' }) -join " ") + " "
+            } else { "" }
+            $psi.Arguments = $prefix + '--notify "' + $title + '" "' + $detail + '"'
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow = $true
             $psi.RedirectStandardOutput = $true
             $psi.RedirectStandardError = $true
             $psi.EnvironmentVariables["DESKMATE_DIR"] = [string]$env:DESKMATE_DIR
+            if ($env:DESKMATE_HOME) { $psi.EnvironmentVariables["DESKMATE_HOME"] = [string]$env:DESKMATE_HOME }
+            $psi.EnvironmentVariables["DESKMATE_DOCK_DRY"] = "1"
             $proc = [System.Diagnostics.Process]::Start($psi)
             try {
+                $errTask = $proc.StandardError.ReadToEndAsync()
+                $stdout = $proc.StandardOutput.ReadToEnd()
+                $stderr = $errTask.GetAwaiter().GetResult()
                 if (-not $proc.WaitForExit(15000)) {
                     try { $proc.Kill() } catch { }
                     throw "CLI --notify did not exit within 15 seconds"
                 }
-                $stdout = $proc.StandardOutput.ReadToEnd()
-                $stderr = $proc.StandardError.ReadToEnd()
                 Assert-Equal 0 $proc.ExitCode "CLI --notify must return 0 after successful dispatch; stderr=$stderr"
                 Assert-Equal 0 $stderr.Length "CLI --notify must stay quiet on the success path"
             }

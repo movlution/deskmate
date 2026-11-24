@@ -8,9 +8,23 @@
 # 4. Tabs Hover vs Pressed Fill States (Tokens, AST, and pixel-distinct rendering)
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
+$script:advM3OwnedTmp = $null
+$script:advM3PrevDir = $env:DESKMATE_DIR
+$script:advM3PrevHome = $env:DESKMATE_HOME
+$script:advM3PrevDry = $env:DESKMATE_DOCK_DRY
+if ([string]::IsNullOrEmpty($env:DESKMATE_DIR)) {
+    $script:advM3OwnedTmp = Join-Path ([IO.Path]::GetTempPath()) ("deskmate-advm3-" + [Guid]::NewGuid().ToString("N"))
+    $advM3Home = Join-Path $script:advM3OwnedTmp "home"
+    New-Item -ItemType Directory -Path $script:advM3OwnedTmp, $advM3Home -Force | Out-Null
+    $env:DESKMATE_DIR = $script:advM3OwnedTmp
+    $env:DESKMATE_HOME = $advM3Home
+    $env:DESKMATE_DOCK_DRY = "1"
+}
+
 . (Join-Path $commonDir "TestHarness.ps1")
 . (Join-Path $commonDir "DeskmateLoader.ps1")
 
+try {
 Describe "Adversarial Suite M3: Island HUD & Interactive State Stress Testing" {
 
     $islandType = Get-DeskmateType "Island"
@@ -484,5 +498,14 @@ Describe "Adversarial Suite M3: Island HUD & Interactive State Stress Testing" {
         # Active tab check
         Assert-True ($tabsSrc -match "if\s*\(Hover\(`"tab`"\s*\+\s*to\)\s*&&\s*to\s*!=\s*page\)") "Hover and pressed fills must only apply when to != page"
         Assert-True ($tabsSrc -match "p\.FillRound\(pill,\s*TabH\s*/\s*2,\s*p\.T\.Accent\);") "Active page tab must render Accent pill"
+    }
+}
+}
+finally {
+    if ($script:advM3OwnedTmp) {
+        $env:DESKMATE_DIR = $script:advM3PrevDir
+        $env:DESKMATE_HOME = $script:advM3PrevHome
+        $env:DESKMATE_DOCK_DRY = $script:advM3PrevDry
+        Remove-Item -LiteralPath $script:advM3OwnedTmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

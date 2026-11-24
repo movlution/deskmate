@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace Deskmate
@@ -8,6 +9,11 @@ namespace Deskmate
     partial class Island
     {
         const string NotifAppRulesKey = "notif.appRules";
+        static readonly JsonSerializerOptions NotifAppRulesJsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            IncludeFields = true
+        };
 
         public sealed class NotifAppRule
         {
@@ -29,8 +35,7 @@ namespace Deskmate
                     string raw = settings.Get(NotifAppRulesKey, "");
                     if (raw.Length > 0)
                     {
-                        var saved = new System.Web.Script.Serialization.JavaScriptSerializer()
-                            .Deserialize<Dictionary<string, NotifAppRule>>(raw);
+                        var saved = JsonSerializer.Deserialize<Dictionary<string, NotifAppRule>>(raw, NotifAppRulesJsonOptions);
                         if (saved != null)
                             foreach (var pair in saved)
                                 if (!string.IsNullOrWhiteSpace(pair.Key) && pair.Value != null)

@@ -572,10 +572,11 @@ namespace Deskmate
 
         public static string FindExecutable()
         {
+            string exeDir = Path.GetDirectoryName(Environment.ProcessPath ?? "");
             var candidates = new List<string>
             {
                 ToolsPath,
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cloudflared.exe"),
+                string.IsNullOrEmpty(exeDir) ? null : Path.Combine(exeDir, "cloudflared.exe"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin", "cloudflared.exe")
             };
             string pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";

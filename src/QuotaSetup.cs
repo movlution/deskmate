@@ -16,7 +16,7 @@ namespace Deskmate
         // Forward slashes survive Git Bash
         public static string Command()
         {
-            return "\"" + System.Reflection.Assembly.GetEntryAssembly().Location.Replace('\\', '/') + "\" --statusline";
+            return "\"" + (Environment.ProcessPath ?? "").Replace('\\', '/') + "\" --statusline";
         }
 
         static bool IsOurs(object line)
