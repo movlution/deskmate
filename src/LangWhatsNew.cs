@@ -8,6 +8,8 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.14.1 ("Penjaga beban" is translated with the Guard strings)
+            en.Add("Aplikasi di latar yang memakai banyak CPU atau RAM selama beberapa menit muncul di island, dengan pilihan Mode hemat, Tutup, atau Abaikan. Matikan di Pengaturan › Perangkat & HP.", "Background apps using lots of CPU or RAM for minutes show on the island, with Efficiency mode, Close, or Ignore. Turn it off in Settings › Devices & Phone.");
             // What's new 2.14.0
             en.Add("AI tanpa kunci API", "AI without an API key");
             en.Add("Pakai Codex CLI atau Claude Code yang sudah masuk di laptop ini sebagai layanan AI, lengkap dengan alat Deskmate: pengingat, timer, tugas, dan Ingatan.", "Use the Codex CLI or Claude Code already signed in on this laptop as your AI provider, with Deskmate's tools: reminders, timers, tasks, and Memory.");

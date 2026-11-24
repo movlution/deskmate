@@ -20,6 +20,14 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.14.1",
+                Items = new[]
+                {
+                    new[] { "Penjaga beban", "Aplikasi di latar yang memakai banyak CPU atau RAM selama beberapa menit muncul di island, dengan pilihan Mode hemat, Tutup, atau Abaikan. Matikan di Pengaturan › Perangkat & HP.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.14.0",
                 Items = new[]
                 {
