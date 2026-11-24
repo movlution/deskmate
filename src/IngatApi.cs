@@ -144,7 +144,7 @@ namespace Deskmate
                 {
                     DateTime day;
                     if (!DateTime.TryParseExact(Get(q, "date"), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out day)) day = DateTime.Today;
-                    var eps = store.Timeline(day.ToUniversalTime(), day.AddDays(1).ToUniversalTime(), 600);
+                    var eps = store.TimelineLite(day.ToUniversalTime(), day.AddDays(1).ToUniversalTime(), 600);
                     return new Dictionary<string, object>
                     {
                         { "date", day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) },

@@ -522,7 +522,7 @@ namespace Deskmate
                 var day = today.AddDays(-back);
                 string key = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
                 if (store.HasDaily(key)) continue;
-                var eps = store.Timeline(day.ToUniversalTime(), day.AddDays(1).ToUniversalTime(), 400);
+                var eps = store.TimelineLite(day.ToUniversalTime(), day.AddDays(1).ToUniversalTime(), 400);
                 if (eps.Count == 0) { store.SaveDaily(key, ""); continue; }
                 var sb = new StringBuilder();
                 foreach (var ep in eps)

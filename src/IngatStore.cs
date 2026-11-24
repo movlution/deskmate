@@ -414,6 +414,14 @@ namespace Deskmate
             return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE end>=? AND start<=? ORDER BY start LIMIT ?", fromUtc, toUtc, limit));
         }
 
+        // Same rows without the body (up to 12 KB each): for callers that only group, count or list episodes
+        const string LiteCols = "id,start,end,app,exe,project,title,url,kind,summary,'',closed,context";
+
+        public List<IngatEpisode> TimelineLite(DateTime fromUtc, DateTime toUtc, int limit)
+        {
+            return ReadAll(db.Query("SELECT " + LiteCols + " FROM episodes WHERE end>=? AND start<=? ORDER BY start LIMIT ?", fromUtc, toUtc, limit));
+        }
+
         public List<IngatEpisode> Recent(int limit)
         {
             return ReadAll(db.Query("SELECT " + Cols + " FROM episodes ORDER BY start DESC LIMIT ?", limit));

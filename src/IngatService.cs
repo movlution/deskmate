@@ -783,7 +783,7 @@ namespace Deskmate
             var c = composing;
             if (c != null) d["composing"] = c;
             // Streak: same project (or app) with no break over 10 minutes
-            var recent = Store.Timeline(DateTime.UtcNow.AddHours(-6), DateTime.UtcNow, 400);
+            var recent = Store.TimelineLite(DateTime.UtcNow.AddHours(-6), DateTime.UtcNow, 400);
             double minutes = 0;
             DateTime edge = DateTime.UtcNow;
             for (int i = recent.Count - 1; i >= 0; i--)
@@ -810,7 +810,7 @@ namespace Deskmate
             d["recent"] = recJson;
 
             var today = DateTime.Today;
-            var todayEps = Store.Timeline(today.ToUniversalTime(), DateTime.UtcNow.AddMinutes(1), 400);
+            var todayEps = Store.TimelineLite(today.ToUniversalTime(), DateTime.UtcNow.AddMinutes(1), 400);
             d["today"] = IngatStructure.GroupTimeline(todayEps);
             d["inboxWaiting"] = Store.Inbox(10).Count;
             d["openPromises"] = Store.Commitments(0, false, 20).Count;
