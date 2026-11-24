@@ -18,7 +18,13 @@ namespace Deskmate
 
             int Px(float v) { return (int)Math.Round(v * scale); }
 
-            public PetChatInput(float scale, int availableWidth, Action<string, int> onSend, Action<PetEmote> onEmote)
+            [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+            static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, string l);
+
+            // No emote handler: the pet is being asked something, not chatting to friends
+            bool Asking { get { return onEmote == null; } }
+
+            public PetChatInput(float scale, int availableWidth, Action<string, int> onSend, Action<PetEmote> onEmote, string cue = null)
             {
                 this.scale = scale > 0 ? scale : 1f;
                 this.onSend = onSend;
@@ -30,7 +36,7 @@ namespace Deskmate
                 AutoScaleMode = AutoScaleMode.None;
                 TopMost = true;
                 KeyPreview = true;
-                Text = Lang.T("Kirim pesan lewat pet");
+                Text = Asking ? Lang.T("Tanya pet") : Lang.T("Kirim pesan lewat pet");
 
                 var tone = Ink.Base;
                 bool dark = tone.IsDark;
@@ -40,13 +46,13 @@ namespace Deskmate
                 rim = Ink.Mix(BackColor, fore, dark ? 0.18f : 0.14f);
 
                 int pad = Px(10);
-                int winW = Math.Max(Px(250), Math.Min(Px(300), availableWidth - Px(16)));
+                int winW = Math.Max(Px(250), Math.Min(Px(Asking ? 340 : 300), availableWidth - Px(16)));
                 int sendW = Px(62);
                 int boxH = Px(28);
                 int row1Y = pad;
                 int row2Y = row1Y + boxH + Px(8);
                 int emoteH = Px(26);
-                int winH = row2Y + emoteH + pad;
+                int winH = Asking ? row1Y + boxH + pad : row2Y + emoteH + pad;
                 ClientSize = new Size(winW, winH);
 
                 box = new TextBox
@@ -55,7 +61,7 @@ namespace Deskmate
                     BackColor = fieldBg,
                     ForeColor = fore,
                     Font = Ink.Text(Px(12.5f)),
-                    MaxLength = PetPacket.MaxChatChars,
+                    MaxLength = Asking ? 500 : PetPacket.MaxChatChars,
                     Bounds = new Rectangle(pad, row1Y, winW - pad * 2 - sendW - Px(6), boxH)
                 };
                 box.KeyDown += (s, e) =>
@@ -72,10 +78,12 @@ namespace Deskmate
                     }
                 };
                 Controls.Add(box);
+                // Grey hint inside the empty box (EM_SETCUEBANNER, shown even while focused)
+                if (!string.IsNullOrEmpty(cue)) box.HandleCreated += delegate { SendMessage(box.Handle, 0x1501, (IntPtr)1, cue); };
 
                 var sendBtn = new KitButton
                 {
-                    Text = Lang.T("Kirim"),
+                    Text = Asking ? Lang.T("Tanya") : Lang.T("Kirim"),
                     Primary = true,
                     Font = Ink.Semi(Px(12f)),
                     Bounds = new Rectangle(box.Right + Px(6), row1Y, sendW, boxH)
@@ -93,7 +101,7 @@ namespace Deskmate
                 };
                 int ex = pad;
                 int ew = Px(34);
-                foreach (var item in emotes)
+                if (!Asking) foreach (var item in emotes)
                 {
                     var kind = item.Kind;
                     var eb = new KitButton

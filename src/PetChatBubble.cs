@@ -117,6 +117,9 @@ namespace Deskmate
                 };
             }
 
+            // Answers stay longer than chat lines; hovering still holds them
+            public double Seconds { set { remainingSec = value; } }
+
             public static Rectangle BoundsAbove(Rectangle area, Point anchor, Size size, int margin)
             {
                 int left = area.Left + margin, right = area.Right - margin - size.Width;

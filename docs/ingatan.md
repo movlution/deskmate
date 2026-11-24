@@ -25,7 +25,7 @@ Deskmate.exe --mcp (stdio)        ──┼──► API lokal 127.0.0.1 + token
 ## Bertanya
 
 - **Chat Suruh:** tanya seperti biasa. Model memakai seksi `activity` dari alat `read_deskmate`.
-- **Pet:** tombol **Ingat** di bar aksi pet membuka chat dengan pertanyaan yang sudah terisi. Pet juga memberi rekap pagi tentang kemarin dan mengingatkan istirahat setelah 2 jam di satu proyek.
+- **Pet sebagai asisten:** klik pet lalu pilih **Tanya** (tombol pertama di bar aksinya). Ketik pertanyaan apa saja di kotak di atas pet, lalu tekan Enter. Pet berpikir ("Hmm, sebentar…") dan menjawab di gelembungnya. Klik jawabannya untuk bertanya lanjutan; pet mengingat percakapan selama 10 menit. Dengan Ingatan aktif, jawabannya memakai aktivitasmu lewat AI pilihan Ingatan. Kalau AI itu belum siap, atau Ingatan mati, pet tetap menjawab lewat AI utama (**Pengaturan › AI**) tanpa membawa data aktivitas. Pet juga memberi rekap pagi tentang kemarin dan mengingatkan istirahat setelah 2 jam di satu proyek; klik gelembungnya untuk langsung bertanya.
 - **Asisten AI lain (MCP):** di **Pengaturan › Ingatan › Konfigurasi MCP**, klik **Salin**, lalu tempel ke konfigurasi klien MCP:
 
 ```json
@@ -55,6 +55,10 @@ ollama pull nomic-embed-text
 ```
 
 Layanan cloud (Claude, OpenAI, dan lainnya) bisa dipilih di **Pengaturan › Ingatan › Layanan AI**. Deskmate meminta konfirmasi dulu, karena teks layar yang sudah disaring akan ikut terkirim. Kalau AI-nya **Mati** atau belum siap, pencarian kata kunci tetap berjalan, dan pertanyaan dijawab dengan daftar momen yang paling cocok.
+
+Tidak semua server menyediakan embedding (endpoint `/embeddings` dengan model yang dipilih). Kalau permintaan embedding gagal, Ingatan berhenti mencobanya selama 6 jam dan mencari dengan kata kunci saja, jadi pertanyaan tidak tertahan menunggu batas waktu. Ringkasan, rekap, dan jawaban tetap memakai layanan teks yang sama. Untuk menghindari percobaan itu sama sekali, pilih **Model makna › Mati**.
+
+Jendela Deskmate sendiri (pet, island, Pengaturan) tidak dicatat dan tidak memutus episode yang sedang berjalan. Episode diringkas setelah selesai dan kalau panjangnya minimal 1 menit; yang lebih pendek tetap bisa dicari lewat judul dan teksnya.
 
 ## Rapat
 

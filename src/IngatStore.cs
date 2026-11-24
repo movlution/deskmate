@@ -194,7 +194,8 @@ namespace Deskmate
         public List<IngatEpisode> Search(string q, DateTime fromUtc, DateTime toUtc, int limit)
         {
             string fts = FtsQuery(q);
-            if (fts.Length == 0) return Timeline(fromUtc, toUtc, limit);
+            // No topic words ("what was I doing?"): the latest moments, not the oldest
+            if (fts.Length == 0) return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE end>=? AND start<=? ORDER BY start DESC LIMIT ?", fromUtc, toUtc, limit));
             var rows = db.Query("SELECT e.id,e.start,e.end,e.app,e.exe,e.project,e.title,e.url,e.kind,e.summary,e.body,e.closed, bm25(episodes_fts, 4.0, 2.0, 1.0, 3.0, 2.0) AS s " +
                 "FROM episodes_fts JOIN episodes e ON e.id=episodes_fts.rowid WHERE episodes_fts MATCH ? AND e.end>=? AND e.start<=? ORDER BY s LIMIT ?",
                 fts, fromUtc, toUtc, limit);
@@ -227,6 +228,8 @@ namespace Deskmate
             db.Exec("INSERT OR REPLACE INTO embeddings(episode,model,vec) VALUES(?,?,?)", id, model, bytes);
             db.Exec("UPDATE episodes SET embedded=1 WHERE id=?", id);
         }
+
+        public bool HasVectors(string model) { return db.Long("SELECT COUNT(*) FROM embeddings WHERE model=?", model) > 0; }
 
         // Embedding failed for good (no server, too long): stop asking
         public void SkipVector(long id) { db.Exec("UPDATE episodes SET embedded=2 WHERE id=?", id); }

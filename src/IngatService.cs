@@ -192,7 +192,8 @@ namespace Deskmate
             if (hwnd == IntPtr.Zero) return;
             int pid;
             string exe = Exe(ref hwnd, out pid);
-            if (exe.Length == 0 || pid == Process.GetCurrentProcess().Id) return;
+            // Deskmate's own windows (pet, island, settings) are not activity, and must not cut the episode in two
+            if (exe.Length == 0 || pid == Process.GetCurrentProcess().Id || exe == SelfExe) return;
             string title = Title(hwnd);
             if (title.Length == 0 || exe == "explorer" && (title == "Program Manager" || title.Length == 0)) return;
 
@@ -397,6 +398,8 @@ namespace Deskmate
         delegate bool EnumProc(IntPtr h, IntPtr l);
         [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc cb, IntPtr l);
         [DllImport("shell32.dll")] static extern int SHQueryUserNotificationState(out int state);
+
+        static readonly string SelfExe = Path.GetFileNameWithoutExtension(Process.GetCurrentProcess().MainModule.FileName).ToLowerInvariant();
 
         public static double IdleSeconds()
         {

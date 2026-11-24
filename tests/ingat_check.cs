@@ -101,6 +101,8 @@ namespace Deskmate
                 store.DropTiny(tiny);
 
                 Assert(store.Get(tiny) == null, "tiny episode dropped");
+                var latest = store.Search("apa yang", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 10);
+                Assert(latest.Count == 2 && latest[0].Id == b, "no topic words: newest first");
                 var hits = store.Search("wasapi", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 10);
                 Assert(hits.Count == 1 && hits[0].Id == a, "keyword finds episode");
                 hits = store.Search("embedding", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 10);
@@ -122,10 +124,14 @@ namespace Deskmate
                 var settings = new Settings();
                 settings.Set("ingat.ai", "off");
                 var brain = new IngatBrain(store, settings);
-                Assert(!brain.Thinking && brain.EmbedModel == "", "ai off");
+                Assert(!brain.Thinking && brain.EmbedModel == "" && !brain.EmbedUsable, "ai off");
+                Assert(!store.HasVectors("none") && store.HasVectors("m"), "vectors known per model");
                 Assert(brain.Search("wasapi", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 5)[0].Id == a, "brain search");
                 var ans = brain.Ask("apa yang saya kerjakan soal wasapi tadi?");
                 Assert(Json.Arr(ans, "sources").Length >= 1, "ask has sources without a model");
+                // Pet chat without a model: says so and flags it, so the island falls back to the main AI
+                var chat = brain.Chat("kemarin aku kerja wasapi?", new List<KeyValuePair<string, string>>(), "Rubah", "custom:Rubah", new Dictionary<string, object>());
+                Assert(chat.ContainsKey("error") && Json.Str(chat, "answer").Length > 0, "pet chat flags missing model");
             }
         }
 

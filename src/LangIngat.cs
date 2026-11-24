@@ -77,6 +77,15 @@ namespace Deskmate
                 new[] { "Ingatan tidak bisa menjawab sekarang", "Memory cannot answer right now" },
                 new[] { "Layanan AI belum dipilih", "No AI service chosen" },
                 new[] { "Rapat", "Meeting" },
+                new[] { "Tanya", "Ask" },
+                new[] { "Tanya pet", "Ask your pet" },
+                new[] { "Tanya apa saja, termasuk yang tadi kamu kerjakan…", "Ask anything, even what you worked on earlier…" },
+                new[] { "Tanya apa saja…", "Ask anything…" },
+                new[] { "Hmm, sebentar…", "Hmm, one sec…" },
+                new[] { "Aduh, aku lagi tidak bisa berpikir. Coba lagi sebentar ya.", "Oops, I can't think right now. Try again in a bit." },
+                new[] { "Aku belum bisa berpikir: {0}", "I can't think yet: {0}" },
+                new[] { "Aku belum bisa berpikir: layanan AI untuk Ingatan belum siap.", "I can't think yet: the AI for Memory is not ready." },
+                new[] { "Aku belum bisa berpikir, tapi yang paling cocok: {0}", "I can't think yet, but the closest match: {0}" },
                 new[] { "Memori aktivitas lokal: cari dan tanya apa yang sudah kamu kerjakan, plus MCP", "Local activity memory: search and ask about what you have done, plus MCP" },
             };
             foreach (var p in pairs) if (!en.ContainsKey(p[0])) en[p[0]] = p[1];

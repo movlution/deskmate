@@ -169,6 +169,17 @@ namespace Deskmate
                     return new Dictionary<string, object> { { "facts", store.Facts().ToArray() } };
                 case "POST /ask":
                     return svc.Brain.Ask(Fmt.OneLine(Json.Str(body, "q"), 500));
+                case "POST /chat":
+                {
+                    var history = new List<KeyValuePair<string, string>>();
+                    foreach (var o in Json.Arr(body, "history"))
+                    {
+                        string role = Json.Str(o, "role"), text = Fmt.OneLine(Json.Str(o, "text"), 800);
+                        if ((role == "user" || role == "assistant") && text.Length > 0) history.Add(new KeyValuePair<string, string>(role, text));
+                    }
+                    if (history.Count > 12) history.RemoveRange(0, history.Count - 12);
+                    return svc.Brain.Chat(Fmt.OneLine(Json.Str(body, "q"), 600), history, Fmt.OneLine(Json.Str(body, "name"), 40), Json.Str(body, "kind"), svc.Now());
+                }
                 case "POST /pause":
                     svc.Pause((int)Json.Num(body, "minutes", 30));
                     return new Dictionary<string, object> { { "paused", svc.Paused } };

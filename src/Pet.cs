@@ -628,9 +628,16 @@ namespace Deskmate
 
             public void ShowChatBubble(string sender, string text, bool masked, Action onReply)
             {
+                ShowChatBubble(sender, text, masked, onReply, 0);
+            }
+
+            // seconds > 0: how long it stays (the pet's own answers)
+            public void ShowChatBubble(string sender, string text, bool masked, Action onReply, double seconds)
+            {
                 if (!CanShowBubble || sheet == null) return;
                 CloseChatBubble();
                 var b = new PetChatBubble(sender, text, masked, scale, work.Width, () => CanShowBubble, onReply);
+                if (seconds > 0) b.Seconds = seconds;
                 if (!b.MoveAbove(work, new Point(DrawnCenterX, BubbleAnchorY)))
                 {
                     b.Dispose();

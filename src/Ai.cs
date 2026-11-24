@@ -244,12 +244,12 @@ namespace Deskmate
         }
 
         // OpenAI-compatible /embeddings; null when the provider has none or the call failed
-        public static float[] Embed(AiProvider p, string model, string text, out string error)
+        public static float[] Embed(AiProvider p, string model, string text, out string error, int timeoutMs = 15000)
         {
             error = null;
             if (p == null || p.Anthropic || !Ready(p)) { error = "no embeddings"; return null; }
             var payload = new Dictionary<string, object> { { "model", model }, { "input", text } };
-            var r = Web.Send("POST", BaseUrl(p) + "embeddings", Auth(p, Key(p)), Json.Encode(payload), 60000);
+            var r = Web.Send("POST", BaseUrl(p) + "embeddings", Auth(p, Key(p)), Json.Encode(payload), timeoutMs);
             if (!r.Ok) { error = Error(p, r); return null; }
             try
             {

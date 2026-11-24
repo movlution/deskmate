@@ -130,7 +130,7 @@ namespace Deskmate
                     Post(delegate
                     {
                         ingatAsking = false;
-                        if (line != null && pet != null && !pet.IsDisposed) pet.ShowChatBubble(PetDisplayName, line, false, delegate { AskIngat(""); });
+                        if (line != null && pet != null && !pet.IsDisposed) pet.ShowChatBubble(PetAskName, line, false, delegate { OpenPetAsk(); }, 15);
                     });
                 }
             });

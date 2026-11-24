@@ -325,8 +325,9 @@ namespace Deskmate
                 };
                 if (Isle != null && Isle.PetRoomConnected)
                     list.Add(new PetAction(PetIcons.Chat, Lang.T("Chat"), true, () => { Isle.OpenPetChatInput(this); }));
-                if (Isle != null && Isle.IngatOn)
-                    list.Add(new PetAction(PetIcons.Memory, Lang.T("Ingat"), true, () => { Isle.AskIngat(""); }));
+                // The pet is the assistant: ask it anything, with Ingatan behind it when on
+                if (Isle != null)
+                    list.Insert(0, new PetAction(PetIcons.Memory, Lang.T("Tanya"), true, () => { Isle.OpenPetAsk(); }));
                 list.Add(new PetAction(PetIcons.Gear, Lang.T("Atur"), true, () => { if (Isle != null) Isle.OpenPrefs("pet"); }));
                 return list;
             }
