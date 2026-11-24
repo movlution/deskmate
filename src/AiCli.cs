@@ -78,28 +78,37 @@ namespace Deskmate
             return ok ? null : Lang.F("{0} belum login; jalankan \"{1}\" sekali di terminal", Ai.Label(p), LoginHint(p));
         }
 
-        // Tools are not passed: the CLI answers in plain text
-        public static Ai.Reply Ask(AiProvider p, string model, string system, List<KeyValuePair<string, string>> turns, out string error)
+        // Tools (OpenAI function specs) go in as text; the CLI answers in a JSON shape that lists the calls,
+        // and Deskmate runs them as it does for any provider
+        public static Ai.Reply Ask(AiProvider p, string model, string system, List<KeyValuePair<string, string>> turns, object[] tools, out string error)
         {
             error = null;
             string exe = Exe(p);
             if (exe == null) { error = Lang.F("{0} belum terpasang di laptop ini", Ai.Label(p)); return null; }
             if (model.Length > 0 && !SafeModel.IsMatch(model)) { error = Lang.F("Model {0} belum dipilih", Ai.Label(p)); return null; }
 
+            var names = ToolNames(tools);
+            bool shaped = names.Count > 0;
+            if (shaped) system = (system ?? "") + "\n\n" + ToolGuide(tools);
+
             // An empty folder so the agent has no project of the user's to read
             string work = Path.Combine(Path.GetTempPath(), "Deskmate-cli");
             string tag = Guid.NewGuid().ToString("N");
             string sysFile = Path.Combine(work, tag + ".system.txt");
             string outFile = Path.Combine(work, tag + ".reply.txt");
+            string schemaFile = Path.Combine(work, tag + ".schema.json");
             try
             {
                 Directory.CreateDirectory(work);
                 string args, input;
+                string schema = shaped ? Json.Encode(Schema(names)) : "";
                 if (p.Cli == "codex")
                 {
                     input = "Follow these instructions. Do not run commands or edit files; answer in text only.\n\n" + system + "\n\n" + Transcript(turns);
+                    if (shaped) File.WriteAllText(schemaFile, schema, new UTF8Encoding(false));
                     args = "exec --skip-git-repo-check --ephemeral --sandbox read-only --color never --ignore-rules -c model_reasoning_effort=low" +
-                           " -C " + Quote(work) + " -o " + Quote(outFile) + (model.Length > 0 ? " -m " + model : "") + " -";
+                           " -C " + Quote(work) + " -o " + Quote(outFile) + (shaped ? " --output-schema " + Quote(schemaFile) : "") +
+                           (model.Length > 0 ? " -m " + model : "") + " -";
                 }
                 else
                 {
@@ -107,7 +116,8 @@ namespace Deskmate
                     input = Transcript(turns);
                     // Project settings only (none in the empty folder): a user's settings.json can route
                     // Claude Code to a proxy or rename models, and the point here is the claude.ai login
-                    args = "-p --output-format text --tools \"\" --no-session-persistence --safe-mode --strict-mcp-config --setting-sources project" +
+                    args = "-p --output-format " + (shaped ? "json --json-schema " + Arg(schema) : "text") +
+                           " --tools \"\" --no-session-persistence --safe-mode --strict-mcp-config --setting-sources project" +
                            " --system-prompt-file " + Quote(sysFile) + (model.Length > 0 ? " --model " + model : "");
                 }
                 var r = Run(exe, args, input, AskTimeout, work);
@@ -117,10 +127,23 @@ namespace Deskmate
                 if (r.Code != 0 || text.Length == 0)
                 {
                     Log.Write("ai " + p.Id + " exit " + r.Code);
-                    error = Lang.F("{0} gagal: {1}", Ai.Label(p), Short(r.Err.Length > 0 ? r.Err : r.Out));
+                    error = Lang.F("{0} gagal: {1}", Ai.Label(p), Short(r.Err.Length > 0 ? r.Err : ClaudeError(r.Out) ?? r.Out));
                     return null;
                 }
-                return new Ai.Reply { Text = text };
+                if (!shaped) return new Ai.Reply { Text = text };
+                object shape = text;
+                if (p.Cli == "claude")
+                {
+                    var d = ParseObj(text);
+                    if (d == null) return new Ai.Reply { Text = text };
+                    if (d.ContainsKey("is_error") && d["is_error"] is bool && (bool)d["is_error"])
+                    {
+                        error = Lang.F("{0} gagal: {1}", Ai.Label(p), Short(Json.Str(d, "result")));
+                        return null;
+                    }
+                    shape = Json.Obj(d, "structured_output") ?? (object)Json.Str(d, "result");
+                }
+                return ReadShape(shape, names);
             }
             catch (Exception ex)
             {
@@ -132,7 +155,118 @@ namespace Deskmate
             {
                 try { File.Delete(sysFile); } catch (Exception) { }
                 try { File.Delete(outFile); } catch (Exception) { }
+                try { File.Delete(schemaFile); } catch (Exception) { }
             }
+        }
+
+        static List<string> ToolNames(object[] tools)
+        {
+            var names = new List<string>();
+            if (tools == null) return names;
+            foreach (var t in tools)
+            {
+                string name = Json.Str(Json.Obj(t as Dictionary<string, object>, "function"), "name");
+                if (name.Length > 0 && !names.Contains(name)) names.Add(name);
+            }
+            return names;
+        }
+
+        // The CLI has no tools of its own here; Deskmate's are described in words
+        internal static string ToolGuide(object[] tools)
+        {
+            var b = new StringBuilder();
+            b.Append("# Deskmate actions\n");
+            b.Append("You have no tools of your own in this session and must not try to call any. Deskmate runs these actions for you. ");
+            b.Append("To use one, add an entry to \"calls\" with its \"name\" and \"arguments\": a JSON object, encoded as a string, that follows the action's parameters. ");
+            b.Append("Put what you say to the user in \"text\" (it may be empty when a call says it). Leave \"calls\" empty when no action is needed. ");
+            b.Append("Never tell the user an action is unavailable when one below fits.\n\nActions:\n");
+            foreach (var t in tools)
+            {
+                var fn = Json.Obj(t as Dictionary<string, object>, "function");
+                if (fn == null) continue;
+                object parameters;
+                fn.TryGetValue("parameters", out parameters);
+                b.Append("- ").Append(Json.Str(fn, "name")).Append(": ").Append(Json.Str(fn, "description"))
+                 .Append("\n  parameters: ").Append(Json.Encode(parameters)).Append('\n');
+            }
+            return b.ToString();
+        }
+
+        // Strict for both CLIs: every key required, nothing extra; arguments stay a string so each
+        // action can keep its own shape
+        static Dictionary<string, object> Schema(List<string> names)
+        {
+            var call = new Dictionary<string, object>
+            {
+                { "type", "object" },
+                { "properties", new Dictionary<string, object>
+                    {
+                        { "name", new Dictionary<string, object> { { "type", "string" }, { "enum", names.ToArray() } } },
+                        { "arguments", new Dictionary<string, object> { { "type", "string" } } },
+                    } },
+                { "required", new[] { "name", "arguments" } },
+                { "additionalProperties", false },
+            };
+            return new Dictionary<string, object>
+            {
+                { "type", "object" },
+                { "properties", new Dictionary<string, object>
+                    {
+                        { "text", new Dictionary<string, object> { { "type", "string" } } },
+                        { "calls", new Dictionary<string, object> { { "type", "array" }, { "items", call } } },
+                    } },
+                { "required", new[] { "text", "calls" } },
+                { "additionalProperties", false },
+            };
+        }
+
+        // An object or its JSON text; plain text when the CLI ignored the shape
+        internal static Ai.Reply ReadShape(object shape, List<string> names)
+        {
+            var d = shape as Dictionary<string, object> ?? ParseObj(shape as string);
+            if (d == null) return new Ai.Reply { Text = (shape as string ?? "").Trim() };
+            var reply = new Ai.Reply { Text = Json.Str(d, "text").Trim() };
+            foreach (var o in Json.Arr(d, "calls"))
+            {
+                string name = Json.Str(o, "name");
+                if (!names.Contains(name)) continue;
+                var args = Json.Obj(o, "arguments") ?? ParseObj(Json.Str(o, "arguments")) ?? new Dictionary<string, object>();
+                reply.Calls.Add(new KeyValuePair<string, Dictionary<string, object>>(name, args));
+            }
+            return reply;
+        }
+
+        static Dictionary<string, object> ParseObj(string s)
+        {
+            s = (s ?? "").Trim();
+            // Some models wrap JSON in a code fence
+            if (s.StartsWith("```")) { int nl = s.IndexOf('\n'); int end = s.LastIndexOf("```", StringComparison.Ordinal); if (nl > 0 && end > nl) s = s.Substring(nl + 1, end - nl - 1).Trim(); }
+            if (!s.StartsWith("{")) return null;
+            try { return Json.Parse(s) as Dictionary<string, object>; }
+            catch (ArgumentException) { return null; }
+            catch (InvalidOperationException) { return null; }
+        }
+
+        static string ClaudeError(string stdout)
+        {
+            var d = ParseObj(stdout);
+            return d == null ? null : Json.Str(d, "result");
+        }
+
+        // One argument for CreateProcess: quotes escaped, trailing backslashes doubled
+        static string Arg(string s)
+        {
+            var b = new StringBuilder("\"");
+            int slashes = 0;
+            foreach (char c in s)
+            {
+                if (c == '\\') { slashes++; continue; }
+                if (c == '"') b.Append('\\', slashes * 2 + 1).Append('"');
+                else b.Append('\\', slashes).Append(c);
+                slashes = 0;
+            }
+            b.Append('\\', slashes * 2).Append('"');
+            return b.ToString();
         }
 
         // Claude Code lists no models: its aliases (always the newest) and the current ids

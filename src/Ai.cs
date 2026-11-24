@@ -278,7 +278,7 @@ namespace Deskmate
                 string cliModel = settings == null ? "" : settings.Get("ai." + p.Id + ".model", "").Trim();
                 // A model from the user's own CLI settings may not exist for this account
                 if (cliModel.Length == 0 && p.Models.Length > 0) cliModel = p.Models[0];
-                return AiCli.Ask(p, cliModel, system, turns, out error);
+                return AiCli.Ask(p, cliModel, system, turns, tools, out error);
             }
             if (!Ready(p)) { error = p.Id == "custom" && BaseUrl(p).Length == 0 ? Lang.T("Alamat server belum diisi") : Lang.F("Key {0} belum diisi", Label(p)); return null; }
             string key = Key(p);
