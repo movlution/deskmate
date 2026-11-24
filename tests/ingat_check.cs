@@ -190,6 +190,15 @@ namespace Deskmate
             Assert(IngatTime.Range("3 jam terakhir", now, out f, out t) && f == now.AddHours(-3), "last hours");
             Assert(IngatTime.Range("minggu lalu", now, out f, out t) && (t - f).TotalDays == 7 && f.DayOfWeek == DayOfWeek.Monday, "last week");
             Assert(!IngatTime.Range("docs wasapi loopback", now, out f, out t), "no time words");
+
+            // Right after midnight "tadi" still reaches the evening before, and "tadi malam" is last night
+            var late = new DateTime(2026, 11, 25, 0, 30, 0, DateTimeKind.Local);
+            Assert(IngatTime.Range("apa yang saya kerjakan tadi?", late, out f, out t) && f == late.AddHours(-6) && t == late, "tadi just after midnight");
+            Assert(IngatTime.Range("barusan buka apa", late, out f, out t) && f == late.AddHours(-6), "barusan just after midnight");
+            Assert(IngatTime.Range("tadi malam", late, out f, out t) && f == new DateTime(2026, 11, 24, 18, 0, 0) && t == late, "tadi malam after midnight is last night");
+            Assert(IngatTime.Range("tadi", now, out f, out t) && f == now.Date && t == now, "tadi in the afternoon is today");
+            Assert(IngatTime.Range("hari ini", late, out f, out t) && f == late.Date, "hari ini stays today");
+            Assert(IngatTime.Range("tadi pagi", late, out f, out t) && f == new DateTime(2026, 11, 24, 4, 0, 0), "tadi pagi before dawn is yesterday morning");
         }
 
         static void TestFtsQuery()
@@ -632,14 +641,18 @@ namespace Deskmate
                     "fallback Ask includes live screen focus and anchors even with zero stored episodes: " + ansText);
                 Assert(Json.Obj(liveOnlyAns, "screen") != null, "Ask response exposes structured screen object");
 
-                // Broad day recap without AI must return main episodes even if one unrelated episode had literal word 'aktivitas'
-                var t0 = DateTime.UtcNow.AddMinutes(-50);
+                // Broad day recap without AI must return main episodes even if one unrelated episode had literal word 'aktivitas'.
+                // "Hari ini" starts at local midnight: keep both episodes inside today, however soon after 00:00 this runs
+                var dayStartUtc = DateTime.Today.ToUniversalTime();
+                double span = Math.Min(50 * 60, (DateTime.UtcNow - dayStartUtc).TotalSeconds - 2);
+                var t0 = DateTime.UtcNow.AddSeconds(-span);
+                Func<double, DateTime> at = share => t0.AddSeconds(span * share);
                 long noise = store.Open(t0, "Chrome", "chrome", "", "Artikel aktivitas harian", "", "reading");
-                store.Touch(noise, t0.AddMinutes(1), "Artikel aktivitas harian", "", "Tips mencatat aktivitas");
-                store.Close(noise, t0.AddMinutes(1));
-                long mainWork = store.Open(t0.AddMinutes(3), "Visual Studio Code", "code", "Deskmate", "IngatService.cs - Deskmate", "", "coding");
-                store.Touch(mainWork, t0.AddMinutes(30), "IngatService.cs - Deskmate", "", "Perbaikan EnsureFresh dan UIA");
-                store.Close(mainWork, t0.AddMinutes(30));
+                store.Touch(noise, at(0.02), "Artikel aktivitas harian", "", "Tips mencatat aktivitas");
+                store.Close(noise, at(0.02));
+                long mainWork = store.Open(at(0.06), "Visual Studio Code", "code", "Deskmate", "IngatService.cs - Deskmate", "", "coding");
+                store.Touch(mainWork, at(0.6), "IngatService.cs - Deskmate", "", "Perbaikan EnsureFresh dan UIA");
+                store.Close(mainWork, at(0.6));
 
                 var recapAns = brain.Ask("rangkum aktivitas saya hari ini", liveNow);
                 Assert(Json.Arr(recapAns, "sources").Length >= 2 && Json.Str(recapAns, "answer").Contains("Deskmate"),

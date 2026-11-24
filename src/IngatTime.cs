@@ -40,6 +40,9 @@ namespace Deskmate
             return string.IsNullOrEmpty(q) ? "" : SpanWordsRx.Replace(q, " ");
         }
 
+        // How far back "tadi" reaches at the least, whatever the clock says
+        const int RecentHours = 6;
+
         // Null range: no time named, search everything
         public static bool Range(string q, DateTime nowLocal, out DateTime fromLocal, out DateTime toLocal)
         {
@@ -70,10 +73,20 @@ namespace Deskmate
             if (day == DateTime.MinValue) return false;
             fromLocal = day; toLocal = day.AddDays(1);
             // Part of the day narrows it
+            bool part = true;
             if (has("pagi") || has("morning")) { fromLocal = day.AddHours(4); toLocal = day.AddHours(11); }
             else if (has("siang") || has("afternoon")) { fromLocal = day.AddHours(11); toLocal = day.AddHours(15); }
             else if (has("sore")) { fromLocal = day.AddHours(15); toLocal = day.AddHours(18.5); }
             else if (has("malam") || has("evening") || has("night") || has("tonight")) { fromLocal = day.AddHours(18); toLocal = day.AddDays(1).AddHours(3); }
+            else part = false;
+            // A part of today that has not started yet means the last one: "tadi malam" at 00:30 is last night
+            if (day == today && fromLocal > nowLocal) { fromLocal = fromLocal.AddDays(-1); toLocal = toLocal.AddDays(-1); }
+            // "Tadi" and "barusan" mean a while ago, not since midnight: right after 00:00 they still reach the evening before
+            if (!part && day == today && (has("tadi") || has("barusan") || has("earlier")))
+            {
+                var recent = nowLocal.AddHours(-RecentHours);
+                if (recent < fromLocal) fromLocal = recent;
+            }
             if (toLocal > nowLocal && fromLocal <= nowLocal) toLocal = nowLocal;
             return true;
         }
