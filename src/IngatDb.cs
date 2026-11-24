@@ -61,8 +61,6 @@ namespace Deskmate
             return p == IntPtr.Zero ? "sqlite" : Marshal.PtrToStringUni(p);
         }
 
-        public long LastId { get { return sqlite3_last_insert_rowid(db); } }
-        public int Changes { get { return sqlite3_changes(db); } }
 
         // Statements run one by one; ';' inside strings is not used by our schema
         public void Script(string sql)
@@ -84,6 +82,17 @@ namespace Deskmate
                     return sqlite3_changes(db);
                 }
                 finally { sqlite3_finalize(st); }
+            }
+        }
+
+        // Runs an INSERT and returns its rowid under the same lock: the rowid is per connection, so another thread
+        // inserting between the statement and a separate read would hand back its row instead
+        public long Insert(string sql, params object[] args)
+        {
+            lock (gate)
+            {
+                Exec(sql, args);
+                return sqlite3_last_insert_rowid(db);
             }
         }
 

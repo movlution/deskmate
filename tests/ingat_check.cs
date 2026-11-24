@@ -33,6 +33,10 @@ namespace Deskmate
             TestFtsQuery();
             TestStoreAndSearch();
             TestRetentionAndForget();
+            TestForgottenMeetingsStayForgotten();
+            TestInsertIdsUnderConcurrency();
+            TestChromiumPrivateRootName();
+            TestServiceForgetDropsLiveState();
             TestMcpWithoutService();
             TestChatDetection();
             TestPeopleAndMessages();
@@ -270,6 +274,97 @@ namespace Deskmate
                 Assert(store.Forget(DateTime.UtcNow.AddHours(-1), DateTime.UtcNow.AddMinutes(1)) == 1 && store.Get(b) == null, "forget range");
                 Assert(store.Search("new", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow, 5).Count == 0, "fts row gone too");
             }
+        }
+
+        // The scan re-imports any rapat\*.md without a meetings row: forgetting must leave a blank tombstone
+        static void TestForgottenMeetingsStayForgotten()
+        {
+            using (var store = new IngatStore(TempDb()))
+            {
+                var t = DateTime.UtcNow.AddMinutes(-30);
+                string recent = "C:\\x\\2026-11-24 10.00 Zoom.md", old = "C:\\x\\2026-01-01 09.00 Meet.md", wiped = "C:\\x\\2026-11-20 08.00 Teams.md";
+                long m = store.AddMeeting(recent, t, t.AddMinutes(5), "Zoom", "Rapat · Zoom", "Rahasia rapat Jumat");
+                Assert(store.Forget(DateTime.UtcNow.AddHours(-1), DateTime.UtcNow) == 1 && store.Get(m) == null, "forgotten meeting episode is gone");
+                Assert(store.HasMeeting(recent), "forgotten meeting keeps a tombstone so the scan does not bring it back");
+                Assert(store.MeetingPath(m) == "" && (long)store.Stats()["meetings"] == 0, "tombstone points at no episode");
+
+                var o = DateTime.UtcNow.AddDays(-400);
+                store.AddMeeting(old, o, o.AddMinutes(30), "Meet", "Rapat · Meet", "Rapat lama");
+                store.Retain(14, 180);
+                Assert(store.HasMeeting(old) && (long)store.Stats()["meetings"] == 0, "meetings past retention stay retained away");
+
+                store.AddMeeting(wiped, t, t.AddMinutes(5), "Teams", "Rapat · Teams", "Rapat dihapus");
+                store.ForgetAll();
+                Assert(store.HasMeeting(wiped) && store.HasMeeting(recent) && (long)store.Stats()["meetings"] == 0, "forget all keeps tombstones too");
+            }
+        }
+
+        // last_insert_rowid is per connection: an id read after another thread's insert would point at its row
+        static void TestInsertIdsUnderConcurrency()
+        {
+            using (var store = new IngatStore(TempDb()))
+            {
+                var t = DateTime.UtcNow.AddMinutes(-5);
+                string failure = null;
+                var other = new Thread(delegate ()
+                {
+                    try { for (int i = 0; i < 400; i++) store.Person("Orang " + i, t); }
+                    catch (Exception ex) { failure = ex.Message; }
+                });
+                other.Start();
+                for (int i = 0; i < 400 && failure == null; i++)
+                {
+                    string app = "App" + i;
+                    long id = store.Open(t, app, "app" + i, "", "judul " + i, "", "");
+                    var ep = store.Get(id);
+                    if (ep == null || ep.App != app) { failure = "episode id " + id + " is not the row just opened (" + (ep == null ? "missing" : ep.App) + ")"; break; }
+                }
+                other.Join();
+                Assert(failure == null, "insert ids stay with their own row: " + failure);
+            }
+        }
+
+        static void TestChromiumPrivateRootName()
+        {
+            Assert(IngatText.PrivateRootName("Example Domain - Google Chrome (Incognito)", "Example Domain - Google Chrome"), "chrome incognito");
+            Assert(IngatText.PrivateRootName("Example Domain - Google Chrome (Guest)", "Example Domain - Google Chrome"), "chrome guest");
+            Assert(!IngatText.PrivateRootName("Example Domain - Google Chrome", "Example Domain - Google Chrome"), "normal window");
+            Assert(!IngatText.PrivateRootName("Example - Network error - Google Chrome - Person 1", "Example - Google Chrome"), "another profile is not private");
+            Assert(!IngatText.PrivateRootName("Inbox (3)", "Inbox (3)"), "a title ending in parentheses is not a marker");
+            Assert(!IngatText.PrivateRootName("", "Visual Studio Code"), "electron app without a browser root view");
+        }
+
+        // Forgetting the stretch that holds the live episode must drop it and the screen kept in memory
+        static void TestServiceForgetDropsLiveState()
+        {
+            var type = typeof(IngatService);
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var svc = (IngatService)type.GetConstructor(flags, null, new[] { typeof(int) }, null).Invoke(new object[] { 0 });
+            try
+            {
+                var now = DateTime.UtcNow;
+                long id = svc.Store.Open(now.AddMinutes(-3), "Notepad", "notepad", "", "rahasia.txt", "", "");
+                svc.Store.Touch(id, now, "rahasia.txt", "", "isi yang mau dilupakan");
+                var snap = new IngatSnapshot { App = "Notepad", Title = "rahasia.txt" };
+                snap.MainLines.Add("isi yang mau dilupakan");
+                type.GetField("current", flags).SetValue(svc, svc.Store.Get(id));
+                type.GetField("latestSnap", flags).SetValue(svc, snap);
+                type.GetField("lastDraft", flags).SetValue(svc, "draf yang mau dilupakan");
+                Assert(svc.Now().ContainsKey("episode") && svc.Now().ContainsKey("screen"), "live episode and screen before forgetting");
+
+                svc.Forget(now.AddMinutes(-15), now.AddMinutes(1));
+                var after = svc.Now();
+                Assert(!after.ContainsKey("episode") && !after.ContainsKey("screen"), "forgotten live episode and screen are not served any more");
+                Assert((string)type.GetField("lastDraft", flags).GetValue(svc) == "", "forgotten draft is dropped");
+
+                long keep = svc.Store.Open(now.AddMinutes(-1), "Notepad", "notepad", "", "baru.txt", "", "");
+                type.GetField("current", flags).SetValue(svc, svc.Store.Get(keep));
+                svc.Forget(now.AddDays(-3), now.AddDays(-2));
+                Assert(svc.Now().ContainsKey("episode"), "forgetting an older stretch leaves the live episode alone");
+                svc.ForgetAll();
+                Assert(!svc.Now().ContainsKey("episode"), "forget all drops the live episode");
+            }
+            finally { svc.Store.Dispose(); }
         }
 
         static void TestMcpWithoutService()

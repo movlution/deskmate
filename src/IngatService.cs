@@ -370,7 +370,7 @@ namespace Deskmate
 
             var blockedApps = List("ingat.block.apps");
             var blockedSites = List("ingat.block.sites");
-            if (IngatPrivacy.BlockedApp(exe, blockedApps) || IngatPrivacy.PrivateWindow(title, "", blockedSites))
+            if (IngatPrivacy.BlockedApp(exe, blockedApps) || IngatPrivacy.PrivateWindow(title, "", blockedSites) || IngatText.ChromiumPrivate(hwnd, title, exe))
             {
                 State = "private";
                 lock (gate) { latestSnap = null; CloseCurrent(now); }
@@ -650,6 +650,43 @@ namespace Deskmate
                 for (int i = ev.Count - 1; i >= 0; i--) if (ev[i][1] == "chat" || ev[i][1] == "uia" || ev[i][1] == "ocr") return ev[i][3];
                 return "";
             }
+        }
+
+        // Forget a stretch: the live episode and screen go too when they fall inside it, or capture would keep
+        // answering from the forgotten screen and writing into an episode that no longer exists
+        public int Forget(DateTime fromUtc, DateTime toUtc)
+        {
+            lock (gate)
+            {
+                int n = Store.Forget(fromUtc, toUtc);
+                bool liveHit = current != null && current.EndUtc >= fromUtc && current.StartUtc <= toUtc;
+                bool snapHit = latestSnap != null && latestSnap.CapturedUtc >= fromUtc && latestSnap.CapturedUtc <= toUtc;
+                if (liveHit || snapHit) DropLive();
+                return n;
+            }
+        }
+
+        public void ForgetAll()
+        {
+            lock (gate)
+            {
+                Store.ForgetAll();
+                DropLive();
+            }
+        }
+
+        // Under gate: let go of the open episode, the screen, and the draft without writing anything back
+        void DropLive()
+        {
+            current = null;
+            currentKey = "";
+            currentHwnd = IntPtr.Zero;
+            latestSnap = null;
+            lastConversation = "";
+            lastDraft = lastDraftSaved = lastDraftField = lastDraftTitle = "";
+            lastDraftHwnd = IntPtr.Zero;
+            Composing = false;
+            composing = null;
         }
 
         void CloseCurrent(DateTime at)

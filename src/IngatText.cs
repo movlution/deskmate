@@ -30,6 +30,56 @@ namespace Deskmate
 
         [DllImport("user32.dll")] static extern bool IsHungAppWindow(IntPtr hwnd);
 
+        // Chromium keeps Incognito and Guest out of the window title ("Page - Google Chrome") but names its
+        // BrowserRootView pane "Page - Google Chrome (Incognito)" / "(Guest)", in the UI language. Other profiles
+        // use " - Person 1" instead, so a parenthesized tail the title lacks means a private window.
+        // A window never changes mode, so the answer is kept per handle.
+        static readonly Dictionary<IntPtr, bool> chromiumPrivate = new Dictionary<IntPtr, bool>();
+
+        public static bool ChromiumPrivate(IntPtr hwnd, string title, string exe)
+        {
+            if (hwnd == IntPtr.Zero) return false;
+            var cls = new StringBuilder(64);
+            Native.GetClassName(hwnd, cls, cls.Capacity);
+            if (cls.ToString() != "Chrome_WidgetWin_1") return false;
+            lock (chromiumPrivate)
+            {
+                bool known;
+                if (chromiumPrivate.TryGetValue(hwnd, out known)) return known;
+            }
+            if (IsHungAppWindow(hwnd)) return false;
+            string rootName;
+            bool settled;
+            try
+            {
+                var win = AutomationElement.FromHandle(hwnd);
+                if (win == null) return false;
+                var view = win.FindFirst(TreeScope.Children, new PropertyCondition(AutomationElement.ClassNameProperty, "BrowserRootView"));
+                rootName = view == null ? "" : view.Current.Name ?? "";
+                // Electron apps share the window class but never have a browser root view; a browser window that has
+                // not named its view yet is asked again on the next look instead of being remembered as not private
+                settled = view == null ? !IsBrowser(exe) : rootName.Length > 0;
+            }
+            catch (Exception) { return false; }
+            bool result = PrivateRootName(rootName, title);
+            if (!settled) return result;
+            lock (chromiumPrivate)
+            {
+                if (chromiumPrivate.Count > 256) chromiumPrivate.Clear();
+                chromiumPrivate[hwnd] = result;
+            }
+            return result;
+        }
+
+        // "Page - Google Chrome (Incognito)" against the title "Page - Google Chrome"
+        public static bool PrivateRootName(string rootName, string title)
+        {
+            string r = (rootName ?? "").TrimEnd(), t = (title ?? "").TrimEnd();
+            if (!r.EndsWith(")", StringComparison.Ordinal) || t.EndsWith(")", StringComparison.Ordinal)) return false;
+            int open = r.LastIndexOf(" (", StringComparison.Ordinal);
+            return open > 0 && r.Length - open <= 40;
+        }
+
         struct PlacedLine
         {
             public double Top;

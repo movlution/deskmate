@@ -257,11 +257,11 @@ namespace Deskmate
                     return new Dictionary<string, object> { { "ok", true } };
                 case "POST /forget":
                 {
-                    if (Json.Str(body, "all") == "True" || Json.Str(body, "all") == "true" || Json.Str(body, "all") == "1") { store.ForgetAll(); return new Dictionary<string, object> { { "forgot", "all" } }; }
+                    if (Json.Str(body, "all") == "True" || Json.Str(body, "all") == "true" || Json.Str(body, "all") == "1") { svc.ForgetAll(); return new Dictionary<string, object> { { "forgot", "all" } }; }
                     var from = Json.Time(body, "from");
                     var to = Json.Time(body, "to");
                     if (from == DateTime.MinValue || to == DateTime.MinValue || to < from) return new Dictionary<string, object> { { "error", "from/to" } };
-                    return new Dictionary<string, object> { { "forgot", store.Forget(from, to) } };
+                    return new Dictionary<string, object> { { "forgot", svc.Forget(from, to) } };
                 }
             }
             return null;

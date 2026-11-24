@@ -99,9 +99,8 @@ namespace Deskmate
             string autoKind = string.IsNullOrEmpty(kind) ? IngatStructure.Classify(exe, url, title, "") : kind;
             var ctx = new IngatContext();
             ctx.Absorb(t, title, url, "", null);
-            db.Exec("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,context) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            long id = db.Insert("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,context) VALUES(?,?,?,?,?,?,?,?,?,?)",
                 t, t, app ?? "", exe ?? "", project ?? "", title ?? "", url ?? "", autoKind, title ?? "", ctx.Encode());
-            long id = db.LastId;
             Reindex(id);
             return id;
         }
@@ -156,8 +155,8 @@ namespace Deskmate
         // Brief pass-throughs under 8 s without typed/copied/sent actions are dropped; quick reference lookups stay
         public void DropTiny(long id)
         {
-            db.Exec("DELETE FROM episodes WHERE id=? AND end-start<8 AND kind<>'meeting' AND NOT EXISTS(SELECT 1 FROM events WHERE episode=episodes.id AND source IN ('sent','typed','clipboard'))", id);
-            if (db.Changes > 0) { db.Exec("DELETE FROM episodes_fts WHERE rowid=?", id); db.Exec("DELETE FROM events WHERE episode=?", id); }
+            int dropped = db.Exec("DELETE FROM episodes WHERE id=? AND end-start<8 AND kind<>'meeting' AND NOT EXISTS(SELECT 1 FROM events WHERE episode=episodes.id AND source IN ('sent','typed','clipboard'))", id);
+            if (dropped > 0) { db.Exec("DELETE FROM episodes_fts WHERE rowid=?", id); db.Exec("DELETE FROM events WHERE episode=?", id); }
         }
 
         public void Reindex(long id)
@@ -380,8 +379,7 @@ namespace Deskmate
                 db.Exec("UPDATE people SET last=MAX(COALESCE(last,0),?), mentions=mentions+1 WHERE id=?", seenUtc, id);
                 return id;
             }
-            db.Exec("INSERT INTO people(name,norm,last,mentions) VALUES(?,?,?,1)", name.Trim(), norm, seenUtc);
-            return db.LastId;
+            return db.Insert("INSERT INTO people(name,norm,last,mentions) VALUES(?,?,?,1)", name.Trim(), norm, seenUtc);
         }
 
         // Lookup only: 0 when nobody by that name or alias is known
@@ -414,8 +412,7 @@ namespace Deskmate
                 db.Exec("UPDATE conversations SET last=MAX(COALESCE(last,0),?), person=CASE WHEN ?<>0 THEN ? ELSE person END WHERE id=?", seenUtc, person, person, id);
                 return id;
             }
-            db.Exec("INSERT INTO conversations(app,name,norm,kind,person,last) VALUES(?,?,?,?,?,?)", app, name.Trim(), norm, kind, person, seenUtc);
-            return db.LastId;
+            return db.Insert("INSERT INTO conversations(app,name,norm,kind,person,last) VALUES(?,?,?,?,?,?)", app, name.Trim(), norm, kind, person, seenUtc);
         }
 
         public void SetDigest(long conversation, string digest) { db.Exec("UPDATE conversations SET digest=?, digest_t=? WHERE id=?", digest, DateTime.UtcNow, conversation); }
@@ -442,8 +439,7 @@ namespace Deskmate
                 if (!string.IsNullOrEmpty(said)) db.Exec("UPDATE messages SET said=? WHERE id=? AND said=''", said, IngatDb.Num(known[0][0]));
                 return false;
             }
-            db.Exec("INSERT INTO messages(conversation,t,sender,mine,text,hash,episode,status,said) VALUES(?,?,?,?,?,?,?,?,?)", conversation, t, mine ? "me" : sender, mine, text, hash, episode, status, said ?? "");
-            long id = db.LastId;
+            long id = db.Insert("INSERT INTO messages(conversation,t,sender,mine,text,hash,episode,status,said) VALUES(?,?,?,?,?,?,?,?,?)", conversation, t, mine ? "me" : sender, mine, text, hash, episode, status, said ?? "");
             db.Exec("INSERT INTO messages_fts(rowid,sender,text,conv) SELECT ?, ?, ?, name FROM conversations WHERE id=?", id, sender, text, conversation);
             return true;
         }
@@ -663,8 +659,7 @@ namespace Deskmate
         public long AddMeeting(string path, DateTime startUtc, DateTime endUtc, string app, string title, string text)
         {
             if (text.Length > BodyCap * 4) text = text.Substring(0, BodyCap * 4);
-            db.Exec("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,closed) VALUES(?,?,?,?,?,?,?,?,?,1)", startUtc, endUtc, app, "", "", title, "", "meeting", text);
-            long id = db.LastId;
+            long id = db.Insert("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,closed) VALUES(?,?,?,?,?,?,?,?,?,1)", startUtc, endUtc, app, "", "", title, "", "meeting", text);
             db.Exec("INSERT OR IGNORE INTO meetings(path,start,title,episode) VALUES(?,?,?,?)", path, startUtc, title, id);
             Reindex(id);
             return id;
@@ -684,7 +679,8 @@ namespace Deskmate
             var cut = DateTime.UtcNow.AddDays(-Math.Max(1, episodeDays));
             db.Exec("DELETE FROM episodes_fts WHERE rowid IN (SELECT id FROM episodes WHERE end<?)", cut);
             db.Exec("DELETE FROM embeddings WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
-            db.Exec("DELETE FROM meetings WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
+            // A meeting keeps a blank tombstone row: the transcript file stays in rapat\, and the scan would bring it back otherwise
+            db.Exec("UPDATE meetings SET episode=0, title='' WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
             db.Exec("DELETE FROM episode_people WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
             db.Exec("DELETE FROM episodes WHERE end<?", cut);
             // Messages follow episodes; people and promises stay while anything still points at them
@@ -701,7 +697,7 @@ namespace Deskmate
                 const string ids = "SELECT id FROM episodes WHERE end>=? AND start<=?";
                 db.Exec("DELETE FROM episodes_fts WHERE rowid IN (" + ids + ")", fromUtc, toUtc);
                 db.Exec("DELETE FROM embeddings WHERE episode IN (" + ids + ")", fromUtc, toUtc);
-                db.Exec("DELETE FROM meetings WHERE episode IN (" + ids + ")", fromUtc, toUtc);
+                db.Exec("UPDATE meetings SET episode=0, title='' WHERE episode IN (" + ids + ")", fromUtc, toUtc);
                 db.Exec("DELETE FROM events WHERE t>=? AND t<=?", fromUtc, toUtc);
                 db.Exec("DELETE FROM episode_people WHERE episode IN (" + ids + ")", fromUtc, toUtc);
                 db.Exec("DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE t>=? AND t<=?)", fromUtc, toUtc);
@@ -717,7 +713,7 @@ namespace Deskmate
 
         public void ForgetAll()
         {
-            db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;DELETE FROM meetings;DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM facts;" +
+            db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;UPDATE meetings SET episode=0, title='';DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM facts;" +
                 "DELETE FROM messages_fts;DELETE FROM messages;DELETE FROM commitments;DELETE FROM conversations;DELETE FROM episode_people;DELETE FROM people");
             db.Exec("VACUUM");
         }
