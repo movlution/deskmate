@@ -839,18 +839,20 @@ namespace Deskmate
             public bool CanShowBubble { get { return placed && !hidden && !closing && Visible && !Native.IsFullscreenOn(monitor); } }
 
             // Where the friend's pet should be now: the last packet carried forward at its speed, a short while at most
-            double RemoteTargetX
+            double RemoteBaseNorm
             {
                 get
                 {
                     double n = remoteTargetNorm;
                     if (recvVel != 0 && recvT >= 0)
                         n += recvVel * Math.Min(RemoteHorizon, Math.Max(0, clock.Elapsed.TotalSeconds - recvT));
-                    return lane.Left + Math.Max(0, Math.Min(1, n)) * lane.Width;
+                    return n;
                 }
             }
+            // Plus the shift from a drop here, if the user moved the pet out of the way
+            double RemoteTargetX { get { return lane.Left + Math.Max(0, Math.Min(1, RemoteBaseNorm + remoteOffset)) * lane.Width; } }
             bool RemotePredicting { get { return recvVel != 0 && recvT >= 0 && clock.Elapsed.TotalSeconds - recvT < RemoteHorizon; } }
-            bool RemoteMoving { get { return Math.Abs(RemoteTargetX - remoteX) > 0.5 || remoteHopT >= 0 || RemotePredicting; } }
+            bool RemoteMoving { get { return Math.Abs(RemoteTargetX - remoteX) > 0.5 || remoteHopT >= 0 || RemotePredicting || RemoteDragging; } }
             double RemoteLift { get { return remoteHopT < 0 ? 0 : Math.Sin(Math.PI * Math.Min(1, remoteHopT / PetBrain.HopTime)) * PetBrain.HopHeight * scale; } }
 
             public void ApplyRemoteState(double xNorm, int dir, PetMode mode, bool hop, double v)
@@ -937,6 +939,10 @@ namespace Deskmate
                     remoteHopT += clamped;
                     if (remoteHopT >= PetBrain.HopTime) remoteHopT = -1;
                 }
+                UpdateRemotePress();
+                StepRemoteDrop(clamped);
+                // While carried, the pointer places the pet
+                if (remoteHeld) return;
                 double target = RemoteTargetX;
                 if (!remotePlaced) { remoteX = target; remotePlaced = true; }
                 double gap = target - remoteX;
@@ -1236,11 +1242,12 @@ namespace Deskmate
                 int x, c, row, y;
                 if (IsRemote)
                 {
-                    PetMode drawMode = Math.Abs(RemoteTargetX - remoteX) > 2 * scale ? PetMode.Walk : remoteMode;
+                    PetMode drawMode = remoteHeld || remoteDragLift > 0 ? PetMode.Held
+                        : Math.Abs(RemoteTargetX - remoteX) > 2 * scale ? PetMode.Walk : remoteMode;
                     x = (int)Math.Round(remoteX);
                     c = sheet.Frame(drawMode, remoteAnimT, 1.0);
                     row = remoteDir > 0 ? 0 : 1;
-                    y = lane.Y - (sheet.Base + 1) * f - (int)Math.Round(RemoteLift);
+                    y = lane.Y - (sheet.Base + 1) * f - (int)Math.Round(RemoteLift + remoteDragLift);
                 }
                 else
                 {
@@ -1289,6 +1296,7 @@ namespace Deskmate
                     brain.StopPlay();
                     brain.CancelDockTrick();
                     CancelPetPress();
+                    CancelRemotePress();
                     if (emote != null) emote.Stop();
                     CloseWellness();
                     CloseChatBubble();
@@ -1308,7 +1316,11 @@ namespace Deskmate
                 if (m.Msg == FrameMsg) { Frame(); return; }
                 if (IsRemote)
                 {
-                    if ((m.Msg == 0x202 || m.Msg == 0x205) && placed && Isle != null)
+                    // Press and drag moves the friend's pet out of the way; a click or right-click opens the chat
+                    if ((m.Msg == 0x201 || m.Msg == 0x203) && placed && sheet != null) { BeginRemotePress(); return; }
+                    if (m.Msg == 0x202 && remotePressed) { EndRemotePress(Cursor.Position); Frame(); return; }
+                    if ((m.Msg == 0x001F || m.Msg == 0x0215) && remotePressed) { CancelRemotePress(); Frame(); }
+                    if (m.Msg == 0x205 && placed && Isle != null && !remotePressed)
                     {
                         Isle.OpenPetChatInput(this);
                         return;
