@@ -8,6 +8,9 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.14.2
+            en.Add("Ingatan lebih ringan", "Lighter Memory");
+            en.Add("Ingatan kini memakai jauh lebih sedikit CPU, memori, dan tulisan disk selagi layar tidak berubah. Apa yang dicatat tetap sama.", "Memory now uses far less CPU, RAM, and disk writes while the screen stays the same. What it records is unchanged.");
             // What's new 2.14.1 ("Penjaga beban" is translated with the Guard strings)
             en.Add("Aplikasi di latar yang memakai banyak CPU atau RAM selama beberapa menit muncul di island, dengan pilihan Mode hemat, Tutup, atau Abaikan. Matikan di Pengaturan › Perangkat & HP.", "Background apps using lots of CPU or RAM for minutes show on the island, with Efficiency mode, Close, or Ignore. Turn it off in Settings › Devices & Phone.");
             // What's new 2.14.0

@@ -20,6 +20,14 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.14.2",
+                Items = new[]
+                {
+                    new[] { "Ingatan lebih ringan", "Ingatan kini memakai jauh lebih sedikit CPU, memori, dan tulisan disk selagi layar tidak berubah. Apa yang dicatat tetap sama.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.14.1",
                 Items = new[]
                 {
