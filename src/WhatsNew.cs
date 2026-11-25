@@ -20,6 +20,16 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.15.0",
+                Items = new[]
+                {
+                    new[] { "Rak di Dock", "Seret berkas, gambar, atau teks ke dock untuk menahannya, lalu seret ke aplikasi lain. Atur di Pengaturan › Dock.", "" },
+                    new[] { "Lempar pet", "Lepas pet sambil menyeret untuk melemparnya: ia melayang, memantul, lalu kembali ke tempatnya.", "" },
+                    new[] { "AI mengatur semua fitur", "Suruh dan pet kini bisa membaca dan mengubah tugas, catatan, kalender, pengingat, timer, media, rak, integrasi, dan pengaturan.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.14.2",
                 Items = new[]
                 {

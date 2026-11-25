@@ -8,6 +8,12 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.15.0 ("Rak di Dock" is translated with the Dock strings)
+            en.Add("Seret berkas, gambar, atau teks ke dock untuk menahannya, lalu seret ke aplikasi lain. Atur di Pengaturan › Dock.", "Drag files, pictures, or text onto the dock to hold them, then drag them into another app. Set it in Settings › Dock.");
+            en.Add("Lempar pet", "Throw your pet");
+            en.Add("Lepas pet sambil menyeret untuk melemparnya: ia melayang, memantul, lalu kembali ke tempatnya.", "Let go of your pet mid-drag to throw it: it flies, bounces, and hops back to its spot.");
+            en.Add("AI mengatur semua fitur", "AI runs every feature");
+            en.Add("Suruh dan pet kini bisa membaca dan mengubah tugas, catatan, kalender, pengingat, timer, media, rak, integrasi, dan pengaturan.", "Suruh and your pet can now read and change tasks, notes, calendar, reminders, timers, media, the shelf, integrations, and settings.");
             // What's new 2.14.2
             en.Add("Ingatan lebih ringan", "Lighter Memory");
             en.Add("Ingatan kini memakai jauh lebih sedikit CPU, memori, dan tulisan disk selagi layar tidak berubah. Apa yang dicatat tetap sama.", "Memory now uses far less CPU, RAM, and disk writes while the screen stays the same. What it records is unchanged.");
