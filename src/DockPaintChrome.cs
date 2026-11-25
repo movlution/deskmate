@@ -33,7 +33,7 @@ namespace Deskmate
                     else if (s.Id == id.Replace("sys:", "") && id.StartsWith("sys:", StringComparison.Ordinal))
                     {
                         anchor = s.Icon;
-                        return s.Id == "work" ? Lang.T("Tugas dan catatan") : s.Id == "start" ? "Start" : Lang.T("Semua jendela");
+                        return s.Id == "shelf" ? ShelfLabel() : s.Id == "work" ? Lang.T("Tugas dan catatan") : s.Id == "start" ? "Start" : Lang.T("Semua jendela");
                     }
                 foreach (var kv in hits)
                     if (kv.Value == id && id.StartsWith("tray:", StringComparison.Ordinal))

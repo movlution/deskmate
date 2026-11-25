@@ -75,7 +75,8 @@ namespace Deskmate
             void TrayDown(string id, MouseButtons button) { TrayDown(TrayById(id), button); }
             void TrayUp(string id, MouseButtons button) { TrayUp(TrayById(id), button); }
 
-            // Files over an app: its window comes up; dropped files open with it
+            // Files over an app: its window comes up; dropped files open with it.
+            // Anything else dropped on the dock waits in its tray, to be dragged on later.
             protected override void OnDragOver(DragEventArgs e)
             {
                 base.OnDragOver(e);
@@ -84,12 +85,23 @@ namespace Deskmate
                 mouseY = c.Y / scale;
                 inside = true;
                 hover.Target = 1;
+                bool holdable = ShelfSlotOn && Holdable(e.Data);
+                if (holdable && !fileOver) { fileOver = true; Reveal(true); CloseCard(); }
                 string id = HitAt(new PointF(mouseX, mouseY));
                 var app = AppById(id);
                 var files = e.Data.GetDataPresent(DataFormats.FileDrop) ? e.Data.GetData(DataFormats.FileDrop) as string[] : null;
                 e.Effect = DragDropEffects.None;
                 if (app != null && files != null && OpensFiles(app)) e.Effect = DragDropEffects.Copy;
+                // The tray's own files only go to apps
+                else if (shelfDragOut) { }
+                else if (id == "sys:shelf" && holdable) e.Effect = DragDropEffects.Copy;
                 else if (app == null && files != null && Array.TrueForAll(files, Pinnable)) e.Effect = DragDropEffects.Link;
+                else if (app == null && holdable) e.Effect = DragDropEffects.Copy;
+                if (id != hoverId && (fileOver || shelfDragOut))
+                {
+                    hoverId = id;
+                    labelShow.Target = id == "sys:shelf" ? 1 : 0;
+                }
                 if (id != dropHover) { dropHover = id; dropSinceUtc = DateTime.UtcNow; }
                 else if (app != null && app.Running && (DateTime.UtcNow - dropSinceUtc).TotalMilliseconds > 700)
                 {
@@ -104,20 +116,36 @@ namespace Deskmate
             protected override void OnDragLeave(EventArgs e)
             {
                 base.OnDragLeave(e);
+                DragGone();
+                if (HideMode != "never") { hideLater.Stop(); hideLater.Start(); }
+                Animate();
+            }
+
+            void DragGone()
+            {
                 dropHover = null;
                 inside = false;
+                fileOver = false;
                 hover.Target = 0;
-                Animate();
+                if (hoverId != null) { hoverId = null; labelShow.Target = 0; }
             }
 
             protected override void OnDragDrop(DragEventArgs e)
             {
                 base.OnDragDrop(e);
                 var files = e.Data.GetData(DataFormats.FileDrop) as string[];
-                var app = AppById(dropHover);
-                dropHover = null;
-                inside = false;
-                hover.Target = 0;
+                string at = dropHover;
+                var app = AppById(at);
+                bool tray = ShelfSlotOn && !shelfDragOut && app == null;
+                DragGone();
+                Animate();
+                // On the tray, or anything the dock cannot pin: hold it
+                if (tray && (at == "sys:shelf" || files == null || files.Length == 0 || !Array.TrueForAll(files, Pinnable)))
+                {
+                    var held = DropPaths(e.Data);
+                    if (held.Count > 0) isle.HoldInDock(held);
+                    return;
+                }
                 if (files == null || files.Length == 0) return;
                 if (app != null && OpensFiles(app))
                 {

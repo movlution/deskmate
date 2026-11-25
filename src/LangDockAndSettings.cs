@@ -28,6 +28,14 @@ namespace Deskmate
             en.Add("Buka jendela baru", "New window");
             en.Add("Sematkan di Dock", "Pin to Dock");
             en.Add("Lepas dari Dock", "Unpin from Dock");
+            en.Add("Ditahan di Dock", "Held in the Dock");
+            en.Add("Buka Rak", "Open Shelf");
+            en.Add("Lepas untuk menahan di Dock", "Drop to hold in the Dock");
+            en.Add("Rak Dock", "Dock shelf");
+            en.Add("{0} · seret ke aplikasi", "{0} · drag into an app");
+            en.Add("{0} berkas · seret ke aplikasi", "{0} files · drag into an app");
+            en.Add("Rak di Dock", "Shelf in the Dock");
+            en.Add("Seret berkas, gambar, atau teks ke dock untuk menahannya, lalu seret ke aplikasi lain", "Drag files, pictures, or text onto the dock to hold them, then drag them into another app");
             en.Add("Tutup jendela", "Close window");
             en.Add("Tutup {0} jendela", "Close {0} windows");
             en.Add("{0} agen", "{0} agents");

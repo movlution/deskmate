@@ -237,6 +237,7 @@ namespace Deskmate
                     if (!Replacing && apps.Count > 0) slots.Add(new Slot { Id = "worksep", Sep = true });
                 }
                 foreach (var a in apps) slots.Add(new Slot { Id = "app:" + a.Key, App = a, Show = Ease.Clamp01(a.Show.Value) });
+                ShelfSlots();
                 // The dragged app leaves a gap that follows the pointer
                 if (dragApp != null) InsertDragGap();
             }
@@ -450,6 +451,7 @@ namespace Deskmate
                 if (DockFlyersMoving(DateTime.UtcNow)) moving = true;
                 if (StepDrag(dt)) moving = true;
                 if (StepLabel(dt)) moving = true;
+                if (StepShelf(dt)) moving = true;
                 return moving;
             }
 

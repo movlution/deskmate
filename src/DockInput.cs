@@ -103,6 +103,7 @@ namespace Deskmate
                 HoverReveal();
                 if (pressId != null && e.Button == MouseButtons.Left && dragApp == null && AppById(pressId) != null && Far(e.Location, downAt)) BeginDrag(AppById(pressId), pt);
                 if (dragApp != null) { DragMove(pt); Animate(); return; }
+                if (pressId == "sys:shelf" && e.Button == MouseButtons.Left && Held.Count > 0 && Far(e.Location, downAt)) { ShelfDragOut(); return; }
                 string id = HitAt(pt);
                 if (card != null && card.Kind == DockCard.WindowsKind && PreviewAppById(id) == card.App) card.Keep();
                 if (id != hoverId) SetHover(id);
