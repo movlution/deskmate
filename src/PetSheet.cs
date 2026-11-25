@@ -164,23 +164,35 @@ namespace Deskmate
             // Row 0 faces right, row 1 is mirrored; f screen px per art px, nearest neighbour
             public int[] Atlas(int f)
             {
-                int cw = W * f, ch = H * f, w = cw * Count;
+                return AtlasScaled(W * f, H * f);
+            }
+
+            // Row 0 faces right, row 1 is mirrored; exact cw x ch screen px per cell, nearest neighbour
+            public int[] AtlasScaled(int cw, int ch)
+            {
+                if (cw < 1) cw = 1;
+                if (ch < 1) ch = 1;
+                int w = cw * Count;
                 var px = new int[w * ch * 2];
                 for (int c = 0; c < Count; c++)
                 {
                     var a = Art[c];
-                    for (int gy = 0; gy < H; gy++)
-                        for (int gx = 0; gx < W; gx++)
+                    for (int y = 0; y < ch; y++)
+                    {
+                        int gy = y * H / ch;
+                        if (gy >= H) gy = H - 1;
+                        int row0 = y * w + c * cw;
+                        int row1 = (ch + y) * w + c * cw;
+                        for (int x = 0; x < cw; x++)
                         {
+                            int gx = x * W / cw;
+                            if (gx >= W) gx = W - 1;
                             int v = a[gy * W + gx];
                             if (v == 0) continue;
-                            for (int row = 0; row < 2; row++)
-                            {
-                                int ox = c * cw + (row == 0 ? gx : W - 1 - gx) * f, oy = row * ch + gy * f;
-                                for (int y = 0; y < f; y++)
-                                    for (int x = 0; x < f; x++) px[(oy + y) * w + ox + x] = v;
-                            }
+                            px[row0 + x] = v;
+                            px[row1 + (cw - 1 - x)] = v;
                         }
+                    }
                 }
                 return px;
             }

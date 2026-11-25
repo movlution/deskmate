@@ -751,7 +751,9 @@ namespace Deskmate
                 }
             }
             public int DrawnCenterX { get { return drawnX == int.MinValue ? lane.Left + cw / 2 : drawnX + cw / 2; } }
-            public int BubbleAnchorY { get { return sheet == null ? StandY : StandY - (sheet.Base + 1 - sheet.Top) * f; } }
+            int BasePx { get { return sheet == null ? 0 : (int)Math.Round((sheet.Base + 1) * (double)ch / sheet.H); } }
+            int TopPx { get { return sheet == null ? 0 : (int)Math.Round(sheet.Top * (double)ch / sheet.H); } }
+            public int BubbleAnchorY { get { return sheet == null ? StandY : StandY - (BasePx - TopPx); } }
 
             // Where the pet's feet are for bubbles and bars: the ground it stands on, or under the paws while carried
             int StandY
@@ -759,7 +761,7 @@ namespace Deskmate
                 get
                 {
                     if (IsRemote || standY == int.MinValue) return lane.Y;
-                    if (brain.Manipulating && drawnY != int.MinValue && sheet != null) return drawnY + (sheet.Base + 1) * f;
+                    if (brain.Manipulating && drawnY != int.MinValue && sheet != null) return drawnY + BasePx;
                     return standY;
                 }
             }
@@ -1062,6 +1064,21 @@ namespace Deskmate
                 return n;
             }
 
+            // Target cell size in screen px for a sheet drawn height logical px tall, kept under the atlas ceiling
+            public static Size CellSize(PetSheet sheet, int height, float scale)
+            {
+                int th = Math.Max(1, (int)Math.Round(height * scale));
+                int tw = Math.Max(1, (int)Math.Round((double)sheet.W * th / sheet.H));
+                long bytes = (long)tw * th * sheet.Count * 8;
+                if (bytes > AtlasBytes && bytes > 0)
+                {
+                    double k = Math.Sqrt((double)AtlasBytes / bytes);
+                    th = Math.Max(1, (int)Math.Floor(th * k));
+                    tw = Math.Max(1, (int)Math.Floor(tw * k));
+                }
+                return new Size(tw, th);
+            }
+
             // dockPresent with an Empty floor: the dock is hidden or has not drawn yet, so the pet
             // keeps its lane (or waits for the first frame; Watch falls back after 3 s)
             public void Floor(Rectangle f, bool dockPresent)
@@ -1099,12 +1116,13 @@ namespace Deskmate
             void Fit()
             {
                 if (sheet == null) return;
-                int nf = Factor(sheet, height, scale);
-                if (nf != f || rebuild || memDC == IntPtr.Zero)
+                Size cell = CellSize(sheet, height, scale);
+                int nf = Math.Max(1, (int)Math.Round((double)cell.Height / sheet.H));
+                if (cell.Width != cw || cell.Height != ch || rebuild || memDC == IntPtr.Zero)
                 {
                     f = nf;
-                    cw = sheet.W * f;
-                    ch = sheet.H * f;
+                    cw = cell.Width;
+                    ch = cell.Height;
                     rebuild = false;
                     Build();
                 }
@@ -1116,7 +1134,7 @@ namespace Deskmate
             {
                 Free();
                 int w = cw * sheet.Count, h = ch * 2;
-                int[] px = sheet.Atlas(f);
+                int[] px = sheet.AtlasScaled(cw, ch);
                 var bmi = new Native.BITMAPINFOHEADER { biSize = Marshal.SizeOf(typeof(Native.BITMAPINFOHEADER)), biWidth = w, biHeight = -h, biPlanes = 1, biBitCount = 32 };
                 IntPtr screen = Native.GetDC(IntPtr.Zero);
                 memDC = Native.CreateCompatibleDC(screen);
@@ -1247,7 +1265,7 @@ namespace Deskmate
                     x = (int)Math.Round(remoteX);
                     c = sheet.Frame(drawMode, remoteAnimT, 1.0);
                     row = remoteDir > 0 ? 0 : 1;
-                    y = lane.Y - (sheet.Base + 1) * f - (int)Math.Round(RemoteLift + remoteDragLift);
+                    y = lane.Y - BasePx - (int)Math.Round(RemoteLift + remoteDragLift);
                 }
                 else
                 {
@@ -1256,7 +1274,7 @@ namespace Deskmate
                     c = sheet.Frame(brain.Mode, poseTime, brain.Pace);
                     row = brain.Dir > 0 ? 0 : 1;
                     // The lowest opaque row of the sheet stands on the ground
-                    y = Ground(brain.X + cw / 2.0) - (sheet.Base + 1) * f - (int)Math.Round(brain.Lift);
+                    y = Ground(brain.X + cw / 2.0) - BasePx - (int)Math.Round(brain.Lift);
                 }
                 bool art = c != drawnCell || row != drawnRow;
                 if (!art && x == drawnX && y == drawnY) return;

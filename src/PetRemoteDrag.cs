@@ -48,7 +48,7 @@ namespace Deskmate
             void RemoteCarryTo(Point at)
             {
                 remoteX = Math.Max(lane.Left, Math.Min(lane.Right, remotePressX + at.X - remotePressAt.X));
-                double maxLift = Math.Max(0, lane.Y - work.Top - (sheet.Base + 1 - sheet.Top) * f);
+                double maxLift = Math.Max(0, lane.Y - work.Top - (BasePx - TopPx));
                 remoteDragLift = Math.Max(0, Math.Min(maxLift, remotePressLift + 8 * scale - (at.Y - remotePressAt.Y)));
                 remotePlaced = true;
             }
