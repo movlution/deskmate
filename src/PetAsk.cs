@@ -55,13 +55,14 @@ namespace Deskmate
             string name = PetAskName, kind = settings.Get("pet.kind", "cat");
             var history = new List<KeyValuePair<string, string>>(petAskTurns);
             bool memory = IngatOn;
+            bool hasExternalTasks = sources != null && (sources.Find("todoist") != null || sources.Find("notion") != null);
             pet.PopEmote(PetEmote.Note);
             pet.ShowChatBubble(name, Lang.T("Hmm, sebentar…"), false, null, 120);
 
             ThreadPool.QueueUserWorkItem(delegate
             {
                 string answer = null;
-                try { answer = PetAskThink(question, history, name, kind, memory); }
+                try { answer = PetAskThink(question, history, name, kind, memory, hasExternalTasks); }
                 catch (Exception ex) { Log.Write("pet tanya: " + ex.Message); }
                 if (string.IsNullOrEmpty(answer)) answer = Lang.T("Aduh, aku lagi tidak bisa berpikir. Coba lagi sebentar ya.");
                 Post(delegate
@@ -81,9 +82,30 @@ namespace Deskmate
             });
         }
 
-        // Worker: Ingatan's service when it runs (its own AI choice decides where memory may go), else the main AI without memory
-        static string PetAskThink(string question, List<KeyValuePair<string, string>> history, string name, string kind, bool memory)
+        // Worker: uses Deskmate's full AI tool loop (and Ingatan activity memory via read_deskmate(activity) when on)
+        string PetAskThink(string question, List<KeyValuePair<string, string>> history, string name, string kind, bool memory, bool hasExternalTasks)
         {
+            if (Ai.Ready(Ai.Text))
+            {
+                string animal = kind == "dog" ? "dog" : kind == "cat" ? "cat" : "pet";
+                string system = "You are " + name + ", the user's little " + animal + " living on their Windows desktop dock, and their personal Deskmate assistant with full control over all Deskmate features (Tasks, Notes, Calendar, Reminders, Timers, Media, Control Center, Shelf, Clipboard, Integrations, Utilities, Settings" +
+                    (memory ? ", and Ingatan activity memory via read_deskmate(section='activity')" : "") + "). " +
+                    "Be warm, playful, and brief: 1-3 short sentences, plain text, no Markdown, at most one emoji. Reply in the user's language. " +
+                    "To edit, complete, or delete items, read them first with read_deskmate if you need their ID/key, then call the appropriate manage_* tool. " +
+                    (memory ? "" : "Ingatan activity memory is currently off; if asked about past screen activity, say it can be turned on in Settings › Ingatan. ") +
+                    "Local time now: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm dddd", System.Globalization.CultureInfo.InvariantCulture) + ".";
+                var all = new List<KeyValuePair<string, string>>(history);
+                all.Add(new KeyValuePair<string, string>("user", question));
+                string error;
+                var msg = AskSuruh(all, hasExternalTasks, system, out error);
+                if (msg != null)
+                {
+                    string summary = ChatSummary(msg);
+                    if (!string.IsNullOrEmpty(summary)) return Fmt.OneLine(summary, 700);
+                }
+                if (error != null && (!memory || !IngatClient.Running()))
+                    return Lang.F("Aku belum bisa berpikir: {0}", error);
+            }
             if (memory && IngatClient.Running())
             {
                 var turns = new List<object>();
@@ -92,22 +114,9 @@ namespace Deskmate
                 {
                     { "q", question }, { "history", turns.ToArray() }, { "name", name }, { "kind", kind },
                 }, 120000);
-                // Ingatan's own AI answered; when it is not set up or failed, the main AI answers without memory
                 if (r != null && Json.Str(r, "answer").Length > 0 && !r.ContainsKey("error")) return Fmt.OneLine(Json.Str(r, "answer"), 700);
             }
-            string animal = kind == "dog" ? "dog" : kind == "cat" ? "cat" : "pet";
-            string system = "You are " + name + ", the user's little " + animal + " living on their Windows desktop dock, and their personal assistant. " +
-                "Be warm, playful, and brief: 1-3 short sentences, plain text, no Markdown, at most one emoji. Reply in the user's language. " +
-                "You cannot take actions on the computer. " +
-                (memory ? "Your memory of the user's activity is not available right now because the AI chosen for Ingatan is not ready; if asked about past activity, say so and suggest Settings › Ingatan › Layanan AI. "
-                        : "You do not remember the user's activity right now (Ingatan is off); if asked, say it can be turned on in Settings › Ingatan. ") +
-                "Local time now: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm dddd", System.Globalization.CultureInfo.InvariantCulture) + ".";
-            var all = new List<KeyValuePair<string, string>>(history);
-            all.Add(new KeyValuePair<string, string>("user", question));
-            string error;
-            var reply = Ai.Ask(system, all, null, out error);
-            if (reply == null) return error != null ? Lang.F("Aku belum bisa berpikir: {0}", error) : null;
-            return Fmt.OneLine(reply.Text.Trim(), 700);
+            return null;
         }
     }
 }
