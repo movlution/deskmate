@@ -31,7 +31,35 @@ namespace Deskmate
             TestClientSendsInOrder();
             TestPrankRouting();
             TestPrankCooldown();
-            return "PetLinkCheck OK (prank routing, prank cooldown, invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
+            TestNameTag();
+            return "PetLinkCheck OK (prank routing, prank cooldown, name tag, invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
+        }
+
+        // The room name tag: drawn off-screen only, sized by its text and scale, hidden on request
+        static void TestNameTag()
+        {
+            var owner = new Form { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(-32000, -32000, 1, 1) };
+            var tag = new Island.PetNameTag();
+            try
+            {
+                tag.Put("Faris", 1f, -30000, -30000, owner);
+                Size small = tag.TagSize;
+                Assert(small.Width > 0 && small.Height > 0, "name tag has a size");
+                Assert(tag.Showing, "name tag shows");
+                tag.Put("Faris dan kucingnya", 1f, -30000, -30000, owner);
+                Assert(tag.TagSize.Width > small.Width, "longer name, wider tag");
+                Assert(tag.TagSize.Height == small.Height, "one line tall either way");
+                tag.Put("Faris", 2f, -30000, -30000, owner);
+                Assert(tag.TagSize.Height > small.Height, "tag follows the monitor scale");
+                tag.Conceal();
+                Assert(!tag.Showing, "name tag hides");
+            }
+            finally
+            {
+                tag.Close();
+                tag.Dispose();
+                owner.Dispose();
+            }
         }
 
         // A guest may only send peer traffic; room, join, leave and err must never reach other guests

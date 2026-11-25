@@ -914,9 +914,10 @@ namespace Deskmate
                     b.Dispose();
                     return;
                 }
-                b.FormClosed += delegate { if (chatBubble == b) chatBubble = null; };
+                b.FormClosed += delegate { if (chatBubble == b) chatBubble = null; PlaceNameTag(); };
                 b.Show(this);
                 chatBubble = b;
+                PlaceNameTag();
             }
 
             public void CloseChatBubble()
@@ -1299,6 +1300,7 @@ namespace Deskmate
                 PlaceWellness();
                 PlaceChatBubble();
                 PlaceActions();
+                PlaceNameTag();
             }
 
             // Out of the way of fullscreen games, video and presentations, and gone with a hidden Deskmate
@@ -1307,7 +1309,8 @@ namespace Deskmate
                 if (!placed && ++waitTicks >= 3) { floor = Rectangle.Empty; Settle(); }
                 bool hide = (away != null && away()) || Native.IsFullscreenOn(monitor);
                 if (!hide && !IsRemote) Cue();
-                if (hide == hidden) return;
+                // Also catches the action bar or a reminder opening and closing over the name
+                if (hide == hidden) { PlaceNameTag(); return; }
                 hidden = hide;
                 if (hide)
                 {
@@ -1319,6 +1322,7 @@ namespace Deskmate
                     CloseWellness();
                     CloseChatBubble();
                     CloseActions();
+                    PlaceNameTag();
                     Native.ShowWindow(Handle, Native.SW_HIDE);
                     Schedule();
                     return;
@@ -1370,6 +1374,7 @@ namespace Deskmate
                 CloseWellness();
                 CloseChatBubble();
                 CloseActions();
+                CloseNameTag();
                 CancelPetPress();
                 rest.Stop();
                 watch.Stop();

@@ -143,6 +143,7 @@ namespace Deskmate
             string dir;
             var prof = BuildLocalPetProfile(out dir);
             petRoom.SetLocalProfile(prof, dir);
+            RefreshPetNameTags();
         }
 
         internal bool PublishLocalPetState(double xNorm, int dir, int mode, bool hop, bool force, double v = 0)
@@ -206,6 +207,7 @@ namespace Deskmate
         {
             var h = PetRoomChanged;
             if (h != null) h();
+            RefreshPetNameTags();
             if (petRoom != null && petRoom.Mode == PetRoomMode.Connected && pet != null && !pet.IsDisposed)
                 PublishLocalPetState(pet.NormX, 1, 0, false, true);
         }
@@ -242,6 +244,7 @@ namespace Deskmate
             {
                 win.PeerName = profile.Name;
                 win.Use(ResolvePeerSheet(profile, true), SizePx(profile.Size), 100);
+                win.RefreshNameTag();
             }
 
             if (pet != null && !pet.IsDisposed)
@@ -257,6 +260,7 @@ namespace Deskmate
             {
                 win.PeerName = profile.Name;
                 win.Use(ResolvePeerSheet(profile, true), SizePx(profile.Size), 100);
+                win.RefreshNameTag();
             }
         }
 
