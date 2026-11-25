@@ -32,7 +32,37 @@ namespace Deskmate
             TestPrankRouting();
             TestPrankCooldown();
             TestNameTag();
-            return "PetLinkCheck OK (prank routing, prank cooldown, name tag, invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
+            TestRoomChatLog();
+            return "PetLinkCheck OK (prank routing, prank cooldown, name tag, room chat log, invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
+        }
+
+        // The room chat history: follows the newest message, stays put once scrolled up, and draws without a window
+        static void TestRoomChatLog()
+        {
+            var lines = new List<Island.PetChatLine>();
+            using (var log = new Island.PetChatLog(lines, 1f, Color.Black, Color.White, true) { Size = new Size(300, 120) })
+            using (var bmp = new Bitmap(300, 120))
+            {
+                log.Added();
+                Assert(log.ContentHeight == 0, "empty history has no height");
+                log.DrawToBitmap(bmp, new Rectangle(0, 0, 300, 120));
+                lines.Add(new Island.PetChatLine { Sender = "", Text = "Budi joined", Notice = true, At = DateTime.Now });
+                for (int i = 0; i < 12; i++)
+                    lines.Add(new Island.PetChatLine { Sender = i % 2 == 0 ? "Faris" : "Budi", Text = "pesan nomor " + i + " yang cukup panjang untuk dibungkus ke baris berikutnya", Mine = i % 2 == 0, At = DateTime.Now });
+                log.Added();
+                Assert(log.ContentHeight > 120, "many messages overflow the view");
+                Assert(log.ScrollOffset == log.ContentHeight - 120, "view follows the newest message");
+                log.ScrollBy(-50);
+                int held = log.ScrollOffset;
+                lines.Add(new Island.PetChatLine { Sender = "Budi", Text = "baru", At = DateTime.Now });
+                log.Added();
+                Assert(log.ScrollOffset == held, "scrolled-up view is not yanked down by a new message");
+                log.ScrollBy(100000);
+                lines.Add(new Island.PetChatLine { Sender = "Budi", Text = "lagi", At = DateTime.Now });
+                log.Added();
+                Assert(log.ScrollOffset == log.ContentHeight - 120, "back at the bottom, it follows again");
+                log.DrawToBitmap(bmp, new Rectangle(0, 0, 300, 120));
+            }
         }
 
         // The room name tag: drawn off-screen only, sized by its text and scale, hidden on request

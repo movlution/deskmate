@@ -115,6 +115,7 @@ namespace Deskmate
             var prof = BuildLocalPetProfile(out dir);
             var room = EnsurePetRoom();
             room.AllowCustomAssets = PetAllowCustomReceive;
+            ClearPetChatLog();
             room.StartHost(prof, dir, useCloudflareTunnel);
         }
 
@@ -125,6 +126,7 @@ namespace Deskmate
             var prof = BuildLocalPetProfile(out dir);
             var room = EnsurePetRoom();
             room.AllowCustomAssets = PetAllowCustomReceive;
+            ClearPetChatLog();
             room.StartJoin(inviteCode, prof, dir);
         }
 
@@ -134,6 +136,8 @@ namespace Deskmate
             CloseRemotePets();
             ClosePetChatUi();
             ClosePrankOverlay();
+            // The history lives only as long as the room
+            ClearPetChatLog();
         }
 
         internal void SyncLocalPetProfile()
@@ -159,6 +163,7 @@ namespace Deskmate
             if (clean.Length == 0) return;
 
             petRoom.SendChat(clean, emote);
+            LogPetChat(PetDisplayName, clean, true);
             if (pet != null && !pet.IsDisposed)
             {
                 pet.ShowChatBubble(PetDisplayName, clean, false, () => OpenPetChatInput(pet));
@@ -185,7 +190,7 @@ namespace Deskmate
             petChatInput = new PetChatInput(target.UiScale, target.WorkArea.Width,
                 (text, emote) => SendPetChat(text, emote),
                 em => SendPetEmote(em), null, onPrank, PrankLabel,
-                onPrank != null ? () => PrankWait(prankPeer) : (Func<int>)null);
+                onPrank != null ? () => PrankWait(prankPeer) : (Func<int>)null, petChatLog);
             petChatInput.FormClosed += delegate { petChatInput = null; };
             if (!petChatInput.MoveAbove(target.WorkArea, new Point(target.DrawnCenterX, target.BubbleAnchorY)))
             {
@@ -215,6 +220,8 @@ namespace Deskmate
         void OnRemotePeerJoined(PetPeerProfile profile)
         {
             if (!PetOn || profile == null || string.IsNullOrEmpty(profile.Id)) return;
+            if (!remoteProfiles.ContainsKey(profile.Id))
+                LogPetChat("", string.Format(Lang.T("{0} masuk room"), string.IsNullOrEmpty(profile.Name) ? Lang.T("Teman") : profile.Name), false, true);
             remoteProfiles[profile.Id] = profile;
 
             PetWindow win;
@@ -266,6 +273,9 @@ namespace Deskmate
 
         void OnRemotePeerLeft(string peerId)
         {
+            PetPeerProfile gone;
+            if (remoteProfiles.TryGetValue(peerId, out gone))
+                LogPetChat("", string.Format(Lang.T("{0} keluar room"), string.IsNullOrEmpty(gone.Name) ? Lang.T("Teman") : gone.Name), false, true);
             remoteProfiles.Remove(peerId);
             pendingPeerAssets.Remove(peerId);
             PetWindow win;
@@ -291,9 +301,13 @@ namespace Deskmate
         void OnRemoteChatReceived(string peerId, string text, int emote)
         {
             PetWindow win;
-            if (!remotePets.TryGetValue(peerId, out win) || win.IsDisposed) return;
             PetPeerProfile prof;
-            string sender = remoteProfiles.TryGetValue(peerId, out prof) ? prof.Name : (win.PeerName ?? "Teman");
+            bool hasWin = remotePets.TryGetValue(peerId, out win) && !win.IsDisposed;
+            string sender = remoteProfiles.TryGetValue(peerId, out prof) && !string.IsNullOrEmpty(prof.Name) ? prof.Name
+                : hasWin && !string.IsNullOrEmpty(win.PeerName) ? win.PeerName : Lang.T("Teman");
+            // Every message goes in the room's history, even when that friend's pet isn't on screen
+            LogPetChat(sender, text, false);
+            if (!hasWin) return;
 
             // Turn both pets to face each other when chatting
             if (pet != null && !pet.IsDisposed)

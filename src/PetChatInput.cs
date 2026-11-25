@@ -20,7 +20,10 @@ namespace Deskmate
             Label prankCaption;
             Timer prankTimer;
             readonly Color rim;
+            readonly PetChatLog log;
             int selectedEmote = -1;
+            // Room chat sits above the band where the pets' bubbles pop, so new bubbles don't cover it
+            const int BubbleBand = 110;
 
             int Px(float v) { return (int)Math.Round(v * scale); }
 
@@ -29,9 +32,12 @@ namespace Deskmate
 
             // No emote handler: the pet is being asked something, not chatting to friends
             bool Asking { get { return onEmote == null; } }
+            // With the room's history: stays open to keep chatting
+            bool Room { get { return log != null; } }
 
             public PetChatInput(float scale, int availableWidth, Action<string, int> onSend, Action<PetEmote> onEmote, string cue = null,
-                Action<PetPrank> onPrank = null, Func<PetPrank, string> prankLabel = null, Func<int> prankWait = null)
+                Action<PetPrank> onPrank = null, Func<PetPrank, string> prankLabel = null, Func<int> prankWait = null,
+                List<PetChatLine> history = null)
             {
                 this.scale = scale > 0 ? scale : 1f;
                 this.onSend = onSend;
@@ -45,7 +51,7 @@ namespace Deskmate
                 AutoScaleMode = AutoScaleMode.None;
                 TopMost = true;
                 KeyPreview = true;
-                Text = Asking ? Lang.T("Tanya pet") : Lang.T("Kirim pesan lewat pet");
+                Text = Asking ? Lang.T("Tanya pet") : history != null ? Lang.T("Chat room") : Lang.T("Kirim pesan lewat pet");
 
                 var tone = Ink.Base;
                 bool dark = tone.IsDark;
@@ -55,10 +61,12 @@ namespace Deskmate
                 rim = Ink.Mix(BackColor, fore, dark ? 0.18f : 0.14f);
 
                 int pad = Px(10);
-                int winW = Math.Max(Px(250), Math.Min(Px(Asking ? 340 : 300), availableWidth - Px(16)));
+                bool room = history != null && !Asking;
+                int winW = Math.Max(Px(250), Math.Min(Px(Asking ? 340 : room ? 320 : 300), availableWidth - Px(16)));
                 int sendW = Px(62);
                 int boxH = Px(28);
-                int row1Y = pad;
+                int logH = room ? Px(200) : 0;
+                int row1Y = room ? pad + logH + Px(8) : pad;
                 int row2Y = row1Y + boxH + Px(8);
                 int emoteH = Px(26);
                 int capH = Px(18);
@@ -66,6 +74,16 @@ namespace Deskmate
                 int prankY = row3Y + capH;
                 int winH = Asking ? row1Y + boxH + pad : this.onPrank != null ? prankY + emoteH + pad : row2Y + emoteH + pad;
                 ClientSize = new Size(winW, winH);
+
+                if (room)
+                {
+                    log = new PetChatLog(history, this.scale, BackColor, fore, dark)
+                    {
+                        Bounds = new Rectangle(pad, pad, winW - pad * 2, logH)
+                    };
+                    Controls.Add(log);
+                    log.Added();
+                }
 
                 box = new TextBox
                 {
@@ -128,7 +146,8 @@ namespace Deskmate
                         if (string.IsNullOrWhiteSpace(box.Text))
                         {
                             if (this.onEmote != null) this.onEmote(kind);
-                            Close();
+                            if (Room) box.Focus();
+                            else Close();
                         }
                         else
                         {
@@ -214,8 +233,22 @@ namespace Deskmate
                 base.Dispose(disposing);
             }
 
+            public void LogChanged() { if (log != null && !log.IsDisposed) log.Added(); }
+
+            // The wheel scrolls the history wherever the pointer is in the window
+            protected override void OnMouseWheel(MouseEventArgs e)
+            {
+                base.OnMouseWheel(e);
+                if (log != null) log.ScrollBy(-e.Delta * Px(36) / 120);
+            }
+
             public bool MoveAbove(Rectangle area, Point anchor)
             {
+                if (Room)
+                {
+                    var high = PetChatBubble.BoundsAbove(area, new Point(anchor.X, anchor.Y - Px(BubbleBand)), Size, Px(8));
+                    if (!high.IsEmpty) { Bounds = high; return true; }
+                }
                 var r = PetChatBubble.BoundsAbove(area, anchor, Size, Px(8));
                 if (r.IsEmpty) return false;
                 Bounds = r;
@@ -232,6 +265,15 @@ namespace Deskmate
             {
                 string txt = (box.Text ?? "").Trim();
                 int em = selectedEmote;
+                if (Room)
+                {
+                    // Keep chatting: clear the box, the message lands in the history and above the pet
+                    box.Clear();
+                    selectedEmote = -1;
+                    box.Focus();
+                    if (txt.Length > 0 && onSend != null) onSend(txt, em);
+                    return;
+                }
                 Close();
                 if (txt.Length > 0 && onSend != null) onSend(txt, em);
             }
