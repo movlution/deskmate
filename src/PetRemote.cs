@@ -44,7 +44,7 @@ namespace Deskmate
             petRoom.PeerJoined += p => RunOnUi(() => OnRemotePeerJoined(p));
             petRoom.PeerProfileUpdated += p => RunOnUi(() => OnRemotePeerUpdated(p));
             petRoom.PeerLeft += id => RunOnUi(() => OnRemotePeerLeft(id));
-            petRoom.PeerStateReceived += (id, x, dir, mode, hop) => RunOnUi(() => OnRemotePeerState(id, x, dir, mode, hop));
+            petRoom.PeerStateReceived += (id, x, dir, mode, hop, v) => RunOnUi(() => OnRemotePeerState(id, x, dir, mode, hop, v));
             petRoom.ChatReceived += (id, text, emote) => RunOnUi(() => OnRemoteChatReceived(id, text, emote));
             petRoom.EmoteReceived += (id, emote) => RunOnUi(() => OnRemoteEmoteReceived(id, emote));
             petRoom.CustomAssetReady += (id, hash, json, png) => RunOnUi(() => OnRemoteCustomAssetReady(id, hash, json, png));
@@ -143,10 +143,10 @@ namespace Deskmate
             petRoom.SetLocalProfile(prof, dir);
         }
 
-        internal void PublishLocalPetState(double xNorm, int dir, int mode, bool hop, bool force)
+        internal bool PublishLocalPetState(double xNorm, int dir, int mode, bool hop, bool force, double v = 0)
         {
-            if (petRoom != null && petRoom.Mode == PetRoomMode.Connected)
-                petRoom.SendState(xNorm, dir, mode, hop, force);
+            return petRoom != null && petRoom.Mode == PetRoomMode.Connected &&
+                petRoom.SendState(xNorm, dir, mode, hop, force, v);
         }
 
         internal void SendPetChat(string text, int emote)
@@ -265,7 +265,7 @@ namespace Deskmate
             }
         }
 
-        void OnRemotePeerState(string peerId, double xNorm, int dir, int mode, bool hop)
+        void OnRemotePeerState(string peerId, double xNorm, int dir, int mode, bool hop, double v)
         {
             PetWindow win;
             if (!remotePets.TryGetValue(peerId, out win) || win.IsDisposed) return;
@@ -274,7 +274,7 @@ namespace Deskmate
             if (petRoom != null && pendingPeerAssets.TryGetValue(peerId, out waiting))
                 petRoom.RequestCustomAsset(peerId, waiting);
             PetMode m = (mode >= 0 && mode <= (int)PetMode.Scratch) ? (PetMode)mode : PetMode.Idle;
-            win.ApplyRemoteState(xNorm, dir, m, hop);
+            win.ApplyRemoteState(xNorm, dir, m, hop, v);
         }
 
         void OnRemoteChatReceived(string peerId, string text, int emote)

@@ -732,9 +732,13 @@ namespace Deskmate
             int remoteDir = 1;
             PetMode remoteMode = PetMode.Idle;
             bool remotePlaced;
+            // Last packet: where the friend's pet was, when it arrived (clock s) and how fast it went (lane widths/s)
+            double recvNorm = 0.5, recvT = -1, recvVel;
+            // How far past the last packet the pet keeps walking before it waits for the next one
+            const double RemoteHorizon = 0.25;
             PetMode lastPubMode = PetMode.Idle;
             int lastPubDir = 1;
-            double lastPubNorm = -1;
+            double lastPubNorm = -1, lastPubT = -1;
             bool lastPubHop;
             PetChatBubble chatBubble;
 
@@ -834,14 +838,37 @@ namespace Deskmate
             public float UiScale { get { return scale; } }
             public bool CanShowBubble { get { return placed && !hidden && !closing && Visible && !Native.IsFullscreenOn(monitor); } }
 
-            double RemoteTargetX { get { return lane.Left + Math.Max(0, Math.Min(1, remoteTargetNorm)) * lane.Width; } }
-            bool RemoteMoving { get { return Math.Abs(RemoteTargetX - remoteX) > 1.0 || remoteHopT >= 0; } }
+            // Where the friend's pet should be now: the last packet carried forward at its speed, a short while at most
+            double RemoteTargetX
+            {
+                get
+                {
+                    double n = remoteTargetNorm;
+                    if (recvVel != 0 && recvT >= 0)
+                        n += recvVel * Math.Min(RemoteHorizon, Math.Max(0, clock.Elapsed.TotalSeconds - recvT));
+                    return lane.Left + Math.Max(0, Math.Min(1, n)) * lane.Width;
+                }
+            }
+            bool RemotePredicting { get { return recvVel != 0 && recvT >= 0 && clock.Elapsed.TotalSeconds - recvT < RemoteHorizon; } }
+            bool RemoteMoving { get { return Math.Abs(RemoteTargetX - remoteX) > 0.5 || remoteHopT >= 0 || RemotePredicting; } }
             double RemoteLift { get { return remoteHopT < 0 ? 0 : Math.Sin(Math.PI * Math.Min(1, remoteHopT / PetBrain.HopTime)) * PetBrain.HopHeight * scale; } }
 
-            public void ApplyRemoteState(double xNorm, int dir, PetMode mode, bool hop)
+            public void ApplyRemoteState(double xNorm, int dir, PetMode mode, bool hop, double v)
             {
                 if (!IsRemote) return;
-                remoteTargetNorm = Math.Max(0, Math.Min(1, xNorm));
+                xNorm = Math.Max(0, Math.Min(1, xNorm));
+                double now = clock.Elapsed.TotalSeconds;
+                if (double.IsNaN(v))
+                {
+                    // An older Deskmate sends no speed: guess it from the last two packets while walking
+                    double gapT = now - recvT;
+                    v = mode == PetMode.Walk && recvT >= 0 && gapT >= 0.05 && gapT <= 0.6 ? (xNorm - recvNorm) / gapT : 0;
+                }
+                if (mode != PetMode.Walk && mode != PetMode.Held) v = 0;
+                recvVel = Math.Max(-3, Math.Min(3, v));
+                recvNorm = xNorm;
+                recvT = now;
+                remoteTargetNorm = xNorm;
                 remoteDir = dir >= 0 ? 1 : -1;
                 if (mode != remoteMode) { remoteMode = mode; remoteAnimT = 0; }
                 if (hop && remoteHopT < 0) remoteHopT = 0;
@@ -913,32 +940,39 @@ namespace Deskmate
                 double target = RemoteTargetX;
                 if (!remotePlaced) { remoteX = target; remotePlaced = true; }
                 double gap = target - remoteX;
-                if (Math.Abs(gap) <= 1.0)
+                if (Math.Abs(gap) <= 0.5 || Math.Abs(gap) > lane.Width * 0.3)
                 {
+                    // Arrived, or a jump too far to walk (thrown, another screen): just be there
                     remoteX = target;
                 }
                 else
                 {
-                    // Smooth catch-up towards remote peer's latest xNorm
-                    double step = Math.Max(PetBrain.BaseSpeed * scale * 2.5 * clamped, Math.Abs(gap) * Math.Min(1.0, clamped * 10.0));
-                    remoteX += Math.Sign(gap) * Math.Min(Math.Abs(gap), step);
-                    remoteDir = Math.Sign(gap);
+                    // Follow the predicted spot with an easing that keeps a steady pace while it moves,
+                    // instead of dashing to each packet and standing still until the next one
+                    remoteX += gap * (1 - Math.Exp(-clamped * 12));
+                    // Only a real distance turns the pet; small corrections keep the facing the friend sent
+                    if (Math.Abs(gap) > 8 * scale) remoteDir = Math.Sign(gap);
                 }
             }
 
             void PublishLocalState()
             {
                 if (IsRemote || Isle == null || !Isle.PetRoomConnected) return;
-                double n = NormX;
+                double n = NormX, now = clock.Elapsed.TotalSeconds;
                 bool hop = brain.Lift > 1.0;
-                bool changed = brain.Mode != lastPubMode || brain.Dir != lastPubDir || hop != lastPubHop || Math.Abs(n - lastPubNorm) >= 0.008;
+                bool changed = brain.Mode != lastPubMode || brain.Dir != lastPubDir || hop != lastPubHop || Math.Abs(n - lastPubNorm) >= 0.002;
                 if (!changed) return;
                 bool force = brain.Mode != lastPubMode || brain.Dir != lastPubDir || (hop && !lastPubHop);
+                // Speed since the last packet, on this clock, so the friend's copy can walk on between packets
+                double dtPub = now - lastPubT;
+                double v = brain.Moving && lastPubNorm >= 0 && dtPub > 0.02 && dtPub < 0.6 ? (n - lastPubNorm) / dtPub : 0;
+                // A throttled packet keeps the last sent values, so the next frame tries again
+                if (!Isle.PublishLocalPetState(n, brain.Dir, (int)brain.Mode, hop, force, v)) return;
                 lastPubMode = brain.Mode;
                 lastPubDir = brain.Dir;
                 lastPubNorm = n;
+                lastPubT = now;
                 lastPubHop = hop;
-                Isle.PublishLocalPetState(n, brain.Dir, (int)brain.Mode, hop, force);
             }
 
             public PetWindow(Rectangle work, float scale, IntPtr monitor, Func<bool> away)
@@ -1202,7 +1236,7 @@ namespace Deskmate
                 int x, c, row, y;
                 if (IsRemote)
                 {
-                    PetMode drawMode = Math.Abs(RemoteTargetX - remoteX) > 1.5 ? PetMode.Walk : remoteMode;
+                    PetMode drawMode = Math.Abs(RemoteTargetX - remoteX) > 2 * scale ? PetMode.Walk : remoteMode;
                     x = (int)Math.Round(remoteX);
                     c = sheet.Frame(drawMode, remoteAnimT, 1.0);
                     row = remoteDir > 0 ? 0 : 1;
