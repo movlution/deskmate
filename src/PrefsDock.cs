@@ -97,6 +97,11 @@ namespace Deskmate
                 var work = Switch("dockbar.work", true, null);
                 work.Enabled = on;
                 add(Row(Lang.T("Tombol tugas dan catatan"), Lang.T("Satu tombol untuk mengakses Tugas dan catatan"), work));
+                var dockShelf = Switch("dockbar.shelf", true, null);
+                dockShelf.Enabled = on;
+                var dockShelfRow = Row(Lang.T("Rak di Dock"), Lang.T("Seret berkas, gambar, atau teks ke dock untuk menahannya, lalu seret ke aplikasi lain"), dockShelf);
+                dockShelfRow.Glyph = IcoShelf;
+                add(dockShelfRow);
 
                 cap(Lang.T("Widget"));
                 string[] notes = { "Jam dan tanggal; klik membuka Ringkasan", "Sampul, judul, dan tombol putar", "Pemakaian tertinggi dan agen yang bekerja", "Saat timer berjalan", "Butuh kota di Pengaturan › Cuaca & Pengingat", "Hanya di laptop", "CPU dan RAM, dibaca tiap 3 detik" };

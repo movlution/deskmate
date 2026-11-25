@@ -167,6 +167,9 @@ namespace Deskmate
             }
             [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, string l);
             [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)] static extern int SetWindowTheme(IntPtr hwnd, string app, string idList);
+            [DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr hwnd, IntPtr rect, IntPtr rgn, uint flags);
+            const int WmSetRedraw = 0x000B;
+            const uint RdwInvalidate = 0x1, RdwErase = 0x4, RdwAllChildren = 0x80, RdwUpdateNow = 0x100, RdwFrame = 0x400;
 
             public PrefsWindow(Island island)
             {
@@ -305,8 +308,30 @@ namespace Deskmate
                 SendMessage(search.Handle, 0x1501, (IntPtr)1, Lang.T("Cari pengaturan"));
                 searchIndex.Clear();
                 Place();
-                Fill();
-                Invalidate(true);
+                // A setting changed in place: the page rebuilds where the reader was,
+                // drawn once when done instead of row by row from the top
+                var at = content.AutoScrollPosition;
+                bool frozen = content.IsHandleCreated && content.Visible;
+                if (frozen) SendMessage(content.Handle, WmSetRedraw, IntPtr.Zero, null);
+                try
+                {
+                    Fill();
+                    if (at.Y != 0)
+                    {
+                        foreach (Control c in content.Controls) if (!c.IsHandleCreated) { var h = c.Handle; }
+                        content.AutoScrollPosition = new Point(-at.X, -at.Y);
+                    }
+                }
+                finally
+                {
+                    if (frozen)
+                    {
+                        SendMessage(content.Handle, WmSetRedraw, (IntPtr)1, null);
+                        RedrawWindow(content.Handle, IntPtr.Zero, IntPtr.Zero, RdwErase | RdwFrame | RdwInvalidate | RdwAllChildren | RdwUpdateNow);
+                    }
+                }
+                Invalidate(false);
+                side.Invalidate();
             }
 
             // Sidebar width, 1x px

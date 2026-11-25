@@ -524,6 +524,12 @@ namespace Deskmate
             return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE closed=1 AND summary='' AND end-start>=25 ORDER BY start DESC LIMIT ?", limit));
         }
 
+        // Pending episodes shorter than maxSeconds: summarized without a model, so no body is needed
+        public List<IngatEpisode> NeedShortSummary(int maxSeconds, int limit)
+        {
+            return ReadAll(db.Query("SELECT " + LiteCols + " FROM episodes WHERE closed=1 AND summary='' AND end-start>=25 AND end-start<? ORDER BY start DESC LIMIT ?", maxSeconds, limit));
+        }
+
         public List<IngatEpisode> NeedEmbedding(int limit)
         {
             return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE closed=1 AND embedded=0 AND summary<>'' ORDER BY start DESC LIMIT ?", limit));

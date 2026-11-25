@@ -290,12 +290,14 @@ namespace Deskmate
                     case "start": act = delegate { ToggleSheet("start"); }; menu = QuickMenu; break;
                     case "taskview": act = delegate { ShellVerb("WindowSwitcher"); }; break;
                     case "work": act = delegate { isle.OpenWork(); }; menu = WorkMenu; break;
+                    case "shelf": act = OpenHeld; menu = ShelfMenu; break;
                 }
                 Hit(s.Hit, id, act, menu);
                 hot |= keyMode && keySel == id;
                 bool startOpen = s.Id == "start" && sheet != null && sheet.Kind == "start";
                 var plateRect = OnBar(s.Icon, 0, press);
-                Color baseFill = startOpen ? Ink.Mix(p.T.FillHover, Ink.A(p.T.Accent, 0.32f), 0.4f) : hot ? p.T.FillHover : p.T.Fill;
+                bool dropOn = s.Id == "shelf" && fileOver && hot;
+                Color baseFill = dropOn ? Ink.Mix(p.T.FillHover, Ink.A(p.T.Accent, 0.4f), 0.6f) : startOpen ? Ink.Mix(p.T.FillHover, Ink.A(p.T.Accent, 0.32f), 0.4f) : hot ? p.T.FillHover : p.T.Fill;
                 Color tileFill = press > 0.001f ? Ink.Mix(baseFill, p.T.FillPressed, press) : baseFill;
                 p.FillRound(plateRect, Math.Min(plateRect.Width, plateRect.Height) * PlateK, tileFill);
                 if (keyMode && keySel == id) FocusRing(s.Icon);
@@ -325,6 +327,7 @@ namespace Deskmate
                         p.Icon('\uE73A', 21 * u, ink, cx, cy);
                         Indicator(workDot.Value, false, s.Icon);
                         break;
+                    case "shelf": DrawShelfGlyph(s, r, ink, hot); break;
                 }
             }
 

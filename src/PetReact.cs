@@ -65,6 +65,8 @@ namespace Deskmate
             double pressX;
             // Screen Y of the paws when the press began; a drag keeps the paws this far from the pointer
             int pressFeet;
+            bool holdVelValid;
+            double holdLastX, holdLastLift, holdLastT, holdVx, holdVy;
             bool autoChase, autoFullscreen;
             double nextAutoSample, nextAutoFullscreen, nextDockFullscreen;
 
@@ -117,10 +119,64 @@ namespace Deskmate
                     pressButton = SystemInformation.MouseButtonsSwapped ? 0x02 : 0x01;
                     pressX = brain.X;
                     pressFeet = drawnY != int.MinValue ? drawnY + (sheet.Base + 1) * f : StandY;
+                    ClearHoldSamples();
                     if (emote != null) emote.Stop();
                 }
                 lastT = clock.Elapsed.TotalSeconds;
                 Frame();
+            }
+
+            void ClearHoldSamples()
+            {
+                holdVelValid = false;
+                holdVx = 0;
+                holdVy = 0;
+            }
+
+            void RecordHoldSample(double x, double lift, double now)
+            {
+                if (!holdVelValid)
+                {
+                    holdVelValid = true;
+                    holdLastX = x;
+                    holdLastLift = lift;
+                    holdLastT = now;
+                    holdVx = 0;
+                    holdVy = 0;
+                    return;
+                }
+                double dt = now - holdLastT;
+                if (dt < 0.002) return;
+                if (dt > 0.12)
+                {
+                    holdVx = 0;
+                    holdVy = 0;
+                }
+                else if (scale > 0)
+                {
+                    double instVx = (x - holdLastX) / (dt * scale);
+                    double instVy = (lift - holdLastLift) / (dt * scale);
+                    // Exponential smoothing (~45ms) filters out mouse polling jitter
+                    double alpha = 1.0 - Math.Exp(-dt / 0.045);
+                    holdVx += (instVx - holdVx) * alpha;
+                    holdVy += (instVy - holdVy) * alpha;
+                }
+                holdLastX = x;
+                holdLastLift = lift;
+                holdLastT = now;
+            }
+
+            void ComputeThrowVelocity(double now, out double vx, out double vy)
+            {
+                vx = 0;
+                vy = 0;
+                if (!holdVelValid) return;
+                double stale = now - holdLastT;
+                // Pausing before release drops straight down instead of flinging
+                if (stale > 0.08) return;
+                double decay = stale > 0 ? Math.Exp(-stale / 0.045) : 1.0;
+                vx = holdVx * decay;
+                vy = holdVy * decay;
             }
 
             // The pet never takes focus. A background window cannot rely on mouse capture,
@@ -130,8 +186,17 @@ namespace Deskmate
                 if (PlayBlocked || (away != null && away())) { CancelPetPress(); return; }
                 Point at = Cursor.Position;
                 if (KeyState(pressButton) >= 0) { EndPetPress(at); return; }
-                if (!brain.Holding && PetBrain.DragThreshold(pressAt, at, scale)) brain.BeginHold();
-                if (brain.Holding) CarryTo(at);
+                double now = clock.Elapsed.TotalSeconds;
+                if (!brain.Holding && PetBrain.DragThreshold(pressAt, at, scale))
+                {
+                    brain.BeginHold();
+                    RecordHoldSample(brain.X, brain.Lift, now);
+                }
+                if (brain.Holding)
+                {
+                    CarryTo(at);
+                    RecordHoldSample(brain.X, brain.Lift, now);
+                }
             }
 
             // Anywhere on the pet's screen: the paws follow the pointer, lifted a little on pickup, never
@@ -150,20 +215,35 @@ namespace Deskmate
             void EndPetPress(Point at)
             {
                 petPressed = false;
-                if (PlayBlocked) { brain.CancelHold(); return; }
-                if (brain.Holding) brain.EndHold();
+                if (PlayBlocked) { ClearHoldSamples(); brain.CancelHold(); return; }
+                if (brain.Holding)
+                {
+                    double now = clock.Elapsed.TotalSeconds;
+                    CarryTo(at);
+                    RecordHoldSample(brain.X, brain.Lift, now);
+                    double vx, vy;
+                    ComputeThrowVelocity(now, out vx, out vy);
+                    ClearHoldSamples();
+                    bool onDock;
+                    int ground = GroundAt(brain.X + cw / 2.0, out onDock);
+                    double maxLift = ground - work.Top - (sheet.Base + 1 - sheet.Top) * f;
+                    brain.EndHold(vx, vy, work.Left, Math.Max(work.Left, work.Right - cw), maxLift);
+                }
                 else if (!PetBrain.DragThreshold(pressAt, at, scale))
                 {
+                    ClearHoldSamples();
                     // A click hops, and opens (or closes) the action bar; a drag only carries the pet
                     brain.Click(StretchSeconds);
                     ToggleActions();
                 }
+                else ClearHoldSamples();
                 lastT = clock.Elapsed.TotalSeconds;
             }
 
             void CancelPetPress()
             {
                 petPressed = false;
+                ClearHoldSamples();
                 brain.CancelHold();
             }
 

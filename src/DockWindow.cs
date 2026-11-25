@@ -260,6 +260,8 @@ namespace Deskmate
                 else StopKeys();
                 if (Glass && !GpuGlass) frost.Start(); else { frost.Stop(); if (plate != null) { plate.Dispose(); plate = null; } }
                 foreach (var a in apps) TuneApp(a);
+                // Hiding turned off while retracted: the edge no longer reveals, so rise now
+                if (HideMode == "never") { hideLater.Stop(); revealLater.Stop(); if (!wantShown) Reveal(true); }
                 Refresh(false);
                 Place();
                 drawnSig = "";
@@ -575,7 +577,7 @@ namespace Deskmate
             bool Moving()
             {
                 var now = DateTime.UtcNow;
-                if (!reveal.Settled || !hover.Settled || !workDot.Settled || WidgetsMoving() || DockFlyersMoving(now)) return true;
+                if (!reveal.Settled || !hover.Settled || !workDot.Settled || !shelfShow.Settled || shelfShow.Target != (ShelfWanted ? 1 : 0) || WidgetsMoving() || DockFlyersMoving(now)) return true;
                 foreach (var s in sysGrow.Values) if (!s.Settled) return true;
                 foreach (var s in sysPress.Values) if (!s.Settled) return true;
                 if (!Anim.Reduced && startPulseUtc > DateTime.MinValue && (now - startPulseUtc).TotalSeconds < 0.40) return true;
@@ -756,7 +758,7 @@ namespace Deskmate
             string Signature()
             {
                 var sb = new StringBuilder();
-                sb.Append(Fmt.Clock(DateTime.Now)).Append('|').Append(hoverId).Append('|').Append(pressId).Append('|').Append(FocusKey()).Append('|').Append(isle.WorkOpen).Append('|').Append(TrayExpanded);
+                sb.Append(Fmt.Clock(DateTime.Now)).Append('|').Append(hoverId).Append('|').Append(pressId).Append('|').Append(FocusKey()).Append('|').Append(isle.WorkOpen).Append('|').Append(TrayExpanded).Append('|').Append(isle.dockHeld.Count);
                 foreach (var a in apps) sb.Append(a.Key.Length).Append(a.Wins.Count).Append(a.Badge).Append(a.Attention ? '!' : '.');
                 var mi = isle.mediaInfo;
                 if (mi.Present) sb.Append(mi.Title).Append(mi.Playing);
@@ -859,7 +861,7 @@ namespace Deskmate
 
             void AutoHide()
             {
-                if (focusReveal || HideMode == "never" || inside || card != null || sheet != null || keyMode || dragging) return;
+                if (focusReveal || HideMode == "never" || inside || card != null || sheet != null || keyMode || dragging || fileOver || shelfDragOut) return;
                 // The edge belongs to the dock even where the floating bar leaves
                 // a transparent gap. Do not retract under a pointer resting there.
                 if (PointerOnEdge()) return;

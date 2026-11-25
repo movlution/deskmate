@@ -213,10 +213,12 @@ namespace Deskmate
             Point autoSample;
             double dockHopFrom, dockHopTo, nextDockTrick;
             bool dockHop;
-            bool held;
+            bool held, throwing, throwLanded, throwLandHard;
+            int throwBounces;
             double heldLift, dropHeight, dropTime, dropFromX, dropToX;
+            double throwVx, throwVy, throwLeft, throwRight, throwMaxLift, throwPeak, throwMaxSpeed;
             // Logical px per second squared: a drop from the top of a 1080p screen takes about a second
-            public const double Gravity = 1600;
+            public const double Gravity = 1600, MaxThrowVx = 850, MaxThrowVy = 680, ThrowDeadzone = 100;
             readonly Random rnd;
 
             public PetBrain(int seed) { rnd = new Random(seed); }
@@ -310,7 +312,16 @@ namespace Deskmate
             // Walking or mid-hop: frames run on vsync
             public bool Moving { get { return Mode == PetMode.Walk || hopT >= 0 || Manipulating; } }
             public bool Holding { get { return held; } }
+            public bool Throwing { get { return throwing; } }
             public bool Manipulating { get { return Mode == PetMode.Held; } }
+
+            // Adjust lift when the ground surface under an airborne throw changes, keeping screen Y continuous
+            public void ShiftGround(double deltaY)
+            {
+                if (!throwing || deltaY == 0) return;
+                heldLift = Math.Max(0, heldLift + deltaY);
+                throwMaxLift = Math.Max(heldLift, throwMaxLift + deltaY);
+            }
 
             public static bool DragThreshold(Point start, Point at, float scale)
             {
@@ -323,6 +334,9 @@ namespace Deskmate
                 Enter(PetMode.Held);
                 hopT = -1;
                 held = true;
+                throwing = false;
+                throwLanded = false;
+                throwBounces = 0;
                 heldLift = 0;
                 return true;
             }
@@ -343,19 +357,58 @@ namespace Deskmate
 
             public void EndHold()
             {
+                EndHold(0, 0, Left, Right, 0);
+            }
+
+            // Release with optional logical px/s throw velocity; small velocities fall straight down as a gentle drop
+            public void EndHold(double vx, double vy, double minX, double maxX, double maxLift)
+            {
                 if (!held) return;
+                if (vx * vx + vy * vy < ThrowDeadzone * ThrowDeadzone)
+                {
+                    held = false;
+                    throwing = false;
+                    throwVx = throwVy = 0;
+                    dropHeight = heldLift;
+                    dropTime = 0;
+                    dropFromX = X;
+                    dropToX = Clamp(X);
+                    if (dropHeight <= 0) { X = dropToX; CancelHold(); }
+                    return;
+                }
+                vx = Math.Max(-MaxThrowVx, Math.Min(MaxThrowVx, vx));
+                vy = Math.Max(-MaxThrowVy, Math.Min(MaxThrowVy, vy));
+                // A sideways flick along the floor pops the pet into a gentle arc
+                if (heldLift <= 0 && vy <= 0) vy = Math.Min(220, Math.Abs(vx) * 0.32);
                 held = false;
-                dropHeight = heldLift;
-                dropTime = 0;
-                dropFromX = X;
-                dropToX = Clamp(X);
-                if (dropHeight <= 0) { X = dropToX; CancelHold(); }
+                throwing = true;
+                throwBounces = 0;
+                throwVx = vx;
+                throwVy = vy;
+                throwLeft = Math.Min(Left, Math.Min(minX, X));
+                throwRight = Math.Max(Right, Math.Max(maxX, X));
+                throwMaxLift = maxLift > 0 ? maxLift : Math.Max(heldLift, 400 * Scale);
+                throwPeak = heldLift;
+                throwMaxSpeed = Math.Abs(vx);
+                if (Math.Abs(vx) > 40) Dir = Math.Sign(vx);
+            }
+
+            public bool ConsumeThrowLanding(out bool hard)
+            {
+                hard = throwLandHard;
+                if (!throwLanded) return false;
+                throwLanded = false;
+                return true;
             }
 
             public void CancelHold()
             {
                 if (!Manipulating) return;
                 held = false;
+                throwing = false;
+                throwLanded = false;
+                throwBounces = 0;
+                throwVx = throwVy = 0;
                 heldLift = 0;
                 Enter(PetMode.Idle);
             }
@@ -480,6 +533,86 @@ namespace Deskmate
                 {
                     if (NoWalk || Calm) { CancelHold(); return; }
                     if (held) return;
+                    if (throwing)
+                    {
+                        double step = Math.Min(dt, 0.033);
+                        bool grounded = heldLift <= 0 && throwVy <= 0;
+                        if (!grounded)
+                        {
+                            // Midpoint gravity integration + subtle air drag for a smooth, natural arc
+                            double nextVy = throwVy - Gravity * step;
+                            heldLift += 0.5 * (throwVy + nextVy) * Scale * step;
+                            throwVy = nextVy;
+                            throwVx *= Math.Exp(-0.75 * step);
+                        }
+                        else
+                        {
+                            // Smooth exponential ground skid after vertical bounces settle
+                            throwVx *= Math.Exp(-9.0 * step);
+                        }
+                        X += throwVx * Scale * step;
+                        if (heldLift > throwPeak) throwPeak = heldLift;
+                        if (X >= Left && X <= Right) { throwLeft = Left; throwRight = Right; }
+                        if (X < throwLeft)
+                        {
+                            X = throwLeft;
+                            if (throwVx < 0)
+                            {
+                                throwVx = -throwVx * 0.5;
+                                if (throwVx > 60) Dir = 1;
+                            }
+                        }
+                        else if (X > throwRight)
+                        {
+                            X = throwRight;
+                            if (throwVx > 0)
+                            {
+                                throwVx = -throwVx * 0.5;
+                                if (throwVx < -60) Dir = -1;
+                            }
+                        }
+                        if (heldLift > throwMaxLift)
+                        {
+                            heldLift = throwMaxLift;
+                            if (throwVy > 0) throwVy = -throwVy * 0.3;
+                        }
+                        if (heldLift <= 0)
+                        {
+                            heldLift = 0;
+                            double impactVy = -throwVy;
+                            if (impactVy > 180 && throwBounces < 2)
+                            {
+                                // Continuous physics bounce: preserves velocity continuity with zero snap
+                                throwVy = impactVy * 0.42;
+                                throwVx *= 0.68;
+                                throwBounces++;
+                            }
+                            else
+                            {
+                                throwVy = 0;
+                                if (Math.Abs(throwVx) < 18)
+                                {
+                                    double peak = throwPeak, maxSpd = throwMaxSpeed;
+                                    double targetX = Clamp(X);
+                                    bool outside = Math.Abs(targetX - X) > 1;
+                                    double fromX = X;
+                                    CancelHold();
+                                    if (outside)
+                                    {
+                                        // Smoothly hop back into the lane instead of teleporting
+                                        hopT = 0;
+                                        hopScale = 0.7;
+                                        dockHopFrom = fromX;
+                                        dockHopTo = targetX;
+                                        dockHop = true;
+                                    }
+                                    throwLanded = true;
+                                    throwLandHard = peak > 140 * Scale || maxSpd > 500;
+                                }
+                            }
+                        }
+                        return;
+                    }
                     dropTime += Math.Min(dt, 0.05);
                     heldLift = dropHeight - Gravity * Scale * dropTime * dropTime;
                     double fall = Math.Sqrt(dropHeight / (Gravity * Scale));
@@ -641,10 +774,31 @@ namespace Deskmate
                 return screenArea && !IsRemote ? work.Bottom : lane.Y;
             }
 
+            // Keep airborne throw screen Y continuous when crossing onto or off a floating dock
+            void SyncThrowGround()
+            {
+                if (!brain.Throwing || !groundKnown || groundY == int.MinValue) return;
+                bool onDock;
+                int target = GroundAt(brain.X + cw / 2.0, out onDock);
+                if (target == groundY) return;
+                if (target > groundY || brain.Lift >= groundY - target)
+                {
+                    brain.ShiftGround(target - groundY);
+                    groundY = target;
+                    groundOnDock = onDock;
+                    standY = target;
+                }
+            }
+
             // The ground to draw on. Walking onto or off a floating dock hops between the two heights;
             // a dock that rises or sinks under the pet carries it along without a hop.
             int Ground(double centerX)
             {
+                if (brain.Throwing && groundKnown && groundY != int.MinValue)
+                {
+                    SyncThrowGround();
+                    return groundY;
+                }
                 bool onDock;
                 int target = GroundAt(centerX, out onDock);
                 standY = target;
@@ -979,8 +1133,17 @@ namespace Deskmate
                 }
                 else
                 {
+                    if (brain.Throwing) SyncThrowGround();
                     if (!petPressed || brain.Holding) brain.Step(dt);
+                    if (brain.Throwing) SyncThrowGround();
                     if (!petPressed) ProbeAutoChase(now);
+                }
+                bool throwLanded = false, throwHard = false;
+                if (brain.ConsumeThrowLanding(out throwHard))
+                {
+                    throwLanded = true;
+                    var mode = throwHard ? PetMode.Surprised : PetMode.Happy;
+                    brain.React(mode, Math.Max(throwHard ? 0.9 : 1.2, sheet.Length(mode)), 0);
                 }
                 wasMoving = brain.Moving;
                 if (climbT >= 0)
@@ -991,6 +1154,7 @@ namespace Deskmate
                 Draw();
                 PublishLocalState();
                 if (caught) Emote(PetEmote.Spark);
+                else if (throwLanded) Emote(throwHard ? PetEmote.Bang : PetEmote.Spark);
                 if (emote != null) emote.Step(now);
                 Schedule();
             }

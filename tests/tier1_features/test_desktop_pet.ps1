@@ -623,6 +623,75 @@ Describe "Tier 1 Feature Suite: Desktop Pet" {
         Assert-Equal $b.Lift 0 "Cancelled drop stays on the ground"
     }
 
+    It "Throw velocity arcs through the air, bounces off walls and ceiling, slides on landing, and reports hard vs soft" {
+        $b = New-Brain 7 50 400
+        $b.X = 100
+        Assert-True ($b.BeginHold()) "Start hold for throw"
+        $b.MoveHeldFree(100, 60, 0, 500, 200)
+        # Hard throw to the right and upward
+        $b.EndHold(800, 600, 50, 400, 150)
+        Assert-False $b.Holding "Throw clears holding"
+        Assert-True $b.Manipulating "Throw stays active through arc, bounces, and skid"
+        Assert-Equal $b.Dir 1 "Faces the throw direction"
+        $hitWall = $false; $hitCeiling = $false; $bounced = $false; $skidded = $false
+        $sawGround = $false; $lastGroundX = [double]::NaN
+        for ($i = 0; $i -lt 300 -and $b.Manipulating; $i++) {
+            $b.Step(0.02)
+            if ($b.Lift -ge 149.9) { $hitCeiling = $true }
+            if ($b.Dir -eq -1) { $hitWall = $true }
+            if ($b.Lift -eq 0) {
+                if (-not [double]::IsNaN($lastGroundX) -and $b.X -ne $lastGroundX) { $skidded = $true }
+                $sawGround = $true
+                $lastGroundX = $b.X
+            } elseif ($sawGround -and $b.Lift -gt 5) {
+                $bounced = $true
+                $lastGroundX = [double]::NaN
+            }
+            Assert-True ($b.X -ge 50 -and $b.X -le 400) "Stays within throw bounds (x=$($b.X))"
+            Assert-True ($b.Lift -le 150 + 1e-6) "Never exceeds maxLift (lift=$($b.Lift))"
+        }
+        Assert-False $b.Manipulating "Throw settles smoothly"
+        Assert-True $hitCeiling "Fast upward throw hits ceiling"
+        Assert-True $hitWall "Fast sideways throw bounces off wall and reverses facing"
+        Assert-True $bounced "Fast throw bounces continuously on impact"
+        Assert-True $skidded "After bouncing, pet skids smoothly to a stop"
+        Assert-Equal $b.Lift 0 "Ends grounded"
+        $hard = $false
+        Assert-True ($b.ConsumeThrowLanding([ref]$hard)) "Landing signals a throw landing"
+        Assert-True $hard "High/fast throw counts as hard landing"
+        Assert-False ($b.ConsumeThrowLanding([ref]$hard)) "Landing signal is consumed once"
+
+        # ShiftGround preserves screen Y continuity when crossing dock edge mid-air
+        $b.X = 200
+        Assert-True ($b.BeginHold()) "Start hold for ground shift test"
+        $b.MoveHeld(200, 50)
+        $b.EndHold(300, 200, 50, 400, 200)
+        $beforeLift = $b.Lift
+        $b.ShiftGround(60)
+        Assert-Equal $b.Lift ($beforeLift + 60) "Shifting ground down increases lift by same amount"
+        $b.CancelHold()
+
+        # Tiny velocity below deadzone behaves as a plain vertical drop
+        $b.X = 200
+        Assert-True ($b.BeginHold()) "Start gentle hold"
+        $b.MoveHeld(200, 40)
+        $b.EndHold(20, 10, 50, 400, 200)
+        for ($i = 0; $i -lt 40 -and $b.Manipulating; $i++) { $b.Step(0.02) }
+        Assert-Equal $b.X 200 "Sub-deadzone velocity drops straight down"
+        Assert-False ($b.ConsumeThrowLanding([ref]$hard)) "Gentle drop does not signal a throw landing"
+
+        # Reduced motion mid-throw cancels cleanly without bounce or landing signal
+        Assert-True ($b.BeginHold()) "Start hold before reduced motion"
+        $b.MoveHeld(200, 50)
+        $b.EndHold(400, 300, 50, 400, 200)
+        $b.Step(0.02)
+        $b.NoWalk = $true
+        $b.Step(0.01)
+        Assert-False $b.Manipulating "Reduced motion cancels active throw"
+        Assert-Equal $b.Lift 0 "Grounded immediately"
+        Assert-False ($b.ConsumeThrowLanding([ref]$hard)) "Cancelled throw emits no landing signal"
+    }
+
     It "Dock launch hops toward a nearby icon without leaving the lane" {
         $b = New-Brain 7 50 150
         $b.X = 120
