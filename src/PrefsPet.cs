@@ -26,8 +26,8 @@ namespace Deskmate
                 add(petRow);
 
                 string kind = settings.Get("pet.kind", "cat");
-                var ids = new List<string> { "cat", "dog" };
-                var names = new List<string> { Lang.T("Kucing"), Lang.T("Anjing") };
+                var ids = new List<string> { "cat", "dog", "chao" };
+                var names = new List<string> { Lang.T("Kucing"), Lang.T("Anjing"), Lang.T("Chao") };
                 foreach (var n in PetSheet.Custom()) { ids.Add("custom:" + n); names.Add(n); }
                 int at = ids.IndexOf(kind);
                 // A chosen folder that has gone still shows, with the reason below

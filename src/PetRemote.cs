@@ -376,7 +376,7 @@ namespace Deskmate
                     }
                 }
             }
-            return PetSheet.BuiltIn(profile.Kind == "dog" ? "dog" : "cat", profile.Color ?? "orange");
+            return PetSheet.BuiltIn(PetSheet.NormalizeBuiltInKind(profile.Kind), profile.Color ?? "orange");
         }
 
         static int SizePx(string size) { return size == "s" ? 32 : size == "l" ? 64 : 48; }

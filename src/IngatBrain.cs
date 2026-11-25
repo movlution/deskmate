@@ -1009,7 +1009,7 @@ namespace Deskmate
                 result["error"] = "not ready";
                 return result;
             }
-            string animal = petKind == "dog" ? "dog" : petKind == "cat" ? "cat" : "pet";
+            string animal = petKind == "dog" ? "dog" : petKind == "chao" ? "cute fantasy fairy-like anime spirit (Chao)" : petKind == "cat" ? "cat" : "pet";
             string system = "You are " + (string.IsNullOrEmpty(petName) ? "the user's pet" : petName + ", the user's") + " little " + animal + " living on their Windows desktop dock, and their personal assistant. " +
                 "Be warm, playful, and brief: 1-3 short sentences, plain text, no Markdown, at most one emoji. Reply in the user's language. " +
                 "Answer general questions from your own knowledge. You also see the user's current screen context and remember their computer activity (below): use it when the question is about what is on screen, or what they did, saw, read, worked on, or discussed, and cite the time and app. " +

@@ -13,6 +13,7 @@ namespace Deskmate
             AddPetText(en, "Hewan", "Animal");
             AddPetText(en, "Kucing", "Cat");
             AddPetText(en, "Anjing", "Dog");
+            AddPetText(en, "Chao", "Chao");
             AddPetText(en, "Gagal dimuat, memakai kucing", "Could not load, showing the cat");
             AddPetText(en, "Warna bulu", "Fur color");
             AddPetText(en, "Oranye", "Orange");

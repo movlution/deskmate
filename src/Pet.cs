@@ -92,7 +92,7 @@ namespace Deskmate
                 }
                 if (petError != null) Log.Write("pet: " + kind + ": " + petError);
             }
-            if (sheet == null) sheet = PetSheet.BuiltIn(kind == "dog" ? "dog" : "cat", color);
+            if (sheet == null) sheet = PetSheet.BuiltIn(PetSheet.NormalizeBuiltInKind(kind), color);
             petSheet = sheet;
             petSheetKey = key;
             return sheet;
