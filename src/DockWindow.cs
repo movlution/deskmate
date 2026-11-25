@@ -260,6 +260,8 @@ namespace Deskmate
                 else StopKeys();
                 if (Glass && !GpuGlass) frost.Start(); else { frost.Stop(); if (plate != null) { plate.Dispose(); plate = null; } }
                 foreach (var a in apps) TuneApp(a);
+                // Hiding turned off while retracted: the edge no longer reveals, so rise now
+                if (HideMode == "never") { hideLater.Stop(); revealLater.Stop(); if (!wantShown) Reveal(true); }
                 Refresh(false);
                 Place();
                 drawnSig = "";

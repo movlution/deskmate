@@ -305,7 +305,14 @@ namespace Deskmate
                 SendMessage(search.Handle, 0x1501, (IntPtr)1, Lang.T("Cari pengaturan"));
                 searchIndex.Clear();
                 Place();
+                // A setting changed in place: the page rebuilds where the reader was
+                var at = content.AutoScrollPosition;
                 Fill();
+                if (at.Y != 0)
+                {
+                    foreach (Control c in content.Controls) if (!c.IsHandleCreated) { var h = c.Handle; }
+                    content.AutoScrollPosition = new Point(-at.X, -at.Y);
+                }
                 Invalidate(true);
             }
 
