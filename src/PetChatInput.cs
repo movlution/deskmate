@@ -13,6 +13,7 @@ namespace Deskmate
             readonly TextBox box;
             readonly Action<string, int> onSend;
             readonly Action<PetEmote> onEmote;
+            readonly Action<PetPrank> onPrank;
             readonly Color rim;
             int selectedEmote = -1;
 
@@ -24,11 +25,13 @@ namespace Deskmate
             // No emote handler: the pet is being asked something, not chatting to friends
             bool Asking { get { return onEmote == null; } }
 
-            public PetChatInput(float scale, int availableWidth, Action<string, int> onSend, Action<PetEmote> onEmote, string cue = null)
+            public PetChatInput(float scale, int availableWidth, Action<string, int> onSend, Action<PetEmote> onEmote, string cue = null,
+                Action<PetPrank> onPrank = null, Func<PetPrank, string> prankLabel = null)
             {
                 this.scale = scale > 0 ? scale : 1f;
                 this.onSend = onSend;
                 this.onEmote = onEmote;
+                this.onPrank = Asking ? null : onPrank;
 
                 FormBorderStyle = FormBorderStyle.None;
                 ShowInTaskbar = false;
@@ -52,7 +55,10 @@ namespace Deskmate
                 int row1Y = pad;
                 int row2Y = row1Y + boxH + Px(8);
                 int emoteH = Px(26);
-                int winH = Asking ? row1Y + boxH + pad : row2Y + emoteH + pad;
+                int capH = Px(18);
+                int row3Y = row2Y + emoteH + Px(10);
+                int prankY = row3Y + capH;
+                int winH = Asking ? row1Y + boxH + pad : this.onPrank != null ? prankY + emoteH + pad : row2Y + emoteH + pad;
                 ClientSize = new Size(winW, winH);
 
                 box = new TextBox
@@ -126,6 +132,43 @@ namespace Deskmate
                     };
                     Controls.Add(eb);
                     ex += ew + Px(6);
+                }
+
+                // Mischief on the friend's screen: a short overlay there that clicks pass through
+                if (this.onPrank != null)
+                {
+                    Controls.Add(new Label
+                    {
+                        Text = Lang.T("Rusuh di layar teman"),
+                        AutoSize = false,
+                        BackColor = BackColor,
+                        ForeColor = Ink.Mix(BackColor, fore, 0.6f),
+                        Font = Ink.Text(Px(10.5f)),
+                        Bounds = new Rectangle(pad, row3Y, winW - pad * 2, capH)
+                    });
+                    var pranks = new[] { PetPrank.Fire, PetPrank.Crack, PetPrank.Paint, PetPrank.Snow };
+                    int gap = Px(6);
+                    int pw = (winW - pad * 2 - gap * (pranks.Length - 1)) / pranks.Length;
+                    int px = pad;
+                    foreach (var pk in pranks)
+                    {
+                        var kind = pk;
+                        var pb = new KitButton
+                        {
+                            Text = prankLabel != null ? prankLabel(kind) : kind.ToString(),
+                            Primary = false,
+                            Font = Ink.Semi(Px(11f)),
+                            Bounds = new Rectangle(px, prankY, pw, emoteH)
+                        };
+                        pb.Click += delegate
+                        {
+                            var act = this.onPrank;
+                            Close();
+                            if (act != null) act(kind);
+                        };
+                        Controls.Add(pb);
+                        px += pw + gap;
+                    }
                 }
 
                 Deactivate += delegate { if (!IsDisposed) Close(); };

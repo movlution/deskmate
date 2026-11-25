@@ -29,7 +29,8 @@ namespace Deskmate
             TestAssetHashAndSignature();
             TestSlowGuestDoesNotBlockHost();
             TestClientSendsInOrder();
-            return "PetLinkCheck OK (invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
+            TestPrankRouting();
+            return "PetLinkCheck OK (prank routing, invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
         }
 
         // A guest may only send peer traffic; room, join, leave and err must never reach other guests
@@ -71,6 +72,62 @@ namespace Deskmate
                     a.Send(PetPacket.EncodeChat("", "marker", -1));
                     Assert(markerAtB.Wait(5000), "legit chat still relayed after forbidden types");
                     lock (seenAtB) Assert(seenAtB.Count == 0, "forbidden types relayed: " + string.Join(",", seenAtB.ToArray()));
+                }
+            }
+        }
+
+        // A prank goes only to the friend it names (or the host), never to the rest of the room
+        static void TestPrankRouting()
+        {
+            using (var host = new PetHost())
+            {
+                host.Start(new PetPeerProfile { Name = "Host" }, false, 0);
+                var wsUri = new Uri("ws://127.0.0.1:" + host.Port + "/ws");
+                string bId = null;
+                var bReady = new ManualResetEventSlim(false);
+                var cReady = new ManualResetEventSlim(false);
+                var aReady = new ManualResetEventSlim(false);
+                var prankAtB = new ManualResetEventSlim(false);
+                var markerAtC = new ManualResetEventSlim(false);
+                var prankAtHost = new ManualResetEventSlim(false);
+                int prankAtC = 0, prankKindAtB = -1;
+                string prankFromAtB = null;
+                host.MessageFromGuest += (id, msg) => { if (PetPacket.Str(msg, "t") == "prank" && PetPacket.Int(msg, "kind") == 3) prankAtHost.Set(); };
+                using (var a = new PetLinkClient())
+                using (var b = new PetLinkClient())
+                using (var c = new PetLinkClient())
+                {
+                    string aId = null;
+                    a.MessageReceived += msg => { if (PetPacket.Str(msg, "t") == "room") { aId = PetPacket.Str(msg, "yourId"); aReady.Set(); } };
+                    b.MessageReceived += msg =>
+                    {
+                        string t = PetPacket.Str(msg, "t");
+                        if (t == "room") { bId = PetPacket.Str(msg, "yourId"); bReady.Set(); }
+                        else if (t == "prank") { prankKindAtB = PetPacket.Int(msg, "kind", -1); prankFromAtB = PetPacket.Str(msg, "id"); prankAtB.Set(); }
+                    };
+                    c.MessageReceived += msg =>
+                    {
+                        string t = PetPacket.Str(msg, "t");
+                        if (t == "room") cReady.Set();
+                        else if (t == "prank") Interlocked.Increment(ref prankAtC);
+                        else if (t == "chat" && PetPacket.Str(msg, "text") == "after") markerAtC.Set();
+                    };
+                    b.Connect(wsUri, host.Pin, new PetPeerProfile { Name = "B" });
+                    Assert(bReady.Wait(5000), "B joined");
+                    c.Connect(wsUri, host.Pin, new PetPeerProfile { Name = "C" });
+                    Assert(cReady.Wait(5000), "C joined");
+                    a.Connect(wsUri, host.Pin, new PetPeerProfile { Name = "A" });
+                    Assert(aReady.Wait(5000), "A joined");
+
+                    a.Send(PetPacket.EncodePrank("spoofed", bId, (int)PetPrank.Fire));
+                    a.Send(PetPacket.EncodePrank("", host.HostId, (int)PetPrank.Snow));
+                    a.Send(PetPacket.EncodeChat("", "after", -1));
+                    Assert(prankAtB.Wait(5000), "B got the prank aimed at it");
+                    Assert(prankKindAtB == (int)PetPrank.Fire, "prank kind kept");
+                    Assert(prankFromAtB == aId, "host stamps the real sender id");
+                    Assert(prankAtHost.Wait(5000), "host got the prank aimed at it");
+                    Assert(markerAtC.Wait(5000), "C still gets room chat");
+                    Assert(prankAtC == 0, "prank leaked to a bystander");
                 }
             }
         }

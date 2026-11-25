@@ -281,6 +281,18 @@ namespace Deskmate
             });
         }
 
+        // A screen prank aimed at one friend; kind is a PetPrank value
+        public static string EncodePrank(string fromId, string toId, int kind)
+        {
+            return Json.Encode(new Dictionary<string, object>
+            {
+                { "t", "prank" },
+                { "id", fromId ?? "" },
+                { "to", toId ?? "" },
+                { "kind", kind }
+            });
+        }
+
         public static string EncodeAssetReq(string fromId, string toId, string hash)
         {
             return Json.Encode(new Dictionary<string, object>
@@ -523,6 +535,7 @@ namespace Deskmate
         public event Action<string, double, int, int, bool, double> PeerStateReceived;
         public event Action<string, string, int> ChatReceived;
         public event Action<string, int> EmoteReceived;
+        public event Action<string, int> PrankReceived;
         public event Action<string, string, byte[], byte[]> CustomAssetReady;
 
         sealed class IncomingAsset
@@ -685,6 +698,14 @@ namespace Deskmate
             if (Mode != PetRoomMode.Connected) return;
             string json = PetPacket.EncodeEmote(LocalId, emote);
             if (IsHost) host.BroadcastFromHost(json);
+            else if (client != null && client.Connected) client.Send(json);
+        }
+
+        public void SendPrank(string peerId, int kind)
+        {
+            if (Mode != PetRoomMode.Connected || string.IsNullOrEmpty(peerId)) return;
+            string json = PetPacket.EncodePrank(LocalId, peerId, kind);
+            if (IsHost) host.SendToGuest(peerId, json);
             else if (client != null && client.Connected) client.Send(json);
         }
 
@@ -887,6 +908,13 @@ namespace Deskmate
                 int emote = PetPacket.Int(msg, "emote", -1);
                 var em = EmoteReceived;
                 if (em != null) em(senderId, emote);
+            }
+            else if (t == "prank")
+            {
+                // Only the friend it was aimed at plays it
+                if (PetPacket.Str(msg, "to") != LocalId) return;
+                var pr = PrankReceived;
+                if (pr != null) pr(senderId, PetPacket.Int(msg, "kind", -1));
             }
             else if (t == "asset_req")
             {

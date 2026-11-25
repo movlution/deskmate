@@ -127,6 +127,16 @@ namespace Deskmate
                 customRow.Glyph = (char)0xE896;
                 add(customRow);
 
+                var prankRecv = Switch("pet.link.prank", true, v =>
+                {
+                    settings.Set("pet.link.prank", v);
+                    settings.Save();
+                });
+                var prankRow = Row(Lang.T("Izinkan teman rusuh di layar"),
+                    Lang.T("Efek singkat seperti api atau salju yang bisa diklik tembus; tidak muncul saat berbagi layar"), prankRecv);
+                prankRow.Glyph = (char)0xE945;
+                add(prankRow);
+
                 // Host controls (Cloudflare Quick Tunnel)
                 bool downloadingCf = false;
                 var hostWrap = new Panel { AutoSize = false, BackColor = Color.Transparent, Height = (int)(ControlH * Ui), Width = (int)(220 * Ui) };

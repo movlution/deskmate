@@ -47,6 +47,7 @@ namespace Deskmate
             petRoom.PeerStateReceived += (id, x, dir, mode, hop, v) => RunOnUi(() => OnRemotePeerState(id, x, dir, mode, hop, v));
             petRoom.ChatReceived += (id, text, emote) => RunOnUi(() => OnRemoteChatReceived(id, text, emote));
             petRoom.EmoteReceived += (id, emote) => RunOnUi(() => OnRemoteEmoteReceived(id, emote));
+            petRoom.PrankReceived += (id, kind) => RunOnUi(() => OnRemotePrankReceived(id, kind));
             petRoom.CustomAssetReady += (id, hash, json, png) => RunOnUi(() => OnRemoteCustomAssetReady(id, hash, json, png));
             return petRoom;
         }
@@ -132,6 +133,7 @@ namespace Deskmate
             if (petRoom != null) petRoom.Stop();
             CloseRemotePets();
             ClosePetChatUi();
+            ClosePrankOverlay();
         }
 
         internal void SyncLocalPetProfile()
@@ -175,9 +177,13 @@ namespace Deskmate
             if (!PetRoomConnected || anchor == null || anchor.IsDisposed || !anchor.CanShowBubble) return;
             ClosePetChatUi();
             var target = pet != null && !pet.IsDisposed && pet.CanShowBubble ? pet : anchor;
+            // Opened from a friend's pet: that friend can also be pranked
+            string prankPeer = anchor.IsRemote ? anchor.PeerId : null;
+            Action<PetPrank> onPrank = null;
+            if (!string.IsNullOrEmpty(prankPeer)) onPrank = kind => SendPetPrank(prankPeer, kind);
             petChatInput = new PetChatInput(target.UiScale, target.WorkArea.Width,
                 (text, emote) => SendPetChat(text, emote),
-                em => SendPetEmote(em));
+                em => SendPetEmote(em), null, onPrank, PrankLabel);
             petChatInput.FormClosed += delegate { petChatInput = null; };
             if (!petChatInput.MoveAbove(target.WorkArea, new Point(target.DrawnCenterX, target.BubbleAnchorY)))
             {
