@@ -28,6 +28,12 @@ namespace Deskmate
         // Same app or project after a gap this short continues the episode
         const double JoinSeconds = 120;
         const double AwaySeconds = 180;
+        // No keyboard or mouse for this long before the worker calls the model
+        const double AiIdleSeconds = 45;
+        // A window that keeps changing on its own (Task Manager, video, a log, a timer) while the user is
+        // hands-off is looked at less and less often, up to MaxLookMs; any input or switch resets it
+        const int MaxLookMs = 15000;
+        const double HandsOffSeconds = 3;
 
         public static int Run(string[] args)
         {
@@ -158,10 +164,21 @@ namespace Deskmate
             lock (freshGate) Monitor.PulseAll(freshGate);
         }
 
+        // Looks in a row that found the foreground window changed while the user was hands-off (capture thread only)
+        int churn;
+
+        // Normal pace, doubled per changed hands-off look after the first, capped at MaxLookMs
+        int LookMs(double idle)
+        {
+            int baseMs = idle < 15 ? ActiveLookMs : IdleLookMs;
+            int shift = Math.Max(0, Math.Min(churn - 1, 4));
+            return Math.Min(MaxLookMs, baseMs << shift);
+        }
+
         int NextWaitMs()
         {
             lock (freshGate) if (freshWanted) return 0;
-            int baseWait = Composing ? ComposeMs : IdleSeconds() < 15 ? ActiveLookMs : IdleLookMs;
+            int baseWait = Composing ? ComposeMs : LookMs(IdleSeconds());
             lock (eventGate)
             {
                 if (dueUtc == DateTime.MinValue) return baseWait;
@@ -382,7 +399,9 @@ namespace Deskmate
             string cleanTitle = IngatPrivacy.Redact(title);
             bool titleChanged = current == null || current.Title != cleanTitle;
             int rereadMs = idle < 15 ? ActiveRereadMs : IdleRereadMs;
-            int lookMs = idle < 15 ? ActiveLookMs : IdleLookMs;
+            // Input, a switch, or a caller asking for fresh context: back to the normal pace
+            if (newWindow || interactDirty || force || idle < HandsOffSeconds) churn = 0;
+            int lookMs = LookMs(idle);
             bool due = (now - lastReadUtc).TotalMilliseconds >= rereadMs;
             bool look = settings.GetBool("ingat.text", true) && (interactDirty || (now - lastLookUtc).TotalMilliseconds >= lookMs - 150);
 
@@ -410,6 +429,10 @@ namespace Deskmate
                         // First look after a read without a screenshot only sets the baseline
                         if (stampStale) { lastStamp = st; stampStale = false; }
                         else if (IngatText.Changed(lastStamp, st)) read = true;
+                        // Changed again with nobody touching anything: the window moves on its own, look later next time.
+                        // A still look means it settled.
+                        if (read && churn < 8) churn++;
+                        else if (!read) churn = 0;
                     }
                 }
 
@@ -835,8 +858,10 @@ namespace Deskmate
                         Store.Retain(settings.GetInt("ingat.keep.events", 14), settings.GetInt("ingat.keep.days", 180));
                     }
                     if (LowPower()) continue;
-                    if (IdleSeconds() < 10 && !settings.GetBool("ingat.busywork", true)) continue;
-                    for (int round = 0; round < 5 && !stopping && Brain.Work(); round++) { }
+                    double idle = IdleSeconds();
+                    if (idle < 10 && !settings.GetBool("ingat.busywork", true)) continue;
+                    // Model calls wait for a pause: with a CLI provider each one is a new process of its own
+                    for (int round = 0; round < 5 && !stopping && Brain.Work(idle >= AiIdleSeconds); round++) { }
                 }
                 catch (Exception ex) { Log.Write("ingat worker: " + ex.Message); }
             }

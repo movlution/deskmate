@@ -509,6 +509,15 @@ namespace Deskmate
 
                 store.SetSummary(a, "Menulis perekam WASAPI loopback di Deskmate", "coding");
                 Assert(store.Get(a).Kind == "coding" && store.NeedSummary(10).Count == 1, "summary saved, one left");
+                // Short stretches are summarized without a model; longer ones are left for it
+                long brief = store.Open(t0.AddMinutes(22), "Explorer", "explorer", "", "Unduhan", "", "");
+                store.Close(brief, t0.AddMinutes(22).AddSeconds(40));
+                var shortOnes = store.NeedShortSummary(IngatBrain.AiSummarySeconds, 10);
+                Assert(shortOnes.Count == 1 && shortOnes[0].Id == brief, "only the 40 s episode is short");
+                store.SetSummary(brief, "Explorer · Unduhan", "");
+                Assert(store.NeedShortSummary(IngatBrain.AiSummarySeconds, 10).Count == 0 && store.NeedSummary(10).Count == 1, "short one filled, long one still waits for the model");
+                var lite = store.TimelineLite(DateTime.UtcNow.AddHours(-1), DateTime.UtcNow, 50);
+                Assert(lite.Count == 3 && lite.TrueForAll(e => e.Body.Length == 0), "lite timeline carries no bodies");
                 store.SaveVector(a, "m", new float[] { 0.6f, 0.8f });
                 var vecs = store.Vectors("m", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow);
                 Assert(vecs.Count == 1 && Math.Abs(vecs[0].Value[1] - 0.8f) < 1e-6, "vector round trip");

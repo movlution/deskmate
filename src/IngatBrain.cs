@@ -90,14 +90,28 @@ namespace Deskmate
         }
 
         // One worker round; false when there was nothing to do
-        public bool Work()
+        // Shorter stretches get the structured line instead of a model call: most episodes are a few seconds
+        // to a minute, and with a CLI provider every call starts a whole process
+        public const int AiSummarySeconds = 120;
+
+        // aiNow: the user has stepped away long enough that a model call (a process, a network round trip)
+        // does not compete with what they are doing; until then only the cheap work runs
+        public bool Work(bool aiNow)
         {
             bool did = false;
             if (Thinking && !ThinkingPaused)
             {
-                foreach (var ep in store.NeedDigest(2)) { Digest(ep); did = true; }
-                if (!did) foreach (var ep in store.NeedSummary(3)) { Summarize(ep); did = true; }
-                if (!did) did = Days();
+                foreach (var ep in store.NeedShortSummary(AiSummarySeconds, 10))
+                {
+                    store.SetSummary(ep.Id, Fallback(ep), "");
+                    did = true;
+                }
+                if (aiNow && !did)
+                {
+                    foreach (var ep in store.NeedDigest(2)) { Digest(ep); did = true; }
+                    if (!did) foreach (var ep in store.NeedSummary(3)) { Summarize(ep); did = true; }
+                    if (!did) did = Days();
+                }
             }
             if (!did && EmbedUsable)
                 // Up to MaxChunks calls each: two episodes a round keeps the embedding server unhurried
