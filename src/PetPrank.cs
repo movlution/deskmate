@@ -11,12 +11,40 @@ namespace Deskmate
     // Values travel in the "prank" packet; add new ones at the end
     enum PetPrank { Fire = 0, Crack = 1, Paint = 2, Snow = 3 }
 
+    // One prank per friend per Cooldown. The sender locks its buttons with it, and the receiver
+    // applies the same rule per sender, so a modified client still can't spam.
+    sealed class PetPrankGate
+    {
+        public static readonly TimeSpan Cooldown = TimeSpan.FromSeconds(30);
+        readonly Dictionary<string, DateTime> readyAt = new Dictionary<string, DateTime>(StringComparer.Ordinal);
+
+        public int SecondsLeft(string key, DateTime nowUtc)
+        {
+            DateTime at;
+            if (string.IsNullOrEmpty(key) || !readyAt.TryGetValue(key, out at) || at <= nowUtc) return 0;
+            return (int)Math.Ceiling((at - nowUtc).TotalSeconds);
+        }
+
+        // True and starts the cooldown when key is free; false while it is still cooling down
+        public bool TryUse(string key, DateTime nowUtc)
+        {
+            if (string.IsNullOrEmpty(key) || SecondsLeft(key, nowUtc) > 0) return false;
+            readyAt[key] = nowUtc + Cooldown;
+            return true;
+        }
+    }
+
     // Harmless mischief a friend's pet plays on this screen: a click-through overlay that never
     // takes focus or the pointer, and clears itself after a few seconds.
     partial class Island
     {
         PetPrankOverlay prankOverlay;
         DateTime prankUntilUtc = DateTime.MinValue;
+        // Pranks this device sent, by target friend, and received, by sender
+        readonly PetPrankGate prankSent = new PetPrankGate();
+        readonly PetPrankGate prankReceived = new PetPrankGate();
+
+        int PrankWait(string peerId) { return prankSent.SecondsLeft(peerId, DateTime.UtcNow); }
 
         internal bool PetAllowPranks { get { return settings.GetBool("pet.link.prank", true); } }
 
@@ -47,6 +75,7 @@ namespace Deskmate
         void SendPetPrank(string peerId, PetPrank kind)
         {
             if (petRoom == null || petRoom.Mode != PetRoomMode.Connected || string.IsNullOrEmpty(peerId)) return;
+            if (!prankSent.TryUse(peerId, DateTime.UtcNow)) return;
             petRoom.SendPrank(peerId, (int)kind);
             if (pet != null && !pet.IsDisposed) pet.PopEmote(PetEmote.Bang);
             PetWindow win;
@@ -65,6 +94,8 @@ namespace Deskmate
             // One at a time, with a short breather, so a room can't stack them up
             if (DateTime.UtcNow < prankUntilUtc) return;
             if (prankOverlay != null && !prankOverlay.IsDisposed) return;
+            // Each friend waits out the cooldown between pranks, whatever their app allows
+            if (!prankReceived.TryUse(peerId, DateTime.UtcNow)) return;
 
             var p = (PetPrank)kind;
             PetPeerProfile prof;

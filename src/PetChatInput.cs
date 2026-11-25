@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -14,6 +15,10 @@ namespace Deskmate
             readonly Action<string, int> onSend;
             readonly Action<PetEmote> onEmote;
             readonly Action<PetPrank> onPrank;
+            readonly Func<int> prankWait;
+            readonly List<KitButton> prankButtons = new List<KitButton>();
+            Label prankCaption;
+            Timer prankTimer;
             readonly Color rim;
             int selectedEmote = -1;
 
@@ -26,12 +31,13 @@ namespace Deskmate
             bool Asking { get { return onEmote == null; } }
 
             public PetChatInput(float scale, int availableWidth, Action<string, int> onSend, Action<PetEmote> onEmote, string cue = null,
-                Action<PetPrank> onPrank = null, Func<PetPrank, string> prankLabel = null)
+                Action<PetPrank> onPrank = null, Func<PetPrank, string> prankLabel = null, Func<int> prankWait = null)
             {
                 this.scale = scale > 0 ? scale : 1f;
                 this.onSend = onSend;
                 this.onEmote = onEmote;
                 this.onPrank = Asking ? null : onPrank;
+                this.prankWait = prankWait;
 
                 FormBorderStyle = FormBorderStyle.None;
                 ShowInTaskbar = false;
@@ -137,7 +143,7 @@ namespace Deskmate
                 // Mischief on the friend's screen: a short overlay there that clicks pass through
                 if (this.onPrank != null)
                 {
-                    Controls.Add(new Label
+                    prankCaption = new Label
                     {
                         Text = Lang.T("Rusuh di layar teman"),
                         AutoSize = false,
@@ -145,7 +151,8 @@ namespace Deskmate
                         ForeColor = Ink.Mix(BackColor, fore, 0.6f),
                         Font = Ink.Text(Px(10.5f)),
                         Bounds = new Rectangle(pad, row3Y, winW - pad * 2, capH)
-                    });
+                    };
+                    Controls.Add(prankCaption);
                     var pranks = new[] { PetPrank.Fire, PetPrank.Crack, PetPrank.Paint, PetPrank.Snow };
                     int gap = Px(6);
                     int pw = (winW - pad * 2 - gap * (pranks.Length - 1)) / pranks.Length;
@@ -162,18 +169,49 @@ namespace Deskmate
                         };
                         pb.Click += delegate
                         {
+                            if (PrankSecondsLeft() > 0) { SyncPrankButtons(); return; }
                             var act = this.onPrank;
                             Close();
                             if (act != null) act(kind);
                         };
                         Controls.Add(pb);
+                        prankButtons.Add(pb);
                         px += pw + gap;
+                    }
+                    SyncPrankButtons();
+                    if (PrankSecondsLeft() > 0)
+                    {
+                        // Counts down while open, and unlocks the buttons when the wait is over
+                        prankTimer = new Timer { Interval = 500 };
+                        prankTimer.Tick += delegate { SyncPrankButtons(); };
+                        prankTimer.Start();
                     }
                 }
 
                 Deactivate += delegate { if (!IsDisposed) Close(); };
                 using (var path = Ink.Round(new RectangleF(0, 0, winW, winH), Px(Ink.RadiusCard)))
                     Region = new Region(path);
+            }
+
+            int PrankSecondsLeft() { return prankWait != null ? Math.Max(0, prankWait()) : 0; }
+
+            void SyncPrankButtons()
+            {
+                if (prankCaption == null) return;
+                int left = PrankSecondsLeft();
+                bool ready = left <= 0;
+                prankCaption.Text = ready
+                    ? Lang.T("Rusuh di layar teman")
+                    : string.Format(Lang.T("Rusuh lagi dalam {0} dtk"), left);
+                foreach (var b in prankButtons)
+                    if (b.Enabled != ready) b.Enabled = ready;
+                if (ready && prankTimer != null) prankTimer.Stop();
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing && prankTimer != null) { prankTimer.Stop(); prankTimer.Dispose(); prankTimer = null; }
+                base.Dispose(disposing);
             }
 
             public bool MoveAbove(Rectangle area, Point anchor)

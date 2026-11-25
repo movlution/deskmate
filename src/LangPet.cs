@@ -95,6 +95,7 @@ namespace Deskmate
             AddPetText(en, "Pesan baru dari pet", "New message from pet");
             AddPetText(en, "Teman", "Friend");
             AddPetText(en, "Rusuh di layar teman", "Mess with your friend's screen");
+            AddPetText(en, "Rusuh lagi dalam {0} dtk", "Mess again in {0}s");
             AddPetText(en, "Bakar", "Burn");
             AddPetText(en, "Retakkan", "Crack");
             AddPetText(en, "Lempar cat", "Paint");

@@ -30,7 +30,8 @@ namespace Deskmate
             TestSlowGuestDoesNotBlockHost();
             TestClientSendsInOrder();
             TestPrankRouting();
-            return "PetLinkCheck OK (prank routing, invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
+            TestPrankCooldown();
+            return "PetLinkCheck OK (prank routing, prank cooldown, invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
         }
 
         // A guest may only send peer traffic; room, join, leave and err must never reach other guests
@@ -74,6 +75,23 @@ namespace Deskmate
                     lock (seenAtB) Assert(seenAtB.Count == 0, "forbidden types relayed: " + string.Join(",", seenAtB.ToArray()));
                 }
             }
+        }
+
+        // One prank per friend per cooldown; friends are counted apart
+        static void TestPrankCooldown()
+        {
+            var gate = new PetPrankGate();
+            var t0 = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            int cd = (int)PetPrankGate.Cooldown.TotalSeconds;
+            Assert(gate.SecondsLeft("a", t0) == 0, "fresh friend is ready");
+            Assert(gate.TryUse("a", t0), "first prank goes through");
+            Assert(!gate.TryUse("a", t0.AddSeconds(1)), "second prank right after is blocked");
+            Assert(gate.SecondsLeft("a", t0.AddSeconds(1)) == cd - 1, "countdown rounds up");
+            Assert(gate.SecondsLeft("a", t0.AddSeconds(cd - 0.2)) == 1, "last fraction still shows 1 s");
+            Assert(gate.TryUse("b", t0.AddSeconds(1)), "another friend has its own cooldown");
+            Assert(!gate.TryUse("a", t0.AddSeconds(cd - 0.01)), "still blocked just before the end");
+            Assert(gate.TryUse("a", t0.AddSeconds(cd)), "allowed again once the cooldown is over");
+            Assert(!gate.TryUse("", t0) && !gate.TryUse(null, t0), "no key, no prank");
         }
 
         // A prank goes only to the friend it names (or the host), never to the rest of the room

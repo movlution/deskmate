@@ -183,7 +183,8 @@ namespace Deskmate
             if (!string.IsNullOrEmpty(prankPeer)) onPrank = kind => SendPetPrank(prankPeer, kind);
             petChatInput = new PetChatInput(target.UiScale, target.WorkArea.Width,
                 (text, emote) => SendPetChat(text, emote),
-                em => SendPetEmote(em), null, onPrank, PrankLabel);
+                em => SendPetEmote(em), null, onPrank, PrankLabel,
+                onPrank != null ? () => PrankWait(prankPeer) : (Func<int>)null);
             petChatInput.FormClosed += delegate { petChatInput = null; };
             if (!petChatInput.MoveAbove(target.WorkArea, new Point(target.DrawnCenterX, target.BubbleAnchorY)))
             {
