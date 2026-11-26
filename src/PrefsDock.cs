@@ -77,6 +77,9 @@ namespace Deskmate
                 var previewRow = Row(Lang.T("Pratinjau jendela"), Lang.T("Isi jendela langsung, saat kursor di atas aplikasi yang terbuka"), previews);
                 previewRow.Glyph = (char)0xE7C4;
                 add(previewRow);
+                var cardMotion = Switch(DockCardMotion.Setting, true, null);
+                cardMotion.Enabled = on;
+                add(Row(Lang.T("Animasi kartu jendela"), Lang.T("Animasi saat jendela dibuka, diminimalkan, atau ditutup lewat Dock"), cardMotion));
                 var badges = Switch("dockbar.badges", true, null);
                 badges.Enabled = on;
                 var badgeRow = Row(Lang.T("Angka notifikasi"), Lang.T("Jumlah notifikasi Windows di ikon aplikasinya"), badges);

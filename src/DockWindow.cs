@@ -145,6 +145,7 @@ namespace Deskmate
                 watch.RescanIfStale(400);
                 Changed(globalOwner);
                 tick.Start();
+                WatchNativeMinimize();
                 // Entrance: the dock rises, then icons arrive one after another
                 reveal.Snap(0);
                 reveal.Target = 1;
@@ -171,6 +172,9 @@ namespace Deskmate
             protected override void OnFormClosed(FormClosedEventArgs e)
             {
                 closing = true;
+                StopCardMotion(false);
+                StopNativeMinimize();
+                ClearRestoreImage();
                 tick.Stop();
                 dwell.Stop();
                 hideLater.Stop();
@@ -199,6 +203,9 @@ namespace Deskmate
                 if (disposing)
                 {
                     closing = true;
+                    StopCardMotion(false);
+                    StopNativeMinimize();
+                    ClearRestoreImage();
                     if (sheet != null)
                     {
                         var s = sheet;
@@ -447,6 +454,7 @@ namespace Deskmate
                     case 13: watch.Drop(h); changed = watch.Rescan() || true; break;
                 }
                 if (changed) Refresh(false);
+                if (code == 4 || code == 0x8004) PrimeMinimizePreview();
                 m.Result = IntPtr.Zero;
             }
 
@@ -536,6 +544,7 @@ namespace Deskmate
                     if (a.Attention && a.Hops == 0 && a.Hop < 0) { a.Hop = 0; a.Hops = 3; }
                 }
                 apps = result;
+                AnimateLaunchedWindow();
                 ApplyBadges();
                 if (runningBefore != null)
                     foreach (var a in next)
@@ -746,6 +755,8 @@ namespace Deskmate
             void Tick()
             {
                 if (closing) return;
+                if (restoreImage != null && clock.Elapsed.TotalMilliseconds >= restoreDeadline) ClearRestoreImage();
+                AnimateLaunchedWindow();
                 tickN++;
                 UpdateVisibility();
                 if (!shown) return;
@@ -783,6 +794,7 @@ namespace Deskmate
             void Animate()
             {
                 if (closing || pacer == null) return;
+                dockNeedsFrame = true;
                 if (pacer.Want()) lastT = clock.Elapsed.TotalSeconds - 1 / 60.0;
             }
 
@@ -797,11 +809,21 @@ namespace Deskmate
                 // A failed frame must not leave the pacer waiting forever
                 try
                 {
-                    more = Step(dt);
+                    bool windowMoving = StepCardMotion(clock.Elapsed.TotalMilliseconds);
+                    more = windowMoving;
+                    bool dockMoving = Step(dt);
                     f1 = clock.Elapsed.TotalMilliseconds;
-                    Render();
-                    // A widget set off during this render
-                    more |= WidgetsMoving();
+                    // Both windows share the UI thread. Give the window handoff the
+                    // frame budget, then catch up the Dock as soon as it finishes.
+                    bool paintDock = dockMoving || dockWasMoving || dockNeedsFrame;
+                    if (paintDock && (!windowMoving || cardMotion == null || cardMotion.UsesCompositor))
+                    {
+                        dockNeedsFrame = false;
+                        Render();
+                    }
+                    else if (paintDock) dockNeedsFrame = true;
+                    dockWasMoving = dockMoving || WidgetsMoving();
+                    more |= dockWasMoving || dockNeedsFrame;
                 }
                 finally { pacer.Done(more); }
                 if (fpsLog) CountDockFrame(f0, f1, clock.Elapsed.TotalMilliseconds, more);
@@ -809,6 +831,7 @@ namespace Deskmate
 
             // DESKMATE_FPS=1 also logs dock frames
             static readonly bool fpsLog = Environment.GetEnvironmentVariable("DESKMATE_FPS") == "1";
+            bool dockNeedsFrame, dockWasMoving;
             int fpsN, fpsGc;
             double fpsFrom, fpsLast, fpsStep, fpsRender, fpsWorst, fpsGapWorst;
 
