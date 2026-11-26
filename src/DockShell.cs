@@ -561,10 +561,11 @@ namespace Deskmate
             if (!IsWindow(h)) return;
             if (RestoreOrSwitch(h)) return;
             // Do not join another app's input queue on the Dock UI thread.
+            // A flash alone is easy to miss with the taskbar replaced, so let the switcher raise it.
             if (GetForegroundWindow() != h && !SetForegroundWindow(h))
             {
-                FlashWindow(h, true);
-                Log.Write("dock focus: Windows did not grant foreground activation");
+                SwitchToThisWindow(h, true);
+                Log.Write("dock focus: Windows did not grant foreground activation, used the switcher");
             }
         }
 
