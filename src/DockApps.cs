@@ -17,6 +17,9 @@ namespace Deskmate
         public int Pid;
         public string Exe = "", AppId = "", Title = "";
         public bool Packaged, Flash;
+        public Rectangle LastFrame;
+        public IntPtr FrameMonitor;
+        public bool FrameMaximized, FrameMinimized;
         public long Seen, Used;
         public DateTime BornUtc;
     }
@@ -28,7 +31,9 @@ namespace Deskmate
         public bool Pinned, Packaged, Attention, Leaving;
         public readonly List<DockWin> Wins = new List<DockWin>();
         public DateTime LaunchUtc = DateTime.MinValue, PulseUtc = DateTime.MinValue, GulpUtc = DateTime.MinValue;
-        public DateTime DeckContactUtc = DateTime.MinValue;
+        public DateTime WindowMotionUtc = DateTime.MinValue;
+        public bool WindowOpening;
+        public DockWindowPose WindowMotionFrom;
         public int Badge;
         // Slot, size, presence, indicator: kept while on the dock
         public readonly Spring X = new Spring(0, 1, 1, 0.05f), Grow = new Spring(1, 1, 1, 0.0005f), Show = new Spring(0, 1, 1, 0.002f), Dot = new Spring(0, 1, 1, 0.003f);
@@ -190,6 +195,7 @@ namespace Deskmate
             var w = new DockWin { H = h, Pid = pid, Seen = ++seq, BornUtc = DateTime.UtcNow, Title = Title(h) };
             w.Exe = ExeOf(pid);
             ResolveId(w);
+            DockWindowFrame.Update(w);
             wins[h] = w;
             return true;
         }
@@ -198,6 +204,7 @@ namespace Deskmate
         bool Refresh(DockWin w)
         {
             w.Title = Title(w.H);
+            DockWindowFrame.Update(w);
             if ((DateTime.UtcNow - w.BornUtc).TotalSeconds > 6) return false;
             string was = w.AppId;
             ResolveId(w);

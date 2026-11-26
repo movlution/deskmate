@@ -20,6 +20,7 @@ namespace Deskmate
             readonly Spring labelShow = new Spring(0, 1, 1, 0.002f);
             string labelText = "";
             readonly CompGlass.PillSpec[] gpuBarPills = new CompGlass.PillSpec[1];
+            readonly PointF[] deckPip = new PointF[4];
             int gpuBarCount;
             bool gpuBarText;
 
@@ -324,6 +325,7 @@ namespace Deskmate
                         break;
                     case "taskview": p.Icon('\uE7C4', 16 * u, ink, cx, cy); break;
                     case "work":
+                        DrawWindowStack(workSlotApp, Glyph(r), DateTime.UtcNow, s.Show);
                         p.Icon('\uE73A', 21 * u, ink, cx, cy);
                         Indicator(workDot.Value, false, s.Icon);
                         break;
@@ -343,15 +345,16 @@ namespace Deskmate
                 Plate(OnBar(s.Icon, HopLift(a, now), down), hot, down, s.Show);
                 if (focus) FocusRing(s.Icon);
                 var r = Glyph(down ? Inset(s.Icon, s.Icon.Width * 0.05f) : s.Icon);
+                DrawWindowStack(a, r, now, s.Show);
                 float sx, sy;
                 HopScale(a, now, out sx, out sy);
                 float rw = r.Width * sx, rh = r.Height * sy;
                 r = new RectangleF(r.X + (r.Width - rw) / 2, r.Bottom - rh, rw, rh);
-                if (!Anim.Reduced)
+                if (!Anim.Reduced && DockWindowMotion.Progress(a, now) >= 1)
                 {
                     double lt = a.LaunchUtc > DateTime.MinValue ? (now - a.LaunchUtc).TotalSeconds : 9;
                     double pt = a.PulseUtc > DateTime.MinValue ? (now - a.PulseUtc).TotalSeconds : 9;
-                    if (lt >= 0 && lt < 0.62)
+                    if (a.Hop >= 0 && lt >= 0 && lt < 0.62)
                     {
                         float u = (float)(lt / 0.62), eu = Ease.OutCubic(u);
                         float grow = r.Width * (0.14f + 0.52f * eu);
@@ -369,6 +372,63 @@ namespace Deskmate
                 DrawIconImage(a, r, s.Show);
                 Indicator(a, s.Icon);
                 if (a.Badge > 0 && s.Show > 0.5f) Badge(s.Icon, a.Badge);
+            }
+
+            void DrawWindowStack(DockApp app, RectangleF icon, DateTime now, float visibility)
+            {
+                float t = DockWindowMotion.Progress(app, now);
+                if (t < 0 || t >= 1) return;
+                var pose = DockWindowMotion.Sample(app, t);
+                float unit = icon.Width, cx = icon.Left + unit * 0.5f, cy = icon.Top + icon.Height * 0.5f;
+                DrawPlayingCard(pose.Back, cx, cy, unit, visibility, 0);
+                DrawPlayingCard(pose.Middle, cx, cy, unit, visibility, 1);
+                DrawPlayingCard(pose.Front, cx, cy, unit, visibility, 2);
+            }
+
+            void DrawPlayingCard(DockPlayingCard card, float cx, float cy, float unit, float visibility, int depth)
+            {
+                float alpha = visibility * card.Opacity;
+                if (alpha <= 0.001f) return;
+                // Keep a narrow visible edge through the turnover instead of hiding the card.
+                float turn = 1 - 0.64f * (float)Math.Sin(Math.PI * card.Facing);
+                float width = unit * 0.74f * card.Scale, height = unit * 1.04f * card.Scale;
+                var state = g.Save();
+                try
+                {
+                    g.TranslateTransform(cx + card.X * unit, cy + card.Y * unit);
+                    g.RotateTransform(card.Angle);
+                    g.ScaleTransform(turn, 1);
+                    var face = new RectangleF(-width * 0.5f, -height * 0.5f, width, height);
+                    float radius = width * 0.15f;
+                    var shadow = face;
+                    shadow.Offset(0, unit * 0.047f);
+                    p.FillRound(shadow, radius, Ink.Scrim((int)(alpha * 54)));
+                    var back = Ink.Mix(p.T.Accent, p.T.OnAccent, (2 - depth) * 0.12f);
+                    var fill = Ink.Mix(back, Ink.Sheen(255), card.Facing);
+                    p.FillRound(face, radius, Ink.A(fill, alpha));
+                    var mark = Ink.Mix(p.T.OnAccent, Ink.Mix(Ink.Scrim(255), p.T.Accent, 0.37f), card.Facing);
+                    float hiddenFace = 1 - card.Facing;
+                    if (hiddenFace > 0.001f)
+                    {
+                        float inset = width * 0.13f;
+                        p.StrokeRound(Inset(face, inset), Math.Max(1, radius - inset),
+                            Ink.A(mark, alpha * hiddenFace * 0.43f), Math.Max(0.75f, unit * 0.025f));
+                    }
+                    DrawDeckDiamond(0, 0, width * 0.16f, height * 0.16f, Ink.A(mark, alpha * 0.87f));
+                    var pip = Ink.A(mark, alpha * card.Facing * 0.83f);
+                    DrawDeckDiamond(-width * 0.30f, -height * 0.31f, width * 0.057f, height * 0.051f, pip);
+                    DrawDeckDiamond(width * 0.30f, height * 0.31f, width * 0.057f, height * 0.051f, pip);
+                }
+                finally { g.Restore(state); }
+            }
+
+            void DrawDeckDiamond(float x, float y, float rx, float ry, Color color)
+            {
+                deckPip[0] = new PointF(x, y - ry);
+                deckPip[1] = new PointF(x + rx, y);
+                deckPip[2] = new PointF(x, y + ry);
+                deckPip[3] = new PointF(x - rx, y);
+                g.FillPolygon(p.B(color), deckPip);
             }
 
             // Apps and system buttons sit on one tile shape

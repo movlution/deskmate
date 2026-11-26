@@ -125,7 +125,7 @@ namespace Deskmate
             en.Add("Perbesar saat disorot", "Magnify on hover");
             en.Add("Pratinjau jendela", "Window previews");
             en.Add("Animasi kartu jendela", "Window card animation");
-            en.Add("Animasi saat jendela dibuka, diminimalkan, atau ditutup lewat Dock", "Animate windows opened, minimized, or closed from the Dock");
+            en.Add("Efek kartu pada bingkai jendela dan ikon Dock", "Card effects on window frames and Dock icons");
             en.Add("Saat tertutup", "When covered");
             en.Add("Salin aplikasi yang tersemat di taskbar, dengan urutannya", "Copy the apps pinned to the taskbar, in their order");
             en.Add("Sedang", "Medium");
