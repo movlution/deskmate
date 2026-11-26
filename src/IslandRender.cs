@@ -68,7 +68,9 @@ namespace Deskmate
             {
                 float shadowStr = (GlassOn && H <= 60) ? (Ink.Light ? 0.45f : 0.35f) : 1f;
                 // Target radius while morphing: one bake
-                DrawShadow(shell, sr.Settled ? R : Math.Min(sr.Target, Math.Min(W, H) / 2), shadowStr);
+                // A clickable Mini should leave nearby app pixels available to the mouse.
+                if (current != View.Mini || !MiniClickEnabled)
+                    DrawShadow(shell, sr.Settled ? R : Math.Min(sr.Target, Math.Min(W, H) / 2), shadowStr);
                 if (!bubbleRect.IsEmpty) DrawShadow(bubbleRect, br, (GlassOn && H <= 60) ? 0.3f : 0.7f);
             }
             DrawGlow(now, shell, R);

@@ -202,7 +202,15 @@ namespace Deskmate
             Native.SHAppBarMessage(0, ref abd);
             winProc = delegate(IntPtr hook, uint evt, IntPtr hwnd, int obj, int child, uint thread, uint time)
             {
-                if (evt == 3) RefreshComboPause();
+                if (evt == 3)
+                {
+                    // A topmost app can cover the island before the fullscreen debounce runs.
+                    if (windowShown && !fullscreen && !dormant && !hiddenByUser && hwnd != Handle &&
+                        hwnd == Native.GetForegroundWindow() &&
+                        (Native.GetWindowLong(hwnd, -20) & Native.WS_EX_TOPMOST) != 0 &&
+                        !Native.IsFullscreenWindow(hwnd, monitorHandle) && !ExceptHidden()) RaiseIsland();
+                    RefreshComboPause();
+                }
                 if (evt == DockSwitchStart || evt == DockSwitchEnd) UpdateDockSwitch(evt == DockSwitchStart, hwnd);
                 fsTimer.Stop(); fsTimer.Start(); NudgeFrost(); NudgeDock();
             };
