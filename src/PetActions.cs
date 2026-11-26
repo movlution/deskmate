@@ -51,6 +51,22 @@ namespace Deskmate
             public static readonly string[] Gear = {
                 "...#...", ".#####.", ".#...#.", "##.#.##", ".#...#.", ".#####.", "...#..."
             };
+            // Two beamed notes: the pet hums
+            public static readonly string[] Note = {
+                "..#####", "..#...#", "..#...#", "..#...#", "###.###", "###.###", "......."
+            };
+            public static readonly string[] Bang = {
+                "..###..", "..###..", "..###..", "..###..", ".......", "..###..", "..###.."
+            };
+
+            // Whole screen pixels keep the icon crisp at fractional DPI
+            public static void Paint(Graphics g, string[] icon, Color ink, int x, int y, int unit)
+            {
+                var brush = KitInk.BrushOf(ink);
+                for (int row = 0; row < 7; row++)
+                    for (int col = 0; col < 7; col++)
+                        if (icon[row][col] == '#') g.FillRectangle(brush, x + col * unit, y + row * unit, unit, unit);
+            }
         }
 
         // Big, labelled buttons above the pet, opened by a plain click or a right-click on it.
@@ -245,12 +261,8 @@ namespace Deskmate
                     int dy = pressed ? Math.Max(1, Px(0.75f)) : 0;
                     Color ink = a.Enabled ? (i == hot ? tint : fore) : faint;
 
-                    // Whole screen pixels keep the icon crisp at fractional DPI
-                    int size = 7 * unit, x = r.X + (r.Width - size) / 2, y = r.Y + Px(9) + dy;
-                    var brush = KitInk.BrushOf(ink);
-                    for (int row = 0; row < 7; row++)
-                        for (int col = 0; col < 7; col++)
-                            if (a.Icon[row][col] == '#') g.FillRectangle(brush, x + col * unit, y + row * unit, unit, unit);
+                    int size = 7 * unit;
+                    PetIcons.Paint(g, a.Icon, ink, r.X + (r.Width - size) / 2, r.Y + Px(9) + dy, unit);
 
                     var label = new RectangleF(r.X, r.Y + Px(31) + dy, r.Width, Px(16));
                     KitInk.Draw(g, a.Label, labelFont, ink, label, ContentAlignment.MiddleCenter);
