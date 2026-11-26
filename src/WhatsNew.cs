@@ -20,6 +20,17 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.16.0",
+                Items = new[]
+                {
+                    new[] { "Chat bersama teman", "Chat pet kini menjadi chat room dengan riwayat bersama, dan nama pemilik tampil di atas setiap pet.", "" },
+                    new[] { "Rusuh lewat pet", "Klik kanan pet teman untuk membakar, meretakkan, melempar cat, atau membekukan layarnya sebentar. Bisa dimatikan di Pengaturan › Dock & Taskbar.", "" },
+                    new[] { "Chao, pet ketiga", "Roh fantasi mungil berwarna pastel kini bisa dipilih di samping kucing dan anjing.", "" },
+                    new[] { "Klik dock untuk meminimalkan", "Klik aplikasi yang sedang di depan untuk meminimalkannya, seperti taskbar Windows.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.15.0",
                 Items = new[]
                 {
