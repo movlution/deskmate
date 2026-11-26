@@ -69,8 +69,11 @@ namespace Deskmate
             var selected = ChosenScreen();
             var plan = PlanDocks(devices, dockWins.Keys, selected != null ? selected.DeviceName : "");
 
-            // Stop shared owner services before assigning them to the new target.
-            foreach (var dock in dockWins.Values) dock.SetGlobalOwner(false);
+            // Stop shared owner services on docks that lose them, before the new owner
+            // takes over. A dock that stays owner keeps its tray: rebuilding it empties
+            // the icon list, and apps that ignore TaskbarCreated never come back.
+            foreach (var kv in dockWins)
+                if (!string.Equals(kv.Key, plan.Owner, StringComparison.OrdinalIgnoreCase)) kv.Value.SetGlobalOwner(false);
             foreach (var device in plan.Close)
             {
                 var dock = dockWins[device];

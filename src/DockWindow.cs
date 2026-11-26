@@ -218,7 +218,7 @@ namespace Deskmate
                 // The Windows taskbar moved: claim the strip again
                 if (m.Msg == AppBarMsg) { if (m.WParam.ToInt64() == 1) { Reserve(Reserving && !Dry); Place(); Render(); } return; }
                 // Explorer restarted (not our own tray echo)
-                if (m.Msg == Taskbar.Created && Taskbar.Created != 0 && (tray == null || !tray.JustBroadcast)) BeginInvoke(new Action(ExplorerBack));
+                if (m.Msg == Taskbar.Created && Taskbar.Created != 0 && !TrayHost.OwnEcho) BeginInvoke(new Action(ExplorerBack));
                 base.WndProc(ref m);
             }
 
