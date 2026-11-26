@@ -8,6 +8,9 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.19.1
+            AddOnce(en, "Pilihan bahasa di installer", "Installer language choice");
+            AddOnce(en, "Installer kini menampilkan Bahasa Indonesia dan English, dan memilih otomatis sesuai bahasa Windows.", "The installer now lists Bahasa Indonesia and English, and picks one to match your Windows language.");
             // What's new 2.19.0
             AddOnce(en, "Kuota AI langsung dari akun", "AI quota straight from your accounts");
             AddOnce(en, "Kuota Claude, Codex, dan Antigravity dibaca dari akun yang sudah masuk setiap 5 menit, tanpa menunggu sesi agent berjalan.", "Claude, Codex, and Antigravity quota is read from your signed-in accounts every 5 minutes, without waiting for an agent session.");
