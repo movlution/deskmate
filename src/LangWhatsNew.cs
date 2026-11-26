@@ -8,6 +8,9 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.20.0
+            AddOnce(en, "Pet mengingatkan tugas & acara", "Your pet reminds you of tasks & events");
+            AddOnce(en, "Sesekali pet menyebut tugas yang belum selesai, tenggat yang dekat, atau acara yang sebentar lagi mulai. Klik gelembungnya untuk membuka Tugas atau Jadwal.", "Now and then your pet mentions an unfinished task, a deadline that's close, or an event starting soon. Click its bubble to open Tasks or the schedule.");
             // What's new 2.19.1
             AddOnce(en, "Pilihan bahasa di installer", "Installer language choice");
             AddOnce(en, "Installer kini menampilkan Bahasa Indonesia dan English, dan memilih otomatis sesuai bahasa Windows.", "The installer now lists Bahasa Indonesia and English, and picks one to match your Windows language.");

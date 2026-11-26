@@ -20,6 +20,14 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.20.0",
+                Items = new[]
+                {
+                    new[] { "Pet mengingatkan tugas & acara", "Sesekali pet menyebut tugas yang belum selesai, tenggat yang dekat, atau acara yang sebentar lagi mulai. Klik gelembungnya untuk membuka Tugas atau Jadwal.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.19.1",
                 Items = new[]
                 {
