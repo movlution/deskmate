@@ -14,6 +14,7 @@ namespace Deskmate
         // Toast marker: DrawInfo draws a ring
         const char IcoGauge = '';
         const float AgentQuotaPitch = 70, QuotaGlanceRowH = 32;
+        const int QuotaRows = 5;
         static readonly string[] QuotaKeys = { "five_hour", "seven_day", "spend_limit" };
         static readonly DateTime Epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         readonly List<QuotaInfo> quotas = new List<QuotaInfo>();
@@ -49,22 +50,9 @@ namespace Deskmate
             if (!settings.GetBool(agent.Length > 0 ? StatusSetup.AgentsKey : "agent.quota", true)) return;
             string profile = agent.Length > 0 ? AgentAdapters.Label(agent) : StatusLine.SafeName(CleanText(Json.Str(ev.Data, "profile"), 24));
             if (agent.Length == 0 && Json.Str(ev.Data, "profile").Length == 0) profile = "";
-            var q = quotas.Find(x => x.Profile == profile);
-            if (q == null)
-            {
-                // Few profiles; oldest goes
-                if (quotas.Count >= 6)
-                {
-                    var oldest = quotas[0];
-                    foreach (var x in quotas) if (x.AtUtc < oldest.AtUtc) oldest = x;
-                    quotas.Remove(oldest);
-                }
-                q = new QuotaInfo { Profile = profile, Agent = agent };
-                quotas.Add(q);
-                // Claude first, then other agents
-                quotas.Sort((a, b) => a.Agent.Length != b.Agent.Length ? a.Agent.Length.CompareTo(b.Agent.Length) : string.CompareOrdinal(a.Profile, b.Profile));
-            }
+            var q = QuotaRow(agent, profile);
             var now = DateTime.UtcNow;
+            q.Note = "";
             q.Model = CleanText(Json.Str(ev.Data, "model"), 40);
             q.AtUtc = now;
             double lo = (now.AddDays(-8) - Epoch).TotalSeconds, hi = (now.AddDays(40) - Epoch).TotalSeconds;
@@ -90,11 +78,33 @@ namespace Deskmate
             quotaSig = sig;
         }
 
+        // One row per AI and Claude profile
+        QuotaInfo QuotaRow(string agent, string profile)
+        {
+            var q = quotas.Find(x => x.Agent == agent && x.Profile == profile);
+            if (q != null) return q;
+            // Few profiles; oldest goes
+            if (quotas.Count >= 8)
+            {
+                var oldest = quotas[0];
+                foreach (var x in quotas) if (x.AtUtc < oldest.AtUtc) oldest = x;
+                quotas.Remove(oldest);
+            }
+            q = new QuotaInfo { Profile = profile, Agent = agent };
+            quotas.Add(q);
+            // Claude first, then other agents
+            quotas.Sort((a, b) => a.Agent.Length != b.Agent.Length ? a.Agent.Length.CompareTo(b.Agent.Length) : string.CompareOrdinal(a.Profile, b.Profile));
+            return q;
+        }
+
         int QuotaSig()
         {
             int h = quotas.Count;
             foreach (var q in quotas)
+            {
+                h = h * 31 + q.Note.GetHashCode();
                 foreach (var w in q.W) h = h * 31 + (w.Has ? (int)w.Pct * 7919 + w.ResetUtc.Minute + 1 : 0);
+            }
             return h;
         }
 
@@ -153,6 +163,9 @@ namespace Deskmate
             return false;
         }
 
+        // Agen list: windows, else signed in with a note
+        static bool QuotaListed(QuotaInfo q) { return QuotaShown(q) || q.Note.Length > 0; }
+
         static float QuotaPeak(QuotaInfo q)
         {
             float top = 0;
@@ -164,8 +177,8 @@ namespace Deskmate
         int QuotaCount(bool notable)
         {
             int n = 0;
-            foreach (var q in quotas) if (QuotaShown(q) && (!notable || QuotaPeak(q) >= 70)) n++;
-            return Math.Min(4, n);
+            foreach (var q in quotas) if (notable ? QuotaShown(q) && QuotaPeak(q) >= 70 : QuotaListed(q)) n++;
+            return Math.Min(notable ? 4 : QuotaRows, n);
         }
 
         // Agen page height, 0 = none
@@ -208,12 +221,17 @@ namespace Deskmate
             int shown = 0;
             foreach (var q in quotas)
             {
-                if (!QuotaShown(q) || shown >= 4) continue;
+                if (!QuotaListed(q) || shown >= QuotaRows) continue;
                 var card = new RectangleF(18, top + 22 + shown++ * AgentQuotaPitch, w - 36, AgentQuotaPitch - 6);
                 p.FillRound(card, 10, p.T.Fill);
                 p.Text(q.Who, Ink.SmallSemi(12), p.T.Text, card.Left + 10, card.Top + 12, card.Width - 20, StringAlignment.Near);
                 int count = 0;
-                foreach (var item in q.W) if (item.Has) count++;
+                if (QuotaShown(q)) foreach (var item in q.W) if (item.Has) count++;
+                if (count == 0)
+                {
+                    p.Text(q.Note, Ink.Caption, p.T.Sub, card.Left + 10, card.Top + 36, card.Width - 20, StringAlignment.Near);
+                    continue;
+                }
                 float col = (card.Width - 20) / count;
                 int index = 0;
                 foreach (var item in q.W)
@@ -324,12 +342,13 @@ namespace Deskmate
         // Settings row: each agent's first window
         string QuotaNote()
         {
-            if (!QuotaOn) return Lang.T("Claude, Codex, Antigravity, dan Copilot, dari status line dan lognya");
+            if (!QuotaOn) return Lang.T("Claude, Codex, Antigravity, dan Copilot yang sudah masuk, langsung dari akunnya");
             QuotaTexts();
             var parts = new List<string>();
             foreach (var q in quotas)
             {
-                if (!QuotaShown(q)) continue;
+                if (!QuotaListed(q)) continue;
+                if (!QuotaShown(q)) { parts.Add(q.Who + " " + q.Note); continue; }
                 foreach (var w in q.W)
                 {
                     if (!w.Has) continue;
@@ -351,7 +370,7 @@ namespace Deskmate
             catch (Exception ex) { Log.Write("statusline setup: " + ex.Message); err = Fmt.OneLine(ex.Message, 60); }
             try { if (AgentSetup.Installed("antigravity")) { if (on) StatusSetup.AgyInstall(); else StatusSetup.AgyRemove(); } }
             catch (Exception ex) { Log.Write("agy statusline: " + ex.Message); }
-            if (on) { LogQuota("codex"); LogQuota("copilot"); }
+            if (on) { LogQuota("codex"); LogQuota("copilot"); LiveQuotaPoll(); }
             else { quotas.Clear(); quotaVersion++; }
             if (err != null) ShowInfo(IcoGauge, Lang.T("Kuota belum dipantau"), err, true);
             else ShowInfo(IcoGauge, on ? Lang.T("Kuota agent dipantau") : Lang.T("Kuota agent dilepas"), "", true);

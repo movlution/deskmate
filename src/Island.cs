@@ -345,6 +345,7 @@ namespace Deskmate
                 CheckLinks();
                 LogQuota("codex");
                 LogQuota("copilot");
+                LiveQuotaPoll();
                 // Separate line: this ran after the boot timeline had already closed
                 Log.Write("defer " + sw.Elapsed.TotalMilliseconds.ToString("0") + "ms");
             };
