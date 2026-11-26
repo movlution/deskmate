@@ -20,6 +20,14 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.17.1",
+                Items = new[]
+                {
+                    new[] { "Bingkai kartu di tiap jendela", "Efek kartu mengikuti bingkai saat jendela dibuka, dipulihkan, diminimalkan, atau ditutup. Ikon Dock ikut bergerak.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.17.0",
                 Items = new[]
                 {

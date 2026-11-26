@@ -724,11 +724,14 @@ namespace Deskmate
                 if (t == null) return;
                 if (id.StartsWith("x", StringComparison.Ordinal) || e.Button == MouseButtons.Middle)
                 {
-                    if (!dock.CloseWindow(App, t.Win.H)) return;
+                    if (!dock.CloseWindow(t.Win.H)) return;
                     int idx = thumbs.IndexOf(t);
                     var closedBox = t.Box;
-                    ShatterCardBox(closedBox);
-                    if (App != null) App.GulpUtc = DateTime.UtcNow;
+                    if (!dock.WindowMotionEnabled)
+                    {
+                        ShatterCardBox(closedBox);
+                        if (App != null) App.GulpUtc = DateTime.UtcNow;
+                    }
                     if (thumbs.Count > 1 && idx >= 0)
                     {
                         if (t.Id != IntPtr.Zero) DwmUnregisterThumbnail(t.Id);

@@ -43,7 +43,6 @@ namespace Deskmate
             // Share of the magnify setting that still applies when icons swell without moving neighbours
             const float InPlaceK = 0.6f;
             const float PadTop = 7, PadBottom = 9, GapX = 8, Side = 8, SegGap = 21, Hop = 18, HopSecs = 0.42f;
-            const float DeckRecoilSecs = 0.18f;
             float BarH { get { return IconRest + PadTop + PadBottom; } }
             // Every tile and hover plate shares this size and centre line
             const float GlyphK = 0.62f;
@@ -399,14 +398,12 @@ namespace Deskmate
                         sy *= 1 + 0.20f * sw;
                     }
                 }
-                float recoil = (float)(now - a.DeckContactUtc).TotalSeconds / DeckRecoilSecs;
-                if (recoil >= 0 && recoil < 1)
+                float motion = DockWindowMotion.Progress(a, now);
+                if (motion >= 0 && motion < 1)
                 {
-                    // One impact, then a smaller rebound before the icon settles.
-                    float press = recoil < 0.28f ? Ease.OutCubic(recoil / 0.28f)
-                        : (float)Math.Cos(Math.PI * (recoil - 0.28f) / 0.72f) * (1 - recoil) / 0.72f;
-                    sx *= 1 + 0.13f * press;
-                    sy *= 1 - 0.17f * press;
+                    float spring = DockWindowMotion.Sample(a, motion).Spring;
+                    sx *= 1 + 0.12f * spring;
+                    sy *= 1 - 0.16f * spring;
                 }
             }
 
@@ -418,7 +415,7 @@ namespace Deskmate
                 hover.Step(dt);
                 workDot.Target = WorkDotTarget();
                 workDot.Step(dt);
-                moving |= !reveal.Settled || !hover.Settled || !workDot.Settled;
+                moving |= !reveal.Settled || !hover.Settled || !workDot.Settled || AppAnimMoving(workSlotApp, DateTime.UtcNow);
                 foreach (var s in sysGrow.Values) { s.Step(dt); moving |= !s.Settled; }
                 foreach (var kv in sysPress)
                 {
@@ -467,10 +464,9 @@ namespace Deskmate
 
             static bool AppAnimMoving(DockApp a, DateTime now)
             {
-                if (a.LaunchUtc > DateTime.MinValue && (now - a.LaunchUtc).TotalSeconds < 0.65) return true;
                 if (a.PulseUtc > DateTime.MinValue && (now - a.PulseUtc).TotalSeconds < 0.40) return true;
                 if (a.GulpUtc > DateTime.MinValue && (now - a.GulpUtc).TotalSeconds < 0.42) return true;
-                if (a.DeckContactUtc > DateTime.MinValue && (now - a.DeckContactUtc).TotalSeconds < DeckRecoilSecs) return true;
+                if (DockWindowMotion.Progress(a, now) < 1f) return true;
                 return false;
             }
 

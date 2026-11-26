@@ -572,6 +572,12 @@ namespace Deskmate
         public static bool IsMinimized(IntPtr h) { return IsIconic(h); }
         public static bool IsMaximized(IntPtr h) { return IsZoomed(h); }
         public static void Minimize(IntPtr h) { ShowWindowAsync(h, 6); }
+        public static void MinimizeFromDock(IntPtr h)
+        {
+            const int WmSysCommand = 0x0112, ScMinimize = 0xF020;
+            if (IsWindow(h) && !IsIconic(h) && !PostMessage(h, WmSysCommand, new IntPtr(ScMinimize), IntPtr.Zero))
+                Minimize(h);
+        }
         public static void Restore(IntPtr h) { ShowWindowAsync(h, 9); Activate(h); }
         public static void Maximize(IntPtr h) { ShowWindowAsync(h, 3); Activate(h); }
 

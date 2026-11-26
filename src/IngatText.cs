@@ -616,13 +616,13 @@ namespace Deskmate
         [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out RECT val, int size);
 
         // Picture of the window's own content, even where other windows cover it; null when minimized or tiny
-        public static Bitmap Snap(IntPtr hwnd, bool windowOnly = false)
+        public static Bitmap Snap(IntPtr hwnd)
         {
             RECT r;
             if (IsIconic(hwnd) || !GetWindowRect(hwnd, out r)) return null;
             int w = r.R - r.L, h = r.B - r.T;
             if (w < 200 || h < 120 || w > 10000 || h > 10000) return null;
-            var bmp = new Bitmap(w, h, windowOnly ? PixelFormat.Format32bppRgb : PixelFormat.Format32bppArgb);
+            var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
             try
             {
                 bool ok;
@@ -633,11 +633,7 @@ namespace Deskmate
                     try { ok = PrintWindow(hwnd, dc, 2); }
                     finally { g.ReleaseHdc(dc); }
                 }
-                // A flat-color window is valid. The zeroed buffer from an unsupported
-                // PrintWindow call is the only uniform image the Dock needs to reject.
-                if (ok && ((windowOnly && bmp.GetPixel(w / 2, h / 2).ToArgb() != Color.Black.ToArgb()) || !Blank(bmp)))
-                    return bmp;
-                if (windowOnly) { bmp.Dispose(); return null; }
+                if (ok && !Blank(bmp)) return bmp;
                 // Some windows refuse: fall back to what the screen shows
                 var bounds = Rectangle.FromLTRB(r.L, r.T, r.R, r.B);
                 bounds.Intersect(System.Windows.Forms.SystemInformation.VirtualScreen);

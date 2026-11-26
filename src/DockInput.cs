@@ -210,187 +210,36 @@ namespace Deskmate
                 isle.volume.Set(Ease.Clamp01(isle.vol + step));
             }
 
-            DockCardMotion cardMotion;
-            double cardMotionRequested;
-            DockApp cardMotionApp;
-            DockApp openingApp;
-            double openingDeadline;
-            Bitmap restoreImage;
-            IntPtr restoreWindow;
-            Rectangle restoreBounds;
-            double restoreDeadline;
-
-            void ClearRestoreImage()
-            {
-                if (restoreImage != null) { restoreImage.Dispose(); restoreImage = null; }
-            }
-
-            void StopCardMotion(bool commitFocus = true)
-            {
-                var motion = cardMotion;
-                cardMotion = null;
-                cardMotionApp = null;
-                if (motion == null) return;
-                try { motion.FinishPendingCommand(commitFocus); }
-                finally { motion.Dispose(); }
-            }
-
-            bool StepCardMotion(double now)
-            {
-                if (cardMotion == null) return false;
-                bool moving = false;
-                try
-                {
-                    if (S != null && S.GetBool(DockCardMotion.Setting, true) && !Anim.Reduced)
-                    {
-                        moving = cardMotion.Step(now, cardMotionRequested, mon, scale, GetForegroundWindow());
-                        var contact = cardMotion.TakeDeckContact(now);
-                        if (cardMotionApp != null && contact != DateTime.MinValue)
-                            cardMotionApp.DeckContactUtc = contact;
-                    }
-                }
-                catch (Exception ex) { Log.Write("dock card motion: " + ex.Message); }
-                if (!moving)
-                {
-                    IntPtr window;
-                    Rectangle bounds;
-                    var bitmap = cardMotion.TakeRestoreImage(out window, out bounds);
-                    if (bitmap != null)
-                    {
-                        ClearRestoreImage();
-                        restoreImage = bitmap;
-                        restoreWindow = window;
-                        restoreBounds = bounds;
-                        restoreDeadline = now + 15000;
-                    }
-                    StopCardMotion();
-                    AnimateLaunchedWindow();
-                }
-                return moving || cardMotion != null;
-            }
-
-            bool BeginCardMotion(IntPtr window, DockApp app, DockWindowAction action)
-            {
-                var icon = MotionIcon(app);
-                if (icon.Width <= 0 || icon.Height <= 0 || !mon.IntersectsWith(icon)) return false;
-                var bounds = action == DockWindowAction.Open ? Rectangle.Empty : DockCardMotion.CardBounds(window, mon);
-                if (action != DockWindowAction.Open && bounds.IsEmpty) return false;
-                cardMotion = new DockCardMotion(window, icon, bounds, action);
-                try
-                {
-                    cardMotionRequested = clock.Elapsed.TotalMilliseconds;
-                    if (action != DockWindowAction.Open && !cardMotion.QueueSnapshot())
-                    {
-                        cardMotion.Dispose();
-                        cardMotion = null;
-                        return false;
-                    }
-                    ScheduleCardMotion(cardMotion, app, cardMotionRequested);
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    cardMotion.Dispose();
-                    cardMotion = null;
-                    cardMotionApp = null;
-                    Log.Write("dock card motion: " + ex.Message);
-                    return false;
-                }
-            }
-
-            bool WindowMotionEnabled { get { return !Dry && DockCardMotion.Enabled(S); } }
-
             internal void FocusWindow(DockApp app, IntPtr window)
             {
-                if (cardMotion != null && cardMotion.PendingFocus && cardMotion.Handles(window)) return;
-                StopCardMotion(false);
-                openingApp = null;
-                if (WindowMotionEnabled && (GetForegroundWindow() != window || ShellApp.IsMinimized(window))
-                    && StageWindowFocus(app, window)) return;
+                if (WindowMotionEnabled && (GetForegroundWindow() != window || ShellApp.IsMinimized(window)))
+                {
+                    WindowFeedback(app, true, DateTime.UtcNow);
+                    QueueOpeningOutline(window);
+                }
                 ShellApp.FocusDockApp(window);
-                if (restoreWindow == window) ClearRestoreImage();
             }
 
-            bool StageWindowFocus(DockApp app, IntPtr window)
+            internal void MinimizeWindow(IntPtr window)
             {
-                var icon = MotionIcon(app);
-                if (icon.IsEmpty || !mon.Contains(icon) || !ShellApp.WindowExists(window)) return false;
-                bool minimized = ShellApp.IsMinimized(window);
-                bool canCapture = DockCardMotion.CanProxy(window);
-                bool reuse = restoreImage != null && restoreWindow == window && minimized
-                    && clock.Elapsed.TotalMilliseconds < restoreDeadline && canCapture;
-                var bounds = reuse ? restoreBounds : MinimizedCardBounds(window);
-                // A dock can activate a window on another screen. Keep the visual on the clicked Dock.
-                if (bounds.IsEmpty || !mon.Contains(bounds)) bounds = LaunchCardBounds(icon);
-                if (bounds.IsEmpty) return false;
-                var motion = new DockCardMotion(window, icon, bounds, DockWindowAction.Open);
-                double now = clock.Elapsed.TotalMilliseconds;
-                if (reuse && bounds == restoreBounds)
-                {
-                    motion.ReuseSnapshot(restoreImage, bounds, now);
-                    restoreImage = null;
-                }
-                else motion.StageFocus(MakeAppCard(app, bounds.Size), now,
-                    canCapture && !minimized && DockCardMotion.CardBounds(window, mon) == bounds);
-                if (restoreWindow == window) ClearRestoreImage();
-                ScheduleCardMotion(motion, app, now);
+                if (WindowMotionEnabled) DockWindowFrame.Update(watch.Find(window));
+                ShellApp.MinimizeFromDock(window);
+            }
+
+            internal bool CloseWindow(IntPtr window)
+            {
+                if (WindowMotionEnabled) DockWindowFrame.Update(watch.Find(window));
+                if (!ShellApp.Close(window)) return false;
+                closingFromDock = window;
+                closeRequestedUtc = DateTime.UtcNow;
                 return true;
-            }
-
-            void ScheduleCardMotion(DockCardMotion motion, DockApp app, double now)
-            {
-                cardMotion = motion;
-                cardMotionApp = app;
-                cardMotionRequested = now;
-                Animate();
-            }
-
-            Rectangle LaunchCardBounds(Rectangle icon)
-            {
-                int width = Math.Min(mon.Width, (int)Math.Round(180 * scale));
-                int height = Math.Min(mon.Height, (int)Math.Round(105 * scale));
-                int x = Math.Max(mon.Left, Math.Min(mon.Right - width, icon.Left + (icon.Width - width) / 2));
-                int y = Math.Max(mon.Top, icon.Top - height - (int)Math.Round(12 * scale));
-                return new Rectangle(x, y, width, height);
-            }
-
-            internal void MinimizeWindow(DockApp app, IntPtr window)
-            {
-                StopCardMotion(false);
-                openingApp = null;
-                if (!WindowMotionEnabled || !BeginCardMotion(window, app, DockWindowAction.Minimize))
-                    ShellApp.Minimize(window);
-            }
-
-            internal bool CloseWindow(DockApp app, IntPtr window)
-            {
-                if (!ShellApp.WindowExists(window)) return false;
-                StopCardMotion(false);
-                openingApp = null;
-                return (WindowMotionEnabled && !ShellApp.IsMinimized(window)
-                    && BeginCardMotion(window, app, DockWindowAction.Close)) || ShellApp.Close(window);
-            }
-
-            void AnimateLaunchedWindow()
-            {
-                if (openingApp == null || cardMotion != null) return;
-                if (clock.Elapsed.TotalMilliseconds > openingDeadline || openingApp.Leaving)
-                {
-                    openingApp = null;
-                    return;
-                }
-                IntPtr foreground = GetForegroundWindow();
-                if (!openingApp.Wins.Exists(w => w.H == foreground)) return;
-                var app = openingApp;
-                openingApp = null;
-                if (WindowMotionEnabled) BeginCardMotion(foreground, app, DockWindowAction.Open);
             }
 
             // The Dock never takes focus. Clicking the front app minimizes it; menus only focus or open.
             void OpenApp(DockApp a, bool fromCard, bool minimizeFront)
             {
                 bool shift = (ModifierKeys & Keys.Shift) != 0, ctrl = (ModifierKeys & Keys.Control) != 0;
-                if (!shift && !a.Running && openingApp == a && clock.Elapsed.TotalMilliseconds < openingDeadline) return;
+                if (!shift && !a.Running && (DateTime.UtcNow - a.LaunchUtc).TotalMilliseconds < 650) return;
                 if (!a.Running || shift) { Launch(a, shift && ctrl); return; }
                 IntPtr fg = GetForegroundWindow();
                 var live = a.Wins.FindAll(w => ShellApp.WindowExists(w.H));
@@ -398,8 +247,7 @@ namespace Deskmate
                 int at = live.FindIndex(w => w.H == fg);
                 if (minimizeFront && at >= 0 && !ShellApp.IsMinimized(fg))
                 {
-                    if (cardMotion != null && cardMotion.CancelUnsentMinimize(fg)) StopCardMotion();
-                    else MinimizeWindow(a, fg);
+                    MinimizeWindow(fg);
                     if (!fromCard) CloseCard();
                     return;
                 }
@@ -408,9 +256,12 @@ namespace Deskmate
                     recent != null && live.Contains(recent) ? recent : live[0];
                 if (next != null)
                 {
-                    a.PulseUtc = DateTime.UtcNow;
-                    a.Grow.Velocity += 2.2f;
-                    Animate();
+                    if (!WindowMotionEnabled)
+                    {
+                        a.PulseUtc = DateTime.UtcNow;
+                        a.Grow.Velocity += 2.2f;
+                        Animate();
+                    }
                     FocusWindow(a, next.H);
                 }
                 if (!fromCard) CloseCard();
@@ -420,24 +271,8 @@ namespace Deskmate
             {
                 string target = a.Target.Length > 0 ? a.Target : a.Exe;
                 if (target.Length == 0) return;
-                StopCardMotion(false);
-                openingApp = null;
-                double now = clock.Elapsed.TotalMilliseconds;
-                var icon = MotionIcon(a);
-                if (!admin && WindowMotionEnabled && !icon.IsEmpty && mon.Contains(icon)
-                    && !a.Wins.Exists(w => ShellApp.WindowExists(w.H)))
-                {
-                    openingApp = a;
-                    openingDeadline = now + 5000;
-                    var bounds = LaunchCardBounds(icon);
-                    var motion = new DockCardMotion(IntPtr.Zero, icon, bounds, DockWindowAction.Launch);
-                    motion.StageLaunch(MakeAppCard(a, bounds.Size), delegate { ShellApp.Launch(target, false); });
-                    ScheduleCardMotion(motion, a, now);
-                }
-                else ShellApp.Launch(target, admin);
-                a.LaunchUtc = DateTime.UtcNow;
-                if (a.Hop < 0) { a.Hop = 0; a.Hops = Anim.Reduced ? 1 : 2; }
-                Animate();
+                ShellApp.Launch(target, admin);
+                LaunchFeedback(a);
             }
 
             void WorkMenu()
@@ -451,7 +286,7 @@ namespace Deskmate
                 if (isle.WorkOpen && isle.WorkHwnd != IntPtr.Zero)
                 {
                     m.Items.Add(new ToolStripSeparator());
-                    m.Items.Add(new ToolStripMenuItem(Lang.T("Tutup jendela"), null, delegate { CloseWindow(workSlotApp, isle.WorkHwnd); }) { Tag = new MenuItemMeta { Glyph = '\uE8BB' } });
+                    m.Items.Add(new ToolStripMenuItem(Lang.T("Tutup jendela"), null, delegate { CloseWindow(isle.WorkHwnd); }) { Tag = new MenuItemMeta { Glyph = '\uE8BB' } });
                 }
                 ShowMenu(m);
             }

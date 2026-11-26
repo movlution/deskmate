@@ -13,7 +13,7 @@ using Windows.UI.Composition.Desktop;
 
 namespace Deskmate
 {
-    static class CompGlass
+    static partial class CompGlass
     {
         public struct PillSpec
         {
@@ -67,6 +67,15 @@ namespace Deskmate
         static CompositionBackdropBrush NewBackdrop()
         {
             return compositor.CreateBackdropBrush();
+        }
+
+        static DesktopWindowTarget CreateWindowTarget(IntPtr hwnd)
+        {
+            IntPtr targetPtr;
+            int hr = ((ICompositorDesktopInterop)(object)compositor).CreateDesktopWindowTarget(hwnd, false, out targetPtr);
+            if (hr != 0) throw new COMException("CreateDesktopWindowTarget", hr);
+            try { return (DesktopWindowTarget)Marshal.GetObjectForIUnknown(targetPtr); }
+            finally { Marshal.Release(targetPtr); }
         }
         static bool tried, ready;
         static IntPtr dqController, d3dDev, d3dCtx, dxgiDev, d2dDev;
@@ -283,109 +292,6 @@ namespace Deskmate
             return uploaded && hr == 0;
         }
 
-        internal sealed class MotionSurface : IDisposable
-        {
-            DesktopWindowTarget target;
-            CompositionDrawingSurface surface;
-            CompositionSurfaceBrush brush;
-            ContainerVisual deck;
-            readonly SpriteVisual[] cards = new SpriteVisual[3];
-            readonly CompositionColorBrush[] backs = new CompositionColorBrush[2];
-
-            public bool Attach(IntPtr hwnd, Bitmap bitmap)
-            {
-                if (!Available) return false;
-                IntPtr ptr;
-                if (((ICompositorDesktopInterop)(object)compositor).CreateDesktopWindowTarget(hwnd, false, out ptr) < 0)
-                    return false;
-                try { target = (DesktopWindowTarget)Marshal.GetObjectForIUnknown(ptr); }
-                finally { Marshal.Release(ptr); }
-                surface = gfxDevice.CreateDrawingSurface(new Windows.Foundation.Size(bitmap.Width, bitmap.Height),
-                    DirectXPixelFormat.B8G8R8A8UIntNormalized, DirectXAlphaMode.Premultiplied);
-                if (!UploadBitmap(bitmap, surface, bitmap.Width, bitmap.Height)) return false;
-                brush = compositor.CreateSurfaceBrush(surface);
-                deck = compositor.CreateContainerVisual();
-                for (int depth = cards.Length - 1; depth >= 0; depth--)
-                {
-                    var visual = compositor.CreateSpriteVisual();
-                    cards[depth] = visual;
-                    if (depth == 0) visual.Brush = brush;
-                    else
-                    {
-                        var color = depth == 1 ? Windows.UI.Color.FromArgb(255, 121, 151, 189)
-                            : Windows.UI.Color.FromArgb(255, 82, 99, 141);
-                        var back = compositor.CreateColorBrush(color);
-                        backs[depth - 1] = back;
-                        visual.Brush = back;
-                        visual.Opacity = 0;
-                    }
-                    deck.Children.InsertAtTop(visual);
-                }
-                target.Root = deck;
-                return true;
-            }
-
-            public void Play(Rectangle card, Rectangle icon, Rectangle viewport, float dpi, bool exiting, float duration, bool fromDock)
-            {
-                float direction = icon.Left + icon.Width * 0.5f < card.Left + card.Width * 0.5f ? -1 : 1;
-                for (int depth = cards.Length - 1; depth >= 0; depth--)
-                    PlayCard(cards[depth], depth, card, icon, viewport, dpi, direction, exiting, duration, fromDock);
-            }
-
-            static void PlayCard(SpriteVisual visual, int depth, Rectangle card, Rectangle icon, Rectangle viewport,
-                float dpi, float direction, bool exiting, float duration, bool fromDock)
-            {
-                var time = TimeSpan.FromMilliseconds(duration);
-                var pivot = new Vector3(card.Width * 0.5f, card.Height * 0.5f, 0);
-                visual.Size = new Vector2(card.Width, card.Height);
-                visual.CenterPoint = pivot;
-                using (var scale = compositor.CreateVector3KeyFrameAnimation())
-                using (var offset = compositor.CreateVector3KeyFrameAnimation())
-                using (var opacity = compositor.CreateScalarKeyFrameAnimation())
-                using (var tilt = compositor.CreateScalarKeyFrameAnimation())
-                using (var linear = compositor.CreateLinearEasingFunction())
-                {
-                    scale.Duration = offset.Duration = opacity.Duration = tilt.Duration = time;
-                    for (int i = 0; i <= 36; i++)
-                    {
-                        float t = i / 36f;
-                        byte alpha;
-                        var frame = DockCardMotion.Frame(card, icon, dpi, exiting, t, out alpha, fromDock);
-                        float fan = DockCardMotion.DeckSpread(exiting, t, fromDock);
-                        float reveal = depth * fan * dpi;
-                        float x = frame.X + frame.Width * 0.5f - viewport.X - pivot.X - 9 * direction * reveal;
-                        float y = frame.Y + frame.Height * 0.5f - viewport.Y - pivot.Y + 5 * reveal;
-                        scale.InsertKeyFrame(t, new Vector3(frame.Width / (float)card.Width, frame.Height / (float)card.Height, 1), linear);
-                        offset.InsertKeyFrame(t, new Vector3(x, y, 0), linear);
-                        opacity.InsertKeyFrame(t, depth == 0 ? alpha / 255f : fan * alpha / (depth == 1 ? 345f : 470f), linear);
-                        tilt.InsertKeyFrame(t, DockCardMotion.DeckTilt(depth, exiting, direction, t, fromDock), linear);
-                    }
-                    visual.StartAnimation("Scale", scale);
-                    visual.StartAnimation("Offset", offset);
-                    visual.StartAnimation("Opacity", opacity);
-                    visual.StartAnimation("RotationAngleInDegrees", tilt);
-                }
-            }
-
-            public void Set(Rectangle frame, Rectangle viewport, byte opacity)
-            {
-                var visual = cards[0];
-                visual.Size = new Vector2(frame.Width, frame.Height);
-                visual.Offset = new Vector3(frame.X - viewport.X, frame.Y - viewport.Y, 0);
-                visual.Opacity = opacity / 255f;
-            }
-
-            public void Dispose()
-            {
-                if (target != null) { target.Root = null; target.Dispose(); }
-                foreach (var card in cards) if (card != null) card.Dispose();
-                foreach (var back in backs) if (back != null) back.Dispose();
-                if (deck != null) deck.Dispose();
-                if (brush != null) brush.Dispose();
-                if (surface != null) surface.Dispose();
-            }
-        }
-
         public sealed class CompBackdrop : NativeWindow, IDisposable
         {
             sealed class PillLayer
@@ -454,11 +360,7 @@ namespace Deskmate
                 };
                 CreateHandle(cp);
 
-                IntPtr targetPtr;
-                int hr = ((ICompositorDesktopInterop)(object)compositor).CreateDesktopWindowTarget(Handle, false, out targetPtr);
-                if (hr != 0) throw new COMException("CreateDesktopWindowTarget", hr);
-                target = (DesktopWindowTarget)Marshal.GetObjectForIUnknown(targetPtr);
-                Marshal.Release(targetPtr);
+                target = CreateWindowTarget(Handle);
 
                 root = compositor.CreateContainerVisual();
                 target.Root = root;

@@ -172,9 +172,7 @@ namespace Deskmate
             protected override void OnFormClosed(FormClosedEventArgs e)
             {
                 closing = true;
-                StopCardMotion(false);
                 StopNativeMinimize();
-                ClearRestoreImage();
                 tick.Stop();
                 dwell.Stop();
                 hideLater.Stop();
@@ -203,9 +201,7 @@ namespace Deskmate
                 if (disposing)
                 {
                     closing = true;
-                    StopCardMotion(false);
                     StopNativeMinimize();
-                    ClearRestoreImage();
                     if (sheet != null)
                     {
                         var s = sheet;
@@ -432,7 +428,7 @@ namespace Deskmate
                 switch (code)
                 {
                     case 1: changed = watch.Track(h); break;
-                    case 2: changed = watch.Drop(h); break;
+                    case 2: WindowWentAway(h); changed = watch.Drop(h); break;
                     case 4:
                     case 0x8004:
                         changed = watch.Track(h);
@@ -454,7 +450,7 @@ namespace Deskmate
                     case 13: watch.Drop(h); changed = watch.Rescan() || true; break;
                 }
                 if (changed) Refresh(false);
-                if (code == 4 || code == 0x8004) PrimeMinimizePreview();
+                if (code == 4 || code == 0x8004) ShellWindowActivated(h);
                 m.Result = IntPtr.Zero;
             }
 
@@ -468,13 +464,13 @@ namespace Deskmate
                 IntPtr h = Marshal.ReadIntPtr(info);
                 Rectangle r = Rectangle.Empty;
                 if (Visible && h != IntPtr.Zero && h == isle.WorkHwnd && S.GetBool("dockbar.work", true))
-                    r = SlotScreenRect("work");
+                    r = MotionIcon(workSlotApp);
                 else
                 {
                     var app = apps.Find(a => a.Wins.Exists(w => w.H == h));
                     if (app == null || !Visible) return false;
-                    r = IconScreenRect(app);
-                    if (!r.IsEmpty) { app.GulpUtc = DateTime.UtcNow; Animate(); }
+                    r = MotionIcon(app);
+                    if (!r.IsEmpty && !WindowMotionEnabled) { app.GulpUtc = DateTime.UtcNow; Animate(); }
                 }
                 if (r.IsEmpty) return false;
                 int off = IntPtr.Size;
@@ -544,7 +540,6 @@ namespace Deskmate
                     if (a.Attention && a.Hops == 0 && a.Hop < 0) { a.Hop = 0; a.Hops = 3; }
                 }
                 apps = result;
-                AnimateLaunchedWindow();
                 ApplyBadges();
                 if (runningBefore != null)
                     foreach (var a in next)
@@ -588,15 +583,14 @@ namespace Deskmate
                     (target != null && target.Length > 0 && string.Equals(a.Target, target, StringComparison.OrdinalIgnoreCase)) ||
                     (appId != null && appId.Length > 0 && string.Equals(a.AppId, appId, StringComparison.OrdinalIgnoreCase)));
                 if (app == null) return;
-                app.LaunchUtc = DateTime.UtcNow;
-                if (app.Hop < 0) { app.Hop = 0; app.Hops = Anim.Reduced ? 1 : 2; }
-                Animate();
+                LaunchFeedback(app);
             }
 
             bool Moving()
             {
                 var now = DateTime.UtcNow;
                 if (!reveal.Settled || !hover.Settled || !workDot.Settled || !shelfShow.Settled || shelfShow.Target != (ShelfWanted ? 1 : 0) || WidgetsMoving() || DockFlyersMoving(now)) return true;
+                if (AppAnimMoving(workSlotApp, now)) return true;
                 foreach (var s in sysGrow.Values) if (!s.Settled) return true;
                 foreach (var s in sysPress.Values) if (!s.Settled) return true;
                 if (!Anim.Reduced && startPulseUtc > DateTime.MinValue && (now - startPulseUtc).TotalSeconds < 0.40) return true;
@@ -755,8 +749,6 @@ namespace Deskmate
             void Tick()
             {
                 if (closing) return;
-                if (restoreImage != null && clock.Elapsed.TotalMilliseconds >= restoreDeadline) ClearRestoreImage();
-                AnimateLaunchedWindow();
                 tickN++;
                 UpdateVisibility();
                 if (!shown) return;
@@ -809,21 +801,16 @@ namespace Deskmate
                 // A failed frame must not leave the pacer waiting forever
                 try
                 {
-                    bool windowMoving = StepCardMotion(clock.Elapsed.TotalMilliseconds);
-                    more = windowMoving;
                     bool dockMoving = Step(dt);
                     f1 = clock.Elapsed.TotalMilliseconds;
-                    // Both windows share the UI thread. Give the window handoff the
-                    // frame budget, then catch up the Dock as soon as it finishes.
                     bool paintDock = dockMoving || dockWasMoving || dockNeedsFrame;
-                    if (paintDock && (!windowMoving || cardMotion == null || cardMotion.UsesCompositor))
+                    if (paintDock)
                     {
                         dockNeedsFrame = false;
                         Render();
                     }
-                    else if (paintDock) dockNeedsFrame = true;
                     dockWasMoving = dockMoving || WidgetsMoving();
-                    more |= dockWasMoving || dockNeedsFrame;
+                    more = dockWasMoving || dockNeedsFrame;
                 }
                 finally { pacer.Done(more); }
                 if (fpsLog) CountDockFrame(f0, f1, clock.Elapsed.TotalMilliseconds, more);

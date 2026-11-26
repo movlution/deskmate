@@ -8,6 +8,9 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.17.1
+            en.Add("Bingkai kartu di tiap jendela", "Card animation on each window frame");
+            en.Add("Efek kartu mengikuti bingkai saat jendela dibuka, dipulihkan, diminimalkan, atau ditutup. Ikon Dock ikut bergerak.", "The card effect follows the window frame when you open, restore, minimize, or close a window. The Dock icon also animates.");
             // What's new 2.17.0
             en.Add("Jendela seperti tumpukan kartu", "Windows move like a deck of cards");
             en.Add("Buka, pindah, pulihkan, atau tutup jendela lewat Dock dengan animasi kartu. Tombol minimize di jendela juga mengirim kartu ke Dock.", "Open, switch, restore, or close windows from the Dock with card animations. The window's minimize button also sends its card to the Dock.");
