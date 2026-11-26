@@ -44,6 +44,12 @@ namespace Deskmate
         string pressId;
         float dragGrab;
         Font strike, strikeBase;
+        // Motion: rows glide from where they were (FLIP), new rows fade up, completions linger
+        readonly Dictionary<string, float> offs = new Dictionary<string, float>();
+        readonly Dictionary<string, float> appear = new Dictionary<string, float>();
+        readonly Dictionary<string, float> pop = new Dictionary<string, float>();
+        readonly HashSet<string> completing = new HashSet<string>();
+        const string HeadKey = "\u0001done", EmptyKey = "\u0001empty";
 
         public event Action<TodoItem> ToggleDone, ToggleStar, EditItem, DeleteItem, ToggleCollapse;
         public event Action<TodoItem, Point> ItemMenu;
@@ -89,11 +95,22 @@ namespace Deskmate
 
         public int RowCount { get { return rows.Count; } }
 
+        static string KeyOf(Rw r) { return r.Kind == KTask ? r.Item.Id : r.Kind == KDoneHead ? HeadKey : EmptyKey; }
+
+        float Off(string key) { float v; return offs.TryGetValue(key, out v) ? v : 0f; }
+
+        // 0 = not yet in, 1 = settled. Negative values are a stagger delay
+        float Appear(string key) { float v; return appear.TryGetValue(key, out v) ? Ease.OutCubic(Math.Max(0f, v)) : 1f; }
+
         public void SetData(List<TaskRow> open, List<TodoItem> done, bool doneOpen, bool showList, string emptyTitle, string emptySub)
         {
             float s = Ui;
             this.doneOpen = doneOpen; this.showList = showList; this.emptyTitle = emptyTitle; this.emptySub = emptySub;
             doneCount = done.Count;
+            var was = new Dictionary<string, float>();
+            foreach (var r in rows) was[KeyOf(r)] = r.Y + Off(KeyOf(r));
+            bool first = rows.Count == 0 && !plainEmpty && !filled;
+            filled = true;
             rows.Clear();
             float y = 6 * s;
             foreach (var tr in open)
@@ -122,6 +139,7 @@ namespace Deskmate
                     }
             }
             total = y + 12 * s;
+            Settle(was, first);
             if (selId != null && !selHead && Find(selId) < 0) selId = null;
             if (selHead && doneCount == 0) selHead = false;
             ClampScroll();
@@ -144,6 +162,71 @@ namespace Deskmate
         }
 
         // ---------- animation ----------
+
+        bool filled;
+        bool Animating { get { return !Anim.Reduced && IsHandleCreated && Visible; } }
+
+        void Settle(Dictionary<string, float> was, bool first)
+        {
+            var live = new HashSet<string>();
+            foreach (var r in rows) live.Add(KeyOf(r));
+            foreach (var k in new List<string>(offs.Keys)) if (!live.Contains(k)) offs.Remove(k);
+            foreach (var k in new List<string>(appear.Keys)) if (!live.Contains(k)) appear.Remove(k);
+            completing.IntersectWith(live);
+            if (!Animating) { offs.Clear(); appear.Clear(); return; }
+            int fresh = 0;
+            foreach (var r in rows)
+            {
+                string k = KeyOf(r);
+                float old;
+                if (was.TryGetValue(k, out old))
+                {
+                    float d = old - r.Y;
+                    if (Math.Abs(d) > 0.5f) offs[k] = d; else offs.Remove(k);
+                }
+                else
+                {
+                    // On the first fill the rows cascade in; later, only the new ones fade up
+                    appear[k] = first ? -Math.Min(0.6f, fresh * 0.07f) : 0f;
+                    fresh++;
+                }
+            }
+            if (offs.Count > 0 || appear.Count > 0) Kick();
+        }
+
+        // A fresh view: rows cascade in from the top instead of gliding from the last view
+        public void PlayEnter()
+        {
+            offs.Clear();
+            scroll = scrollTarget = 0;
+            if (!Animating) { appear.Clear(); Invalidate(); return; }
+            int n = 0;
+            foreach (var r in rows)
+            {
+                if (r.Y > Height) break;
+                appear[KeyOf(r)] = -Math.Min(0.6f, n++ * 0.06f);
+            }
+            Kick();
+            Invalidate();
+        }
+
+        // The row stays put with its check filled until the window commits the change
+        public void MarkCompleting(string id, bool on)
+        {
+            if (id == null) return;
+            if (on) { completing.Add(id); if (Animating && !check.ContainsKey(id)) check[id] = 0f; Kick(); }
+            else completing.Remove(id);
+            Invalidate();
+        }
+
+        public bool IsCompleting(string id) { return id != null && completing.Contains(id); }
+
+        public void PopStar(string id)
+        {
+            if (id == null || !Animating) return;
+            pop[id] = 0f;
+            Kick();
+        }
 
         // The check fill runs from the old state to the new one
         public void StartCheck(TodoItem t, bool wasDone)
@@ -183,7 +266,7 @@ namespace Deskmate
             foreach (var k in new List<string>(check.Keys))
             {
                 int i = Find(k);
-                float target = i >= 0 ? (rows[i].Item.Done ? 1f : 0f) : 1f;
+                float target = i >= 0 ? (rows[i].Item.Done || completing.Contains(k) ? 1f : 0f) : 1f;
                 float v = check[k];
                 v += Math.Sign(target - v) * dt / 240f;
                 if (Math.Abs(target - v) < 0.001f || (target > check[k] && v > target) || (target < check[k] && v < target)) { check.Remove(k); }
@@ -193,6 +276,24 @@ namespace Deskmate
             {
                 scroll += (scrollTarget - scroll) * (1f - (float)Math.Exp(-dt / 55f));
                 if (Math.Abs(scrollTarget - scroll) <= 0.4f) scroll = scrollTarget; else busy = true;
+            }
+            float glide = 1f - (float)Math.Exp(-dt / (1000f * Anim.Response(0.07f)));
+            foreach (var k in new List<string>(offs.Keys))
+            {
+                float v = offs[k] * (1f - glide);
+                if (Math.Abs(v) < 0.5f) offs.Remove(k); else { offs[k] = v; busy = true; }
+            }
+            float fade = dt / (1000f * Anim.Response(0.22f));
+            foreach (var k in new List<string>(appear.Keys))
+            {
+                float v = appear[k] + fade;
+                if (v >= 1f) appear.Remove(k); else { appear[k] = v; busy = true; }
+            }
+            float popStep = dt / (1000f * Anim.Response(0.32f));
+            foreach (var k in new List<string>(pop.Keys))
+            {
+                float v = pop[k] + popStep;
+                if (v >= 1f) pop.Remove(k); else { pop[k] = v; busy = true; }
             }
             Invalidate();
             if (!busy) anim.Stop();
@@ -344,12 +445,17 @@ namespace Deskmate
             for (int i = 0; i < rows.Count; i++)
             {
                 var r = rows[i];
-                float top = r.Y - scroll;
+                string key = KeyOf(r);
+                float a = Appear(key);
+                float top = r.Y - scroll + Off(key) + (1f - a) * 10 * s;
                 if (top + r.H < e.ClipRectangle.Top) continue;
-                if (top > e.ClipRectangle.Bottom) break;
+                // Gliding rows can sit out of order for a moment, so no early break
+                if (top > e.ClipRectangle.Bottom) continue;
                 if (r.Kind == KEmpty) DrawEmpty(g, new RectangleF(0, top, Width, r.H), false);
                 else if (r.Kind == KDoneHead) DrawDoneHead(g, r, top, i);
                 else DrawTask(g, r, top, i);
+                // Fading in is a veil of the card over the row: the card is one flat tone
+                if (a < 1f) g.FillRectangle(KitInk.BrushOf(Color.FromArgb((int)(255 * (1f - a)), TaskInk.Card)), 0, top, Width, r.H);
             }
             var bar = Bar();
             if (!bar.IsEmpty) TaskInk.Pill(g, bar, bar.Width / 2f, TaskInk.Fade(TaskInk.Card, KitInk.Text, dragBar ? 0.4f : 0.22f));
@@ -357,7 +463,7 @@ namespace Deskmate
             if (at >= 0)
             {
                 var r = rows[at];
-                Ring(g, RowRect(r.Y - scroll, r.H), TaskInk.RowRadius(RowInset, s));
+                Ring(g, RowRect(r.Y - scroll + Off(KeyOf(r)), r.H), TaskInk.RowRadius(RowInset, s));
             }
             g.ResetClip();
         }
@@ -416,9 +522,18 @@ namespace Deskmate
             }
 
             // Circle with a fill that grows from the middle
-            float p = Ease.OutCubic(CheckAmt(t));
+            float raw = CheckAmt(t);
+            bool closing = completing.Contains(t.Id);
+            if (closing && !check.ContainsKey(t.Id)) raw = 1f;
+            float p = Ease.OutCubic(raw);
             bool onCircle = cellHere && hoverCell == CCheck;
             var circle = geo.Circle;
+            // A small pop while the check fills
+            if (raw > 0f && raw < 1f)
+            {
+                float grow = circle.Width * 0.09f * (float)Math.Sin(Math.PI * raw);
+                circle = RectangleF.Inflate(circle, grow, grow);
+            }
             Color ring = TaskInk.Fade(onCircle ? KitInk.Sub : KitInk.Faint, KitInk.Accent, p);
             float stroke = 1.8f * s;
             var rc = RectangleF.Inflate(circle, -stroke / 2, -stroke / 2);
@@ -441,7 +556,21 @@ namespace Deskmate
                 bool hs = cellHere && hoverCell == CStar;
                 if (hs) TaskInk.Pill(g, RectangleF.Inflate(geo.Star, -1 * s, -1 * s), slotRadius, slotHover);
                 Color sc = t.Star ? KitInk.Accent : (hs ? KitInk.Text : fg);
-                KitInk.Draw(g, t.Star ? "\uE735" : "\uE734", Ink.Icons(15f * s), sc, geo.Star, ContentAlignment.MiddleCenter);
+                float pv;
+                if (pop.TryGetValue(t.Id, out pv))
+                {
+                    // The star swells and settles when it is toggled
+                    float k = 1f + 0.38f * (float)Math.Sin(Math.PI * Ease.OutCubic(pv));
+                    var keep = g.Transform;
+                    float cx = geo.Star.X + geo.Star.Width / 2f, cy = geo.Star.Y + geo.Star.Height / 2f;
+                    g.TranslateTransform(cx, cy);
+                    g.ScaleTransform(k, k);
+                    g.TranslateTransform(-cx, -cy);
+                    KitInk.Draw(g, t.Star ? "\uE735" : "\uE734", Ink.Icons(15f * s), sc, geo.Star, ContentAlignment.MiddleCenter);
+                    g.Transform = keep;
+                    keep.Dispose();
+                }
+                else KitInk.Draw(g, t.Star ? "\uE735" : "\uE734", Ink.Icons(15f * s), sc, geo.Star, ContentAlignment.MiddleCenter);
             }
             if (shown)
             {
@@ -486,7 +615,9 @@ namespace Deskmate
             // Title and the first line of the details
             var fTitle = Ink.Text(14.5f * s);
             float tw = Math.Max(20, right - geo.TitleLeft);
-            KitInk.Draw(g, t.Title, t.Done ? Strike(fTitle) : fTitle, t.Done ? KitInk.Faint : KitInk.Text, new RectangleF(geo.TitleLeft, first - 13 * s, tw, 26 * s), ContentAlignment.MiddleLeft);
+            bool struck = t.Done || (closing && p > 0.5f);
+            Color titleInk = t.Done ? KitInk.Faint : closing ? TaskInk.Fade(KitInk.Text, KitInk.Faint, p) : KitInk.Text;
+            KitInk.Draw(g, t.Title, struck ? Strike(fTitle) : fTitle, titleInk, new RectangleF(geo.TitleLeft, first - 13 * s, tw, 26 * s), ContentAlignment.MiddleLeft);
             string sub = t.Done ? "" : TaskInk.FirstLine(t.Notes);
             if (sub.Length > 0)
                 KitInk.Draw(g, sub, Ink.Text(12.5f * s), KitInk.Sub, new RectangleF(geo.TitleLeft, first + 8 * s, Math.Max(20, Width - geo.TitleLeft - 24 * s), 22 * s), ContentAlignment.MiddleLeft);

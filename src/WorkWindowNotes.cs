@@ -143,6 +143,8 @@ namespace Deskmate
             if (string.Equals(path, current, StringComparison.OrdinalIgnoreCase)) return;
             if (!SaveCurrent(true)) { RefreshNotes(current); return; }
             ShowNote(path);
+            // Saving the old note refreshed the list around the old path; point it at the new one
+            noteList.SelectPath(current);
         }
 
         void ShowNote(string path)
@@ -323,9 +325,19 @@ namespace Deskmate
             if (!SaveCurrent(true)) return;
             string target = path ?? current;
             if (target == null) return;
-            if (!KitAsk.Confirm(this, Lang.T("Hapus catatan ini?")) || owner.DriveNotesLoading) return;
+            bool quick = string.Equals(target, NoteFiles.QuickPath, StringComparison.OrdinalIgnoreCase);
+            // The quick-note file is shared with Ctrl+Alt+N, so it keeps the question; other notes get undo
+            if (quick && !KitAsk.Confirm(this, Lang.T("Hapus catatan ini?"))) return;
+            if (owner.DriveNotesLoading) return;
             saveTimer.Stop();
             string deleted = target;
+            string keptText;
+            if (!NoteFiles.TryRead(deleted, out keptText)) keptText = null;
+            NoteMeta keptMeta = GetMeta(deleted, false);
+            string keptColor = keptMeta != null ? keptMeta.Color ?? "" : "";
+            string keptLabels = keptMeta != null ? keptMeta.Labels ?? "" : "";
+            bool keptArchived = keptMeta != null && keptMeta.Archived;
+            bool keptPin = NoteFiles.IsPinned(pins, deleted);
             string delKey = NoteFiles.KeyOf(deleted);
             NoteMeta delMeta = GetMeta(deleted, false);
             if (delMeta == null || string.IsNullOrEmpty(delMeta.DriveId))
@@ -351,6 +363,69 @@ namespace Deskmate
             RefreshNotes(deleted);
             if (wasOpen) { if (notes.Count > 0) ShowNote(notes[0].Path); else ShowNote(null); }
             else if (current != null) ShowNote(current);
+            if (!quick && keptText != null)
+                ShowToast(Lang.T("Catatan dihapus"), delegate { RestoreNote(keptText, keptColor, keptLabels, keptArchived, keptPin); });
+        }
+
+        // Undo of a delete: the text comes back as a new note, so the removed one stays removed
+        // on Drive and the copy uploads like any new note
+        void RestoreNote(string text, string color, string labels, bool archived, bool pin)
+        {
+            if (owner.DriveNotesLoading || !SaveCurrent(true)) return;
+            string path = WriteNewNote(text, color, labels, archived, pin);
+            if (path == null) return;
+            if (noteArchiveFilter.Selected != (archived ? 1 : 0)) noteArchiveFilter.Selected = archived ? 1 : 0;
+            RefreshNotes(path);
+            ShowNote(path);
+            RefreshNotes(path);
+        }
+
+        string WriteNewNote(string text, string color, string labels, bool archived, bool pin)
+        {
+            string path;
+            try { path = NoteFiles.NewPath(); }
+            catch (Exception ex) { KitAsk.Notice(this, ex.Message); return null; }
+            if (!NoteFiles.Write(path, text ?? "")) { SaveError(true); return null; }
+            if (!string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(labels) || archived)
+            {
+                NoteMeta m = GetMeta(path, true);
+                m.Color = color ?? ""; m.Labels = labels ?? ""; m.Archived = archived;
+                m.UpdatedUtc = DateTime.UtcNow;
+                NoteFiles.SaveMeta(noteMeta);
+            }
+            if (pin) NoteFiles.SetPin(pins, path, true);
+            owner.ScheduleDriveNotesUpload();
+            return path;
+        }
+
+        void DuplicateNote(string path)
+        {
+            if (owner.DriveNotesLoading || string.IsNullOrEmpty(path)) return;
+            if (!SaveCurrent(true)) return;
+            string text;
+            if (!NoteFiles.TryRead(path, out text)) { KitAsk.Notice(this, Lang.T("Catatan tidak dapat dibaca.")); return; }
+            string nTitle, nBody;
+            if (string.Equals(path, NoteFiles.QuickPath, StringComparison.OrdinalIgnoreCase)) { nTitle = Lang.T("Catatan kilat"); nBody = text; }
+            else NoteFiles.SplitNote(text, out nTitle, out nBody);
+            if (string.IsNullOrWhiteSpace(nTitle)) nTitle = Lang.T("Tanpa judul");
+            NoteMeta m = GetMeta(path, false);
+            string copy = WriteNewNote(NoteFiles.JoinNote(Lang.F("{0} (salinan)", nTitle.Trim()), nBody), m != null ? m.Color : "", m != null ? m.Labels : "", false, false);
+            if (copy == null) return;
+            if (noteArchiveFilter.Selected != 0) noteArchiveFilter.Selected = 0;
+            RefreshNotes(copy);
+            ShowNote(copy);
+            RefreshNotes(copy);
+            noteTitleBox.Focus();
+            noteTitleBox.SelectAll();
+        }
+
+        void CopyNoteText(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            string text = string.Equals(path, current, StringComparison.OrdinalIgnoreCase) ? SerializeCurrentNote() : NoteFiles.Read(path);
+            if (string.IsNullOrEmpty(text)) return;
+            try { Clipboard.SetText(text); ShowToast(Lang.T("Disalin ke papan klip"), null); }
+            catch (Exception ex) { Log.Write("salin catatan: " + ex.Message); }
         }
 
         void ShowNoteContextMenu(NoteInfo n, Point screenPos)
@@ -363,6 +438,9 @@ namespace Deskmate
             bool archived = m != null && m.Archived;
             menu.Items.Add(pinned ? Lang.T("Lepas sematan") : Lang.T("Sematkan"), null, delegate { TogglePin(n.Path); });
             menu.Items.Add(archived ? Lang.T("Pulihkan") : Lang.T("Arsipkan"), null, delegate { ToggleArchive(n.Path); });
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(Lang.T("Duplikat"), null, delegate { DuplicateNote(n.Path); });
+            menu.Items.Add(Lang.T("Salin isi"), null, delegate { CopyNoteText(n.Path); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(Lang.T("Hapus"), null, delegate { DeleteNote(n.Path); });
             MenuLook.Apply(menu);
@@ -507,7 +585,8 @@ namespace Deskmate
         }
 
         void ToggleArchive() { ToggleArchive(current); }
-        void ToggleArchive(string path)
+        void ToggleArchive(string path) { ToggleArchive(path, true); }
+        void ToggleArchive(string path, bool offerUndo)
         {
             if (owner.DriveNotesLoading) return;
             if (string.IsNullOrEmpty(path)) return;
@@ -528,6 +607,20 @@ namespace Deskmate
             if (string.Equals(path, current, StringComparison.OrdinalIgnoreCase))
                 ShowNote(notes.Count > 0 ? notes[0].Path : null);
             owner.ScheduleDriveNotesUpload();
+            if (offerUndo)
+            {
+                string target = path;
+                ShowToast(m.Archived ? Lang.T("Catatan diarsipkan") : Lang.T("Catatan dipulihkan"), delegate
+                {
+                    ToggleArchive(target, false);
+                    if (System.IO.File.Exists(target))
+                    {
+                        RefreshNotes(target);
+                        bool listed = notes.Exists(x => string.Equals(x.Path, target, StringComparison.OrdinalIgnoreCase));
+                        if (listed) OpenNote(target);
+                    }
+                });
+            }
         }
 
         void ShowBlockMenu(bool fromSlash)

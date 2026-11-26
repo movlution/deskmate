@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 
@@ -310,12 +311,43 @@ namespace Deskmate
             return list == null || TaskLists.Same(TaskLists.NameOf(t), list);
         }
 
+        static Predicate<TodoItem> Where(string list, bool starred)
+        {
+            return t => InView(t, list, starred);
+        }
+
+        // Smart views. Today keeps overdue work in sight, as Google Tasks and To Do do
+        public static bool DueToday(TodoItem t)
+        {
+            return t != null && t.Due.HasValue && t.Due.Value.Date <= DateTime.Today;
+        }
+
+        public static bool Planned(TodoItem t) { return t != null && t.Due.HasValue; }
+
+        // Case-insensitive match on title and details; empty query matches everything
+        public static bool Matches(TodoItem t, string query)
+        {
+            if (t == null) return false;
+            if (string.IsNullOrWhiteSpace(query)) return true;
+            var c = CultureInfo.CurrentCulture.CompareInfo;
+            foreach (var word in query.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+                if (c.IndexOf(t.Title ?? "", word, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) < 0 &&
+                    c.IndexOf(t.Notes ?? "", word, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) < 0) return false;
+            return true;
+        }
+
         // Open tasks as rows: top level in sort order, subtasks (one indent) under their parent.
         // list null = every list, starred = only starred. collapsed hides a parent's subtasks
         public static List<TaskRow> Open(List<TodoItem> all, string list, bool starred, string sort, List<string> listOrder, HashSet<string> collapsed)
         {
+            return OpenWhere(all, list == null, Where(list, starred), sort, listOrder, collapsed);
+        }
+
+        // Same as Open with any filter. allLists orders the top level by list first
+        public static List<TaskRow> OpenWhere(List<TodoItem> all, bool allLists, Predicate<TodoItem> filter, string sort, List<string> listOrder, HashSet<string> collapsed)
+        {
             if (all == null) return new List<TaskRow>();
-            var cands = all.FindAll(t => t != null && !t.Done && InView(t, list, starred));
+            var cands = all.FindAll(t => t != null && !t.Done && (filter == null || filter(t)));
             var ids = new HashSet<string>();
             foreach (var t in cands) ids.Add(t.Id);
             var kids = new Dictionary<string, List<TodoItem>>();
@@ -332,7 +364,7 @@ namespace Deskmate
             }
             var cmp = Comparer(sort);
             Comparison<TodoItem> topCmp = cmp;
-            if (list == null && listOrder != null)
+            if (allLists && listOrder != null)
             {
                 topCmp = delegate(TodoItem a, TodoItem b)
                 {
@@ -370,8 +402,13 @@ namespace Deskmate
         // Completed tasks of the view, most recent first
         public static List<TodoItem> Done(List<TodoItem> all, string list, bool starred)
         {
+            return DoneWhere(all, Where(list, starred));
+        }
+
+        public static List<TodoItem> DoneWhere(List<TodoItem> all, Predicate<TodoItem> filter)
+        {
             if (all == null) return new List<TodoItem>();
-            var d = all.FindAll(t => t != null && t.Done && InView(t, list, starred));
+            var d = all.FindAll(t => t != null && t.Done && (filter == null || filter(t)));
             d.Sort(delegate(TodoItem a, TodoItem b)
             {
                 int c = (b.DoneAt ?? b.Created).CompareTo(a.DoneAt ?? a.Created);
@@ -382,9 +419,14 @@ namespace Deskmate
 
         public static int OpenCount(List<TodoItem> all, string list, bool starred)
         {
+            return CountWhere(all, Where(list, starred));
+        }
+
+        public static int CountWhere(List<TodoItem> all, Predicate<TodoItem> filter)
+        {
             if (all == null) return 0;
             int n = 0;
-            foreach (var t in all) if (t != null && !t.Done && InView(t, list, starred)) n++;
+            foreach (var t in all) if (t != null && !t.Done && (filter == null || filter(t))) n++;
             return n;
         }
 
@@ -522,17 +564,48 @@ namespace Deskmate
             return true;
         }
 
-        // Removes the task and its subtasks; each Google id is queued for deletion. Returns how many went
-        public static int Delete(List<TodoItem> all, TodoItem t)
+        // The task and every subtask below it, parent first
+        public static List<TodoItem> Subtree(List<TodoItem> all, TodoItem t)
         {
-            if (all == null || t == null) return 0;
             var gone = new List<TodoItem>();
+            if (all == null || t == null) return gone;
             gone.Add(t);
             var seen = new HashSet<string>();
             seen.Add(t.Id);
             for (int i = 0; i < gone.Count; i++)
                 foreach (var c in Children(all, gone[i]))
                     if (seen.Add(c.Id)) gone.Add(c);
+            return gone;
+        }
+
+        // A copy right below the original, in the same list and under the same parent
+        public static TodoItem Duplicate(List<TodoItem> all, TodoItem t)
+        {
+            if (all == null || t == null || !all.Contains(t)) return null;
+            var copy = new TodoItem
+            {
+                Title = t.Title,
+                Notes = t.Notes,
+                Due = t.Due,
+                Star = t.Star,
+                ListName = t.ListName,
+                ParentId = t.ParentId ?? "",
+                UpdatedUtc = DateTime.UtcNow,
+                Dirty = true
+            };
+            var sib = Siblings(all, t);
+            sib.Insert(sib.IndexOf(t) + 1, copy);
+            for (int n = 0; n < sib.Count; n++) sib[n].Position = n;
+            all.Add(copy);
+            Touch(copy, true);
+            return copy;
+        }
+
+        // Removes the task and its subtasks; each Google id is queued for deletion. Returns how many went
+        public static int Delete(List<TodoItem> all, TodoItem t)
+        {
+            if (all == null || t == null) return 0;
+            var gone = Subtree(all, t);
             foreach (var g in gone)
             {
                 if (!string.IsNullOrEmpty(g.GoogleTaskId)) TodoFile.AddDeletedGoogle(g.GoogleListId, g.GoogleTaskId);
