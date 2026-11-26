@@ -20,6 +20,15 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.17.0",
+                Items = new[]
+                {
+                    new[] { "Jendela seperti tumpukan kartu", "Buka, pindah, pulihkan, atau tutup jendela lewat Dock dengan animasi kartu. Tombol minimize di jendela juga mengirim kartu ke Dock.", "" },
+                    new[] { "Chat room pet lebih mudah dibaca", "Pesan tampil dalam gelembung. Tombol Pesan baru membawa kamu ke bagian terbaru saat sedang membaca riwayat.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.16.0",
                 Items = new[]
                 {

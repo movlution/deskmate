@@ -96,6 +96,12 @@ namespace Deskmate
             AddPetText(en, "Teman", "Friend");
             AddPetText(en, "Chat room", "Room chat");
             AddPetText(en, "Belum ada pesan. Sapa temanmu!", "No messages yet. Say hi!");
+            AddPetText(en, "Tulis pesan…", "Write a message…");
+            AddPetText(en, "Enter kirim · Esc tutup", "Enter to send · Esc to close");
+            AddPetText(en, "Hati", "Heart");
+            AddPetText(en, "Kilau", "Sparkle");
+            AddPetText(en, "Nada", "Music");
+            AddPetText(en, "Kaget", "Surprise");
             AddPetText(en, "{0} masuk room", "{0} joined");
             AddPetText(en, "{0} keluar room", "{0} left");
             AddPetText(en, "Rusuh di layar teman", "Mess with your friend's screen");

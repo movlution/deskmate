@@ -33,7 +33,8 @@ namespace Deskmate
             TestPrankCooldown();
             TestNameTag();
             TestRoomChatLog();
-            return "PetLinkCheck OK (prank routing, prank cooldown, name tag, room chat log, invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
+            TestChatWordDelete();
+            return "PetLinkCheck OK (chat word delete, prank routing, prank cooldown, name tag, room chat log, invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
         }
 
         // The room chat history: follows the newest message, stays put once scrolled up, and draws without a window
@@ -62,6 +63,58 @@ namespace Deskmate
                 log.Added();
                 Assert(log.ScrollOffset == log.ContentHeight - 120, "back at the bottom, it follows again");
                 log.DrawToBitmap(bmp, new Rectangle(0, 0, 300, 120));
+
+                // A friend's line while reading older ones: held in place, the new-message pill shows
+                log.ScrollBy(-80);
+                lines.Add(new Island.PetChatLine { Sender = "Budi", Text = "halo", At = DateTime.Now });
+                log.Added();
+                Assert(log.Unseen, "unread friend message raises the pill");
+                log.DrawToBitmap(bmp, new Rectangle(0, 0, 300, 120));
+                // Your own line always brings the view back down
+                lines.Add(new Island.PetChatLine { Sender = "Faris", Text = "balas", Mine = true, At = DateTime.Now });
+                log.Added();
+                Assert(!log.Unseen && log.ScrollOffset == log.ContentHeight - 120, "sending snaps to the newest message");
+
+                // An unbroken link or laugh still wraps inside the bubble
+                lines.Add(new Island.PetChatLine { Sender = "Budi", Text = "wkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwkwk https://example.com/" + new string('a', 80), At = DateTime.Now });
+                log.Added();
+                Assert(log.WidestText <= log.TextLimit, "long words wrap inside the bubble: " + log.WidestText + " > " + log.TextLimit);
+
+                lines.Clear();
+                log.Added();
+                Assert(log.ContentHeight == 0 && !log.Unseen, "cleared history is empty and has no pill");
+            }
+        }
+
+        sealed class WordBox : KitText
+        {
+            public void Press(Keys k) { OnKeyDown(new KeyEventArgs(k)); }
+        }
+
+        // The chat composer is a KitText: Ctrl+Backspace and Ctrl+Delete remove one word at the caret
+        static void TestChatWordDelete()
+        {
+            using (var box = new WordBox())
+            {
+                box.Text = "akuu sarapan dlu mas";
+                box.Select(box.TextLength, 0);
+                box.Press(Keys.Control | Keys.Back);
+                Assert(box.Text == "akuu sarapan dlu ", "Ctrl+Backspace removes the last word: " + box.Text);
+                box.Press(Keys.Control | Keys.Back);
+                Assert(box.Text == "akuu sarapan ", "Ctrl+Backspace skips the space, then removes a word: " + box.Text);
+                box.Text = "halo, teman";
+                box.Select(box.TextLength, 0);
+                box.Press(Keys.Control | Keys.Back);
+                box.Press(Keys.Control | Keys.Back);
+                Assert(box.Text == "halo", "punctuation goes as its own word: " + box.Text);
+                box.Text = "satu dua tiga";
+                box.Select(0, 0);
+                box.Press(Keys.Control | Keys.Delete);
+                Assert(box.Text == " dua tiga", "Ctrl+Delete removes the next word: " + box.Text);
+                box.Text = "satu dua tiga";
+                box.Select(5, 3);
+                box.Press(Keys.Control | Keys.Back);
+                Assert(box.Text == "satu  tiga", "with a selection, only the selection goes: " + box.Text);
             }
         }
 

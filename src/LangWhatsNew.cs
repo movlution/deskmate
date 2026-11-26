@@ -8,6 +8,11 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.17.0
+            en.Add("Jendela seperti tumpukan kartu", "Windows move like a deck of cards");
+            en.Add("Buka, pindah, pulihkan, atau tutup jendela lewat Dock dengan animasi kartu. Tombol minimize di jendela juga mengirim kartu ke Dock.", "Open, switch, restore, or close windows from the Dock with card animations. The window's minimize button also sends its card to the Dock.");
+            en.Add("Chat room pet lebih mudah dibaca", "Pet room chat is easier to read");
+            en.Add("Pesan tampil dalam gelembung. Tombol Pesan baru membawa kamu ke bagian terbaru saat sedang membaca riwayat.", "Messages appear in bubbles. The New message button jumps to the latest messages when you're reading history.");
             // What's new 2.16.0
             en.Add("Chat bersama teman", "Chat with friends");
             en.Add("Chat pet kini menjadi chat room dengan riwayat bersama, dan nama pemilik tampil di atas setiap pet.", "Pet chat is now a room chat with a shared history, and each owner's name shows above every pet.");

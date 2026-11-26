@@ -302,7 +302,9 @@ namespace Deskmate
             else if (lostUtc != DateTime.MinValue && (now - lostUtc).TotalSeconds > 1)
             {
                 lostUtc = DateTime.MinValue;
-                if ((now - sentUtc).TotalSeconds > 60) Broadcast();
+                // Icons added or removed while Explorer held the spot only reached Explorer;
+                // ask again unless we just did
+                if ((now - sentUtc).TotalSeconds > 5) Broadcast();
             }
             if ((now - sweepUtc).TotalSeconds > 5)
             {
@@ -490,14 +492,38 @@ namespace Deskmate
     static class TrayPromo
     {
         sealed class Entry { public string Exe = ""; public long Uid = -1; public int Promoted = -1; }
-        static List<Entry> entries = new List<Entry>();
-        static DateTime readUtc = DateTime.MinValue;
+        static volatile List<Entry> entries = new List<Entry>();
+        static string entriesSig = "";
+        static long readTicks;
+        static int reading;
 
-        public static void Invalidate() { readUtc = DateTime.MinValue; }
+        // A background read changed what shows; raised off the UI thread
+        public static event Action Updated;
+
+        public static void Invalidate() { Interlocked.Exchange(ref readTicks, 0); Refresh(); }
+
+        // Reads the registry on the thread pool once the last read is 10 s old. Painting
+        // never waits on it: callers use the entries they have, and Updated follows.
+        public static void Refresh()
+        {
+            long now = DateTime.UtcNow.Ticks;
+            if (now - Interlocked.Read(ref readTicks) < TimeSpan.TicksPerSecond * 10) return;
+            if (Interlocked.CompareExchange(ref reading, 1, 0) != 0) return;
+            Interlocked.Exchange(ref readTicks, now);
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                bool changed = false;
+                try { changed = Read(); }
+                catch (Exception ex) { Log.Write("tray promo: " + ex.Message); }
+                finally { Interlocked.Exchange(ref reading, 0); }
+                var h = Updated;
+                if (changed && h != null) h();
+            });
+        }
 
         public static bool Promoted(TrayIcon ic)
         {
-            if ((DateTime.UtcNow - readUtc).TotalSeconds > 10) Read();
+            Refresh();
             Entry any = null;
             foreach (var e in entries)
             {
@@ -508,9 +534,9 @@ namespace Deskmate
             return any != null && any.Promoted == 1;
         }
 
-        static void Read()
+        // Pool thread only; true when the promoted set differs from the last read
+        static bool Read()
         {
-            readUtc = DateTime.UtcNow;
             var list = new List<Entry>();
             try
             {
@@ -528,7 +554,13 @@ namespace Deskmate
                             }
             }
             catch (Exception ex) { Log.Write("tray promo: " + ex.Message); }
+            var sb = new StringBuilder();
+            foreach (var e in list) sb.Append(e.Exe).Append('|').Append(e.Uid).Append('|').Append(e.Promoted).Append('\n');
+            string sig = sb.ToString();
             entries = list;
+            if (sig == entriesSig) return false;
+            entriesSig = sig;
+            return true;
         }
     }
 }
