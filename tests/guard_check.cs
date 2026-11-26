@@ -131,13 +131,16 @@ namespace Deskmate
             {
                 try
                 {
+                    // The child inherits this process's priority (Below Normal on CI runners),
+                    // so the promise checked is "restores what it was", not "restores Normal"
+                    var start = child.PriorityClass;
                     uint was = GuardNative.SetEco(child.Id, true, 0);
-                    Assert(was == GuardNative.Normal, "eco mode applied, old priority normal: " + was);
+                    Assert(was == (uint)start, "eco mode applied, returns the starting priority " + (uint)start + ": " + was);
                     child.Refresh();
                     Assert(child.PriorityClass == ProcessPriorityClass.Idle, "idle priority while in eco mode");
                     Assert(GuardNative.SetEco(child.Id, false, was) != 0, "eco mode removed");
                     child.Refresh();
-                    Assert(child.PriorityClass == ProcessPriorityClass.Normal, "normal priority restored");
+                    Assert(child.PriorityClass == start, "starting priority restored: " + child.PriorityClass);
                     Assert(GuardNative.Friendly(child.Id, "PING.EXE").Length > 0, "friendly name");
                 }
                 finally { try { child.Kill(); } catch (Exception) { } }

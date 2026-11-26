@@ -142,6 +142,8 @@ namespace Deskmate
         public string[] Items = new string[0];
         int selected;
         public event Action<int> Changed;
+        // Just before the menu opens: a chance to refresh Items and Selected
+        public event Action Opening;
 
         public int Selected { get { return selected; } set { selected = value; Text = (value >= 0 && value < Items.Length ? Items[value] : "") + "  ▾"; } }
 
@@ -156,6 +158,8 @@ namespace Deskmate
         protected override void OnClick(EventArgs e)
         {
             base.OnClick(e);
+            var o = Opening;
+            if (o != null) o();
             var m = new ContextMenuStrip();
             for (int i = 0; i < Items.Length; i++)
             {

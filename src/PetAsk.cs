@@ -20,7 +20,7 @@ namespace Deskmate
             get
             {
                 string kind = settings.Get("pet.kind", "cat");
-                return kind == "dog" ? Lang.T("Anjing") : kind == "cat" ? Lang.T("Kucing") : kind.StartsWith("custom:", StringComparison.Ordinal) ? kind.Substring(7) : "Pet";
+                return kind == "dog" ? Lang.T("Anjing") : kind == "chao" ? Lang.T("Chao") : kind == "cat" ? Lang.T("Kucing") : kind.StartsWith("custom:", StringComparison.Ordinal) ? kind.Substring(7) : "Pet";
             }
         }
 
@@ -87,7 +87,7 @@ namespace Deskmate
         {
             if (Ai.Ready(Ai.Text))
             {
-                string animal = kind == "dog" ? "dog" : kind == "cat" ? "cat" : "pet";
+                string animal = kind == "dog" ? "dog" : kind == "chao" ? "cute fantasy fairy-like anime spirit (Chao)" : kind == "cat" ? "cat" : "pet";
                 string system = "You are " + name + ", the user's little " + animal + " living on their Windows desktop dock, and their personal Deskmate assistant with full control over all Deskmate features (Tasks, Notes, Calendar, Reminders, Timers, Media, Control Center, Shelf, Clipboard, Integrations, Utilities, Settings" +
                     (memory ? ", and Ingatan activity memory via read_deskmate(section='activity')" : "") + "). " +
                     "Be warm, playful, and brief: 1-3 short sentences, plain text, no Markdown, at most one emoji. Reply in the user's language. " +

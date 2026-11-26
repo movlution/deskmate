@@ -31,8 +31,8 @@ Describe "Tier 1 Feature Suite: Desktop Pet" {
         }
     }
 
-    It "1. Built-in cat and dog: 20 opaque cells per facing, left row mirrors right, paws on row 19" {
-        foreach ($kind in "cat", "dog") {
+    It "1. Built-in cat, dog, and chao: 20 opaque cells per facing, left row mirrors right, paws on row 19" {
+        foreach ($kind in "cat", "dog", "chao") {
         $sheet = $sheetType.GetMethod("BuiltIn").Invoke($null, @([string]$kind, "orange"))
         Assert-Equal $sheet.Count 20 "$kind must have 20 frames"
         Assert-Equal $sheet.W 24 "$kind has native 24 px detail"

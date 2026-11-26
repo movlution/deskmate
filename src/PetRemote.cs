@@ -44,9 +44,10 @@ namespace Deskmate
             petRoom.PeerJoined += p => RunOnUi(() => OnRemotePeerJoined(p));
             petRoom.PeerProfileUpdated += p => RunOnUi(() => OnRemotePeerUpdated(p));
             petRoom.PeerLeft += id => RunOnUi(() => OnRemotePeerLeft(id));
-            petRoom.PeerStateReceived += (id, x, dir, mode, hop) => RunOnUi(() => OnRemotePeerState(id, x, dir, mode, hop));
+            petRoom.PeerStateReceived += (id, x, dir, mode, hop, v) => RunOnUi(() => OnRemotePeerState(id, x, dir, mode, hop, v));
             petRoom.ChatReceived += (id, text, emote) => RunOnUi(() => OnRemoteChatReceived(id, text, emote));
             petRoom.EmoteReceived += (id, emote) => RunOnUi(() => OnRemoteEmoteReceived(id, emote));
+            petRoom.PrankReceived += (id, kind) => RunOnUi(() => OnRemotePrankReceived(id, kind));
             petRoom.CustomAssetReady += (id, hash, json, png) => RunOnUi(() => OnRemoteCustomAssetReady(id, hash, json, png));
             return petRoom;
         }
@@ -114,6 +115,7 @@ namespace Deskmate
             var prof = BuildLocalPetProfile(out dir);
             var room = EnsurePetRoom();
             room.AllowCustomAssets = PetAllowCustomReceive;
+            ClearPetChatLog();
             room.StartHost(prof, dir, useCloudflareTunnel);
         }
 
@@ -124,6 +126,7 @@ namespace Deskmate
             var prof = BuildLocalPetProfile(out dir);
             var room = EnsurePetRoom();
             room.AllowCustomAssets = PetAllowCustomReceive;
+            ClearPetChatLog();
             room.StartJoin(inviteCode, prof, dir);
         }
 
@@ -132,6 +135,9 @@ namespace Deskmate
             if (petRoom != null) petRoom.Stop();
             CloseRemotePets();
             ClosePetChatUi();
+            ClosePrankOverlay();
+            // The history lives only as long as the room
+            ClearPetChatLog();
         }
 
         internal void SyncLocalPetProfile()
@@ -141,12 +147,13 @@ namespace Deskmate
             string dir;
             var prof = BuildLocalPetProfile(out dir);
             petRoom.SetLocalProfile(prof, dir);
+            RefreshPetNameTags();
         }
 
-        internal void PublishLocalPetState(double xNorm, int dir, int mode, bool hop, bool force)
+        internal bool PublishLocalPetState(double xNorm, int dir, int mode, bool hop, bool force, double v = 0)
         {
-            if (petRoom != null && petRoom.Mode == PetRoomMode.Connected)
-                petRoom.SendState(xNorm, dir, mode, hop, force);
+            return petRoom != null && petRoom.Mode == PetRoomMode.Connected &&
+                petRoom.SendState(xNorm, dir, mode, hop, force, v);
         }
 
         internal void SendPetChat(string text, int emote)
@@ -156,6 +163,7 @@ namespace Deskmate
             if (clean.Length == 0) return;
 
             petRoom.SendChat(clean, emote);
+            LogPetChat(PetDisplayName, clean, true);
             if (pet != null && !pet.IsDisposed)
             {
                 pet.ShowChatBubble(PetDisplayName, clean, false, () => OpenPetChatInput(pet));
@@ -175,9 +183,14 @@ namespace Deskmate
             if (!PetRoomConnected || anchor == null || anchor.IsDisposed || !anchor.CanShowBubble) return;
             ClosePetChatUi();
             var target = pet != null && !pet.IsDisposed && pet.CanShowBubble ? pet : anchor;
+            // Opened from a friend's pet: that friend can also be pranked
+            string prankPeer = anchor.IsRemote ? anchor.PeerId : null;
+            Action<PetPrank> onPrank = null;
+            if (!string.IsNullOrEmpty(prankPeer)) onPrank = kind => SendPetPrank(prankPeer, kind);
             petChatInput = new PetChatInput(target.UiScale, target.WorkArea.Width,
                 (text, emote) => SendPetChat(text, emote),
-                em => SendPetEmote(em));
+                em => SendPetEmote(em), null, onPrank, PrankLabel,
+                onPrank != null ? () => PrankWait(prankPeer) : (Func<int>)null, petChatLog);
             petChatInput.FormClosed += delegate { petChatInput = null; };
             if (!petChatInput.MoveAbove(target.WorkArea, new Point(target.DrawnCenterX, target.BubbleAnchorY)))
             {
@@ -199,6 +212,7 @@ namespace Deskmate
         {
             var h = PetRoomChanged;
             if (h != null) h();
+            RefreshPetNameTags();
             if (petRoom != null && petRoom.Mode == PetRoomMode.Connected && pet != null && !pet.IsDisposed)
                 PublishLocalPetState(pet.NormX, 1, 0, false, true);
         }
@@ -206,6 +220,8 @@ namespace Deskmate
         void OnRemotePeerJoined(PetPeerProfile profile)
         {
             if (!PetOn || profile == null || string.IsNullOrEmpty(profile.Id)) return;
+            if (!remoteProfiles.ContainsKey(profile.Id))
+                LogPetChat("", string.Format(Lang.T("{0} masuk room"), string.IsNullOrEmpty(profile.Name) ? Lang.T("Teman") : profile.Name), false, true);
             remoteProfiles[profile.Id] = profile;
 
             PetWindow win;
@@ -235,6 +251,7 @@ namespace Deskmate
             {
                 win.PeerName = profile.Name;
                 win.Use(ResolvePeerSheet(profile, true), SizePx(profile.Size), 100);
+                win.RefreshNameTag();
             }
 
             if (pet != null && !pet.IsDisposed)
@@ -250,11 +267,15 @@ namespace Deskmate
             {
                 win.PeerName = profile.Name;
                 win.Use(ResolvePeerSheet(profile, true), SizePx(profile.Size), 100);
+                win.RefreshNameTag();
             }
         }
 
         void OnRemotePeerLeft(string peerId)
         {
+            PetPeerProfile gone;
+            if (remoteProfiles.TryGetValue(peerId, out gone))
+                LogPetChat("", string.Format(Lang.T("{0} keluar room"), string.IsNullOrEmpty(gone.Name) ? Lang.T("Teman") : gone.Name), false, true);
             remoteProfiles.Remove(peerId);
             pendingPeerAssets.Remove(peerId);
             PetWindow win;
@@ -265,7 +286,7 @@ namespace Deskmate
             }
         }
 
-        void OnRemotePeerState(string peerId, double xNorm, int dir, int mode, bool hop)
+        void OnRemotePeerState(string peerId, double xNorm, int dir, int mode, bool hop, double v)
         {
             PetWindow win;
             if (!remotePets.TryGetValue(peerId, out win) || win.IsDisposed) return;
@@ -274,15 +295,19 @@ namespace Deskmate
             if (petRoom != null && pendingPeerAssets.TryGetValue(peerId, out waiting))
                 petRoom.RequestCustomAsset(peerId, waiting);
             PetMode m = (mode >= 0 && mode <= (int)PetMode.Scratch) ? (PetMode)mode : PetMode.Idle;
-            win.ApplyRemoteState(xNorm, dir, m, hop);
+            win.ApplyRemoteState(xNorm, dir, m, hop, v);
         }
 
         void OnRemoteChatReceived(string peerId, string text, int emote)
         {
             PetWindow win;
-            if (!remotePets.TryGetValue(peerId, out win) || win.IsDisposed) return;
             PetPeerProfile prof;
-            string sender = remoteProfiles.TryGetValue(peerId, out prof) ? prof.Name : (win.PeerName ?? "Teman");
+            bool hasWin = remotePets.TryGetValue(peerId, out win) && !win.IsDisposed;
+            string sender = remoteProfiles.TryGetValue(peerId, out prof) && !string.IsNullOrEmpty(prof.Name) ? prof.Name
+                : hasWin && !string.IsNullOrEmpty(win.PeerName) ? win.PeerName : Lang.T("Teman");
+            // Every message goes in the room's history, even when that friend's pet isn't on screen
+            LogPetChat(sender, text, false);
+            if (!hasWin) return;
 
             // Turn both pets to face each other when chatting
             if (pet != null && !pet.IsDisposed)
@@ -376,7 +401,7 @@ namespace Deskmate
                     }
                 }
             }
-            return PetSheet.BuiltIn(profile.Kind == "dog" ? "dog" : "cat", profile.Color ?? "orange");
+            return PetSheet.BuiltIn(PetSheet.NormalizeBuiltInKind(profile.Kind), profile.Color ?? "orange");
         }
 
         static int SizePx(string size) { return size == "s" ? 32 : size == "l" ? 64 : 48; }

@@ -29,7 +29,67 @@ namespace Deskmate
             TestAssetHashAndSignature();
             TestSlowGuestDoesNotBlockHost();
             TestClientSendsInOrder();
-            return "PetLinkCheck OK (invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
+            TestPrankRouting();
+            TestPrankCooldown();
+            TestNameTag();
+            TestRoomChatLog();
+            return "PetLinkCheck OK (prank routing, prank cooldown, name tag, room chat log, invite, cloudflared parser, RFC6455 host/client, PIN rejection, state/chat, host disconnect, lazy custom pet asset, host copy-button layout, relay filter, connection cap, cache hash, cloudflared signature, stalled guest, ordered sends)";
+        }
+
+        // The room chat history: follows the newest message, stays put once scrolled up, and draws without a window
+        static void TestRoomChatLog()
+        {
+            var lines = new List<Island.PetChatLine>();
+            using (var log = new Island.PetChatLog(lines, 1f, Color.Black, Color.White, true) { Size = new Size(300, 120) })
+            using (var bmp = new Bitmap(300, 120))
+            {
+                log.Added();
+                Assert(log.ContentHeight == 0, "empty history has no height");
+                log.DrawToBitmap(bmp, new Rectangle(0, 0, 300, 120));
+                lines.Add(new Island.PetChatLine { Sender = "", Text = "Budi joined", Notice = true, At = DateTime.Now });
+                for (int i = 0; i < 12; i++)
+                    lines.Add(new Island.PetChatLine { Sender = i % 2 == 0 ? "Faris" : "Budi", Text = "pesan nomor " + i + " yang cukup panjang untuk dibungkus ke baris berikutnya", Mine = i % 2 == 0, At = DateTime.Now });
+                log.Added();
+                Assert(log.ContentHeight > 120, "many messages overflow the view");
+                Assert(log.ScrollOffset == log.ContentHeight - 120, "view follows the newest message");
+                log.ScrollBy(-50);
+                int held = log.ScrollOffset;
+                lines.Add(new Island.PetChatLine { Sender = "Budi", Text = "baru", At = DateTime.Now });
+                log.Added();
+                Assert(log.ScrollOffset == held, "scrolled-up view is not yanked down by a new message");
+                log.ScrollBy(100000);
+                lines.Add(new Island.PetChatLine { Sender = "Budi", Text = "lagi", At = DateTime.Now });
+                log.Added();
+                Assert(log.ScrollOffset == log.ContentHeight - 120, "back at the bottom, it follows again");
+                log.DrawToBitmap(bmp, new Rectangle(0, 0, 300, 120));
+            }
+        }
+
+        // The room name tag: drawn off-screen only, sized by its text and scale, hidden on request
+        static void TestNameTag()
+        {
+            var owner = new Form { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(-32000, -32000, 1, 1) };
+            var tag = new Island.PetNameTag();
+            try
+            {
+                tag.Put("Faris", 1f, -30000, -30000, owner);
+                Size small = tag.TagSize;
+                Assert(small.Width > 0 && small.Height > 0, "name tag has a size");
+                Assert(tag.Showing, "name tag shows");
+                tag.Put("Faris dan kucingnya", 1f, -30000, -30000, owner);
+                Assert(tag.TagSize.Width > small.Width, "longer name, wider tag");
+                Assert(tag.TagSize.Height == small.Height, "one line tall either way");
+                tag.Put("Faris", 2f, -30000, -30000, owner);
+                Assert(tag.TagSize.Height > small.Height, "tag follows the monitor scale");
+                tag.Conceal();
+                Assert(!tag.Showing, "name tag hides");
+            }
+            finally
+            {
+                tag.Close();
+                tag.Dispose();
+                owner.Dispose();
+            }
         }
 
         // A guest may only send peer traffic; room, join, leave and err must never reach other guests
@@ -71,6 +131,79 @@ namespace Deskmate
                     a.Send(PetPacket.EncodeChat("", "marker", -1));
                     Assert(markerAtB.Wait(5000), "legit chat still relayed after forbidden types");
                     lock (seenAtB) Assert(seenAtB.Count == 0, "forbidden types relayed: " + string.Join(",", seenAtB.ToArray()));
+                }
+            }
+        }
+
+        // One prank per friend per cooldown; friends are counted apart
+        static void TestPrankCooldown()
+        {
+            var gate = new PetPrankGate();
+            var t0 = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            int cd = (int)PetPrankGate.Cooldown.TotalSeconds;
+            Assert(gate.SecondsLeft("a", t0) == 0, "fresh friend is ready");
+            Assert(gate.TryUse("a", t0), "first prank goes through");
+            Assert(!gate.TryUse("a", t0.AddSeconds(1)), "second prank right after is blocked");
+            Assert(gate.SecondsLeft("a", t0.AddSeconds(1)) == cd - 1, "countdown rounds up");
+            Assert(gate.SecondsLeft("a", t0.AddSeconds(cd - 0.2)) == 1, "last fraction still shows 1 s");
+            Assert(gate.TryUse("b", t0.AddSeconds(1)), "another friend has its own cooldown");
+            Assert(!gate.TryUse("a", t0.AddSeconds(cd - 0.01)), "still blocked just before the end");
+            Assert(gate.TryUse("a", t0.AddSeconds(cd)), "allowed again once the cooldown is over");
+            Assert(!gate.TryUse("", t0) && !gate.TryUse(null, t0), "no key, no prank");
+        }
+
+        // A prank goes only to the friend it names (or the host), never to the rest of the room
+        static void TestPrankRouting()
+        {
+            using (var host = new PetHost())
+            {
+                host.Start(new PetPeerProfile { Name = "Host" }, false, 0);
+                var wsUri = new Uri("ws://127.0.0.1:" + host.Port + "/ws");
+                string bId = null;
+                var bReady = new ManualResetEventSlim(false);
+                var cReady = new ManualResetEventSlim(false);
+                var aReady = new ManualResetEventSlim(false);
+                var prankAtB = new ManualResetEventSlim(false);
+                var markerAtC = new ManualResetEventSlim(false);
+                var prankAtHost = new ManualResetEventSlim(false);
+                int prankAtC = 0, prankKindAtB = -1;
+                string prankFromAtB = null;
+                host.MessageFromGuest += (id, msg) => { if (PetPacket.Str(msg, "t") == "prank" && PetPacket.Int(msg, "kind") == 3) prankAtHost.Set(); };
+                using (var a = new PetLinkClient())
+                using (var b = new PetLinkClient())
+                using (var c = new PetLinkClient())
+                {
+                    string aId = null;
+                    a.MessageReceived += msg => { if (PetPacket.Str(msg, "t") == "room") { aId = PetPacket.Str(msg, "yourId"); aReady.Set(); } };
+                    b.MessageReceived += msg =>
+                    {
+                        string t = PetPacket.Str(msg, "t");
+                        if (t == "room") { bId = PetPacket.Str(msg, "yourId"); bReady.Set(); }
+                        else if (t == "prank") { prankKindAtB = PetPacket.Int(msg, "kind", -1); prankFromAtB = PetPacket.Str(msg, "id"); prankAtB.Set(); }
+                    };
+                    c.MessageReceived += msg =>
+                    {
+                        string t = PetPacket.Str(msg, "t");
+                        if (t == "room") cReady.Set();
+                        else if (t == "prank") Interlocked.Increment(ref prankAtC);
+                        else if (t == "chat" && PetPacket.Str(msg, "text") == "after") markerAtC.Set();
+                    };
+                    b.Connect(wsUri, host.Pin, new PetPeerProfile { Name = "B" });
+                    Assert(bReady.Wait(5000), "B joined");
+                    c.Connect(wsUri, host.Pin, new PetPeerProfile { Name = "C" });
+                    Assert(cReady.Wait(5000), "C joined");
+                    a.Connect(wsUri, host.Pin, new PetPeerProfile { Name = "A" });
+                    Assert(aReady.Wait(5000), "A joined");
+
+                    a.Send(PetPacket.EncodePrank("spoofed", bId, (int)PetPrank.Fire));
+                    a.Send(PetPacket.EncodePrank("", host.HostId, (int)PetPrank.Snow));
+                    a.Send(PetPacket.EncodeChat("", "after", -1));
+                    Assert(prankAtB.Wait(5000), "B got the prank aimed at it");
+                    Assert(prankKindAtB == (int)PetPrank.Fire, "prank kind kept");
+                    Assert(prankFromAtB == aId, "host stamps the real sender id");
+                    Assert(prankAtHost.Wait(5000), "host got the prank aimed at it");
+                    Assert(markerAtC.Wait(5000), "C still gets room chat");
+                    Assert(prankAtC == 0, "prank leaked to a bystander");
                 }
             }
         }

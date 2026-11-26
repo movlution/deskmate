@@ -210,9 +210,11 @@ namespace Deskmate
                 isle.volume.Set(Ease.Clamp01(isle.vol + step));
             }
 
-            // Click always brings the app forward, never minimizes it;
-            // a second click on the front app moves to its next window
-            void OpenApp(DockApp a, bool fromCard)
+            // Like the Windows taskbar: a click on the app in front minimizes its front
+            // window; otherwise the app comes forward. The dock never takes focus, so the
+            // foreground window is still the app's at click time. Menus pass minimizeFront
+            // false: they only ever focus or open.
+            void OpenApp(DockApp a, bool fromCard, bool minimizeFront)
             {
                 bool shift = (ModifierKeys & Keys.Shift) != 0, ctrl = (ModifierKeys & Keys.Control) != 0;
                 if (!a.Running || shift) { Launch(a, shift && ctrl); return; }
@@ -220,6 +222,12 @@ namespace Deskmate
                 var live = a.Wins.FindAll(w => ShellApp.WindowExists(w.H));
                 if (live.Count == 0) { Launch(a, false); return; }
                 int at = live.FindIndex(w => w.H == fg);
+                if (minimizeFront && at >= 0 && !ShellApp.IsMinimized(fg))
+                {
+                    ShellApp.Minimize(fg);
+                    if (!fromCard) CloseCard();
+                    return;
+                }
                 var recent = a.Recent();
                 var next = at >= 0 ? live[(at + 1) % live.Count] :
                     recent != null && live.Contains(recent) ? recent : live[0];
@@ -286,7 +294,7 @@ namespace Deskmate
             internal AppSheet CurrentAppSheet { get { return sheet as AppSheet; } }
             internal void OpenAppMenu(DockApp a) { AppMenu(a); }
             public void LaunchApp(DockApp a, bool admin) { Launch(a, admin); }
-            internal void FocusOrOpenApp(DockApp a) { OpenApp(a, false); }
+            internal void FocusOrOpenApp(DockApp a) { OpenApp(a, false, false); }
             internal void PinApp(DockApp a) { Pin(a, -1); }
             internal void UnpinApp(DockApp a) { Unpin(a); }
             internal void EndApp(DockApp a) { EndDockApp(a); }

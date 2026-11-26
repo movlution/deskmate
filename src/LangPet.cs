@@ -13,6 +13,7 @@ namespace Deskmate
             AddPetText(en, "Hewan", "Animal");
             AddPetText(en, "Kucing", "Cat");
             AddPetText(en, "Anjing", "Dog");
+            AddPetText(en, "Chao", "Chao");
             AddPetText(en, "Gagal dimuat, memakai kucing", "Could not load, showing the cat");
             AddPetText(en, "Warna bulu", "Fur color");
             AddPetText(en, "Oranye", "Orange");
@@ -93,6 +94,22 @@ namespace Deskmate
             AddPetText(en, "Kirim", "Send");
             AddPetText(en, "Pesan baru dari pet", "New message from pet");
             AddPetText(en, "Teman", "Friend");
+            AddPetText(en, "Chat room", "Room chat");
+            AddPetText(en, "Belum ada pesan. Sapa temanmu!", "No messages yet. Say hi!");
+            AddPetText(en, "{0} masuk room", "{0} joined");
+            AddPetText(en, "{0} keluar room", "{0} left");
+            AddPetText(en, "Rusuh di layar teman", "Mess with your friend's screen");
+            AddPetText(en, "Rusuh lagi dalam {0} dtk", "Mess again in {0}s");
+            AddPetText(en, "Bakar", "Burn");
+            AddPetText(en, "Retakkan", "Crack");
+            AddPetText(en, "Lempar cat", "Paint");
+            AddPetText(en, "Bekukan", "Freeze");
+            AddPetText(en, "Membakar layarmu!", "Set your screen on fire!");
+            AddPetText(en, "Meretakkan layarmu!", "Cracked your screen!");
+            AddPetText(en, "Melempar cat ke layarmu!", "Threw paint at your screen!");
+            AddPetText(en, "Membekukan layarmu!", "Froze your screen!");
+            AddPetText(en, "Izinkan teman rusuh di layar", "Let friends mess with your screen");
+            AddPetText(en, "Efek singkat seperti api atau salju yang bisa diklik tembus; tidak muncul saat berbagi layar", "Short effects like fire or snow that clicks pass through; never shown while sharing your screen");
         }
 
         static void AddPetText(Dictionary<string, string> en, string id, string text)

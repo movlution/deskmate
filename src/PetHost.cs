@@ -258,7 +258,7 @@ namespace Deskmate
                     }
 
                     string to = PetPacket.Str(msg, "to");
-                    if (type == "asset_req" || type == "asset_chunk")
+                    if (type == "asset_req" || type == "asset_chunk" || type == "prank")
                     {
                         if (string.Equals(to, HostId, StringComparison.Ordinal))
                         {
@@ -312,15 +312,15 @@ namespace Deskmate
         internal static bool IsGuestType(string type)
         {
             return type == "state" || type == "chat" || type == "emote" || type == "profile" ||
-                   type == "asset_req" || type == "asset_chunk";
+                   type == "asset_req" || type == "asset_chunk" || type == "prank";
         }
 
-        // Per guest, per 3 s: 5 chats/emotes/asset requests, 30 state/profile updates.
+        // Per guest, per 3 s: 5 chats/emotes/pranks/asset requests, 30 state/profile updates.
         // Asset chunks are only accepted by a peer that asked for them, so they are not counted.
         static bool AllowMessage(GuestConn c, string type)
         {
             if (type == "asset_chunk") return true;
-            bool social = type == "chat" || type == "emote" || type == "asset_req";
+            bool social = type == "chat" || type == "emote" || type == "asset_req" || type == "prank";
             return Allow(social ? c.ChatTicks : c.StateTicks, social ? 5 : 30);
         }
 

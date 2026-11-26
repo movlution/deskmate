@@ -374,7 +374,7 @@ namespace Deskmate
             bool PositionActions(PetActionBar b)
             {
                 int x = drawnX + cw / 2;
-                int y = StandY - (sheet.Base + 1 - sheet.Top) * f;
+                int y = StandY - (BasePx - TopPx);
                 if (wellness != null && !wellness.IsDisposed) y = Math.Min(y, wellness.Top);
                 return b.MoveAbove(work, new Point(x, y));
             }

@@ -118,7 +118,7 @@ namespace Deskmate
                     pressAt = Cursor.Position;
                     pressButton = SystemInformation.MouseButtonsSwapped ? 0x02 : 0x01;
                     pressX = brain.X;
-                    pressFeet = drawnY != int.MinValue ? drawnY + (sheet.Base + 1) * f : StandY;
+                    pressFeet = drawnY != int.MinValue ? drawnY + BasePx : StandY;
                     ClearHoldSamples();
                     if (emote != null) emote.Stop();
                 }
@@ -208,7 +208,7 @@ namespace Deskmate
                 bool onDock;
                 int ground = GroundAt(x + cw / 2.0, out onDock);
                 double feet = pressFeet - 8 * scale + (at.Y - pressAt.Y);
-                double maxLift = ground - work.Top - (sheet.Base + 1 - sheet.Top) * f;
+                double maxLift = ground - work.Top - (BasePx - TopPx);
                 brain.MoveHeldFree(x, ground - feet, left, right, maxLift);
             }
 
@@ -226,7 +226,7 @@ namespace Deskmate
                     ClearHoldSamples();
                     bool onDock;
                     int ground = GroundAt(brain.X + cw / 2.0, out onDock);
-                    double maxLift = ground - work.Top - (sheet.Base + 1 - sheet.Top) * f;
+                    double maxLift = ground - work.Top - (BasePx - TopPx);
                     brain.EndHold(vx, vy, work.Left, Math.Max(work.Left, work.Right - cw), maxLift);
                 }
                 else if (!PetBrain.DragThreshold(pressAt, at, scale))
@@ -329,7 +329,7 @@ namespace Deskmate
                 int factor = Math.Max(2, f);
                 int dir = IsRemote ? remoteDir : brain.Dir;
                 int cx = drawnX + cw / 2 + dir * cw / 4;
-                emote.Pop(kind, cx, drawnY + sheet.Top * f - factor, factor, clock.Elapsed.TotalSeconds, Anim.Reduced);
+                emote.Pop(kind, cx, drawnY + TopPx - factor, factor, clock.Elapsed.TotalSeconds, Anim.Reduced);
             }
 
             // Once a second: music, a focus session, and whether anyone is at the keyboard

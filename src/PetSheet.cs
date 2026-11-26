@@ -164,35 +164,52 @@ namespace Deskmate
             // Row 0 faces right, row 1 is mirrored; f screen px per art px, nearest neighbour
             public int[] Atlas(int f)
             {
-                int cw = W * f, ch = H * f, w = cw * Count;
+                return AtlasScaled(W * f, H * f);
+            }
+
+            // Row 0 faces right, row 1 is mirrored; exact cw x ch screen px per cell, nearest neighbour
+            public int[] AtlasScaled(int cw, int ch)
+            {
+                if (cw < 1) cw = 1;
+                if (ch < 1) ch = 1;
+                int w = cw * Count;
                 var px = new int[w * ch * 2];
                 for (int c = 0; c < Count; c++)
                 {
                     var a = Art[c];
-                    for (int gy = 0; gy < H; gy++)
-                        for (int gx = 0; gx < W; gx++)
+                    for (int y = 0; y < ch; y++)
+                    {
+                        int gy = y * H / ch;
+                        if (gy >= H) gy = H - 1;
+                        int row0 = y * w + c * cw;
+                        int row1 = (ch + y) * w + c * cw;
+                        for (int x = 0; x < cw; x++)
                         {
+                            int gx = x * W / cw;
+                            if (gx >= W) gx = W - 1;
                             int v = a[gy * W + gx];
                             if (v == 0) continue;
-                            for (int row = 0; row < 2; row++)
-                            {
-                                int ox = c * cw + (row == 0 ? gx : W - 1 - gx) * f, oy = row * ch + gy * f;
-                                for (int y = 0; y < f; y++)
-                                    for (int x = 0; x < f; x++) px[(oy + y) * w + ox + x] = v;
-                            }
+                            px[row0 + x] = v;
+                            px[row1 + (cw - 1 - x)] = v;
                         }
+                    }
                 }
                 return px;
             }
 
-            // Ten built-in sheets at most (2 animals x 5 furs). Sharing one instance means a repeated
+            // Fifteen built-in sheets at most (3 characters x 5 colors). Sharing one instance means a repeated
             // choice, a friend's identical pet, or a profile update never repaints art or rebuilds an atlas.
             static readonly Dictionary<string, PetSheet> builtIns = new Dictionary<string, PetSheet>(StringComparer.Ordinal);
 
+            public static string NormalizeBuiltInKind(string kind)
+            {
+                return kind == "dog" ? "dog" : kind == "chao" ? "chao" : "cat";
+            }
+
             public static PetSheet BuiltIn(string kind, string color)
             {
-                kind = kind == "dog" ? "dog" : "cat";
-                // Unknown furs paint orange, so they share its sheet (and a peer can't grow the cache)
+                kind = NormalizeBuiltInKind(kind);
+                // Unknown colors paint orange, so they share its sheet (and a peer can't grow the cache)
                 if (color != "brown" && color != "gray" && color != "black" && color != "cream") color = "orange";
                 string key = kind + "|" + color;
                 lock (builtIns)
@@ -208,8 +225,12 @@ namespace Deskmate
             static PetSheet PaintBuiltIn(string kind, string color)
             {
                 var s = new PetSheet { W = PetArt.Grid, H = PetArt.Grid };
-                int[] pal = PetArt.Palette(color);
-                for (int c = 0; c < PetArt.Cells; c++) s.Art.Add(PetArt.Paint(kind == "dog" ? PetArt.Dog(c) : PetArt.Cat(c), pal));
+                int[] pal = PetArt.Palette(kind, color);
+                for (int c = 0; c < PetArt.Cells; c++)
+                {
+                    byte[] grid = kind == "dog" ? PetArt.Dog(c) : kind == "chao" ? PetArt.Chao(c) : PetArt.Cat(c);
+                    s.Art.Add(PetArt.Paint(grid, pal));
+                }
                 // Idle 1.5 fps, walk 8 fps at base speed, sit 0.8 fps, sleep breathing 0.6 fps
                 s.Set(PetMode.Idle, new[] { 0, 1 }, new[] { 1 / 1.5, 1 / 1.5 });
                 s.Set(PetMode.Walk, new[] { 2, 3, 4, 5 }, new[] { 0.125, 0.125, 0.125, 0.125 });
@@ -430,10 +451,13 @@ namespace Deskmate
             public const int Grid = 24, Cells = 20;
             const byte Dark = 3;
 
-            // ARGB follows Ink: clear, coat, markings, outline, blush, cream, eyes, light, shadow.
+            // ARGB follows Ink: clear, coat, markings, outline, blush, cream, eyes, light, shadow, sparkle, orb.
             // A black coat gets amber eyes; dark eyes would vanish into it.
-            public static int[] Palette(string color)
+            public static int[] Palette(string color) { return Palette("cat", color); }
+
+            public static int[] Palette(string kind, string color)
             {
+                if (kind == "chao") return ChaoPalette(color);
                 uint fur = 0xFFF0A35E, stripe = 0xFFC9773A, dark = 0xFF2A1E17, eye = 0;
                 switch (color)
                 {
@@ -444,7 +468,37 @@ namespace Deskmate
                 }
                 if (eye == 0) eye = dark;
                 return new[] { 0, (int)fur, (int)stripe, (int)dark, unchecked((int)0xFFE88A8A),
-                    unchecked((int)0xFFF5DFBF), (int)eye, Shade(fur, 0xFFFFE6BC, 46), Shade(stripe, dark, 75) };
+                    unchecked((int)0xFFF5DFBF), (int)eye, Shade(fur, 0xFFFFE6BC, 46), Shade(stripe, dark, 75),
+                    unchecked((int)0xFFFFFFFF), unchecked((int)0xFFFFDF5D) };
+            }
+
+            // Anime fantasy pastel palettes for Chao across the 5 built-in color choices
+            static int[] ChaoPalette(string color)
+            {
+                // orange: Sakura Peach Chao
+                uint body = 0xFFFFB48A, tip = 0xFFFF7A7A, dark = 0xFF2B1D2E, blush = 0xFFFF88A8;
+                uint belly = 0xFFFFF5EA, eye = 0xFF2B1D2E, orb = 0xFFFFDF5D;
+                switch (color)
+                {
+                    case "cream": // Classic Sky/Aqua Chao with sunny yellow tips
+                        body = 0xFF8CE2F7; tip = 0xFFFFD859; dark = 0xFF1F2B44; blush = 0xFFFF90B3;
+                        belly = 0xFFF4FCFF; eye = 0xFF1F2B44; orb = 0xFFFFE45E;
+                        break;
+                    case "gray": // Starlight Lavender Chao
+                        body = 0xFFC9B8F5; tip = 0xFF8D78E6; dark = 0xFF241D3B; blush = 0xFFFF92C2;
+                        belly = 0xFFF6F2FF; eye = 0xFF241D3B; orb = 0xFF7CE8FF;
+                        break;
+                    case "brown": // Warm Mochi Forest Spirit Chao
+                        body = 0xFFD4A373; tip = 0xFF9C6644; dark = 0xFF2A1C14; blush = 0xFFFF9494;
+                        belly = 0xFFFFF3E0; eye = 0xFF2A1C14; orb = 0xFF9AF08A;
+                        break;
+                    case "black": // Dark / Shadow Chao with glowing gold eyes and rose tips
+                        body = 0xFF47415C; tip = 0xFFE85D88; dark = 0xFF151221; blush = 0xFFFF6B9D;
+                        belly = 0xFFDED9F0; eye = 0xFFFFD84D; orb = 0xFFFF5E8A;
+                        break;
+                }
+                return new[] { 0, (int)body, (int)tip, (int)dark, (int)blush, (int)belly, (int)eye,
+                    Shade(body, 0xFFFFFFFF, 68), Shade(body, dark, 72), unchecked((int)0xFFFFFFFF), (int)orb };
             }
 
             static int Shade(uint from, uint to, int mix)
@@ -466,8 +520,8 @@ namespace Deskmate
 
             // Draw at native resolution; the letters are palette indices, not RGB values.
             // f coat, s markings, h highlight, b shadow, w muzzle/chest, n blush,
-            // e eye, o dark detail. All grounded poses share outline row 19.
-            const string Ink = ".fsonwehb";
+            // e eye, o dark detail, k white sparkle, a emotion orb. All grounded poses share outline row 19.
+            const string Ink = ".fsonwehbka";
 
             static readonly string[] CatHead = {
                 "s......h", "fn....nhf", "ffh..hfff", "fhhsfhfff", "fhfsffeff",
@@ -590,6 +644,168 @@ namespace Deskmate
                 "..hhh", ".hffffh", "ssfffffff", "sbsfooowwo",
                 ".bsffffwww", "..bbwwwwwo", "...bbwww"
             };
+
+            // Anime fantasy spirit (Chao-inspired): teardrop head, big shiny eyes, tiny fairy wings, floating emotion orb
+            static readonly string[] ChaoHead = {
+                ".ss........",
+                "..shhf.....",
+                ".hffffffh..",
+                "hffffffffh.",
+                "ffffkeffkef",
+                "ffffeeffeef",
+                ".ffnfffffn.",
+                "..bbffffbb."
+            };
+            static readonly string[] ChaoBody = {
+                ".hfffffh.",
+                "hffwwwffh",
+                "ffwwwwwff",
+                "ffwwwwwfb",
+                ".bfwwwfb.",
+                "..bbbbb.."
+            };
+            static readonly string[] ChaoWingUp = {
+                "ww..",
+                "hww.",
+                ".hww",
+                "..bw"
+            };
+            static readonly string[] ChaoWingDown = {
+                "..w.",
+                ".hww",
+                "hwwb",
+                ".bb."
+            };
+            static readonly string[] ChaoOrb = {
+                "ka",
+                "aa"
+            };
+
+            public static byte[] Chao(int c)
+            {
+                var g = new byte[Grid * Grid];
+                int phase = c & 1;
+
+                // Sleep: curled up peacefully on the floor with floating Zzz
+                if (c == 8 || c == 9)
+                {
+                    Stamp(g, 4, 13 - phase, "..ww.", ".hwwb", "hwwbb");
+                    Stamp(g, 6, 13 - phase, ".hfffffh..", "hffwwwwffh", "ffwwwwwwfb", ".bfwwwwfb.", "..bbssssbb");
+                    Stamp(g, 11, 10, ".ss........", "..shhf.....", ".hffffffh..", "hffffffffh.",
+                        "ffffeeffeef", ".ffnfffffn.", "..bbffffbb.");
+                    Stamp(g, 9, 18, "ss....ss");
+                    Stamp(g, 14, 7 + phase, ChaoOrb);
+                    if (phase == 1) Stamp(g, 18, 3, "kkk", "..k", ".k.", "kkk");
+                    return g;
+                }
+
+                // Sit: cozy seated chibi with feet tucked forward and gently bobbing orb
+                if (c == 6 || c == 7)
+                {
+                    Stamp(g, 12, 1 + phase, ChaoOrb);
+                    Stamp(g, 4, 12 + phase, ChaoWingDown);
+                    Stamp(g, 8, 13, ChaoBody);
+                    Stamp(g, 7, 14, "hf", "ss");
+                    Stamp(g, 16, 15, "sf", "ss");
+                    Stamp(g, 11, 18, "ss.ss");
+                    Stamp(g, 7, 5 + phase, ChaoHead);
+                    if (phase == 1) Stamp(g, 11, 10, "eeffee", "ffffff");
+                    return g;
+                }
+
+                // Stretch: cheerful big stretch with arms raised wide and happy eyes
+                if (c == 14 || c == 15)
+                {
+                    Stamp(g, 12, 1, ".k.", "kak", ".a.");
+                    Stamp(g, 3, 10 + phase, ChaoWingUp);
+                    Stamp(g, 8, 12, ChaoBody);
+                    Stamp(g, 5, 11 - phase, "ss.", ".hf");
+                    Stamp(g, 17, 11 - phase, ".ss", "fh.");
+                    Stamp(g, 9, 17, "fb", "ss");
+                    Stamp(g, 14, 17, "fb", "ss");
+                    Stamp(g, 7, 4, ChaoHead);
+                    Stamp(g, 11, 8, "eeffee", "nffffn");
+                    return g;
+                }
+
+                // Held: dangling stubby feet, fluttering wings, and cute surprised expression
+                if (c == 16 || c == 17)
+                {
+                    Stamp(g, 12, 1, ChaoOrb);
+                    Stamp(g, 4, 10 + phase * 2, phase == 0 ? ChaoWingUp : ChaoWingDown);
+                    Stamp(g, 8, 11, ChaoBody);
+                    Stamp(g, 6, 11 + phase, "ss", "hf");
+                    Stamp(g, 17, 11 + (1 - phase), "ss", "fh");
+                    Stamp(g, 9, 16 + phase, "fb", "ss");
+                    Stamp(g, 14, 16 + (1 - phase), "fb", "ss");
+                    Stamp(g, 7, 3, ChaoHead);
+                    Stamp(g, 11, 7, "kwffkw", "eeffee");
+                    return g;
+                }
+
+                bool happy = c == 10 || c == 11;
+                bool startled = c == 12 || c == 13;
+                bool swipe = c == 18 || c == 19;
+                int step = c >= 2 && c <= 5 ? c - 2 : -1;
+                int bob = (step == 1 || step == 3) ? -1 : 0;
+                int bodyY = (startled ? 11 : 12) + bob;
+                int headY = (happy ? 3 : 4) + bob;
+
+                // Emotion orb above head
+                if (happy) Stamp(g, 12, 1, phase == 0 ? ".k." : "k.k", "kak", ".a.");
+                else if (startled) Stamp(g, 13, 1, "ka", "aa");
+                else Stamp(g, 12 - (step >= 0 ? 1 : 0), 1 + (phase == 1 && !swipe ? 1 : 0), ChaoOrb);
+
+                // Fluttering fairy wings
+                Stamp(g, 4, bodyY - 2 + (phase == 1 ? 2 : 0), phase == 0 ? ChaoWingUp : ChaoWingDown);
+
+                // Stubby feet (always keeping ground contact on row 18 -> outline row 19)
+                int leftFootX = step == 0 ? 8 : step == 2 ? 11 : 9;
+                int rightFootX = step == 0 ? 15 : step == 2 ? 12 : 14;
+                int leftFootY = step == 1 ? 16 : 17;
+                int rightFootY = step == 3 ? 16 : 17;
+                if (happy && phase == 0) leftFootY = 16;
+                Stamp(g, leftFootX, leftFootY, "fb", "ss");
+                Stamp(g, rightFootX, rightFootY, "fb", "ss");
+
+                // Plump chibi body and stubby arms
+                Stamp(g, 8, bodyY, ChaoBody);
+                if (happy || startled)
+                {
+                    Stamp(g, 6, bodyY - 1, "ss", "hf");
+                    Stamp(g, 17, bodyY - 1, "ss", "fh");
+                }
+                else if (swipe)
+                {
+                    Stamp(g, 7, bodyY + 1, "hf", "ss");
+                    if (phase == 0) Stamp(g, 17, bodyY + 1, "fhss", "..ak");
+                    else Stamp(g, 17, bodyY, "fhss.", "...ka", "..a.k");
+                }
+                else
+                {
+                    Stamp(g, 7, bodyY + 1 + (step == 0 ? -1 : 0), "hf", "ss");
+                    Stamp(g, 16, bodyY + 1 + (step == 2 ? -1 : 0), "sf", "ss");
+                }
+
+                // Teardrop anime head and facial expressions
+                Stamp(g, 7, headY, ChaoHead);
+                if (happy)
+                {
+                    Stamp(g, 11, headY + 4, "eeffee", "ffffff");
+                    Stamp(g, 9, headY + 6, "nnffffnn");
+                }
+                else if (c == 1)
+                {
+                    // Gentle idle blink
+                    Stamp(g, 11, headY + 4, "ffffff", "eeffee");
+                }
+                else if (startled)
+                {
+                    Stamp(g, 11, headY + 4, "kwffkw", "eeffee");
+                    Stamp(g, 13, headY + 6, "ee");
+                }
+                return g;
+            }
 
             static void Leg(byte[] g, int x, int top, int stride, int ground, bool far)
             {

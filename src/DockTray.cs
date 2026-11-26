@@ -99,8 +99,11 @@ namespace Deskmate
 
         public bool Running { get { return thread != null; } }
 
-        // Our own TaskbarCreated echo, not an Explorer restart
-        public bool JustBroadcast { get { return (DateTime.UtcNow - sentUtc).TotalSeconds < 3; } }
+        // Our own TaskbarCreated echo, not an Explorer restart. Process-wide: Stop()
+        // broadcasts after the dock dropped its host, and same-thread docks receive
+        // the message synchronously, before any instance could be asked.
+        static long ownSentTicks;
+        public static bool OwnEcho { get { return (DateTime.UtcNow.Ticks - Interlocked.Read(ref ownSentTicks)) < TimeSpan.TicksPerSecond * 3; } }
 
         public void Start(Rectangle area)
         {
@@ -324,6 +327,7 @@ namespace Deskmate
         void Broadcast()
         {
             sentUtc = DateTime.UtcNow;
+            Interlocked.Exchange(ref ownSentTicks, sentUtc.Ticks);
             SendNotifyMessage((IntPtr)0xFFFF, TaskbarCreated, IntPtr.Zero, IntPtr.Zero);
         }
 

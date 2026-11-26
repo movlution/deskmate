@@ -244,8 +244,10 @@ namespace Deskmate
             });
         }
 
-        public static string EncodeState(string id, double xNorm, int dir, int mode, bool hop)
+        // v: the sender's speed in lane widths per second, so a friend's pet keeps walking between packets
+        public static string EncodeState(string id, double xNorm, int dir, int mode, bool hop, double v = 0)
         {
+            if (double.IsNaN(v) || double.IsInfinity(v)) v = 0;
             return Json.Encode(new Dictionary<string, object>
             {
                 { "t", "state" },
@@ -253,7 +255,8 @@ namespace Deskmate
                 { "x", Math.Round(Math.Max(0, Math.Min(1, xNorm)), 4) },
                 { "dir", dir >= 0 ? 1 : -1 },
                 { "mode", mode },
-                { "hop", hop }
+                { "hop", hop },
+                { "v", Math.Round(Math.Max(-3, Math.Min(3, v)), 4) }
             });
         }
 
@@ -275,6 +278,18 @@ namespace Deskmate
                 { "t", "emote" },
                 { "id", id ?? "" },
                 { "emote", emote }
+            });
+        }
+
+        // A screen prank aimed at one friend; kind is a PetPrank value
+        public static string EncodePrank(string fromId, string toId, int kind)
+        {
+            return Json.Encode(new Dictionary<string, object>
+            {
+                { "t", "prank" },
+                { "id", fromId ?? "" },
+                { "to", toId ?? "" },
+                { "kind", kind }
             });
         }
 
@@ -516,9 +531,11 @@ namespace Deskmate
         public event Action<PetPeerProfile> PeerJoined;
         public event Action<PetPeerProfile> PeerProfileUpdated;
         public event Action<string> PeerLeft;
-        public event Action<string, double, int, int, bool> PeerStateReceived;
+        // Last double: velocity, NaN from versions that do not send it
+        public event Action<string, double, int, int, bool, double> PeerStateReceived;
         public event Action<string, string, int> ChatReceived;
         public event Action<string, int> EmoteReceived;
+        public event Action<string, int> PrankReceived;
         public event Action<string, string, byte[], byte[]> CustomAssetReady;
 
         sealed class IncomingAsset
@@ -653,15 +670,17 @@ namespace Deskmate
             c.Connect(inv.WsUri, inv.Pin, localProfile);
         }
 
-        public void SendState(double xNorm, int dir, int mode, bool hop, bool force)
+        // True when the packet went out; false when throttled, so the caller tries again next frame
+        public bool SendState(double xNorm, int dir, int mode, bool hop, bool force, double v)
         {
-            if (Mode != PetRoomMode.Connected) return;
+            if (Mode != PetRoomMode.Connected) return false;
             long now = DateTime.UtcNow.Ticks;
-            if (!force && now - lastStateSentTicks < TimeSpan.FromMilliseconds(140).Ticks) return;
+            if (!force && now - lastStateSentTicks < TimeSpan.FromMilliseconds(100).Ticks) return false;
             lastStateSentTicks = now;
-            string json = PetPacket.EncodeState(LocalId, xNorm, dir, mode, hop);
+            string json = PetPacket.EncodeState(LocalId, xNorm, dir, mode, hop, v);
             if (IsHost) host.BroadcastFromHost(json);
             else if (client != null && client.Connected) client.Send(json);
+            return true;
         }
 
         public void SendChat(string text, int emote)
@@ -679,6 +698,14 @@ namespace Deskmate
             if (Mode != PetRoomMode.Connected) return;
             string json = PetPacket.EncodeEmote(LocalId, emote);
             if (IsHost) host.BroadcastFromHost(json);
+            else if (client != null && client.Connected) client.Send(json);
+        }
+
+        public void SendPrank(string peerId, int kind)
+        {
+            if (Mode != PetRoomMode.Connected || string.IsNullOrEmpty(peerId)) return;
+            string json = PetPacket.EncodePrank(LocalId, peerId, kind);
+            if (IsHost) host.SendToGuest(peerId, json);
             else if (client != null && client.Connected) client.Send(json);
         }
 
@@ -862,8 +889,9 @@ namespace Deskmate
                 int dir = PetPacket.Int(msg, "dir", 1);
                 int mode = PetPacket.Int(msg, "mode", 0);
                 bool hop = PetPacket.Bool(msg, "hop");
+                double v = msg.ContainsKey("v") ? PetPacket.Num(msg, "v", 0) : double.NaN;
                 var ps = PeerStateReceived;
-                if (ps != null) ps(senderId, x, dir, mode, hop);
+                if (ps != null) ps(senderId, x, dir, mode, hop, v);
             }
             else if (t == "chat")
             {
@@ -880,6 +908,13 @@ namespace Deskmate
                 int emote = PetPacket.Int(msg, "emote", -1);
                 var em = EmoteReceived;
                 if (em != null) em(senderId, emote);
+            }
+            else if (t == "prank")
+            {
+                // Only the friend it was aimed at plays it
+                if (PetPacket.Str(msg, "to") != LocalId) return;
+                var pr = PrankReceived;
+                if (pr != null) pr(senderId, PetPacket.Int(msg, "kind", -1));
             }
             else if (t == "asset_req")
             {

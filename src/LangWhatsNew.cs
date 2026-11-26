@@ -8,6 +8,15 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.16.0
+            en.Add("Chat bersama teman", "Chat with friends");
+            en.Add("Chat pet kini menjadi chat room dengan riwayat bersama, dan nama pemilik tampil di atas setiap pet.", "Pet chat is now a room chat with a shared history, and each owner's name shows above every pet.");
+            en.Add("Rusuh lewat pet", "Pranks through pets");
+            en.Add("Klik kanan pet teman untuk membakar, meretakkan, melempar cat, atau membekukan layarnya sebentar. Bisa dimatikan di Pengaturan › Dock & Taskbar.", "Right-click a friend's pet to briefly burn, crack, paint, or freeze their screen. Turn it off in Settings › Dock & Taskbar.");
+            en.Add("Chao, pet ketiga", "Chao, a third pet");
+            en.Add("Roh fantasi mungil berwarna pastel kini bisa dipilih di samping kucing dan anjing.", "A tiny pastel fantasy spirit can now be picked next to the cat and dog.");
+            en.Add("Klik dock untuk meminimalkan", "Click the Dock to minimize");
+            en.Add("Klik aplikasi yang sedang di depan untuk meminimalkannya, seperti taskbar Windows.", "Click the app in front to minimize it, like the Windows taskbar.");
             // What's new 2.15.0 ("Rak di Dock" is translated with the Dock strings)
             en.Add("Seret berkas, gambar, atau teks ke dock untuk menahannya, lalu seret ke aplikasi lain. Atur di Pengaturan › Dock.", "Drag files, pictures, or text onto the dock to hold them, then drag them into another app. Set it in Settings › Dock.");
             en.Add("Lempar pet", "Throw your pet");

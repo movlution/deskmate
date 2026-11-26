@@ -25,14 +25,47 @@ namespace Deskmate
                 petRow.Glyph = (char)0xEB51;
                 add(petRow);
 
-                string kind = settings.Get("pet.kind", "cat");
-                var ids = new List<string> { "cat", "dog" };
-                var names = new List<string> { Lang.T("Kucing"), Lang.T("Anjing") };
-                foreach (var n in PetSheet.Custom()) { ids.Add("custom:" + n); names.Add(n); }
-                int at = ids.IndexOf(kind);
-                // A chosen folder that has gone still shows, with the reason below
-                if (at < 0 && kind.StartsWith("custom:", StringComparison.Ordinal)) { ids.Add(kind); names.Add(kind.Substring(7)); at = ids.Count - 1; }
-                var kindPop = Popup(names.ToArray(), Math.Max(0, at), i => change("pet.kind", ids[i]));
+                var ids = new List<string>();
+                var names = new List<string>();
+                // Built-ins plus every folder under pets\ right now; returns where the chosen pet is
+                Func<int> scanKinds = () =>
+                {
+                    string kind = settings.Get("pet.kind", "cat");
+                    ids.Clear();
+                    names.Clear();
+                    ids.AddRange(new[] { "cat", "dog", "chao" });
+                    names.AddRange(new[] { Lang.T("Kucing"), Lang.T("Anjing"), Lang.T("Chao") });
+                    foreach (var n in PetSheet.Custom()) { ids.Add("custom:" + n); names.Add(n); }
+                    int found = ids.IndexOf(kind);
+                    // A chosen folder that has gone still shows, with the reason below
+                    if (found < 0 && kind.StartsWith("custom:", StringComparison.Ordinal)) { ids.Add(kind); names.Add(kind.Substring(7)); found = ids.Count - 1; }
+                    return Math.Max(0, found);
+                };
+                int at = scanKinds();
+                var kindPop = Popup(names.ToArray(), at, i =>
+                {
+                    // Picking a pet, even the same one again, reads its folder afresh
+                    island.petSheetKey = null;
+                    change("pet.kind", ids[i]);
+                });
+                // Pressing the picker looks in the pets folder again, so a pet just copied in is there
+                // without closing settings
+                kindPop.Opening += delegate
+                {
+                    int now = scanKinds();
+                    kindPop.Items = names.ToArray();
+                    kindPop.Selected = now;
+                    int want = kindPop.Width;
+                    foreach (var it in kindPop.Items)
+                        want = Math.Max(want, (int)Math.Min(260 * Ui, TextRenderer.MeasureText(it + "  ▾", kindPop.Font).Width + 30 * Ui));
+                    if (want > kindPop.Width)
+                    {
+                        int right = kindPop.Right;
+                        kindPop.Width = want;
+                        kindPop.Left = right - want;
+                        if (kindPop.Parent != null) kindPop.Parent.Invalidate();
+                    }
+                };
                 var kindRow = Row(Lang.T("Hewan"), null, kindPop);
                 // Reserve room for status text so changing pets never shifts the rows.
                 kindRow.Height = (int)(54 * Ui);
@@ -126,6 +159,16 @@ namespace Deskmate
                     Lang.T("Unduh sprite custom pet teman secara otomatis dan simpan di cache"), customRecv);
                 customRow.Glyph = (char)0xE896;
                 add(customRow);
+
+                var prankRecv = Switch("pet.link.prank", true, v =>
+                {
+                    settings.Set("pet.link.prank", v);
+                    settings.Save();
+                });
+                var prankRow = Row(Lang.T("Izinkan teman rusuh di layar"),
+                    Lang.T("Efek singkat seperti api atau salju yang bisa diklik tembus; tidak muncul saat berbagi layar"), prankRecv);
+                prankRow.Glyph = (char)0xE945;
+                add(prankRow);
 
                 // Host controls (Cloudflare Quick Tunnel)
                 bool downloadingCf = false;
