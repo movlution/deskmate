@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Globalization;
 using System.Windows.Forms;
 
@@ -85,48 +87,264 @@ namespace Deskmate
                 return list;
             }
 
+            // Clearing motion: rows fly off, the rest close the gap, an all-clear check pops
+            sealed class Ghost { public NotifItem Item; public float Y; public double T0; public bool Lit; }
+            sealed class Shift { public float From; public double T0; }
+            readonly List<Ghost> ghosts = new List<Ghost>();
+            readonly Dictionary<uint, Shift> shifts = new Dictionary<uint, Shift>();
+            readonly System.Diagnostics.Stopwatch fx = System.Diagnostics.Stopwatch.StartNew();
+            double cheerT0 = -10, clearBtnT0 = -10;
+            bool cheered;
+            const float FlySecs = 0.46f, ShiftSecs = 0.36f, CheerSecs = 0.95f, BtnSecs = 0.2f, Stagger = 0.065f;
+
+            double Now { get { return fx.Elapsed.TotalSeconds; } }
+
+            // Anticipation: a small pull back, then away
+            static float InBack(float t)
+            {
+                t = Ease.Clamp01(t);
+                const float c1 = 1.70158f, c3 = c1 + 1;
+                return c3 * t * t * t - c1 * t * t;
+            }
+
+            float ShiftOf(uint id, double now)
+            {
+                Shift s;
+                if (!shifts.TryGetValue(id, out s)) return 0;
+                float t = (float)((now - s.T0) / ShiftSecs);
+                return s.From * (1 - Ease.OutBack(t));
+            }
+
+            protected override bool Animating(float dt)
+            {
+                double now = Now;
+                ghosts.RemoveAll(gh => now - gh.T0 >= FlySecs);
+                List<uint> done = null;
+                foreach (var kv in shifts)
+                    if (now - kv.Value.T0 >= ShiftSecs) { if (done == null) done = new List<uint>(); done.Add(kv.Key); }
+                if (done != null) foreach (var k in done) shifts.Remove(k);
+                return ghosts.Count > 0 || shifts.Count > 0 || now - cheerT0 < CheerSecs || now - clearBtnT0 < BtnSecs;
+            }
+
+            void ClearAllFx()
+            {
+                var list = isle.notifs;
+                double now = Now;
+                cheered = true;
+                shifts.Clear();
+                if (Anim.Reduced) { cheerT0 = now - CheerSecs; return; }
+                int shown = Math.Min(rows, list.Count - first);
+                for (int i = 0; i < shown; i++)
+                {
+                    int k = first + i;
+                    ghosts.Add(new Ghost { Item = list[k], Y = 46 + i * RowH, T0 = now + i * Stagger, Lit = hotId == "n" + k || hotId == "x" + k });
+                }
+                clearBtnT0 = now;
+                cheerT0 = now + Math.Max(0, shown - 1) * Stagger + FlySecs * 0.6f;
+                first = 0;
+                Animate();
+            }
+
+            void RemoveOneFx(int x)
+            {
+                var list = isle.notifs;
+                var item = list[x];
+                int oldFirst = first;
+                isle.RemoveNotifs(new List<NotifItem> { item });
+                if (Anim.Reduced) { if (list.Count == 0) { cheered = true; cheerT0 = Now - CheerSecs; } return; }
+                double now = Now;
+                ghosts.Add(new Ghost { Item = item, Y = 46 + (x - oldFirst) * RowH, T0 = now, Lit = true });
+                int newFirst = Math.Max(0, Math.Min(oldFirst, list.Count - rows));
+                first = newFirst;
+                // Everyone below (or above, when the window slid back) closes the gap
+                for (int j = 0; j < list.Count; j++)
+                {
+                    int was = j < x ? j : j + 1;
+                    float delta = ((was - oldFirst) - (j - newFirst)) * RowH;
+                    if (delta == 0) continue;
+                    uint id = list[j].Id;
+                    shifts[id] = new Shift { From = ShiftOf(id, now) + delta, T0 = now + 0.08 };
+                }
+                if (list.Count == 0) { cheered = true; cheerT0 = now + FlySecs * 0.55f; clearBtnT0 = now; }
+                Animate();
+            }
+
+            void DrawLogo(Image img, RectangleF r)
+            {
+                if (p.Alpha >= 0.995f) { g.DrawImage(img, r); return; }
+                using (var ia = new ImageAttributes())
+                {
+                    ia.SetColorMatrix(new ColorMatrix { Matrix33 = p.Alpha });
+                    var pts = new[] { new PointF(r.X, r.Y), new PointF(r.Right, r.Y), new PointF(r.X, r.Bottom) };
+                    g.DrawImage(img, pts, new RectangleF(0, 0, img.Width, img.Height), GraphicsUnit.Pixel, ia);
+                }
+            }
+
+            void DrawRowFace(NotifItem item, RectangleF row, bool showTime)
+            {
+                float cy = row.Y + row.Height / 2;
+                var logo = new RectangleF(row.X + 10, cy - 16, 32, 32);
+                if (item.Logo != null) DrawLogo(item.Logo, logo);
+                else
+                {
+                    p.FillRound(logo, 9, p.T.FillHover);
+                    string name = item.AppName.Length > 0 ? item.AppName : "?";
+                    p.TextCenter(name.Substring(0, 1).ToUpperInvariant(), Ink.Semi(13f), p.T.Text, logo.X + 16, cy);
+                }
+                float tx = row.X + 52;
+                p.NotifText(isle.NotifTitle(item), Ink.Semi(12.5f), p.T.Text, tx, cy - 9, row.Right - tx - 74, StringAlignment.Near);
+                p.NotifText(isle.NotifBody(item), Ink.Text(11.5f), p.T.Sub, tx, cy + 9, row.Right - tx - 40, StringAlignment.Near);
+                if (showTime) p.TextRight(Fmt.Ago(item.Time), Ink.Small(11f), p.T.Sub, row.Right - 12, cy - 9);
+            }
+
+            void DrawClearButton(float a, bool live)
+            {
+                var f = Ink.Small(12f);
+                string label = Lang.T("Hapus semua");
+                float w = p.Measure(label, f) + 24;
+                var b = new RectangleF(W - Pad - w, 13, w, 26);
+                float keep = p.Alpha;
+                var st = g.Save();
+                if (live) Hit(b, "clear");
+                else
+                {
+                    // Sinks into itself as the list goes
+                    float s = 0.82f + 0.18f * a;
+                    g.TranslateTransform(b.X + w / 2, b.Y + 13);
+                    g.ScaleTransform(s, s);
+                    g.TranslateTransform(-(b.X + w / 2), -(b.Y + 13));
+                    p.Alpha = keep * a;
+                }
+                bool down = live && Down("clear");
+                if (down) b.Offset(0, 0.75f);
+                p.FillRound(b, 8, down ? p.T.FillPressed : live && hotId == "clear" ? p.T.FillHover : p.T.Fill);
+                p.TextCenter(label, f, p.T.Text, b.X + w / 2, b.Y + b.Height / 2);
+                g.Restore(st);
+                p.Alpha = keep;
+            }
+
+            void DrawGhost(Ghost gh, double now)
+            {
+                float t = (float)((now - gh.T0) / FlySecs);
+                if (t >= 1) return;
+                t = Math.Max(0, t);
+                var row = new RectangleF(Pad - 8, gh.Y, W - Pad * 2 + 16, RowH - 4);
+                float dx = InBack(t) * (W * 0.95f);
+                float s = 1 - 0.07f * Ease.OutCubic(t);
+                float keep = p.Alpha;
+                var st = g.Save();
+                g.TranslateTransform(row.X + row.Width / 2 + dx, row.Y + row.Height / 2);
+                g.RotateTransform(2.5f * InBack(t));
+                g.ScaleTransform(s, s);
+                g.TranslateTransform(-(row.X + row.Width / 2), -(row.Y + row.Height / 2));
+                float fade = 1 - t * t;
+                // The card lifts before it leaves
+                float lift = gh.Lit ? 1 : Math.Min(1, t * 6);
+                p.Alpha = keep * fade * lift;
+                p.FillRound(row, 14, p.T.Fill);
+                p.Alpha = keep * fade;
+                DrawRowFace(gh.Item, row, !gh.Lit);
+                g.Restore(st);
+                p.Alpha = keep;
+            }
+
+            // All clear: badge pops, ripple, a burst of sparks, then the words
+            void DrawCheer(double now)
+            {
+                float t = (float)((now - cheerT0) / CheerSecs);
+                if (t <= 0) return;
+                t = Math.Min(1, t);
+                var f = Ink.Small(12f);
+                string txt = Lang.T("Tidak ada notifikasi baru");
+                float tw = p.Measure(txt, f);
+                const float R = 11, Gap = 10;
+                float areaBottom = notifH - 8;
+                float cy = 46 + (areaBottom - 46) / 2;
+                float x0 = (W - (R * 2 + Gap + tw)) / 2, cx = x0 + R;
+                float keep = p.Alpha;
+
+                float ru = Ease.Clamp01((t - 0.08f) / 0.6f);
+                if (ru > 0 && ru < 1)
+                {
+                    p.Alpha = keep * (1 - ru) * 0.55f;
+                    float rr = R + 18 * Ease.OutCubic(ru);
+                    g.DrawEllipse(p.P(p.T.Accent, 1.6f * (1 - ru) + 0.4f), cx - rr, cy - rr, rr * 2, rr * 2);
+                }
+                float su = Ease.Clamp01((t - 0.12f) / 0.55f);
+                if (su > 0 && su < 1)
+                {
+                    p.Alpha = keep * (1 - su * su);
+                    for (int k = 0; k < 8; k++)
+                    {
+                        double ang = (k * 45 + 22.5) * Math.PI / 180;
+                        float dist = R + 5 + (k % 2 == 0 ? 17 : 12) * Ease.OutCubic(su);
+                        float sz = (k % 2 == 0 ? 2.2f : 1.6f) * (1 - su * 0.6f);
+                        p.Circle(cx + (float)Math.Cos(ang) * dist, cy + (float)Math.Sin(ang) * dist, sz, p.T.Accent);
+                    }
+                }
+                p.Alpha = keep;
+                float pop = Ease.OutBack(t / 0.42f);
+                if (pop > 0.01f) p.Circle(cx, cy, R * pop, p.T.Accent);
+                float cu = Ease.OutCubic(Ease.Clamp01((t - 0.22f) / 0.32f));
+                if (cu > 0)
+                {
+                    // Two strokes drawn in order: short leg, then the long one
+                    var a = new PointF(cx - 4.6f, cy + 0.2f);
+                    var b = new PointF(cx - 1.4f, cy + 3.4f);
+                    var c = new PointF(cx + 4.8f, cy - 3.4f);
+                    const float l1 = 0.32f;
+                    var pen = p.P(p.T.OnAccent, 1.9f);
+                    float u1 = Math.Min(1, cu / l1);
+                    g.DrawLine(pen, a, new PointF(a.X + (b.X - a.X) * u1, a.Y + (b.Y - a.Y) * u1));
+                    if (cu > l1)
+                    {
+                        float u2 = (cu - l1) / (1 - l1);
+                        g.DrawLine(pen, b, new PointF(b.X + (c.X - b.X) * u2, b.Y + (c.Y - b.Y) * u2));
+                    }
+                }
+                float tu = Ease.OutCubic(Ease.Clamp01((t - 0.3f) / 0.45f));
+                if (tu > 0)
+                {
+                    p.Alpha = keep * tu;
+                    p.Text(txt, f, p.T.Sub, x0 + R * 2 + Gap - 8 * (1 - tu), cy, tw + 4, StringAlignment.Near);
+                }
+                p.Alpha = keep;
+            }
+
             void DrawNotifs()
             {
                 var list = isle.notifs;
+                double now = Now;
                 Caption(Lang.T("Notifikasi"), Pad + 4, 26);
-                if (list.Count > 0)
+                if (list.Count > 0) { cheered = false; DrawClearButton(1, true); }
+                else if (now - clearBtnT0 < BtnSecs) DrawClearButton(1 - Ease.OutCubic((float)((now - clearBtnT0) / BtnSecs)), false);
+                var area = new RectangleF(0, 44, W, Math.Max(0, notifH - 4 - 44));
+                if (ghosts.Count > 0 || list.Count == 0)
                 {
-                    var f = Ink.Small(12f);
-                    string label = Lang.T("Hapus semua");
-                    float w = p.Measure(label, f) + 24;
-                    var b = new RectangleF(W - Pad - w, 13, w, 26);
-                    Hit(b, "clear");
-                    bool down = Down("clear");
-                    if (down) b.Offset(0, 0.75f);
-                    p.FillRound(b, 8, down ? p.T.FillPressed : hotId == "clear" ? p.T.FillHover : p.T.Fill);
-                    p.TextCenter(label, f, p.T.Text, b.X + w / 2, b.Y + b.Height / 2);
+                    var st = g.Save();
+                    g.SetClip(area, CombineMode.Intersect);
+                    foreach (var gh in ghosts) DrawGhost(gh, now);
+                    g.Restore(st);
                 }
                 if (list.Count == 0)
                 {
-                    p.Text(Lang.T("Tidak ada notifikasi baru"), Ink.Small(12f), p.T.Sub, Pad + 4, 68, W - Pad * 2, StringAlignment.Near);
+                    if (cheered) DrawCheer(now);
+                    else p.Text(Lang.T("Tidak ada notifikasi baru"), Ink.Small(12f), p.T.Sub, Pad + 4, 68, W - Pad * 2, StringAlignment.Near);
                     return;
                 }
                 first = Math.Max(0, Math.Min(first, list.Count - rows));
+                var clip = g.Save();
+                if (shifts.Count > 0) g.SetClip(area, CombineMode.Intersect);
                 for (int i = 0; i < rows && first + i < list.Count; i++)
                 {
                     var item = list[first + i];
-                    var row = new RectangleF(Pad - 8, 46 + i * RowH, W - Pad * 2 + 16, RowH - 4);
+                    var row = new RectangleF(Pad - 8, 46 + i * RowH + ShiftOf(item.Id, now), W - Pad * 2 + 16, RowH - 4);
                     string id = "n" + (first + i), del = "x" + (first + i);
                     bool hover = hotId == id || hotId == del;
                     Hit(row, id);
                     if (hover) p.FillRound(row, 14, pressId == id ? p.T.FillPressed : p.T.Fill);
+                    DrawRowFace(item, row, !hover);
                     float cy = row.Y + row.Height / 2;
-                    var logo = new RectangleF(row.X + 10, cy - 16, 32, 32);
-                    if (item.Logo != null) g.DrawImage(item.Logo, logo);
-                    else
-                    {
-                        p.FillRound(logo, 9, p.T.FillHover);
-                        string name = item.AppName.Length > 0 ? item.AppName : "?";
-                        p.TextCenter(name.Substring(0, 1).ToUpperInvariant(), Ink.Semi(13f), p.T.Text, logo.X + 16, cy);
-                    }
-                    float tx = row.X + 52;
-                    p.NotifText(isle.NotifTitle(item), Ink.Semi(12.5f), p.T.Text, tx, cy - 9, row.Right - tx - 74, StringAlignment.Near);
-                    p.NotifText(isle.NotifBody(item), Ink.Text(11.5f), p.T.Sub, tx, cy + 9, row.Right - tx - 40, StringAlignment.Near);
                     var x = new RectangleF(row.Right - 36, cy - 14, 28, 28);
                     if (hover)
                     {
@@ -136,8 +354,8 @@ namespace Deskmate
                         p.Circle(x.X + 14, xcy, 12, xdown ? p.T.FillPressed : hotId == del ? p.T.FillHover : p.T.Fill);
                         p.Cross(x.X + 14, xcy, 10, hotId == del ? p.T.Text : p.T.Sub);
                     }
-                    else p.TextRight(Fmt.Ago(item.Time), Ink.Small(11f), p.T.Sub, row.Right - 12, cy - 9);
                 }
+                g.Restore(clip);
                 // More than fit: a thin scroll mark
                 if (list.Count > rows)
                 {
@@ -359,7 +577,7 @@ namespace Deskmate
                 var list = isle.notifs;
                 int n = IndexOf(id, 'n'), x = IndexOf(id, 'x');
                 if (n >= 0 && n < list.Count) { var item = list[n]; Done(); isle.OpenNotifApp(item); return; }
-                if (x >= 0 && x < list.Count) { isle.RemoveNotifs(new List<NotifItem> { list[x] }); return; }
+                if (x >= 0 && x < list.Count) { RemoveOneFx(x); return; }
                 int d = IndexOf(id, 'd');
                 if (d > 0)
                 {
@@ -373,7 +591,7 @@ namespace Deskmate
                 }
                 switch (id)
                 {
-                    case "clear": isle.RemoveNotifs(new List<NotifItem>(list)); break;
+                    case "clear": ClearAllFx(); isle.RemoveNotifs(new List<NotifItem>(list)); break;
                     case "prev": month--; break;
                     case "next": month++; break;
                     case "today": month = 0; break;
