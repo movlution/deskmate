@@ -8,6 +8,10 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.18.0
+            AddOnce(en, "Tugas lebih cepat diatur", "Faster task handling");
+            AddOnce(en, "Tampilan Hari ini dan Terencana, pencarian Ctrl+F, tenggat langsung dari kolom tulis, dan Urungkan setelah menyelesaikan atau menghapus tugas.", "Today and Planned views, Ctrl+F search, due dates right from the composer, and Undo after completing or deleting tasks.");
+            AddOnce(en, "Pilih bahasa, dock, dan fitur seperti saat pertama dipasang. Buka lagi dari Pengaturan › Tentang.", "Pick language, dock, and features like on first install. Reopen it from Settings › About.");
             // What's new 2.17.1
             en.Add("Bingkai kartu di tiap jendela", "Card animation on each window frame");
             en.Add("Efek kartu mengikuti bingkai saat jendela dibuka, dipulihkan, diminimalkan, atau ditutup. Ikon Dock ikut bergerak.", "The card effect follows the window frame when you open, restore, minimize, or close a window. The Dock icon also animates.");
