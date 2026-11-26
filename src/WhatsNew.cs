@@ -20,6 +20,15 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.20.0",
+                Items = new[]
+                {
+                    new[] { "Pet mengingatkan tugas & acara", "Sesekali pet menyebut tugas yang belum selesai, tenggat yang dekat, atau acara yang sebentar lagi mulai. Klik gelembungnya untuk membuka Tugas atau Jadwal.", "" },
+                    new[] { "Aplikasi admin di Dock bisa dibuka", "Jendela aplikasi yang berjalan sebagai administrator kini muncul saat ikonnya di Dock diklik, juga saat sedang di-minimize.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.19.1",
                 Items = new[]
                 {

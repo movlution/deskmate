@@ -172,6 +172,7 @@ namespace Deskmate
             LiveQuotaTick(nowUtc);
             redraw |= EdgeTick();
             redraw |= RemindTick(nowUtc);
+            PetNagTick(nowUtc, IdleSeconds());
             RemindSoundTick();
             ThemeTick(nowUtc);
             MemoryWatch();

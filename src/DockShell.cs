@@ -506,9 +506,18 @@ namespace Deskmate
         [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool ShellExecuteEx(ref SHELLEXECUTEINFO info);
 
         // A click on the dock counts as our input, so focus is ours to give
+        // UIPI drops ShowWindow from us when the window's process runs as admin (OBS's
+        // updater, installers); the shell switcher path still restores and raises it
+        static bool RestoreOrSwitch(IntPtr h)
+        {
+            if (!IsIconic(h) || ShowWindowAsync(h, 9)) return false;
+            SwitchToThisWindow(h, true);
+            return true;
+        }
+
         public static void Activate(IntPtr h)
         {
-            if (IsIconic(h)) ShowWindowAsync(h, 9);
+            if (RestoreOrSwitch(h)) return;
             if (SetForegroundWindow(h)) return;
             // Foreground lock: join the front window's input for a moment
             uint mine = GetCurrentThreadId(), theirs = Native.GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
@@ -550,12 +559,13 @@ namespace Deskmate
         public static void FocusDockApp(IntPtr h)
         {
             if (!IsWindow(h)) return;
-            if (IsIconic(h)) ShowWindowAsync(h, 9);
+            if (RestoreOrSwitch(h)) return;
             // Do not join another app's input queue on the Dock UI thread.
+            // A flash alone is easy to miss with the taskbar replaced, so let the switcher raise it.
             if (GetForegroundWindow() != h && !SetForegroundWindow(h))
             {
-                FlashWindow(h, true);
-                Log.Write("dock focus: Windows did not grant foreground activation");
+                SwitchToThisWindow(h, true);
+                Log.Write("dock focus: Windows did not grant foreground activation, used the switcher");
             }
         }
 
@@ -578,7 +588,7 @@ namespace Deskmate
             if (IsWindow(h) && !IsIconic(h) && !PostMessage(h, WmSysCommand, new IntPtr(ScMinimize), IntPtr.Zero))
                 Minimize(h);
         }
-        public static void Restore(IntPtr h) { ShowWindowAsync(h, 9); Activate(h); }
+        public static void Restore(IntPtr h) { if (!ShowWindowAsync(h, 9)) { SwitchToThisWindow(h, true); return; } Activate(h); }
         public static void Maximize(IntPtr h) { ShowWindowAsync(h, 3); Activate(h); }
 
         public static string ResolveFileTarget(string target, string exe)
