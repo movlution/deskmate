@@ -21,6 +21,8 @@ namespace Deskmate
     {
         // Agent empty for Claude profiles
         public string Profile = "", Model = "", Tail = "", Agent = "", Who = "";
+        // Signed in, no readable window: "Terhubung · Pro"
+        public string Note = "";
         public DateTime AtUtc;
         public readonly QuotaWindow[] W = { new QuotaWindow(), new QuotaWindow(), new QuotaWindow() };
     }

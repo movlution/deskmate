@@ -169,6 +169,7 @@ namespace Deskmate
             IngatTick();
             TickOneShots();
             GoogleWorkTick(nowUtc);
+            LiveQuotaTick(nowUtc);
             redraw |= EdgeTick();
             redraw |= RemindTick(nowUtc);
             RemindSoundTick();
