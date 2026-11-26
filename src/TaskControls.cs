@@ -293,14 +293,52 @@ namespace Deskmate
         string selected = "";
         int hover = -1;
         float scroll;
+        // The selection pill slides to the new pick (content coordinates); NaN when settled
+        float glideY = float.NaN;
+        KitGlide glide;
+        float glideFrom;
+        readonly Timer anim = new Timer { Interval = 15 };
 
         public string Selected
         {
             get { return selected; }
-            set { if (selected == value) return; selected = value; Invalidate(); AccessibilityNotifyClients(AccessibleEvents.Selection, 0); }
+            set
+            {
+                if (selected == value) return;
+                int from = IndexOfKey(selected);
+                selected = value;
+                int to = IndexOfKey(selected);
+                if (from >= 0 && to >= 0 && IsHandleCreated && Visible && !Anim.Reduced)
+                {
+                    glideFrom = float.IsNaN(glideY) ? Cell(from).Y + scroll : glideY;
+                    glideY = glideFrom;
+                    glide.Begin(0);
+                    anim.Start();
+                }
+                else { glideY = float.NaN; anim.Stop(); }
+                Invalidate();
+                AccessibilityNotifyClients(AccessibleEvents.Selection, 0);
+            }
         }
 
-        public TaskRail() { AccessibleRole = AccessibleRole.List; }
+        public TaskRail()
+        {
+            AccessibleRole = AccessibleRole.List;
+            anim.Tick += delegate
+            {
+                int to = IndexOfKey(selected);
+                float t = glide.Sample(1, 0.2f);
+                if (to < 0 || t >= 1) { glideY = float.NaN; anim.Stop(); }
+                else glideY = glideFrom + (Cell(to).Y + scroll - glideFrom) * t;
+                Invalidate();
+            };
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) anim.Dispose();
+            base.Dispose(disposing);
+        }
 
         float RowH { get { return 36 * Ui; } }
         // Section heading: a caption with a section's worth of air above it
@@ -420,6 +458,13 @@ namespace Deskmate
             var fCount = Ink.Small(11.5f * s);
             var fIcon = Ink.Icons(15f * s);
             float radius = Ink.RadiusControl * s;
+            bool gliding = !float.IsNaN(glideY);
+            int selAt = IndexOfKey(selected);
+            if (gliding && selAt >= 0)
+            {
+                var sc = Cell(selAt);
+                TaskInk.Pill(g, new RectangleF(sc.X, glideY - scroll, sc.Width, sc.Height), radius, TaskInk.Wash(KitInk.Window, 0.16f));
+            }
             for (int i = 0; i < Items.Count; i++)
             {
                 var it = Items[i];
@@ -434,8 +479,8 @@ namespace Deskmate
                 bool sel = it.Kind != RailItem.New && it.Key == selected;
                 bool hov = i == hover;
                 // Selected: a soft accent-tinted pill with accent glyph; hover: one tint step
-                if (sel) TaskInk.Pill(g, c, radius, TaskInk.Wash(KitInk.Window, hov ? 0.20f : 0.16f));
-                else if (hov) TaskInk.Pill(g, c, radius, KitInk.Hover);
+                if (sel && !gliding) TaskInk.Pill(g, c, radius, TaskInk.Wash(KitInk.Window, hov ? 0.20f : 0.16f));
+                else if (hov && !sel) TaskInk.Pill(g, c, radius, KitInk.Hover);
                 Color fg = sel ? KitInk.Text : (hov ? KitInk.Text : KitInk.Sub);
                 Color glyph = sel ? KitInk.Accent : fg;
                 KitInk.Draw(g, it.Glyph.ToString(), fIcon, glyph, new RectangleF(c.X + 10 * s, c.Y, 24 * s, c.Height), ContentAlignment.MiddleCenter);

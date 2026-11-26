@@ -9,7 +9,6 @@ namespace Deskmate
         static void AddCore(Dictionary<string, string> en)
         {
             en.Add("Klik kanan island, lalu pilih Tugas dan catatan untuk membuka ruang kerja. Kelompokkan tugas dalam daftar dan simpan catatan di tab Catatan. Keduanya juga tersedia dari menu dock.", "Right-click the island and choose Tasks and notes to open your workspace. Organize tasks into lists and keep notes in the Notes tab. Both are also available from the dock menu.");
-            en.Add("Buka Pengaturan › Dock & Taskbar untuk menyalakan dock, memilih ukuran ikon, dan mengatur kapan dock disembunyikan. Opsi Ganti taskbar Windows tersedia terpisah; pilih sesuai cara kerjamu.", "Open Settings › Dock & Taskbar to enable the dock, choose an icon size, and decide when it hides. Replace Windows taskbar is a separate option; choose what suits your workflow.");
             en.Add("Aturan notifikasi aplikasi", "App notification rules");
             en.Add("Aturan notifikasi aplikasi…", "App notification rules…");
             en.Add("Ikuti pengaturan umum", "Use general settings");

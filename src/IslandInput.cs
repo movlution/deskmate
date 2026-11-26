@@ -204,6 +204,7 @@ namespace Deskmate
             base.OnMouseMove(e);
             bool wasOnBubble = bubbleRect.Contains(mouse);
             mouse = new PointF(e.X / scale, e.Y / scale);
+            if (current == View.Mini && MiniClickEnabled) return;
             if (prompterSizing != 0) { SizePrompterTo(Control.MousePosition); return; }
             if (dragId != null)
             {
@@ -301,6 +302,14 @@ namespace Deskmate
                     pressedCompactBounds = ToScreenBounds(bubbleRect);
                     return;
                 }
+                if (current == View.Mini && MiniClickEnabled && shell.Contains(pt) && CanExpand())
+                {
+                    hoverTimer.Stop();
+                    leaveTimer.Stop();
+                    pressedId = null;
+                    pressedCompactBounds = ToScreenBounds(shell);
+                    return;
+                }
                 if (InShape(pt))
                 {
                     if (!pointerInside) pointerInside = true;
@@ -389,6 +398,7 @@ namespace Deskmate
             else if (releasedOnPress && !expanded && CanExpand())
             {
                 hoverTimer.Stop();
+                if (current == View.Mini) pointerInside = InShape(pt);
                 Expand(ToastPage(false));
             }
             pressedId = null;

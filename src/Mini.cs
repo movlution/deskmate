@@ -7,7 +7,7 @@ using WinTimer = System.Windows.Forms.Timer;
 
 namespace Deskmate
 {
-    // Mini: click-through sliver on the edge
+    // Mini: compact sliver on the edge
     partial class Island
     {
         const int MiniHotkey = 11;
@@ -202,11 +202,13 @@ namespace Deskmate
             if (!miniIdle && (DateTime.UtcNow - quietUtc).TotalSeconds >= 60) { miniIdle = true; Kick(); }
         }
 
-        // Running script or sliver: every click passes
+        // Keep explicit Mini click-through. In Automatic, click-to-open also applies to the sliver.
+        bool MiniClickEnabled { get { return MiniMode == "auto" && settings.Get("panel.open", "hover") == "click"; } }
+
         void ApplyClickThrough()
         {
             if (!IsHandleCreated) return;
-            bool want = PrompterRunning() || current == View.Mini;
+            bool want = PrompterRunning() || (current == View.Mini && !MiniClickEnabled);
             PilotThrough(ref want);
             if (want == clickThrough) return;
             int ex = Native.GetWindowLong(Handle, ExStyle);

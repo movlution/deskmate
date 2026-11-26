@@ -23,6 +23,16 @@ namespace Deskmate
         bool BoardOn { get { return taskMode.Selected == 1; } }
         readonly TaskSyncStatus syncStatus = new TaskSyncStatus();
         readonly TaskIconButton moreBtn = new TaskIconButton { Glyph = '\uE712', AccessibleName = Lang.T("Opsi daftar") };
+        readonly TaskIconButton searchBtn = new TaskIconButton { Glyph = '\uE721', GlyphPx = 15, AccessibleName = Lang.T("Cari tugas") };
+        readonly TaskAddBox taskSearch = new TaskAddBox();
+        bool taskSearchOn;
+        string addHint = "";
+        int addHintW;
+        // Completed rows linger with their check filled, then leave together
+        readonly Timer completeTimer = new Timer { Interval = 420 };
+        readonly List<string> pendingDone = new List<string>();
+        readonly WorkToast toast = new WorkToast();
+        int shownTab = -1;
         string activeRailKey = "all";
         string currentSort = TaskTree.SortManual;
         bool doneOpen;
@@ -111,11 +121,7 @@ namespace Deskmate
                 RefillTasks(keepId);
             };
             rail.AccessibleName = Lang.T("Daftar tugas");
-            rail.Picked += delegate(string key)
-            {
-                activeRailKey = key;
-                RefillTasks(null);
-            };
+            rail.Picked += delegate(string key) { PickView(key); };
             rail.ItemMenu += delegate(string key, Point pt)
             {
                 ShowListItemMenu(key, pt);
@@ -162,6 +168,28 @@ namespace Deskmate
             else currentSort = TaskTree.SortManual;
             moreBtn.Back = delegate { return KitInk.Window; };
             moreBtn.Click += delegate { ShowMoreOptionsMenu(); };
+            searchBtn.Back = delegate { return KitInk.Window; };
+            searchBtn.Click += delegate { if (taskSearchOn) CloseTaskSearch(); else OpenTaskSearch(); };
+            noteTips.SetToolTip(searchBtn, Lang.T("Cari tugas") + " (Ctrl+F)");
+            noteTips.SetToolTip(moreBtn, Lang.T("Opsi daftar"));
+
+            taskSearch.BorderStyle = BorderStyle.None;
+            taskSearch.AccessibleName = Lang.T("Cari tugas");
+            taskSearch.Wheel = taskView;
+            taskSearch.Visible = false;
+            taskSearch.TextChanged += delegate { RefillTasks(null); };
+            taskSearch.KeyDown += delegate(object s, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; CloseTaskSearch(); }
+                else if (e.KeyCode == Keys.Down || e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; taskView.FocusFirst(); }
+            };
+            taskSearch.GotFocus += delegate { Invalidate(Rectangle.Inflate(wellAdd, 2, 2)); };
+            taskSearch.LostFocus += delegate { Invalidate(Rectangle.Inflate(wellAdd, 2, 2)); };
+            addBox.TextChanged += delegate { UpdateAddHint(); };
+
+            completeTimer.Tick += delegate { FlushCompletions(); };
+            toast.Back = delegate { return Tab == 1 ? KitInk.Group : BoardOn ? KitInk.Window : TaskInk.Card; };
+            toast.Placing += PlaceToast;
             noteTips.BackColor = KitInk.Window; noteTips.ForeColor = KitInk.Text;
             noteTips.Draw += delegate(object o, DrawToolTipEventArgs e)
             {
@@ -169,12 +197,12 @@ namespace Deskmate
                 KitInk.Draw(e.Graphics, noteTips.GetToolTip(e.AssociatedControl), e.Font, KitInk.Text, e.Bounds, ContentAlignment.MiddleLeft);
             };
             taskView.AccessibleName = Lang.T("Daftar tugas");
-            taskView.ToggleDone += delegate(TodoItem t)
+            taskView.ToggleDone += BeginToggleDone;
+            taskView.ToggleStar += delegate(TodoItem t)
             {
-                taskView.StartCheck(t, t.Done);
-                ToggleTaskDone(t);
+                taskView.PopStar(t.Id);
+                ToggleTaskStar(t);
             };
-            taskView.ToggleStar += ToggleTaskStar;
             taskView.EditItem += delegate(TodoItem t)
             {
                 EditTask(t);
@@ -219,6 +247,11 @@ namespace Deskmate
                 searchTimer.Stop();
                 if (string.IsNullOrEmpty(search.Text)) RefreshNotes(current);
                 else searchTimer.Start();
+            };
+            search.KeyDown += delegate(object s, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Escape && search.TextLength > 0) { e.SuppressKeyPress = true; search.Clear(); }
+                else if (e.KeyCode == Keys.Down) { e.SuppressKeyPress = true; noteList.Focus(); }
             };
             search.GotFocus += delegate { Invalidate(Rectangle.Inflate(wellSearch, 2, 2)); };
             search.LostFocus += delegate { Invalidate(Rectangle.Inflate(wellSearch, 2, 2)); };
@@ -303,10 +336,14 @@ namespace Deskmate
             noteStatsTimer.Tick += delegate { editor.RefreshFormatting(); UpdateNoteStats(); };
             saveTimer.Tick += delegate { saveTimer.Stop(); SaveCurrent(false); };
 
-            Controls.AddRange(new Control[] { tabs, taskMode, rail, title, addBox, taskView, board, syncStatus, moreBtn });
+            Controls.AddRange(new Control[] { tabs, taskMode, rail, title, addBox, taskSearch, taskView, board, syncStatus, searchBtn, moreBtn });
             Controls.AddRange(new Control[] { newNoteBtn, search, noteArchiveFilter, colorStrip, noteList, noteTagChip, blockBtn, checkBtn, colorBtn, pinBtn, archiveBtn, delBtn, noteTitleBox, editor });
+            Controls.Add(toast);
+            toast.BringToFront();
             FormClosing += (s, e) =>
             {
+                FlushCompletions();
+                toast.Dismiss();
                 if (!SaveCurrent(true)) { e.Cancel = true; return; }
                 saveTimer.Stop();
                 // Keep one persistent work window. The dock launcher and hotkey
@@ -318,7 +355,7 @@ namespace Deskmate
                     owner.SyncWorkDock();
                 }
             };
-            VisibleChanged += delegate { owner.SyncWorkDock(); };
+            VisibleChanged += delegate { if (!Visible) FlushCompletions(); owner.SyncWorkDock(); };
             Activated += delegate
             {
                 owner.SyncWorkDock();
@@ -358,6 +395,9 @@ namespace Deskmate
         {
             base.OnShown(e);
             FocusMain();
+            // The first look at the window: the open side's list cascades in
+            if (Tab == 0) { if (!BoardOn) taskView.PlayEnter(); }
+            else noteList.PlayEnter();
             owner.SyncGoogleWorkIfStale(15);
         }
 
@@ -366,7 +406,7 @@ namespace Deskmate
             if (disposing)
             {
                 if (blockMenu != null) blockMenu.Dispose();
-                saveTimer.Dispose(); noteStatsTimer.Dispose(); searchTimer.Dispose(); noteTips.Dispose();
+                saveTimer.Dispose(); noteStatsTimer.Dispose(); searchTimer.Dispose(); noteTips.Dispose(); completeTimer.Dispose();
             }
             base.Dispose(disposing);
             if (disposing)
@@ -382,6 +422,9 @@ namespace Deskmate
                 else EditTask(null, BoardOn ? BoardListForNewTask() : null); return true; }
             if (key == (Keys.Control | Keys.Shift | Keys.L) && Tab == 1 && current != null) { ToggleChecklistLine(); return true; }
             if (key == (Keys.Control | Keys.F) && Tab == 1) { search.Focus(); search.SelectAll(); return true; }
+            if (key == (Keys.Control | Keys.F) && Tab == 0 && !BoardOn) { OpenTaskSearch(); return true; }
+            // Ctrl+Z undoes the last toast action unless a text field owns the key for its own undo
+            if (key == (Keys.Control | Keys.Z) && toast.HasAction && !(ActiveControl is TextBoxBase)) { toast.RunAction(); return true; }
             return base.ProcessCmdKey(ref msg, key);
         }
 
@@ -418,18 +461,33 @@ namespace Deskmate
             if (!t && current == null && notes.Count > 0) { ShowNote(notes[0].Path); RefreshNotes(current); }
             bool gConn = GoogleWorkOn();
 
+            if (BoardOn && taskSearchOn) { taskSearchOn = false; taskSearch.Text = ""; }
             rail.Visible = t;
             title.Visible = t && !BoardOn;
-            addBox.Visible = t && !BoardOn;
+            addBox.Visible = t && !BoardOn && !taskSearchOn;
+            taskSearch.Visible = t && !BoardOn && taskSearchOn;
             taskMode.Visible = t;
             taskView.Visible = t && !BoardOn;
             board.Visible = t && BoardOn;
             syncStatus.Visible = t && gConn && !BoardOn;
             moreBtn.Visible = t && !BoardOn;
+            searchBtn.Visible = t && !BoardOn;
+            searchBtn.Active = taskSearchOn;
 
             newNoteBtn.Visible = search.Visible = noteArchiveFilter.Visible = colorStrip.Visible = noteList.Visible = !t;
             ApplyNoteEditorVisibility();
             Relayout();
+            if (shownTab != Tab)
+            {
+                // Switching tabs: the new side's list cascades in, and an old undo no longer applies here
+                if (shownTab >= 0)
+                {
+                    toast.Dismiss();
+                    if (t) { if (!BoardOn) taskView.PlayEnter(); }
+                    else noteList.PlayEnter();
+                }
+                shownTab = Tab;
+            }
         }
 
         void ApplyNoteEditorVisibility()
@@ -528,11 +586,12 @@ namespace Deskmate
 
             int btnSz = bar;
             moreBtn.SetBounds(W - pad - btnSz, y0, btnSz, btnSz);
+            searchBtn.SetBounds(moreBtn.Left - (int)(Ink.Sp4 * s) - btnSz, y0, btnSz, btnSz);
 
             int syncWidth = syncStatus.PreferredWidth();
-            syncStatus.SetBounds(moreBtn.Left - gap - syncWidth, y0 + (btnSz - (int)(28 * s)) / 2, syncWidth, (int)(28 * s));
+            syncStatus.SetBounds(searchBtn.Left - gap - syncWidth, y0 + (btnSz - (int)(28 * s)) / 2, syncWidth, (int)(28 * s));
 
-            int titleRight = (syncStatus.Visible ? syncStatus.Left - gap : moreBtn.Left - gap);
+            int titleRight = (syncStatus.Visible ? syncStatus.Left - gap : searchBtn.Left - gap);
             int titleW = Math.Max(100, titleRight - rx);
             // Title line, then the subtitle on its own line with air between them
             title.SetBounds(rx, y0, titleW, (int)(56 * s));
@@ -542,9 +601,15 @@ namespace Deskmate
             addBox.Font = fText;
             addBox.BackColor = TaskInk.Card;
             addBox.ForeColor = KitInk.Text;
-            addBox.SetBounds(wellAdd.X + (int)(40 * s), 0, wellAdd.Width - (int)(52 * s), addBox.Height);
+            addBox.SetBounds(wellAdd.X + (int)(40 * s), 0, Math.Max(40, wellAdd.Width - (int)(52 * s) - addHintW), addBox.Height);
             addBox.Top = wellAdd.Y + (wellAdd.Height - addBox.Height) / 2;
-            addBox.Placeholder = Lang.T("Tambah tugas…");
+            addBox.Placeholder = AddPlaceholder();
+            taskSearch.Font = fText;
+            taskSearch.BackColor = TaskInk.Card;
+            taskSearch.ForeColor = KitInk.Text;
+            taskSearch.SetBounds(wellAdd.X + (int)(40 * s), 0, wellAdd.Width - (int)(52 * s), taskSearch.Height);
+            taskSearch.Top = wellAdd.Y + (wellAdd.Height - taskSearch.Height) / 2;
+            taskSearch.Placeholder = Lang.T("Cari judul atau detail tugas…");
 
             int listTop = wellAdd.Bottom + (int)(Ink.Sp16 * s);
             int listHeight = H - pad - listTop;
@@ -609,8 +674,19 @@ namespace Deskmate
             editor.SetBounds(wellEditor.X + inset, edTop, wellEditor.Width - 2 * inset, Math.Max((int)(40 * s), wellEditor.Bottom - edTop - (int)(Ink.Sp16 * s)));
             Native.ThemeScroll(editor);
             editor.RefreshFormatting();
+            PlaceToast();
 
             Invalidate(true);
+        }
+
+        void PlaceToast()
+        {
+            if (!IsHandleCreated) return;
+            float s = Ui;
+            Rectangle host = Tab == 1 ? wellEditor : BoardOn ? board.Bounds : taskView.Bounds;
+            if (host.Width <= 0 || host.Height <= 0) host = ClientRectangle;
+            var size = toast.Measure(Math.Min(host.Width - (int)(Ink.Sp32 * s), (int)(520 * s)));
+            toast.SetBounds(host.X + (host.Width - size.Width) / 2, host.Bottom - size.Height - (int)(14 * s), size.Width, size.Height);
         }
 
         protected override void OnPaintBackground(PaintEventArgs e)
@@ -628,8 +704,19 @@ namespace Deskmate
             if (Tab == 0)
             {
                 if (BoardOn) return;
-                Field(g, wellAdd, addBox.Focused, s);
-                KitInk.Draw(g, "\uE710", Ink.Icons(14 * s), addBox.Focused ? KitInk.Accent : KitInk.Sub, new RectangleF(wellAdd.X + Ink.Sp12 * s, wellAdd.Y, 22 * s, wellAdd.Height), ContentAlignment.MiddleCenter);
+                bool focusedField = taskSearchOn ? taskSearch.Focused : addBox.Focused;
+                Field(g, wellAdd, focusedField, s);
+                KitInk.Draw(g, taskSearchOn ? "\uE721" : "\uE710", Ink.Icons((taskSearchOn ? 13.5f : 14f) * s), focusedField ? KitInk.Accent : KitInk.Sub, new RectangleF(wellAdd.X + Ink.Sp12 * s, wellAdd.Y, 22 * s, wellAdd.Height), ContentAlignment.MiddleCenter);
+                if (!taskSearchOn && addHint.Length > 0)
+                {
+                    // Live preview of the date the composer understood, as a calm accent chip
+                    var fChip = Ink.Small(11.5f * s);
+                    float cw = addHintW - Ink.Sp8 * s;
+                    var chip = new RectangleF(wellAdd.Right - Ink.Sp8 * s - cw, wellAdd.Y + (wellAdd.Height - 22 * s) / 2f, cw, 22 * s);
+                    TaskInk.Pill(g, chip, chip.Height / 2f, TaskInk.Wash(KitInk.Group, 0.16f));
+                    KitInk.Draw(g, "\uE787", Ink.Icons(10.5f * s), KitInk.Accent, new RectangleF(chip.X + 7 * s, chip.Y, 14 * s, chip.Height), ContentAlignment.MiddleCenter);
+                    KitInk.Draw(g, addHint, fChip, KitInk.Accent, new RectangleF(chip.X + 22 * s, chip.Y, chip.Width - 28 * s, chip.Height), ContentAlignment.MiddleLeft);
+                }
             }
             else
             {

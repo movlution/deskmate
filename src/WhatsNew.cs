@@ -20,6 +20,15 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.18.0",
+                Items = new[]
+                {
+                    new[] { "Tugas lebih cepat diatur", "Tampilan Hari ini dan Terencana, pencarian Ctrl+F, tenggat langsung dari kolom tulis, dan Urungkan setelah menyelesaikan atau menghapus tugas.", "" },
+                    new[] { "Panduan awal", "Pilih bahasa, dock, dan fitur seperti saat pertama dipasang. Buka lagi dari Pengaturan › Tentang.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.17.1",
                 Items = new[]
                 {

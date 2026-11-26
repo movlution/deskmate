@@ -285,6 +285,12 @@ namespace Deskmate
         DateTime lastStep;
         bool dragBar;
         float dragGrab;
+        // Motion: rows glide to their new place (a pin moves a note up), new rows fade up,
+        // and the selection wash slides between rows
+        readonly Dictionary<string, float> offs = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, float> appear = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        float selGlideY = float.NaN;
+        bool filled;
 
         public event Action<NoteInfo> SelectedChanged;
         public event Action<NoteInfo> TogglePinItem;
@@ -305,10 +311,19 @@ namespace Deskmate
             base.Dispose(disposing);
         }
 
+        bool Animating { get { return !Anim.Reduced && IsHandleCreated && Visible; } }
+
+        float Off(string key) { float v; return offs.TryGetValue(key, out v) ? v : 0f; }
+        float Appear(string key) { float v; return appear.TryGetValue(key, out v) ? Ease.OutCubic(Math.Max(0f, v)) : 1f; }
+
         public void SetData(List<NoteInfo> items, string selectedPath)
         {
             float s = Ui;
             selPath = selectedPath;
+            var was = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in rows) was[r.Note.Path] = r.Y + Off(r.Note.Path);
+            bool first = !filled;
+            filled = true;
             rows.Clear();
             float y = 6 * s;
             if (items != null)
@@ -323,8 +338,66 @@ namespace Deskmate
             }
             total = y + 6 * s;
             ClampScroll();
+            Settle(was, first);
             Invalidate();
             AccessibilityNotifyClients(AccessibleEvents.Reorder, 0);
+        }
+
+        void Settle(Dictionary<string, float> was, bool first)
+        {
+            var live = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in rows) live.Add(r.Note.Path);
+            foreach (var k in new List<string>(offs.Keys)) if (!live.Contains(k)) offs.Remove(k);
+            foreach (var k in new List<string>(appear.Keys)) if (!live.Contains(k)) appear.Remove(k);
+            if (!Animating) { offs.Clear(); appear.Clear(); selGlideY = float.NaN; return; }
+            int fresh = 0;
+            foreach (var r in rows)
+            {
+                float old;
+                if (was.TryGetValue(r.Note.Path, out old))
+                {
+                    float d = old - r.Y;
+                    if (Math.Abs(d) > 0.5f) offs[r.Note.Path] = d; else offs.Remove(r.Note.Path);
+                }
+                else
+                {
+                    // A filter that empties and refills the list cascades; one new note just fades up
+                    bool cascade = first || was.Count == 0 || rows.Count - was.Count > 2;
+                    if (cascade && r.Y - scroll > Height) continue;
+                    appear[r.Note.Path] = cascade ? -Math.Min(0.6f, fresh * 0.06f) : 0f;
+                    fresh++;
+                }
+            }
+            if (offs.Count > 0 || appear.Count > 0) Kick();
+        }
+
+        // Fresh look at the list (tab switch): rows cascade in
+        public void PlayEnter()
+        {
+            offs.Clear();
+            if (!Animating) { appear.Clear(); Invalidate(); return; }
+            int n = 0;
+            foreach (var r in rows)
+            {
+                float top = r.Y - scroll;
+                if (top + r.H < 0) continue;
+                if (top > Height) break;
+                appear[r.Note.Path] = -Math.Min(0.6f, n++ * 0.06f);
+            }
+            Kick();
+            Invalidate();
+        }
+
+        // Moves the selection without raising SelectedChanged (the window already opened the note)
+        public void SelectPath(string path)
+        {
+            if (string.Equals(path, selPath, StringComparison.OrdinalIgnoreCase)) return;
+            int from = SelIndex();
+            if (from >= 0 && Animating && float.IsNaN(selGlideY)) { selGlideY = rows[from].Y; Kick(); }
+            selPath = path;
+            int to = SelIndex();
+            if (to >= 0) Reveal(to);
+            Invalidate();
         }
 
         int SelIndex()
@@ -361,6 +434,26 @@ namespace Deskmate
                 scroll += (scrollTarget - scroll) * (1f - (float)Math.Exp(-dt / 55f));
                 if (Math.Abs(scrollTarget - scroll) <= 0.4f) scroll = scrollTarget; else busy = true;
             }
+            float glide = 1f - (float)Math.Exp(-dt / (1000f * Anim.Response(0.07f)));
+            foreach (var k in new List<string>(offs.Keys))
+            {
+                float v = offs[k] * (1f - glide);
+                if (Math.Abs(v) < 0.5f) offs.Remove(k); else { offs[k] = v; busy = true; }
+            }
+            float fade = dt / (1000f * Anim.Response(0.22f));
+            foreach (var k in new List<string>(appear.Keys))
+            {
+                float v = appear[k] + fade;
+                if (v >= 1f) appear.Remove(k); else { appear[k] = v; busy = true; }
+            }
+            int at = SelIndex();
+            if (at >= 0 && !float.IsNaN(selGlideY))
+            {
+                float want = rows[at].Y;
+                selGlideY += (want - selGlideY) * (1f - (float)Math.Exp(-dt / (1000f * Anim.Response(0.05f))));
+                if (Math.Abs(want - selGlideY) < 0.5f) selGlideY = float.NaN; else busy = true;
+            }
+            else selGlideY = float.NaN;
             Invalidate();
             if (!busy) anim.Stop();
         }
@@ -468,13 +561,23 @@ namespace Deskmate
             KitInk.Smooth(g);
             g.Clear(KitInk.Window);
             float s = Ui;
+            int sat = SelIndex();
+            // The selection wash slides from the last pick, under the rows' text
+            if (sat >= 0 && !float.IsNaN(selGlideY))
+            {
+                var sr = rows[sat];
+                float gy = selGlideY - scroll + Off(sr.Note.Path);
+                TaskInk.Pill(g, new RectangleF(6 * s, gy + 2 * s, Width - 12 * s, sr.H - 4 * s), Ink.RadiusControl * s, TaskInk.Wash(KitInk.Window, 0.16f));
+            }
             for (int i = 0; i < rows.Count; i++)
             {
                 var r = rows[i];
-                float top = r.Y - scroll;
+                float a = Appear(r.Note.Path);
+                float top = r.Y - scroll + Off(r.Note.Path) + (1f - a) * 10 * s;
                 if (top + r.H < e.ClipRectangle.Top) continue;
-                if (top > e.ClipRectangle.Bottom) break;
+                if (top > e.ClipRectangle.Bottom) continue;
                 DrawRow(g, r, top, i);
+                if (a < 1f) g.FillRectangle(KitInk.BrushOf(Color.FromArgb((int)(255 * (1f - a)), KitInk.Window)), 0, top, Width, r.H);
             }
             var bar = Bar();
             if (!bar.IsEmpty) TaskInk.Pill(g, bar, bar.Width / 2f, TaskInk.Fade(KitInk.Window, KitInk.Text, dragBar ? 0.4f : 0.22f));
@@ -482,7 +585,7 @@ namespace Deskmate
             if (at >= 0)
             {
                 var r = rows[at];
-                Ring(g, new RectangleF(6 * s, r.Y - scroll + 2 * s, Width - 12 * s, r.H - 4 * s), Ink.RadiusControl * s);
+                Ring(g, new RectangleF(6 * s, r.Y - scroll + Off(r.Note.Path) + 2 * s, Width - 12 * s, r.H - 4 * s), Ink.RadiusControl * s);
             }
         }
 
@@ -491,16 +594,18 @@ namespace Deskmate
             float s = Ui;
             var n = r.Note;
             bool sel = string.Equals(n.Path, selPath, StringComparison.OrdinalIgnoreCase);
+            bool gliding = sel && !float.IsNaN(selGlideY);
             float amt = HotAmt(n.Path);
             var pill = new RectangleF(6 * s, top + 2 * s, Width - 12 * s, r.H - 4 * s);
             // Selected reads like the task rail: a soft accent wash. A label colour tints the card
             // lightly and keeps a slim marker so the colour is never the only cue.
             Color baseBg = sel ? TaskInk.Wash(KitInk.Window, 0.16f) : TaskInk.Fade(KitInk.Window, TaskInk.RowHover, amt);
+            Color drawBg = gliding && NotePalette.ColorOf(n.Color) == Color.Empty ? KitInk.Window : baseBg;
             Color cardTint = NotePalette.ColorOf(n.Color);
             if (cardTint != Color.Empty)
                 baseBg = Ink.Mix(baseBg, cardTint, sel ? (Ink.Light ? 0.12f : 0.14f) : (Ink.Light ? 0.07f : 0.09f));
-            if (baseBg != KitInk.Window)
-                TaskInk.Pill(g, pill, Ink.RadiusControl * s, baseBg);
+            if (drawBg != KitInk.Window)
+                TaskInk.Pill(g, pill, Ink.RadiusControl * s, drawBg);
             if (cardTint != Color.Empty)
                 TaskInk.Pill(g, new RectangleF(pill.X + Ink.Sp4 * s, pill.Y + Ink.Sp8 * s, 3 * s, pill.Height - Ink.Sp16 * s), 1.5f * s, cardTint);
 
@@ -623,6 +728,12 @@ namespace Deskmate
             if (i < 0 || i >= rows.Count) return;
             var n = rows[i].Note;
             if (string.Equals(n.Path, selPath, StringComparison.OrdinalIgnoreCase)) return;
+            int from = SelIndex();
+            if (from >= 0 && Animating)
+            {
+                selGlideY = float.IsNaN(selGlideY) ? rows[from].Y : selGlideY;
+                Kick();
+            }
             selPath = n.Path;
             Invalidate();
             AccessibilityNotifyClients(AccessibleEvents.Focus, i);

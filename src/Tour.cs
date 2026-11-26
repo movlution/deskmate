@@ -18,14 +18,6 @@ namespace Deskmate
             public Func<bool> Done;
         }
 
-        void TourOnFirstRun()
-        {
-            if (!settings.Fresh || settings.GetBool("tour.done", false)) return;
-            var wait = new System.Windows.Forms.Timer { Interval = 4500 };
-            wait.Tick += delegate { wait.Stop(); wait.Dispose(); StartTour(); };
-            wait.Start();
-        }
-
         public void StartTour()
         {
             if (tour != null && !tour.IsDisposed) { tour.Activate(); return; }
@@ -48,10 +40,16 @@ namespace Deskmate
                 + " " + Lang.T("Misalnya \"timer 25 menit\", \"ingetin minum 30 menit lagi\", atau \"catat beli galon\". Perintah seperti ini jalan tanpa internet.");
             string menu = Lang.T("Klik kanan island atau ikon Deskmate di tray untuk timer fokus, teleprompter, catatan kilat, cermin kamera, dan Pengaturan. Sholat, minum, dan cuaca dinyalakan di Pengaturan › Cuaca & Pengingat.")
                 + (navKey.Length > 0 ? " " + Lang.F("{0} memindahkan fokus ke island untuk dipakai dengan keyboard.", navKey) : "");
+            // Follows what setup chose for the dock
+            string dock = !DockBarOn
+                ? Lang.T("Dock sedang mati. Nyalakan di Pengaturan › Dock & Taskbar kalau ingin aplikasi, jendela terbuka, dan jam di tepi bawah layar; opsi Ganti taskbar Windows ada di halaman yang sama.")
+                : settings.GetBool("dockbar.replace", false)
+                    ? Lang.T("Dock di tepi bawah kini menggantikan taskbar Windows: klik ikon untuk membuka aplikasi, klik kanan untuk menyematkan, dan ikon tray ada di pojok kanannya. Ukuran ikon, sembunyi otomatis, dan widget diatur di Pengaturan › Dock & Taskbar.")
+                    : Lang.T("Dock di tepi bawah menampung aplikasi, jendela terbuka, dan widget, berdampingan dengan taskbar Windows. Ukuran ikon, sembunyi otomatis, dan opsi Ganti taskbar Windows diatur di Pengaturan › Dock & Taskbar.");
             var steps = new[]
             {
                 new TourStep { Title = Lang.T("Ini Deskmate"), Body = Lang.T("Island di tepi atas ini membesar saat ada yang terjadi: lagu diputar, pesan masuk, agent minta izin, unduhan berjalan, atau flashdisk dicolok. Saat tidak dipakai, ia bisa menyusut jadi garis kecil bermata yang tembus klik.") },
-                new TourStep { Title = Lang.T("Dock dan taskbar"), Body = Lang.T("Buka Pengaturan › Dock & Taskbar untuk menyalakan dock, memilih ukuran ikon, dan mengatur kapan dock disembunyikan. Opsi Ganti taskbar Windows tersedia terpisah; pilih sesuai cara kerjamu.") },
+                new TourStep { Title = Lang.T("Dock dan taskbar"), Body = dock },
                 new TourStep { Title = Lang.T("Tugas dan catatan"), Body = Lang.T("Klik kanan island, lalu pilih Tugas dan catatan untuk membuka ruang kerja. Kelompokkan tugas dalam daftar dan simpan catatan di tab Catatan. Keduanya juga tersedia dari menu dock.") },
                 new TourStep
                 {

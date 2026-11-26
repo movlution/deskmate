@@ -29,6 +29,22 @@ namespace Deskmate
             railItems.Add(new RailItem
             {
                 Kind = RailItem.View,
+                Key = "today",
+                Text = Lang.T("Hari ini"),
+                Glyph = '\uE706',
+                Count = TaskTree.CountWhere(todos, TaskTree.DueToday)
+            });
+            railItems.Add(new RailItem
+            {
+                Kind = RailItem.View,
+                Key = "planned",
+                Text = Lang.T("Terjadwal"),
+                Glyph = '\uE787',
+                Count = TaskTree.CountWhere(todos, TaskTree.Planned)
+            });
+            railItems.Add(new RailItem
+            {
+                Kind = RailItem.View,
                 Key = "starred",
                 Text = Lang.T("Berbintang"),
                 Glyph = '\uE735',
@@ -71,23 +87,42 @@ namespace Deskmate
             var lists = owner != null && owner.taskLists != null ? owner.taskLists : new List<TaskListInfo>();
             TaskLists.Ensure(lists, todos);
 
-            if (activeRailKey != "all" && activeRailKey != "starred")
+            if (!IsViewKey(activeRailKey))
             {
                 if (TaskLists.Find(lists, activeRailKey) == null)
                     activeRailKey = TaskLists.Default;
             }
 
             bool starred = activeRailKey == "starred";
-            string listName = (activeRailKey == "all" || activeRailKey == "starred") ? null : activeRailKey;
+            string listName = IsViewKey(activeRailKey) ? null : activeRailKey;
+            var filter = ViewFilter();
+            bool searching = taskSearchOn && taskSearch.Text.Trim().Length > 0;
 
             listOrder.Clear();
             foreach (var l in lists) listOrder.Add(l.Name);
 
-            var openRows = TaskTree.Open(todos, listName, starred, currentSort, listOrder, collapsed);
-            var doneItems = TaskTree.Done(todos, listName, starred);
+            // Planned reads as a timeline, whatever the list sort is
+            string sort = activeRailKey == "planned" || activeRailKey == "today" ? TaskTree.SortDate : currentSort;
+            var openRows = TaskTree.OpenWhere(todos, listName == null, filter, sort, listOrder, collapsed);
+            var doneItems = TaskTree.DoneWhere(todos, filter);
 
             string emptyTitle, emptySub;
-            if (starred)
+            if (searching)
+            {
+                emptyTitle = Lang.T("Tidak ada tugas yang cocok");
+                emptySub = Lang.T("Coba kata kunci lain");
+            }
+            else if (activeRailKey == "today" && doneItems.Count == 0)
+            {
+                emptyTitle = Lang.T("Tidak ada tugas untuk hari ini");
+                emptySub = Lang.T("Tugas bertenggat hari ini atau terlambat muncul di sini");
+            }
+            else if (activeRailKey == "planned" && doneItems.Count == 0)
+            {
+                emptyTitle = Lang.T("Belum ada tugas terjadwal");
+                emptySub = Lang.T("Beri tenggat, mis. \"Kirim laporan @besok 10:00\"");
+            }
+            else if (starred)
             {
                 emptyTitle = Lang.T("Tidak ada tugas berbintang");
                 emptySub = Lang.T("Beri bintang pada tugas untuk melihatnya di sini");
@@ -105,14 +140,23 @@ namespace Deskmate
 
             taskView.SetData(openRows, doneItems, doneOpen, listName == null, emptyTitle, emptySub);
             if (keepId != null) taskView.Select(keepId);
-            if (BoardOn) RefillBoard(todos, lists, listName, starred, keepId);
+            if (BoardOn) RefillBoard(todos, lists, listName, filter, keepId);
 
             if (activeRailKey == "all") title.Title = Lang.T("Semua tugas");
             else if (activeRailKey == "starred") title.Title = Lang.T("Berbintang");
+            else if (activeRailKey == "today") title.Title = Lang.T("Hari ini");
+            else if (activeRailKey == "planned") title.Title = Lang.T("Terjadwal");
             else title.Title = activeRailKey;
 
-            int openCount = TaskTree.OpenCount(todos, listName, starred);
-            title.Subtitle = openCount == 0 ? Lang.T("Tidak ada tugas aktif") : (openCount == 1 ? "1 " + Lang.T("tugas aktif") : openCount + " " + Lang.T("tugas aktif"));
+            int openCount = TaskTree.CountWhere(todos, filter);
+            if (searching)
+                title.Subtitle = openCount == 0 ? Lang.T("Tidak ada hasil") : Lang.F("{0} hasil", openCount);
+            else
+            {
+                title.Subtitle = openCount == 0 ? Lang.T("Tidak ada tugas aktif") : (openCount == 1 ? "1 " + Lang.T("tugas aktif") : openCount + " " + Lang.T("tugas aktif"));
+                if (activeRailKey == "today") title.Subtitle = DateTime.Today.ToString("dddd, d MMMM", CultureInfo.CurrentCulture) + "  \u00B7  " + title.Subtitle;
+            }
+            title.Invalidate();
 
             RefillRail();
             UpdateSyncStatus();
@@ -208,15 +252,29 @@ namespace Deskmate
             int at = text.LastIndexOf('@');
             if (at < 0 || (at > 0 && !char.IsWhiteSpace(text[at - 1]))) return true;
             DateTime? date = null; TimeSpan? time = null;
+            string prev = "";
             foreach (var raw in text.Substring(at + 1).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
             {
                 string w = raw.ToLowerInvariant();
-                DateTime d; TimeSpan t;
+                DateTime d; TimeSpan t; int wd;
                 if (w == "besok" || w == "tomorrow") date = DateTime.Today.AddDays(1);
+                else if (w == "lusa") date = DateTime.Today.AddDays(2);
                 else if (w == "hari" || w == "hariini" || w == "today") date = DateTime.Today;
+                // "minggu depan" / "next week": Monday of next week
+                else if ((w == "depan" && prev == "minggu") || (w == "week" && prev == "next")) date = NextWeekday(DayOfWeek.Monday);
+                else if (w == "next") { }
+                else if ((wd = Weekday(w)) >= 0) date = NextWeekday((DayOfWeek)wd);
                 else if (DateTime.TryParseExact(w, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out d)) date = d.Date;
+                else if (DateTime.TryParseExact(w, new[] { "d/M", "d/M/yyyy", "d-M-yyyy" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out d))
+                {
+                    date = d.Date;
+                    // A day and month without a year that already passed means next year
+                    if (w.Split('/', '-').Length == 2 && date.Value < DateTime.Today) date = date.Value.AddYears(1);
+                }
                 else if (TimeSpan.TryParseExact(w.Replace('.', ':'), new[] { "h\\:mm", "hh\\:mm" }, CultureInfo.InvariantCulture, out t)) time = t;
+                else if (w.StartsWith("jam", StringComparison.Ordinal) || w == "pukul" || w == "at") { }
                 else return true;
+                prev = w;
             }
             if (!date.HasValue && !time.HasValue) return true;
             string head = text.Substring(0, at).Trim();
@@ -229,6 +287,194 @@ namespace Deskmate
             return true;
         }
 
+        static readonly string[] DayWords = { "minggu", "senin", "selasa", "rabu", "kamis", "jumat", "sabtu" };
+        static readonly string[] DayWordsEn = { "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday" };
+
+        static int Weekday(string w)
+        {
+            if (w == "jum'at") w = "jumat";
+            for (int i = 0; i < 7; i++)
+                if (w == DayWords[i] || w == DayWordsEn[i] || (w.Length == 3 && DayWordsEn[i].StartsWith(w, StringComparison.Ordinal))) return i;
+            return -1;
+        }
+
+        // The next such day after today; today itself is "hari ini"
+        static DateTime NextWeekday(DayOfWeek day)
+        {
+            int ahead = ((int)day - (int)DateTime.Today.DayOfWeek + 7) % 7;
+            return DateTime.Today.AddDays(ahead == 0 ? 7 : ahead);
+        }
+
+        static bool IsViewKey(string key) { return key == "all" || key == "starred" || key == "today" || key == "planned"; }
+
+        Predicate<TodoItem> ViewFilter()
+        {
+            string key = activeRailKey;
+            string query = taskSearchOn ? taskSearch.Text.Trim() : "";
+            Predicate<TodoItem> view;
+            if (key == "starred") view = t => t.Star;
+            else if (key == "today") view = TaskTree.DueToday;
+            else if (key == "planned") view = TaskTree.Planned;
+            else if (key == "all") view = null;
+            else view = t => TaskLists.Same(TaskLists.NameOf(t), key);
+            if (query.Length == 0) return view ?? (t => true);
+            return t => (view == null || view(t)) && TaskTree.Matches(t, query);
+        }
+
+        string AddPlaceholder()
+        {
+            if (activeRailKey == "today") return Lang.T("Tambah tugas untuk hari ini…");
+            return Lang.T("Tambah tugas… (mis. Rapat @besok 10:00)");
+        }
+
+        void UpdateAddHint()
+        {
+            string titleStr; DateTime? due;
+            string text = addBox.Text.Replace('\r', ' ').Replace('\n', ' ');
+            ParseDue(text, out titleStr, out due);
+            string hint = due.HasValue ? TaskInk.DueText(due.Value) : "";
+            if (hint == addHint) return;
+            addHint = hint;
+            float s = Ui;
+            addHintW = hint.Length == 0 ? 0 : TextRenderer.MeasureText(hint, Ink.Small(11.5f * s), new Size(int.MaxValue, 1000), TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width + (int)(44 * s);
+            addBox.Width = Math.Max(40, wellAdd.Width - (int)(52 * s) - addHintW);
+            Invalidate(Rectangle.Inflate(wellAdd, 2, 2));
+        }
+
+        void OpenTaskSearch()
+        {
+            if (Tab != 0 || BoardOn) return;
+            if (!taskSearchOn)
+            {
+                taskSearchOn = true;
+                ApplyTab();
+            }
+            taskSearch.Focus();
+            taskSearch.SelectAll();
+        }
+
+        void CloseTaskSearch()
+        {
+            if (!taskSearchOn) return;
+            taskSearchOn = false;
+            taskSearch.Text = "";
+            ApplyTab();
+            RefillTasks(null);
+            taskView.PlayEnter();
+            addBox.Focus();
+        }
+
+        // ---------- completion with a beat, and undo ----------
+
+        void BeginToggleDone(TodoItem t)
+        {
+            if (t == null) return;
+            if (pendingDone.Contains(t.Id))
+            {
+                // A second click inside the beat takes it back
+                pendingDone.Remove(t.Id);
+                taskView.MarkCompleting(t.Id, false);
+                taskView.StartCheck(t, true);
+                if (pendingDone.Count == 0) completeTimer.Stop();
+                return;
+            }
+            if (t.Done || Anim.Reduced || !taskView.Visible)
+            {
+                taskView.StartCheck(t, t.Done);
+                ToggleTaskDone(t);
+                return;
+            }
+            pendingDone.Add(t.Id);
+            taskView.MarkCompleting(t.Id, true);
+            completeTimer.Stop();
+            completeTimer.Interval = (int)(420 * Anim.Pace);
+            completeTimer.Start();
+        }
+
+        void FlushCompletions()
+        {
+            completeTimer.Stop();
+            if (pendingDone.Count == 0) return;
+            var ids = new List<string>(pendingDone);
+            pendingDone.Clear();
+            var done = new List<TodoItem>();
+            foreach (string id in ids)
+            {
+                var t = FindTask(id);
+                if (t == null || t.Done) continue;
+                t.Done = true;
+                t.DoneAt = DateTime.Now;
+                t.UpdatedUtc = DateTime.UtcNow;
+                t.Dirty = true;
+                done.Add(t);
+            }
+            foreach (string id in ids) taskView.MarkCompleting(id, false);
+            if (done.Count == 0) { RefillTasks(null); return; }
+            if (Changed(null)) ToastDone(done);
+        }
+
+        void ToastDone(List<TodoItem> done)
+        {
+            var ids = done.ConvertAll(x => x.Id);
+            string msg = done.Count == 1 ? Lang.T("Tugas selesai") : Lang.F("{0} tugas selesai", done.Count);
+            ShowToast(msg, delegate
+            {
+                string keep = null;
+                foreach (string id in ids)
+                {
+                    var t = FindTask(id);
+                    if (t == null || !t.Done) continue;
+                    t.Done = false;
+                    t.DoneAt = null;
+                    t.UpdatedUtc = DateTime.UtcNow;
+                    t.Dirty = true;
+                    keep = t.Id;
+                }
+                if (keep != null) Changed(keep);
+            });
+        }
+
+        void ShowToast(string message, Action undo)
+        {
+            toast.Show(message, Lang.T("Urungkan"), undo);
+        }
+
+        // Puts deleted tasks back. A Google delete still queued is cancelled; one already sent
+        // means the task is created again instead of pointing at a removed remote task
+        void RestoreTasks(List<TodoItem> items, Dictionary<string, string> parents)
+        {
+            if (owner == null || items == null || items.Count == 0) return;
+            if (owner.todos == null) owner.EnsureWorkData();
+            var queue = TodoFile.LoadDeletedGoogle();
+            bool queueChanged = false;
+            foreach (var t in items)
+            {
+                if (owner.todos.Exists(x => x != null && x.Id == t.Id)) continue;
+                if (!string.IsNullOrEmpty(t.GoogleTaskId))
+                {
+                    int at = queue.FindIndex(q => q[1] == t.GoogleTaskId);
+                    if (at >= 0) { queue.RemoveAt(at); queueChanged = true; }
+                    else { t.GoogleTaskId = ""; t.GoogleListId = ""; }
+                }
+                t.UpdatedUtc = DateTime.UtcNow;
+                t.Dirty = true;
+                t.Moved = true;
+                owner.todos.Add(t);
+            }
+            if (parents != null)
+                foreach (var pair in parents)
+                {
+                    var child = FindTask(pair.Key);
+                    if (child != null && string.IsNullOrEmpty(child.ParentId) && FindTask(pair.Value) != null)
+                    {
+                        child.ParentId = pair.Value;
+                        child.Moved = true; child.Dirty = true; child.UpdatedUtc = DateTime.UtcNow;
+                    }
+                }
+            if (queueChanged) TodoFile.SaveDeletedGoogle(queue);
+            Changed(items[0].Id);
+        }
+
         void AddTask()
         {
             if (owner == null) return;
@@ -237,7 +483,9 @@ namespace Deskmate
             if (text.Length == 0) return;
             string titleStr; DateTime? due;
             ParseDue(text, out titleStr, out due);
-            string targetList = (activeRailKey == "all" || activeRailKey == "starred") ? TaskLists.Default : activeRailKey;
+            string targetList = IsViewKey(activeRailKey) ? TaskLists.Default : activeRailKey;
+            // Added from Today or Planned: due today, so it stays in the view it was typed into
+            if (!due.HasValue && (activeRailKey == "today" || activeRailKey == "planned")) due = DateTime.Today;
             var item = new TodoItem
             {
                 Title = titleStr,
@@ -251,6 +499,7 @@ namespace Deskmate
             owner.todos.Add(item);
             addBox.Clear();
             Changed(item.Id);
+            taskView.Select(item.Id);
             addBox.Focus();
         }
 
@@ -315,25 +564,46 @@ namespace Deskmate
             dlg.Show(this);
         }
 
+        // No confirmation: the toast offers undo, as Google Tasks and To Do do
         void DeleteTask(TodoItem t)
         {
             if (t == null || owner == null) return;
             if (owner.todos == null) owner.EnsureWorkData();
-            int count = TaskTree.Children(owner.todos, t).Count;
-            string msg = count > 0 ? Lang.F("Hapus tugas ini beserta {0} subtugasnya?", count) : Lang.T("Hapus tugas ini?");
-            if (!KitAsk.Confirm(this, msg)) return;
+            pendingDone.Remove(t.Id);
+            var gone = TaskTree.Subtree(owner.todos, t);
             TaskTree.Delete(owner.todos, t);
-            Changed(null);
+            if (!Changed(null)) return;
+            string msg = gone.Count > 1 ? Lang.F("Tugas dan {0} subtugas dihapus", gone.Count - 1) : Lang.T("Tugas dihapus");
+            ShowToast(msg, delegate { RestoreTasks(gone, null); });
         }
 
         void ClearDone()
         {
             if (owner == null) return;
             if (owner.todos == null) owner.EnsureWorkData();
-            if (!KitAsk.Confirm(this, Lang.T("Hapus semua tugas yang selesai?"), Lang.T("Hapus"), Lang.T("Batal"))) return;
-            string list = (activeRailKey == "all" || activeRailKey == "starred") ? null : activeRailKey;
-            TaskTree.ClearDone(owner.todos, list);
-            Changed(null);
+            // Only the completed tasks this view shows: Starred clears starred ones, not every list
+            var done = TaskTree.DoneWhere(owner.todos, ViewFilter());
+            if (done.Count == 0) return;
+            var ids = new HashSet<string>();
+            foreach (var t in done) ids.Add(t.Id);
+            var parents = new Dictionary<string, string>();
+            foreach (var t in owner.todos)
+                if (t != null && !ids.Contains(t.Id) && !string.IsNullOrEmpty(t.ParentId) && ids.Contains(t.ParentId)) parents[t.Id] = t.ParentId;
+            foreach (var t in done)
+            {
+                if (!string.IsNullOrEmpty(t.GoogleTaskId)) TodoFile.AddDeletedGoogle(t.GoogleListId, t.GoogleTaskId);
+                owner.todos.Remove(t);
+            }
+            // Open subtasks of a removed parent move up a level instead of dangling
+            foreach (var pair in parents)
+            {
+                var child = FindTask(pair.Key);
+                if (child == null) continue;
+                child.ParentId = ""; child.Moved = true; child.Dirty = true; child.UpdatedUtc = DateTime.UtcNow;
+            }
+            if (!Changed(null)) return;
+            ShowToast(done.Count == 1 ? Lang.T("1 tugas selesai dihapus") : Lang.F("{0} tugas selesai dihapus", done.Count),
+                delegate { RestoreTasks(done, parents); });
         }
 
         void ToggleTaskStar(TodoItem t)
@@ -342,6 +612,48 @@ namespace Deskmate
             t.UpdatedUtc = DateTime.UtcNow;
             t.Dirty = true;
             Changed(t.Id);
+        }
+
+        void SetTaskDue(TodoItem t, DateTime? due)
+        {
+            if (t == null) return;
+            // Keep an hour the task already had when only the day changes
+            if (due.HasValue && t.Due.HasValue && t.Due.Value.TimeOfDay != TimeSpan.Zero) due = due.Value.Date + t.Due.Value.TimeOfDay;
+            t.Due = due;
+            t.UpdatedUtc = DateTime.UtcNow;
+            t.Dirty = true;
+            Changed(t.Id);
+        }
+
+        void MoveTaskToList(TodoItem t, string list)
+        {
+            if (t == null || owner == null || TaskLists.Same(TaskLists.NameOf(t), list)) return;
+            string from = TaskLists.NameOf(t);
+            if (!TaskTree.MoveBoardCard(owner.todos, t, list, null, false)) return;
+            if (!Changed(t.Id)) return;
+            string shown = TaskLists.IsDefault(list) ? Lang.T(TaskLists.Default) : list;
+            string id = t.Id;
+            ShowToast(Lang.F("Dipindahkan ke {0}", shown), delegate
+            {
+                var back = FindTask(id);
+                if (back != null && TaskTree.MoveBoardCard(owner.todos, back, from, null, false)) Changed(id);
+            });
+        }
+
+        void DuplicateTask(TodoItem t)
+        {
+            if (t == null || owner == null) return;
+            var copy = TaskTree.Duplicate(owner.todos, t);
+            if (copy != null && Changed(copy.Id)) taskView.Select(copy.Id);
+        }
+
+        static void CopyTaskText(TodoItem t)
+        {
+            if (t == null) return;
+            string text = t.Title ?? "";
+            if (!string.IsNullOrWhiteSpace(t.Notes)) text += Environment.NewLine + t.Notes.Trim();
+            try { Clipboard.SetText(text); }
+            catch (Exception ex) { Log.Write("salin tugas: " + ex.Message); }
         }
 
         TodoItem FindTask(string id)
@@ -355,7 +667,7 @@ namespace Deskmate
             return lane != null ? lane.ListName : TaskLists.Find(owner.taskLists, activeRailKey) != null ? activeRailKey : TaskLists.Default;
         }
 
-        void RefillBoard(List<TodoItem> tasks, List<TaskListInfo> lists, string listName, bool starred, string keepId)
+        void RefillBoard(List<TodoItem> tasks, List<TaskListInfo> lists, string listName, Predicate<TodoItem> filter, string keepId)
         {
             var ordered = new List<TaskListInfo>();
             foreach (string id in boardOrder)
@@ -396,8 +708,10 @@ namespace Deskmate
                 boardLanes.Insert(i, lane);
                 lane.TabIndex = i;
                 lane.CanMoveList = names.Length > 1;
-                var open = TaskTree.Open(tasks, name, starred, TaskTree.SortManual, null, null);
-                lane.SetCards(open.ConvertAll(row => row.Item), TaskTree.Done(tasks, name, starred), keepId);
+                string laneName = name;
+                Predicate<TodoItem> inLane = t => TaskLists.Same(TaskLists.NameOf(t), laneName) && (filter == null || filter(t));
+                var open = TaskTree.OpenWhere(tasks, false, inLane, TaskTree.SortManual, null, null);
+                lane.SetCards(open.ConvertAll(row => row.Item), TaskTree.DoneWhere(tasks, inLane), keepId);
             }
             LayoutBoard();
         }
@@ -462,11 +776,12 @@ namespace Deskmate
 
         void ToggleTaskDone(TodoItem t)
         {
+            pendingDone.Remove(t.Id);
             t.Done = !t.Done;
             t.DoneAt = t.Done ? (DateTime?)DateTime.Now : null;
             t.UpdatedUtc = DateTime.UtcNow;
             t.Dirty = true;
-            Changed(t.Id);
+            if (Changed(t.Id) && t.Done) ToastDone(new List<TodoItem> { t });
         }
 
         void MoveBoardCard(string id, string list, string anchorId, bool after)
@@ -488,12 +803,47 @@ namespace Deskmate
             var menu = new ContextMenuStrip();
             menu.Closed += delegate { BeginInvoke(new Action(menu.Dispose)); };
             menu.Items.Add(Lang.T("Edit…"), null, delegate { EditTask(t); });
-            if (BoardOn)
+            menu.Items.Add(Lang.T(t.Done ? "Tandai belum selesai" : "Tandai selesai"), null, delegate
             {
-                menu.Items.Add(Lang.T(t.Done ? "Tandai belum selesai" : "Tandai selesai"), null,
-                    delegate { ToggleTaskDone(t); });
-                menu.Items.Add(Lang.T(t.Star ? "Hapus bintang" : "Beri bintang"), null, delegate { ToggleTaskStar(t); });
+                if (BoardOn) ToggleTaskDone(t);
+                else BeginToggleDone(t);
+            });
+            menu.Items.Add(Lang.T(t.Star ? "Hapus bintang" : "Beri bintang"), null, delegate
+            {
+                taskView.PopStar(t.Id);
+                ToggleTaskStar(t);
+            });
+
+            // Due date in one step, the four choices people pick most
+            var dueMenu = new ToolStripMenuItem(Lang.T("Tenggat"));
+            dueMenu.DropDownItems.Add(Lang.T("Hari ini"), null, delegate { SetTaskDue(t, DateTime.Today); });
+            dueMenu.DropDownItems.Add(Lang.T("Besok"), null, delegate { SetTaskDue(t, DateTime.Today.AddDays(1)); });
+            dueMenu.DropDownItems.Add(Lang.T("Minggu depan"), null, delegate { SetTaskDue(t, NextWeekday(DayOfWeek.Monday)); });
+            if (t.Due.HasValue)
+            {
+                dueMenu.DropDownItems.Add(new ToolStripSeparator());
+                dueMenu.DropDownItems.Add(Lang.T("Hapus tenggat"), null, delegate { SetTaskDue(t, null); });
             }
+            dueMenu.DropDownItems.Add(new ToolStripSeparator());
+            dueMenu.DropDownItems.Add(Lang.T("Pilih tanggal…"), null, delegate { EditTask(t); });
+            menu.Items.Add(dueMenu);
+
+            if (owner.taskLists != null && owner.taskLists.Count > 1)
+            {
+                var moveMenu = new ToolStripMenuItem(Lang.T("Pindah ke daftar"));
+                foreach (var l in owner.taskLists)
+                {
+                    string name = l.Name;
+                    var item = new ToolStripMenuItem(TaskLists.IsDefault(name) ? Lang.T(TaskLists.Default) : name, null, delegate { MoveTaskToList(t, name); });
+                    item.Checked = TaskLists.Same(TaskLists.NameOf(t), name);
+                    item.Enabled = !item.Checked;
+                    moveMenu.DropDownItems.Add(item);
+                }
+                menu.Items.Add(moveMenu);
+            }
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(Lang.T("Duplikat"), null, delegate { DuplicateTask(t); });
+            menu.Items.Add(Lang.T("Salin teks"), null, delegate { CopyTaskText(t); });
             bool canIndent = TaskTree.CanIndent(owner.todos, t);
             bool canOutdent = !string.IsNullOrEmpty(t.ParentId);
             if (canIndent)
@@ -523,6 +873,23 @@ namespace Deskmate
             menu.Items.Add(Lang.T("Hapus"), null, delegate { DeleteTask(t); });
             MenuLook.Apply(menu);
             menu.Show(screenPos);
+        }
+
+        void PickView(string key)
+        {
+            if (activeRailKey == key) return;
+            FlushCompletions();
+            activeRailKey = key;
+            rail.Selected = key;
+            RefillTasks(null);
+            UpdateAddHintPlaceholder();
+            if (!BoardOn) taskView.PlayEnter();
+        }
+
+        void UpdateAddHintPlaceholder()
+        {
+            addBox.Placeholder = AddPlaceholder();
+            addBox.Invalidate();
         }
 
         void RenameList(string listName)
@@ -604,15 +971,17 @@ namespace Deskmate
         {
             var menu = new ContextMenuStrip();
             menu.Closed += delegate { BeginInvoke(new Action(menu.Dispose)); };
-            menu.Items.Add(Lang.T("Semua tugas"), null, delegate { activeRailKey = "all"; RefillTasks(null); });
-            menu.Items.Add(Lang.T("Berbintang"), null, delegate { activeRailKey = "starred"; RefillTasks(null); });
+            menu.Items.Add(Lang.T("Semua tugas"), null, delegate { PickView("all"); });
+            menu.Items.Add(Lang.T("Hari ini"), null, delegate { PickView("today"); });
+            menu.Items.Add(Lang.T("Terjadwal"), null, delegate { PickView("planned"); });
+            menu.Items.Add(Lang.T("Berbintang"), null, delegate { PickView("starred"); });
             menu.Items.Add(new ToolStripSeparator());
             if (owner.taskLists != null)
             {
                 foreach (var l in owner.taskLists)
                 {
                     string name = l.Name;
-                    menu.Items.Add(name, null, delegate { activeRailKey = name; RefillTasks(null); });
+                    menu.Items.Add(name, null, delegate { PickView(name); });
                 }
             }
             MenuLook.Apply(menu);
@@ -656,11 +1025,12 @@ namespace Deskmate
                 menu.Items.Add(new ToolStripSeparator());
             }
 
-            menu.Items.Add(Lang.T("Tugas baru…"), null, delegate { EditTask(null); });
+            menu.Items.Add(Lang.T("Tugas baru…") + "\tCtrl+N", null, delegate { EditTask(null); });
+            menu.Items.Add(Lang.T("Cari tugas") + "\tCtrl+F", null, delegate { OpenTaskSearch(); });
 
             menu.Items.Add(new ToolStripSeparator());
 
-            bool isSpecial = activeRailKey == "all" || activeRailKey == "starred" || TaskLists.IsDefault(activeRailKey);
+            bool isSpecial = IsViewKey(activeRailKey) || TaskLists.IsDefault(activeRailKey);
             var mRename = menu.Items.Add(Lang.T("Ganti nama daftar…"), null, delegate { RenameList(activeRailKey); });
             mRename.Enabled = !isSpecial;
 
@@ -669,7 +1039,8 @@ namespace Deskmate
 
             menu.Items.Add(new ToolStripSeparator());
 
-            menu.Items.Add(Lang.T("Hapus tugas selesai"), null, delegate { ClearDone(); });
+            var clear = menu.Items.Add(Lang.T("Hapus tugas selesai"), null, delegate { ClearDone(); });
+            clear.Enabled = owner != null && TaskTree.DoneWhere(owner.todos, ViewFilter()).Count > 0;
 
             MenuLook.Apply(menu);
             menu.Show(moreBtn, new Point(0, moreBtn.Height));

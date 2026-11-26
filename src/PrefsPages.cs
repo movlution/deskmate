@@ -739,6 +739,7 @@ namespace Deskmate
                         add(UpdateRow());
                         var notes = WhatsNew.For(AppVersion);
                         if (notes != null) add(Row(Lang.T("Apa yang baru"), Lang.F("Ringkasan Deskmate {0}", AppVersion), Button(Lang.T("Lihat"), false, delegate { island.ShowWhatsNew(this, new List<WhatsNew.Note> { notes }); })));
+                        add(Row(Lang.T("Panduan awal"), Lang.T("Pilih bahasa, dock, dan fitur seperti saat pertama dipasang"), Button(Lang.T("Buka"), false, delegate { Close(); island.StartSetup(); })));
                         add(Row(Lang.T("Tur Deskmate"), Lang.T("Kenalan lagi dengan fitur utama Deskmate"), Button(Lang.T("Mulai tur"), false, delegate { Close(); island.StartTour(); })));
                         add(Row(Lang.T("Layanan luar"), Lang.T("Lirik, Kulia, GitHub, cuaca, integrasi, dan layanan AI; semua bisa dimatikan"), null));
                         // QRIS dialog lives on the site
