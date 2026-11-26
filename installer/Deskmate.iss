@@ -46,8 +46,13 @@ RestartApplications=no
 Name: "id"; MessagesFile: "compiler:Default.isl"
 Name: "en"; MessagesFile: "compiler:Default.isl"
 
-[Messages]
+[LangOptions]
+; The language picker reads names from here, not from [Messages]
 id.LanguageName=Bahasa Indonesia
+id.LanguageID=$0421
+en.LanguageName=English
+
+[Messages]
 id.SetupAppTitle=Pemasangan
 id.SetupWindowTitle=Pemasangan - %1
 id.UninstallAppTitle=Copot
