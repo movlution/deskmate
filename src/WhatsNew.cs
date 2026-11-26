@@ -20,6 +20,14 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.19.0",
+                Items = new[]
+                {
+                    new[] { "Kuota AI langsung dari akun", "Kuota Claude, Codex, dan Antigravity dibaca dari akun yang sudah masuk setiap 5 menit, tanpa menunggu sesi agent berjalan.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.18.0",
                 Items = new[]
                 {

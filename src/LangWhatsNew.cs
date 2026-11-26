@@ -8,6 +8,9 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.19.0
+            AddOnce(en, "Kuota AI langsung dari akun", "AI quota straight from your accounts");
+            AddOnce(en, "Kuota Claude, Codex, dan Antigravity dibaca dari akun yang sudah masuk setiap 5 menit, tanpa menunggu sesi agent berjalan.", "Claude, Codex, and Antigravity quota is read from your signed-in accounts every 5 minutes, without waiting for an agent session.");
             // What's new 2.18.0
             AddOnce(en, "Tugas lebih cepat diatur", "Faster task handling");
             AddOnce(en, "Tampilan Hari ini dan Terencana, pencarian Ctrl+F, tenggat langsung dari kolom tulis, dan Urungkan setelah menyelesaikan atau menghapus tugas.", "Today and Planned views, Ctrl+F search, due dates right from the composer, and Undo after completing or deleting tasks.");
