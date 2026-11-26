@@ -85,7 +85,7 @@ namespace Deskmate
         }
 
         // Daily release check; never downloads anything
-        public const string AppVersion = "2.19.0";
+        public const string AppVersion = "2.19.1";
         string newVersion, newUrl;
         bool newRebuild, checking, checkFailed;
         DateTime checkedUtc;

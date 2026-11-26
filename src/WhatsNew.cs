@@ -20,6 +20,14 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.19.1",
+                Items = new[]
+                {
+                    new[] { "Pilihan bahasa di installer", "Installer kini menampilkan Bahasa Indonesia dan English, dan memilih otomatis sesuai bahasa Windows.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.19.0",
                 Items = new[]
                 {
