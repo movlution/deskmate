@@ -254,6 +254,8 @@ namespace Deskmate
         {
             base.OnLoad(e);
             Boot.Mark("onload");
+            // First run: the installer's language until setup asks
+            if (settings.Fresh && !settings.Has("lang")) settings.Set("lang", SetupLanguage());
             Lang.English = settings.Get("lang", "id") == "en";
             LoadPack();
             LoadLayout();
@@ -279,7 +281,7 @@ namespace Deskmate
             if (dockWins.Count == 0) Taskbar.Restore(settings);
             // New installs: tour, not notes
             if (settings.Fresh) settings.Set("whatsnew.seen", AppVersion);
-            TourOnFirstRun();
+            SetupOnFirstRun();
             InitShelfDrop();
             LoadShelf();
             Boot.Mark("shelf");

@@ -132,6 +132,10 @@ Name: "{userdesktop}\Deskmate"; Filename: "{app}\Deskmate.exe"; WorkingDir: "{ap
 Filename: "{app}\Deskmate.exe"; Parameters: "--adopt"; StatusMsg: "{cm:Adopting}"; Flags: runhidden waituntilterminated
 Filename: "{app}\Deskmate.exe"; Description: "{cm:Launch}"; Flags: nowait postinstall skipifsilent
 
+[Registry]
+; The app's first-run setup starts in the language picked here
+Root: HKCU; Subkey: "Software\Deskmate"; ValueType: string; ValueName: "SetupLang"; ValueData: "{language}"; Flags: uninsdeletekey
+
 [UninstallDelete]
 ; Updater leftovers and backups of replaced builds beside the exe
 Type: files; Name: "{app}\Deskmate.new.exe"
