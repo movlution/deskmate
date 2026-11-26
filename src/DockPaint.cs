@@ -336,7 +336,7 @@ namespace Deskmate
                 var a = s.App;
                 if (a == dragApp) return;
                 var app = a;
-                Hit(s.Hit, s.Id, delegate { OpenApp(app, false); }, delegate { AppMenu(app); });
+                Hit(s.Hit, s.Id, delegate { OpenApp(app, false, true); }, delegate { AppMenu(app); });
                 bool focus = keyMode && keySel == s.Id;
                 bool hot = hoverId == s.Id && dragApp == null, down = pressId == s.Id && dragApp == null;
                 var now = DateTime.UtcNow;
