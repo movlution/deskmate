@@ -107,11 +107,16 @@ namespace Deskmate
                 var chase = Switch("pet.autoChase", false, v => change("pet.autoChase", v));
                 add(Row(Lang.T("Kejar kursor otomatis"), Lang.T("Sapukan kursor cepat ke samping di sepanjang dock untuk mengajak pet berlari sebentar"), chase));
 
+                var nag = Switch("pet.nag", true, v => change("pet.nag", v));
+                var nagRow = Row(Lang.T("Ingatkan tugas & acara"), Lang.T("Sesekali pet mengingatkan tugas yang belum selesai dan acara yang sebentar lagi mulai"), nag);
+                nagRow.Glyph = (char)0xE823;
+                add(nagRow);
+
                 refresh = () =>
                 {
                     bool on = petOn.Checked;
                     bool custom = ids[kindPop.Selected].StartsWith("custom:", StringComparison.Ordinal);
-                    kindPop.Enabled = sizeSeg.Enabled = areaSeg.Enabled = speed.Enabled = react.Enabled = chase.Enabled = on;
+                    kindPop.Enabled = sizeSeg.Enabled = areaSeg.Enabled = speed.Enabled = react.Enabled = chase.Enabled = nag.Enabled = on;
                     colorPop.Enabled = on && !custom;
                     SetPetDetail(kindRow, on && island.petError != null
                         ? Lang.T("Gagal dimuat, memakai kucing") + ": " + Lang.T(island.petError) : "");

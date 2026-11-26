@@ -920,6 +920,8 @@ namespace Deskmate
                 PlaceNameTag();
             }
 
+            public bool ChatOpen { get { return chatBubble != null && !chatBubble.IsDisposed; } }
+
             public void CloseChatBubble()
             {
                 if (chatBubble != null && !chatBubble.IsDisposed) chatBubble.Close();
