@@ -354,12 +354,21 @@ namespace Deskmate
             {
                 if (tray != null) return;
                 tray = new TrayHost();
-                tray.Changed += delegate
-                {
-                    if (System.Threading.Interlocked.Exchange(ref trayPosted, 1) != 0) return;
-                    try { BeginInvoke(new Action(TrayChanged)); } catch (Exception) { trayPosted = 0; }
-                };
+                tray.Changed += PostTrayChanged;
+                // Taskbar settings are read off the UI thread; a changed read redraws the tray
+                promoHandler = PostTrayChanged;
+                TrayPromo.Updated += promoHandler;
+                TrayPromo.Refresh();
                 tray.Start(TrayArea());
+            }
+
+            Action promoHandler;
+
+            // Any thread: one TrayChanged queued at a time
+            void PostTrayChanged()
+            {
+                if (System.Threading.Interlocked.Exchange(ref trayPosted, 1) != 0) return;
+                try { BeginInvoke(new Action(TrayChanged)); } catch (Exception) { trayPosted = 0; }
             }
 
             void StopTray()
@@ -368,6 +377,7 @@ namespace Deskmate
                 if (tray == null) return;
                 var t = tray;
                 tray = null;
+                if (promoHandler != null) { TrayPromo.Updated -= promoHandler; promoHandler = null; }
                 t.Stop();
                 foreach (var dock in isle.dockWins.Values)
                     if (dock != this && !dock.closing && dock.TrayExpanded) dock.CloseCard();
