@@ -8,6 +8,11 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.20.1
+            AddOnce(en, "Ingatan lebih cepat & akurat", "Faster & more accurate Memory");
+            AddOnce(en, "Pembacaan konteks layar (UI Automation & OCR), pencarian memori hibrida, dan database SQLite lokal kini lebih cepat, lebih akurat membaca fokus/URL/error, dan jauh lebih hemat baca-tulis disk.", "Screen context capture (UI Automation & OCR), hybrid memory search, and the local SQLite database are now faster, more accurate at reading focus/URLs/errors, and much lighter on disk I/O.");
+            AddOnce(en, "Tampilan Pengaturan & kontrol lebih rapi", "Cleaner Settings & controls");
+            AddOnce(en, "Navigasi Pengaturan diperbarui dengan beranda & submenu yang lebih ringkas, plus penyempurnaan visual kontrol, notifikasi, dan sinkronisasi sumber.", "Settings navigation is refreshed with a cleaner hub and submenus, alongside visual refinements to controls, notifications, and source syncing.");
             // What's new 2.20.0
             AddOnce(en, "Pet mengingatkan tugas & acara", "Your pet reminds you of tasks & events");
             AddOnce(en, "Sesekali pet menyebut tugas yang belum selesai, tenggat yang dekat, atau acara yang sebentar lagi mulai. Klik gelembungnya untuk membuka Tugas atau Jadwal.", "Now and then your pet mentions an unfinished task, a deadline that's close, or an event starting soon. Click its bubble to open Tasks or the schedule.");

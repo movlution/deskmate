@@ -20,6 +20,15 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.20.1",
+                Items = new[]
+                {
+                    new[] { "Ingatan lebih cepat & akurat", "Pembacaan konteks layar (UI Automation & OCR), pencarian memori hibrida, dan database SQLite lokal kini lebih cepat, lebih akurat membaca fokus/URL/error, dan jauh lebih hemat baca-tulis disk.", "" },
+                    new[] { "Tampilan Pengaturan & kontrol lebih rapi", "Navigasi Pengaturan diperbarui dengan beranda & submenu yang lebih ringkas, plus penyempurnaan visual kontrol, notifikasi, dan sinkronisasi sumber.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.20.0",
                 Items = new[]
                 {
