@@ -20,6 +20,14 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.21.1",
+                Items = new[]
+                {
+                    new[] { "Pemeriksaan pembaruan lebih andal", "Jika API GitHub tidak merespons, Deskmate memeriksa rilis terbaru lewat halaman resmi GitHub. Pemasangan tetap memverifikasi SHA-256.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.21.0",
                 Items = new[]
                 {

@@ -8,6 +8,9 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.21.1
+            AddOnce(en, "Pemeriksaan pembaruan lebih andal", "More reliable update checks");
+            AddOnce(en, "Jika API GitHub tidak merespons, Deskmate memeriksa rilis terbaru lewat halaman resmi GitHub. Pemasangan tetap memverifikasi SHA-256.", "If the GitHub API is unavailable, Deskmate checks the official GitHub releases page. Installation still verifies SHA-256.");
             // What's new 2.21.0
             AddOnce(en, "Ingatan lebih cerdas mencari & menghubungkan", "Smarter Memory search & connections");
             AddOnce(en, "Pencarian kini memahami fakta & percakapan secara semantik, mendukung imbuhan Indonesia/Inggris lebih luas, mengambil potongan teks paling relevan, serta mengelompokkan aktivitas lintas aplikasi menjadi alur kerja (workstream) dan graf entitas.", "Search now understands facts and conversations semantically, supports richer Indonesian/English stemming, extracts the most relevant passages, and groups cross-app activity into workstreams and an entity graph.");
