@@ -20,6 +20,14 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.21.2",
+                Items = new[]
+                {
+                    new[] { "Pengaturan lebih mulus", "Jendela Pengaturan dan kontrolnya kini beranimasi lebih halus, mengikuti pengaturan gerak, dan menggambar ulang lebih cepat berkat cache tampilan.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.21.1",
                 Items = new[]
                 {
