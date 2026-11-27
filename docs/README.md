@@ -9,7 +9,7 @@ Indeks panduan dan catatan teknis. Semua dokumen ditulis dalam bahasa Indonesia.
 | [`fitur.md`](fitur.md) | Daftar fitur dan cara pakai sehari-hari. |
 | [`pengaturan.md`](pengaturan.md) | Semua halaman Pengaturan dan arti kuncinya. |
 | [`integrasi.md`](integrasi.md) | Kulia, Notion, Todoist, Google Calendar, dan sumber lain. |
-| [`hp.md`](hp.md) | Menyambungkan Tepi Android lewat Wi-Fi. |
+| [`hp.md`](hp.md) | Menyambungkan HP Android lewat Wi-Fi. |
 | [`teleprompter.md`](teleprompter.md) | Naskah, kecepatan, dan pintasan teleprompter. |
 | [`skrip.md`](skrip.md) | Memanggil Deskmate dari skrip. |
 | [`ingatan.md`](ingatan.md) | Memori aktivitas lokal: cara kerja, bertanya, MCP, rapat, dan privasi. |
@@ -42,6 +42,7 @@ Indeks panduan dan catatan teknis. Semua dokumen ditulis dalam bahasa Indonesia.
 
 | Dokumen | Isi |
 |---|---|
+| [`rilis-2.21.3.md`](rilis-2.21.3.md) | Catatan rilis 2.21.3. |
 | [`rilis-2.21.2.md`](rilis-2.21.2.md) | Catatan rilis 2.21.2. |
 | [`rilis-2.21.1.md`](rilis-2.21.1.md) | Catatan rilis 2.21.1. |
 | [`rilis-2.21.0.md`](rilis-2.21.0.md) | Catatan rilis 2.21.0. |

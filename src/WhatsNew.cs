@@ -20,6 +20,14 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.21.3",
+                Items = new[]
+                {
+                    new[] { "Kirim saran lewat GitHub", "Kirim saran di Pengaturan › Tentang kini membuka GitHub Issues untuk laporan masalah dan ide fitur, dan panduan sambungan HP diperbarui.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.21.2",
                 Items = new[]
                 {

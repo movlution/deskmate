@@ -10,10 +10,10 @@ namespace Deskmate
     // Suggestions go to a Google Form
     static class Feedback
     {
-        // Form's formResponse address and its field ids
-        const string FormUrl = "https://docs.google.com/forms/d/e/1FAIpQLSdDsBrxC6LIIlq4Itbab9WwW416oyCjpZDQu5JySwDmBdVrUg/formResponse";
-        const string EntryKind = "entry.467859773", EntryText = "entry.617759107", EntryContact = "entry.263767280",
-            EntryVersion = "entry.1329022008", EntryWindows = "entry.1141987323";
+        // Form's formResponse address and its field ids (unwired by default; feedback uses GitHub Issues)
+        const string FormUrl = "";
+        const string EntryKind = "", EntryText = "", EntryContact = "",
+            EntryVersion = "", EntryWindows = "";
 
         public static bool Ready { get { return FormUrl.Length > 0 && EntryText.Length > 0; } }
 
@@ -139,7 +139,7 @@ namespace Deskmate
             contactWell = new RectangleF(m, textWell.Bottom + u(10), inner, u(38));
             contact.Font = UiFont(13f);
             contact.SetBounds((int)contactWell.X + u(14), (int)contactWell.Y + (u(38) - contact.PreferredHeight) / 2, (int)contactWell.Width - u(28), contact.PreferredHeight);
-            Native.SetCue(contact.Handle, Lang.T("Kontak untuk dibalas (opsional): email atau Instagram"));
+            Native.SetCue(contact.Handle, Lang.T("Kontak untuk dibalas (opsional): email atau GitHub"));
             system.Size = new Size(u(46), u(26));
             system.Location = new Point(m + inner - system.Width, (int)contactWell.Bottom + u(14));
             systemLabel.Text = Lang.T("Sertakan versi Deskmate dan Windows");
@@ -148,7 +148,7 @@ namespace Deskmate
             systemLabel.TextAlign = ContentAlignment.MiddleLeft;
             note.Font = UiFont(12f);
             note.SetBounds(m + u(2), system.Bottom + u(8), inner, u(36));
-            if (note.Text.Length == 0) note.Text = Lang.T("Dikirim ke Google Form pembuat Deskmate. Tanpa nama, tanpa isi layar.");
+            if (note.Text.Length == 0) note.Text = Lang.T("Dikirim lewat formulir saran Deskmate. Tanpa nama, tanpa isi layar.");
             foreach (var l in new[] { systemLabel, note }) { l.BackColor = KitInk.Window; l.ForeColor = l == note ? KitInk.Sub : KitInk.Text; }
             foreach (var t in new TextBox[] { text, contact }) { t.BackColor = KitInk.Group; t.ForeColor = KitInk.Text; }
             int btnH = u(36), by = note.Bottom + u(12);

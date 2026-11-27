@@ -8,6 +8,9 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.21.3
+            AddOnce(en, "Kirim saran lewat GitHub", "Send feedback on GitHub");
+            AddOnce(en, "Kirim saran di Pengaturan › Tentang kini membuka GitHub Issues untuk laporan masalah dan ide fitur, dan panduan sambungan HP diperbarui.", "Send feedback in Settings › About now opens GitHub Issues for bug reports and feature ideas, and the phone connection guide has been updated.");
             // What's new 2.21.2
             AddOnce(en, "Pengaturan lebih mulus", "Smoother Settings");
             AddOnce(en, "Jendela Pengaturan dan kontrolnya kini beranimasi lebih halus, mengikuti pengaturan gerak, dan menggambar ulang lebih cepat berkat cache tampilan.", "The Settings window and its controls now animate more smoothly, respect your motion setting, and redraw faster thanks to view caching.");

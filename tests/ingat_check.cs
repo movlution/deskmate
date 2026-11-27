@@ -661,7 +661,7 @@ namespace Deskmate
         {
             Assert(IngatStructure.Classify("code", "", "IngatService.cs - Deskmate - Visual Studio Code", "") == "coding", "vscode is coding");
             Assert(IngatStructure.Classify("pwsh", "", "Administrator: PowerShell", "") == "coding", "terminal is coding");
-            Assert(IngatStructure.Classify("chrome", "https://github.com/reval/deskmate/pull/12", "PR #12", "") == "coding", "github is coding");
+            Assert(IngatStructure.Classify("chrome", "https://github.com/movlution/deskmate/pull/12", "PR #12", "") == "coding", "github is coding");
             Assert(IngatStructure.Classify("chrome", "https://learn.microsoft.com/en-us/windows/win32", "Win32 Docs", "") == "reading", "docs site is reading");
             Assert(IngatStructure.Classify("chrome", "https://docs.google.com/document/d/abc", "Proposal", "") == "writing", "gdocs is writing");
             Assert(IngatStructure.Classify("figma", "", "Deskmate UI", "") == "design", "figma is design");

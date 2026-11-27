@@ -4,7 +4,7 @@
 
 Warna island, lambang di samping jam, maskot di pojok panel, pegangan bar progres, dan sapaan saat Deskmate dibuka bisa diganti dengan paket tema. Buat folder di `%APPDATA%\Deskmate\themes\<nama>\`, lalu pilih di **Pengaturan > Tampilan > Paket tema**.
 
-Untuk warna saja, tidak perlu paket: **Pengaturan > Tampilan > Warna sendiri**. Paket lengkap dengan gambar, sapaan, dan suara bisa dibuat di [pembuat paket](https://odlaver.github.io/tepi/pack/).
+Untuk warna saja, tidak perlu membuat berkas manual: gunakan **Pengaturan > Tampilan > Warna sendiri** lalu simpan jadi paket. Untuk paket lengkap dengan gambar, sapaan, dan suara, buat folder di `%APPDATA%\Deskmate\themes\<nama>\` dengan struktur berikut:
 
 | Berkas | Isi |
 |---|---|
