@@ -152,6 +152,12 @@ Color is for navigation only: every category owns a tile color, and rows inside 
 
 Tiles reuse the paper twins of `Ink.Labels` in both themes (`Ink.Label(key, true)`), so no new literal exists. The glyph is `Ink.On(tile)`, which is ivory on every twin (≥ 4.9:1). The same color fills the 20 px sidebar tile and the 44 px hero tile of that page.
 
+Every category page has an illustrated tile (`SettingsArt.DrawTile`, art in `assets/settings`): the same paper twin as a soft gradient squircle with one bold ivory motif and at most two calm accent spots. It replaces the flat glyph tile wherever a category appears (hub card, page hero, breadcrumb, side rail, prev/next footer). The flat glyph tile stays as the fallback, and part banners inside a page keep glyph tiles.
+
+### Scenes
+
+Hub hero and wide cards and every page hero carry a banner scene along their right edge (`SettingsArt.DrawScene`): the category tile enlarged and tilted, a small ghost tile low on its left, one faint ring and two small dots. The top-right corner stays clear for the status pill and palette dots. The art fades out across its left half, is clipped to the card, and is drawn under the border. Text stops `SettingsArt.SceneReserve` before the right edge, so it never sits on the art. On paper the scene is drawn at 92 % opacity.
+
 ### Side rail
 
 - 220 px wide on `Side`. The search well (28 px, radius 7) sits on top.

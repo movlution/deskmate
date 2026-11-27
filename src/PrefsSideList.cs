@@ -273,8 +273,11 @@ namespace Deskmate
                     }
                     var tileColor = TileOf(Items[i]);
                     var tile = new RectangleF(c.X + 6 * s, c.Y + (c.Height - 20 * s) / 2, 20 * s, 20 * s);
-                    Fill(g, tile, 5 * s, tileColor);
-                    KitInk.Draw(g, Items[i][2], icons, Ink.On(tileColor), tile, ContentAlignment.MiddleCenter);
+                    if (!SettingsArt.DrawTile(g, Items[i][0], tile))
+                    {
+                        Fill(g, tile, 5 * s, tileColor);
+                        KitInk.Draw(g, Items[i][2], icons, Ink.On(tileColor), tile, ContentAlignment.MiddleCenter);
+                    }
                     KitInk.Draw(g, Items[i][1], sel ? fs : f, ink, new RectangleF(c.X + 36 * s, c.Y, c.Width - 40 * s, c.Height), ContentAlignment.MiddleLeft);
                 }
                 if (at >= 0) Ring(g, Cell(at), radius);

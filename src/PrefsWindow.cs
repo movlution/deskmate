@@ -1043,7 +1043,7 @@ namespace Deskmate
                                 var tileR = new RectangleF(bx, (topH - 20 * s) / 2f, 20 * s, 20 * s);
                                 if (sec[2].Length > 0 && sec[2][0] == KitRow.MarkGlyph)
                                     g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(tileR));
-                                else
+                                else if (!SettingsArt.DrawTile(g, sec[0], tileR))
                                 {
                                     Color tc = sec[4].Length > 0 ? Ink.Label(sec[4], true) : Ink.Label("slate", true);
                                     KitInk.FillRound(g, tileR, 5 * s, tc);
@@ -1341,6 +1341,7 @@ namespace Deskmate
                 if (page != null) SectionNotes.TryGetValue(page, out note);
                 var head = new PageHeader
                 {
+                    Id = page ?? "",
                     Glyph = sec != null ? sec[2][0] : '\uE713',
                     Title = sec != null ? Lang.T(sec[1]) : "",
                     Note = note != null ? Lang.T(note) : "",

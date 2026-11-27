@@ -814,6 +814,8 @@ namespace Deskmate
                 float tintAmt = (c.Featured ? 0.045f : 0.02f) + (Ink.Light ? 0.055f : 0.095f) * active;
                 Color cardBg = Ink.Mix(KitInk.Group, tile, Math.Min(0.18f, tintAmt));
                 KitInk.FillRound(g, drawR, radius, cardBg);
+                // Hero and wide cards carry their category scene along the right edge
+                if (c.Featured || c.Wide) SettingsArt.DrawScene(g, c.Id, drawR, radius);
 
                 // Crisp border: hairline normally, category accent on hover/focus
                 Color edgeColor = active > 0.04f
@@ -841,7 +843,7 @@ namespace Deskmate
                     var icoBmp = AppIconBitmap((int)Math.Round(iconSize));
                     g.DrawImageUnscaled(icoBmp, (int)Math.Round(iconRect.X), (int)Math.Round(iconRect.Y));
                 }
-                else
+                else if (!SettingsArt.DrawTile(g, c.Id, iconRect))
                 {
                     KitInk.FillRound(g, iconRect, (c.Featured ? 11f : 9f) * s, tile);
                     KitInk.Draw(g, Ink.Str(c.Glyph), Ink.Icons((c.Featured ? 19f : 16f) * s), Ink.On(tile), iconRect, ContentAlignment.MiddleCenter);
@@ -890,6 +892,8 @@ namespace Deskmate
                 // Title & subtitle
                 float tx = iconX;
                 float tw = drawR.Width - (tx - drawR.X) - pad;
+                if (c.Featured || c.Wide)
+                    tw = Math.Max(80f * s, Math.Min(tw, drawR.Right - SettingsArt.SceneReserve(c.Id, drawR.Height) - tx));
                 float titleY = iconRect.Bottom + 8f * s;
                 if (c.Featured)
                 {

@@ -27,3 +27,7 @@
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Generated Settings art sources (assets/settings/render_art.ps1)
+/assets/settings/svg/
+/assets/settings/preview.html
