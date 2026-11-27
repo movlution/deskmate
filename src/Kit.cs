@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace Deskmate
@@ -225,14 +227,210 @@ namespace Deskmate
     struct KitGlide
     {
         float from;
-        int start;
-        public void Begin(float position) { from = position; start = Environment.TickCount; }
+        double start;
+        public void Begin(float position) { from = position; start = KitAnim.Now; }
 
         public float Sample(float target, float seconds)
         {
-            float t = unchecked((uint)(Environment.TickCount - start)) / (1000f * Anim.Response(seconds));
+            float t = (float)((KitAnim.Now - start) / Math.Max(0.01f, Anim.Response(seconds)));
             if (Anim.Reduced || t >= 1f) return target;
             return from + (target - from) * Ease.OutCubic(t);
+        }
+    }
+
+    // Shared VSync-paced animation clock for Kit / Settings controls.
+    // Sleeps at 0% CPU when idle; ticks once per DWM refresh (60/120/144Hz) with Stopwatch dt.
+    static class KitAnim
+    {
+        static readonly Stopwatch clock = Stopwatch.StartNew();
+        [ThreadStatic] static Clock threadClock;
+
+        public static double Now { get { return clock.Elapsed.TotalSeconds; } }
+
+        // Frame-rate-independent exponential smoothing factor
+        public static float Decay(float dt, float tau)
+        {
+            float t = Math.Max(0.012f, Anim.Response(tau));
+            return 1f - (float)Math.Exp(-dt / t);
+        }
+
+        internal static void Attach(KitPulse pulse)
+        {
+            var c = threadClock;
+            if (c == null) threadClock = c = new Clock();
+            c.Add(pulse);
+        }
+
+        internal static void Detach(KitPulse pulse)
+        {
+            var c = threadClock;
+            if (c != null) c.Remove(pulse);
+        }
+
+        sealed class Clock
+        {
+            [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
+            const int WmFrame = 0x8000 + 73;
+
+            readonly List<KitPulse> pulses = new List<KitPulse>();
+            readonly List<KitPulse> scratch = new List<KitPulse>();
+            readonly AutoResetEvent wake = new AutoResetEvent(false);
+            readonly Sink sink;
+            volatile IntPtr hwnd;
+            volatile bool run = true, want;
+            int posted;
+
+            public Clock()
+            {
+                sink = new Sink(this);
+                hwnd = sink.Handle;
+                Application.ApplicationExit += OnExit;
+                new Thread(Loop) { IsBackground = true, Name = "kit frames" }.Start();
+            }
+
+            void OnExit(object sender, EventArgs e)
+            {
+                run = false;
+                want = false;
+                hwnd = IntPtr.Zero;
+                wake.Set();
+            }
+
+            public void Add(KitPulse p)
+            {
+                if (!pulses.Contains(p)) pulses.Add(p);
+                if (!run) return;
+                if (hwnd == IntPtr.Zero)
+                {
+                    sink.EnsureHandle();
+                    hwnd = sink.Handle;
+                }
+                if (!want)
+                {
+                    want = true;
+                    wake.Set();
+                }
+            }
+
+            public void Remove(KitPulse p)
+            {
+                pulses.Remove(p);
+                if (pulses.Count == 0) want = false;
+            }
+
+            void OnFrame()
+            {
+                try
+                {
+                    double now = KitAnim.Now;
+                    scratch.Clear();
+                    for (int i = 0; i < pulses.Count; i++) scratch.Add(pulses[i]);
+                    for (int i = 0; i < scratch.Count; i++)
+                    {
+                        var p = scratch[i];
+                        if (!p.Tick(now)) pulses.Remove(p);
+                    }
+                    scratch.Clear();
+                }
+                finally
+                {
+                    bool more = pulses.Count > 0;
+                    if (!more) want = false;
+                    Interlocked.Exchange(ref posted, 0);
+                    if (more && run) { want = true; wake.Set(); }
+                }
+            }
+
+            void Loop()
+            {
+                var sw = Stopwatch.StartNew();
+                double last = -100;
+                const double MinFrameMs = 6.5;
+                while (run)
+                {
+                    if (!want) { wake.WaitOne(); continue; }
+                    if (Native.DwmFlush() != 0) Thread.Sleep(12);
+                    if (!run || !want) continue;
+                    double now = sw.Elapsed.TotalMilliseconds;
+                    double gap = now - last;
+                    if (gap < MinFrameMs)
+                    {
+                        int sleep = (int)Math.Ceiling(MinFrameMs - gap);
+                        if (sleep > 0) Thread.Sleep(sleep);
+                        now = sw.Elapsed.TotalMilliseconds;
+                    }
+                    if (!run || !want) continue;
+                    if (Interlocked.CompareExchange(ref posted, 1, 0) != 0) continue;
+                    last = now;
+                    IntPtr h = hwnd;
+                    if (h == IntPtr.Zero || !PostMessage(h, WmFrame, IntPtr.Zero, IntPtr.Zero))
+                    {
+                        Interlocked.Exchange(ref posted, 0);
+                        want = false;
+                    }
+                }
+            }
+
+            sealed class Sink : NativeWindow
+            {
+                readonly Clock owner;
+                public Sink(Clock owner)
+                {
+                    this.owner = owner;
+                    EnsureHandle();
+                }
+                public void EnsureHandle()
+                {
+                    if (Handle == IntPtr.Zero)
+                        CreateHandle(new CreateParams { Parent = (IntPtr)(-3) });
+                }
+                protected override void WndProc(ref Message m)
+                {
+                    if (m.Msg == WmFrame) { owner.OnFrame(); return; }
+                    base.WndProc(ref m);
+                }
+            }
+        }
+    }
+
+    sealed class KitPulse : IDisposable
+    {
+        readonly Func<float, bool> step;
+        bool running, disposed;
+        double lastT;
+
+        public KitPulse(Func<float, bool> step) { this.step = step; }
+        public bool Running { get { return running; } }
+
+        public void Start()
+        {
+            if (disposed || running) return;
+            running = true;
+            lastT = KitAnim.Now;
+            KitAnim.Attach(this);
+        }
+
+        public void Stop()
+        {
+            if (!running) return;
+            running = false;
+            KitAnim.Detach(this);
+        }
+
+        internal bool Tick(double now)
+        {
+            if (!running || disposed) return false;
+            float dt = (float)Math.Max(0.001, Math.Min(0.04, now - lastT));
+            lastT = now;
+            bool keep = step(dt);
+            if (!keep) running = false;
+            return keep && running && !disposed;
+        }
+
+        public void Dispose()
+        {
+            disposed = true;
+            Stop();
         }
     }
 
@@ -242,51 +440,40 @@ namespace Deskmate
         bool hovered, pressed;
         float knob, hoverT, pressT;
         readonly Spring knobSpring = new Spring(0, 1, 1, 0.002f);
-        int lastTick;
-        Timer anim;
+        KitPulse pulse;
 
-        bool AnimRunning { get { return anim != null && anim.Enabled; } }
-        void StopAnim() { if (anim != null) anim.Stop(); }
+        bool AnimRunning { get { return pulse != null && pulse.Running; } }
+        void StopAnim() { if (pulse != null) pulse.Stop(); }
 
-        void EnsureAnim()
+        bool StepAnim(float dt)
         {
-            if (anim != null) return;
-            anim = new Timer { Interval = 15 };
-            anim.Tick += OnAnimTick;
-        }
-
-        void OnAnimTick(object sender, EventArgs e)
-        {
-            int now = Environment.TickCount;
-            float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
-            lastTick = now;
-            if (Anim.Reduced)
+            if (IsDisposed || !Visible || Anim.Reduced)
             {
                 knob = Checked ? 1f : 0f;
                 knobSpring.Snap(knob);
                 hoverT = hovered ? 1f : 0f;
                 pressT = pressed ? 1f : 0f;
-                StopAnim();
                 Invalidate();
-                return;
+                return false;
             }
             knobSpring.Target = Checked ? 1f : 0f;
             knobSpring.Step(dt);
             knob = knobSpring.Value;
             float hWant = hovered ? 1f : 0f;
             float pWant = pressed ? 1f : 0f;
-            float rate = Math.Min(1f, dt / Math.Max(0.04f, Anim.Response(0.085f)));
+            float rate = KitAnim.Decay(dt, 0.065f);
             hoverT += (hWant - hoverT) * rate;
             pressT += (pWant - pressT) * rate;
-            if (Math.Abs(hWant - hoverT) < 0.01f) hoverT = hWant;
-            if (Math.Abs(pWant - pressT) < 0.01f) pressT = pWant;
-            if (knobSpring.Settled && hoverT == hWant && pressT == pWant)
+            if (Math.Abs(hWant - hoverT) < 0.008f) hoverT = hWant;
+            if (Math.Abs(pWant - pressT) < 0.008f) pressT = pWant;
+            bool more = !(knobSpring.Settled && hoverT == hWant && pressT == pWant);
+            if (!more)
             {
                 knob = knobSpring.Target;
                 knobSpring.Snap(knob);
-                StopAnim();
             }
             Invalidate();
+            return more;
         }
 
         protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); hovered = true; StartAnim(); }
@@ -316,14 +503,10 @@ namespace Deskmate
                 Invalidate();
                 return;
             }
-            Springs.Tune(knobSpring, 0.22f, 0.80f);
+            Springs.Tune(knobSpring, 0.18f, 0.86f);
             knobSpring.Target = Checked ? 1f : 0f;
-            EnsureAnim();
-            if (!anim.Enabled)
-            {
-                lastTick = Environment.TickCount;
-                anim.Start();
-            }
+            if (pulse == null) pulse = new KitPulse(StepAnim);
+            pulse.Start();
             Invalidate();
         }
 
@@ -386,8 +569,8 @@ namespace Deskmate
             float travel = Math.Max(-0.08f, Math.Min(1.08f, knob));
             float cx = track.X + 11 * s + travel * 18 * s, cy = track.Y + 11 * s;
             // Tactile stretch in transit + press-down elongation toward the opposite side
-            float transitStretch = live && !Anim.Reduced ? 5.5f * s * k * (1f - k) : 0f;
-            float pressStretch = live && !Anim.Reduced ? 3.2f * s * pt : 0f;
+            float transitStretch = live && !Anim.Reduced ? 4.8f * s * k * (1f - k) : 0f;
+            float pressStretch = live && !Anim.Reduced ? 2.8f * s * pt : 0f;
             float stretch = transitStretch + pressStretch;
             float leftGrow = Checked ? stretch : 0f;
             float rightGrow = Checked ? 0f : stretch;
@@ -408,7 +591,7 @@ namespace Deskmate
             }
         }
 
-        protected override void Dispose(bool disposing) { if (disposing && anim != null) anim.Dispose(); base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing && pulse != null) pulse.Dispose(); base.Dispose(disposing); }
     }
 
     // Soft segmented choices; the thumb glides with spring physics, arrows move between
@@ -419,38 +602,29 @@ namespace Deskmate
         // Thumb position in segments, gliding toward the pick; -1 until first paint
         float glide = -1;
         readonly Spring glideSpring = new Spring(0, 1, 1, 0.002f);
-        int lastTick;
-        Timer anim;
+        KitPulse pulse;
         public event Action<int> Changed;
 
-        void EnsureAnim()
+        bool StepAnim(float dt)
         {
-            if (anim != null) return;
-            anim = new Timer { Interval = 15 };
-            anim.Tick += delegate
+            if (IsDisposed || !Visible || Anim.Reduced)
             {
-                int now = Environment.TickCount;
-                float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
-                lastTick = now;
-                if (Anim.Reduced)
-                {
-                    glide = selected;
-                    glideSpring.Snap(selected);
-                    anim.Stop();
-                    Invalidate();
-                    return;
-                }
-                glideSpring.Target = selected;
-                glideSpring.Step(dt);
-                glide = glideSpring.Value;
-                if (glideSpring.Settled)
-                {
-                    glide = selected;
-                    glideSpring.Snap(selected);
-                    anim.Stop();
-                }
+                glide = selected;
+                glideSpring.Snap(selected);
                 Invalidate();
-            };
+                return false;
+            }
+            glideSpring.Target = selected;
+            glideSpring.Step(dt);
+            glide = glideSpring.Value;
+            bool more = !glideSpring.Settled;
+            if (!more)
+            {
+                glide = selected;
+                glideSpring.Snap(selected);
+            }
+            Invalidate();
+            return more;
         }
 
         public int Selected
@@ -462,21 +636,17 @@ namespace Deskmate
                 selected = value;
                 if (IsHandleCreated && Visible && glide >= 0 && glide != selected && !Anim.Reduced)
                 {
-                    Springs.Tune(glideSpring, 0.24f, 0.84f);
+                    Springs.Tune(glideSpring, 0.19f, 0.88f);
                     glideSpring.Value = glide;
                     glideSpring.Target = selected;
-                    EnsureAnim();
-                    if (!anim.Enabled)
-                    {
-                        lastTick = Environment.TickCount;
-                        anim.Start();
-                    }
+                    if (pulse == null) pulse = new KitPulse(StepAnim);
+                    pulse.Start();
                 }
                 else
                 {
                     glide = selected;
                     glideSpring.Snap(selected);
-                    if (anim != null) anim.Stop();
+                    if (pulse != null) pulse.Stop();
                 }
                 Invalidate();
                 AccessibilityNotifyClients(AccessibleEvents.Selection, selected);
@@ -573,7 +743,7 @@ namespace Deskmate
             Ring(g, box, radius);
         }
 
-        protected override void Dispose(bool disposing) { if (disposing && anim != null) anim.Dispose(); base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing && pulse != null) pulse.Dispose(); base.Dispose(disposing); }
 
         protected override AccessibleObject CreateAccessibilityInstance() { return new Access(this); }
 

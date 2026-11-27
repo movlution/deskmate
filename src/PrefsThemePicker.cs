@@ -17,39 +17,37 @@ namespace Deskmate
             int hover = -1, drawnIndex = -1;
             readonly float[] lift = new float[3];
             readonly Spring badgePop = new Spring(1, 1, 1, 0.004f);
-            int lastTick;
-            readonly Timer anim = new Timer { Interval = 15 };
+            readonly KitPulse pulse;
 
             static readonly string[] Labels = { "Sistem", "Terang", "Gelap" };
 
             public ThemeCardPicker()
             {
-                anim.Tick += delegate
+                pulse = new KitPulse(StepAnim);
+            }
+
+            bool StepAnim(float dt)
+            {
+                if (IsDisposed || !Visible || Anim.Reduced)
                 {
-                    int now = Environment.TickCount;
-                    float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
-                    lastTick = now;
-                    if (Anim.Reduced)
-                    {
-                        for (int i = 0; i < lift.Length; i++) lift[i] = i == hover && Enabled ? 1f : 0f;
-                        badgePop.Snap(1f);
-                        anim.Stop();
-                        Invalidate();
-                        return;
-                    }
-                    badgePop.Step(dt);
-                    float rate = Math.Min(1f, dt / Math.Max(0.03f, Anim.Response(0.09f)));
-                    bool moving = !badgePop.Settled;
-                    for (int i = 0; i < lift.Length; i++)
-                    {
-                        float want = i == hover && Enabled ? 1f : 0f;
-                        lift[i] += (want - lift[i]) * rate;
-                        if (Math.Abs(want - lift[i]) < 0.01f) lift[i] = want;
-                        else moving = true;
-                    }
-                    if (!moving) { badgePop.Snap(1f); anim.Stop(); }
+                    for (int i = 0; i < lift.Length; i++) lift[i] = i == hover && Enabled ? 1f : 0f;
+                    badgePop.Snap(1f);
                     Invalidate();
-                };
+                    return false;
+                }
+                badgePop.Step(dt);
+                float rate = KitAnim.Decay(dt, 0.068f);
+                bool moving = !badgePop.Settled;
+                for (int i = 0; i < lift.Length; i++)
+                {
+                    float want = i == hover && Enabled ? 1f : 0f;
+                    lift[i] += (want - lift[i]) * rate;
+                    if (Math.Abs(want - lift[i]) < 0.008f) lift[i] = want;
+                    else moving = true;
+                }
+                if (!moving) badgePop.Snap(1f);
+                Invalidate();
+                return moving;
             }
 
             void KickAnim()
@@ -58,15 +56,15 @@ namespace Deskmate
                 {
                     for (int i = 0; i < lift.Length; i++) lift[i] = i == hover && Enabled ? 1f : 0f;
                     badgePop.Snap(1f);
-                    anim.Stop();
+                    pulse.Stop();
                     Invalidate();
                     return;
                 }
-                if (!anim.Enabled) { lastTick = Environment.TickCount; anim.Start(); }
+                pulse.Start();
                 Invalidate();
             }
 
-            protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
+            protected override void Dispose(bool disposing) { if (disposing) pulse.Dispose(); base.Dispose(disposing); }
 
             // Previews paint the real default tones, so the cards always match the windows they choose
             static readonly Tone NightTone = Tone.Dark(), PaperTone = Tone.Paper();
@@ -103,9 +101,9 @@ namespace Deskmate
                 drawnIndex = i;
                 if (changed && IsHandleCreated && Visible && !Anim.Reduced)
                 {
-                    Springs.Tune(badgePop, 0.24f, 0.68f);
-                    badgePop.Value = 0.45f;
-                    badgePop.Velocity = 3.2f;
+                    Springs.Tune(badgePop, 0.19f, 0.78f);
+                    badgePop.Value = 0.55f;
+                    badgePop.Velocity = 2.6f;
                     badgePop.Target = 1f;
                     KickAnim();
                 }
@@ -220,7 +218,7 @@ namespace Deskmate
                 for (int i = 0; i < Labels.Length; i++)
                 {
                     var tile = TileRect(i);
-                    float dy = anim.Enabled ? -1.5f * s * lift[i] : 0f;
+                    float dy = pulse.Running ? -1.5f * s * lift[i] : 0f;
                     if (dy != 0f) tile.Offset(0, dy);
                     bool sel = i == SelectedIndex;
                     DrawThumb(g, tile, i, radius, s);
@@ -246,7 +244,7 @@ namespace Deskmate
             // A selected tile gets one small accent seal, not a double outline.
             void DrawCheck(Graphics g, RectangleF tile, float s)
             {
-                float scale = anim.Enabled && !Anim.Reduced ? Math.Max(0.2f, badgePop.Value) : 1f;
+                float scale = pulse.Running && !Anim.Reduced ? Math.Max(0.2f, badgePop.Value) : 1f;
                 float baseD = 14 * s, d = baseD * scale;
                 float cx = tile.Right - baseD / 2f - 5 * s, cy = tile.Top + baseD / 2f + 5 * s;
                 var badge = new RectangleF(cx - d / 2f, cy - d / 2f, d, d);
@@ -320,27 +318,32 @@ namespace Deskmate
             public event Action<int> Picked;
             int hover = -1, drawnIndex = -1;
             readonly Spring selSpring = new Spring(0, 1, 1, 0.002f);
-            int lastTick;
-            readonly Timer anim = new Timer { Interval = 15 };
+            readonly KitPulse pulse;
 
             static readonly GlassKind[] Kinds = { GlassKind.Clear, GlassKind.Liquid, GlassKind.Frost, GlassKind.Calm, GlassKind.Solid };
             static readonly string[] Labels = { "Bening", "Liquid", "Frost", "Kalem", "Solid" };
 
             public MaterialPicker()
             {
-                anim.Tick += delegate
-                {
-                    int now = Environment.TickCount;
-                    float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
-                    lastTick = now;
-                    if (Anim.Reduced) { selSpring.Snap(SelectedIndex); anim.Stop(); Invalidate(); return; }
-                    selSpring.Step(dt);
-                    if (selSpring.Settled) { selSpring.Snap(SelectedIndex); anim.Stop(); }
-                    Invalidate();
-                };
+                pulse = new KitPulse(StepAnim);
             }
 
-            protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
+            bool StepAnim(float dt)
+            {
+                if (IsDisposed || !Visible || Anim.Reduced)
+                {
+                    selSpring.Snap(SelectedIndex);
+                    Invalidate();
+                    return false;
+                }
+                selSpring.Step(dt);
+                bool more = !selSpring.Settled;
+                if (!more) selSpring.Snap(SelectedIndex);
+                Invalidate();
+                return more;
+            }
+
+            protected override void Dispose(bool disposing) { if (disposing) pulse.Dispose(); base.Dispose(disposing); }
 
             float Gap { get { return 5f * Ui; } }
 
@@ -359,11 +362,10 @@ namespace Deskmate
                 drawnIndex = i;
                 if (changed && IsHandleCreated && Visible && !Anim.Reduced)
                 {
-                    Springs.Tune(selSpring, 0.24f, 0.82f);
-                    if (!anim.Enabled) selSpring.Snap(prev);
+                    Springs.Tune(selSpring, 0.19f, 0.86f);
+                    if (!pulse.Running) selSpring.Snap(prev);
                     selSpring.Target = i;
-                    lastTick = Environment.TickCount;
-                    anim.Start();
+                    pulse.Start();
                 }
                 else selSpring.Snap(i);
                 Invalidate();
@@ -480,7 +482,7 @@ namespace Deskmate
 
                 if (drawnIndex != SelectedIndex) { drawnIndex = SelectedIndex; selSpring.Snap(SelectedIndex); }
                 float cellW = (Width - Gap * (Kinds.Length - 1)) / Kinds.Length;
-                float glideIdx = anim.Enabled ? Math.Max(-0.08f, Math.Min(Kinds.Length - 0.92f, selSpring.Value)) : SelectedIndex;
+                float glideIdx = pulse.Running ? Math.Max(-0.08f, Math.Min(Kinds.Length - 0.92f, selSpring.Value)) : SelectedIndex;
                 var activeCard = new RectangleF(glideIdx * (cellW + Gap) + 0.75f * s, 1.75f * s, cellW - 1.5f * s, Height - 3.5f * s);
                 KitInk.FillRound(g, activeCard, radius, Ink.Mix(under, KitInk.Accent, Ink.Light ? 0.10f : 0.14f));
 

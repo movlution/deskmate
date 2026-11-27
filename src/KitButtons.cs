@@ -14,8 +14,7 @@ namespace Deskmate
         public bool Primary;
         protected bool hovered, pressed;
         float hoverT, pressT;
-        int lastTick;
-        Timer anim;
+        KitPulse pulse;
 
         public KitButton()
         {
@@ -26,33 +25,22 @@ namespace Deskmate
             UseVisualStyleBackColor = false;
         }
 
-        void EnsureAnim()
+        bool StepStateAnim(float dt)
         {
-            if (anim != null) return;
-            anim = new Timer { Interval = 15 };
-            anim.Tick += delegate
+            if (IsDisposed || !Visible || Anim.Reduced)
             {
-                int now = Environment.TickCount;
-                float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
-                lastTick = now;
-                if (Anim.Reduced)
-                {
-                    hoverT = hovered ? 1f : 0f;
-                    pressT = pressed ? 1f : 0f;
-                    anim.Stop();
-                    Invalidate();
-                    return;
-                }
-                float hWant = hovered ? 1f : 0f, pWant = pressed ? 1f : 0f;
-                float hRate = Math.Min(1f, dt / Math.Max(0.03f, Anim.Response(0.09f)));
-                float pRate = Math.Min(1f, dt / Math.Max(0.025f, Anim.Response(0.055f)));
-                hoverT += (hWant - hoverT) * hRate;
-                pressT += (pWant - pressT) * pRate;
-                if (Math.Abs(hWant - hoverT) < 0.01f) hoverT = hWant;
-                if (Math.Abs(pWant - pressT) < 0.01f) pressT = pWant;
-                if (hoverT == hWant && pressT == pWant) anim.Stop();
+                hoverT = hovered ? 1f : 0f;
+                pressT = pressed ? 1f : 0f;
                 Invalidate();
-            };
+                return false;
+            }
+            float hWant = hovered ? 1f : 0f, pWant = pressed ? 1f : 0f;
+            hoverT += (hWant - hoverT) * KitAnim.Decay(dt, 0.065f);
+            pressT += (pWant - pressT) * KitAnim.Decay(dt, 0.042f);
+            if (Math.Abs(hWant - hoverT) < 0.008f) hoverT = hWant;
+            if (Math.Abs(pWant - pressT) < 0.008f) pressT = pWant;
+            Invalidate();
+            return hoverT != hWant || pressT != pWant;
         }
 
         protected void KickStateAnim()
@@ -61,21 +49,17 @@ namespace Deskmate
             {
                 hoverT = hovered ? 1f : 0f;
                 pressT = pressed ? 1f : 0f;
-                if (anim != null) anim.Stop();
+                if (pulse != null) pulse.Stop();
                 Invalidate();
                 return;
             }
-            EnsureAnim();
-            if (!anim.Enabled)
-            {
-                lastTick = Environment.TickCount;
-                anim.Start();
-            }
+            if (pulse == null) pulse = new KitPulse(StepStateAnim);
+            pulse.Start();
             Invalidate();
         }
 
-        protected float HoverFactor { get { return anim != null && anim.Enabled ? hoverT : (hovered ? 1f : 0f); } }
-        protected float PressFactor { get { return anim != null && anim.Enabled ? pressT : (pressed ? 1f : 0f); } }
+        protected float HoverFactor { get { return pulse != null && pulse.Running ? hoverT : (hovered ? 1f : 0f); } }
+        protected float PressFactor { get { return pulse != null && pulse.Running ? pressT : (pressed ? 1f : 0f); } }
 
         protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); hovered = true; KickStateAnim(); }
         protected override void OnMouseDown(MouseEventArgs e)
@@ -98,7 +82,7 @@ namespace Deskmate
             KickStateAnim();
         }
 
-        protected override void Dispose(bool disposing) { if (disposing && anim != null) anim.Dispose(); base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing && pulse != null) pulse.Dispose(); base.Dispose(disposing); }
 
         // Window scale, else derived from a 32px control height
         protected float UiScale
@@ -165,31 +149,23 @@ namespace Deskmate
     {
         bool on;
         readonly Spring pop = new Spring(0, 1, 1, 0.004f);
-        int checkTick;
-        Timer checkAnim;
+        KitPulse checkPulse;
 
         public event EventHandler CheckedChanged;
 
-        void EnsureCheckAnim()
+        bool StepCheckAnim(float dt)
         {
-            if (checkAnim != null) return;
-            checkAnim = new Timer { Interval = 15 };
-            checkAnim.Tick += delegate
+            if (IsDisposed || !Visible || Anim.Reduced)
             {
-                int now = Environment.TickCount;
-                float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - checkTick)) / 1000f));
-                checkTick = now;
-                if (Anim.Reduced)
-                {
-                    pop.Snap(on ? 1f : 0f);
-                    checkAnim.Stop();
-                    Invalidate();
-                    return;
-                }
-                pop.Step(dt);
-                if (pop.Settled) { pop.Snap(pop.Target); checkAnim.Stop(); }
+                pop.Snap(on ? 1f : 0f);
                 Invalidate();
-            };
+                return false;
+            }
+            pop.Step(dt);
+            bool more = !pop.Settled;
+            if (!more) pop.Snap(pop.Target);
+            Invalidate();
+            return more;
         }
 
         public bool Checked
@@ -201,16 +177,15 @@ namespace Deskmate
                 on = value;
                 if (IsHandleCreated && Visible && !Anim.Reduced)
                 {
-                    Springs.Tune(pop, 0.22f, 0.74f);
+                    Springs.Tune(pop, 0.18f, 0.82f);
                     pop.Target = on ? 1f : 0f;
-                    checkTick = Environment.TickCount;
-                    EnsureCheckAnim();
-                    checkAnim.Start();
+                    if (checkPulse == null) checkPulse = new KitPulse(StepCheckAnim);
+                    checkPulse.Start();
                 }
                 else
                 {
                     pop.Snap(on ? 1f : 0f);
-                    if (checkAnim != null) checkAnim.Stop();
+                    if (checkPulse != null) checkPulse.Stop();
                 }
                 var h = CheckedChanged;
                 if (h != null) h(this, EventArgs.Empty);
@@ -231,7 +206,7 @@ namespace Deskmate
             float ht = live ? HoverFactor : 0f, pt = live ? PressFactor : 0f;
             Color bg = Ink.Mix(Ink.Mix(KitInk.Line, KitInk.Tint(0.17f), ht), KitInk.Tint(0.22f), pt);
             KitInk.FillRound(g, r, Radius(r, s), bg);
-            bool running = checkAnim != null && checkAnim.Enabled;
+            bool running = checkPulse != null && checkPulse.Running;
             float t = running ? pop.Value : (on ? 1f : 0f);
             float tClamp = Ease.Clamp01(t);
             // Subtle spring bounce scale on check
@@ -267,7 +242,7 @@ namespace Deskmate
             DrawRing(g, r, s);
         }
 
-        protected override void Dispose(bool disposing) { if (disposing && checkAnim != null) checkAnim.Dispose(); base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing && checkPulse != null) checkPulse.Dispose(); base.Dispose(disposing); }
     }
 
     // List choice: button opening styled menu

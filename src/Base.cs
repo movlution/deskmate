@@ -390,6 +390,7 @@ namespace Deskmate
     {
         public static float Clamp01(float t) { return t < 0 ? 0 : t > 1 ? 1 : t; }
         public static float OutCubic(float t) { t = Clamp01(t); float u = 1 - t; return 1 - u * u * u; }
+        public static float OutQuart(float t) { t = Clamp01(t); float u = 1 - t; float u2 = u * u; return 1 - u2 * u2; }
         public static float InOutCubic(float t) { t = Clamp01(t); return t < 0.5f ? 4 * t * t * t : 1 - (float)Math.Pow(-2 * t + 2, 3) / 2; }
         public static float OutExpo(float t) { t = Clamp01(t); return t >= 1 ? 1 : 1 - (float)Math.Pow(2, -10 * t); }
 
