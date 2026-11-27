@@ -163,7 +163,7 @@ namespace Deskmate
                 case "GET /meetings":
                 {
                     int days = Clamp(Get(q, "days"), 14, 1, 365);
-                    return new Dictionary<string, object> { { "meetings", Jsons(store.Meetings(DateTime.UtcNow.AddDays(-days), DateTime.UtcNow, 100), false) } };
+                    return new Dictionary<string, object> { { "meetings", Jsons(store.MeetingsLite(DateTime.UtcNow.AddDays(-days), DateTime.UtcNow, 100), false) } };
                 }
                 case "GET /meeting":
                 {

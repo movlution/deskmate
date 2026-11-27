@@ -17,6 +17,9 @@ namespace Deskmate
         public readonly List<string> NavLines = new List<string>();
         public readonly List<string> Anchors = new List<string>();
         public bool Secret;
+        public bool HasDraftCheck;
+        public string Draft;
+        public string DraftField = "";
         public DateTime CapturedUtc = DateTime.UtcNow;
 
         public void ClearSecret()
@@ -24,6 +27,8 @@ namespace Deskmate
             Secret = true;
             Source = "window";
             Focus = "";
+            Draft = null;
+            DraftField = "";
             Headings.Clear();
             MainLines.Clear();
             NavLines.Clear();
@@ -131,13 +136,13 @@ namespace Deskmate
             if (Headings.Count > 0) d["headings"] = Headings.ToArray();
             if (Anchors.Count > 0) d["anchors"] = Anchors.ToArray();
             var hi = new List<string>();
-            for (int i = 0; i < MainLines.Count && hi.Count < 6; i++)
+            for (int i = 0; i < MainLines.Count && hi.Count < 8; i++)
             {
-                string l = Fmt.OneLine(StripPlacement(MainLines[i]), 160);
+                string l = Fmt.OneLine(StripPlacement(MainLines[i]), 180);
                 if (l.Length >= 3) hi.Add(l);
             }
             if (hi.Count > 0) d["highlights"] = hi.ToArray();
-            string ex = Excerpt(600);
+            string ex = Excerpt(1200);
             if (ex.Length > 0) d["excerpt"] = ex;
             return d;
         }
@@ -384,15 +389,15 @@ namespace Deskmate
         };
 
         static readonly Regex FileRx = new Regex(
-            @"(?<![\w/\\.-])([A-Za-z0-9_\-./\\]{1,64}\.(?:cs|ts|tsx|js|jsx|mjs|py|rs|go|java|kt|cpp|c|h|hpp|json|yaml|yml|toml|xml|html|css|scss|sql|ps1|sh|cmd|bat|md|pdf|docx|xlsx|pptx|sln|csproj|iss|proto|graphql))(?![\w])",
+            @"(?<![\w/\\.-])([A-Za-z0-9_\-./\\]{1,64}\.(?:cs|ts|tsx|js|jsx|mjs|py|rs|go|java|kt|cpp|c|h|hpp|vue|svelte|dart|rb|php|swift|lua|json|yaml|yml|toml|xml|html|css|scss|sql|ps1|sh|cmd|bat|md|pdf|docx|xlsx|pptx|csv|txt|log|sln|csproj|iss|proto|graphql))(?![\w])",
             RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
         static readonly Regex CodeTokenRx = new Regex(
-            @"\b(CS\d{4}|TS\d{4,5}|HTTP\s+[45]\d{2}|0x[0-9A-Fa-f]{6,8}|[A-Z][A-Za-z0-9]{2,40}(?:Exception|Error))\b",
+            @"\b(CS\d{4}|TS\d{4,5}|MSB\d{4}|NU\d{4}|HTTP\s+[45]\d{2}|ERR_[A-Z0-9_]{3,32}|SQLITE_[A-Z_]{2,24}|0x[0-9A-Fa-f]{6,8}|[A-Z][A-Za-z0-9]{2,40}(?:Exception|Error))\b",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         static readonly Regex CmdRx = new Regex(
-            @"(?:^|[\n>$#])\s*((?:git|npm|pnpm|yarn|npx|dotnet|cargo|go|python|pip|uv|docker|kubectl|claude|ollama|csc)\s+[A-Za-z0-9_\-./:@ ]{2,48})",
+            @"(?:^|[\n>$#])\s*((?:git|npm|pnpm|yarn|npx|dotnet|cargo|go|python|pip|uv|docker|kubectl|claude|ollama|csc|pwsh|powershell|make|cmake|mvn|gradle|pytest|jest|vitest|sqlite3|winget|adb|flutter)\s+[A-Za-z0-9_\-./:@ ]{2,48})",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         // Classifies into IngatBrain's kinds without using 'meeting' (reserved for Rapat transcripts)
@@ -484,6 +489,19 @@ namespace Deskmate
             string combined = (title ?? "") + "\n" + ((text ?? "").Length > 3500 ? text.Substring(0, 3500) : (text ?? ""));
             combined = IngatPrivacy.Redact(combined);
 
+            // Extract high-signal diagnostics and commands before file lists so many filenames never evict error codes
+            int diagCap = Math.Min(max, Math.Max(4, max / 2));
+            foreach (Match m in CodeTokenRx.Matches(combined))
+            {
+                if (list.Count >= diagCap) break;
+                IngatContext.AddUnique(list, Regex.Replace(m.Groups[1].Value, @"\s+", " "), max);
+            }
+            int cmdCap = Math.Min(max, list.Count + 3);
+            foreach (Match m in CmdRx.Matches(combined))
+            {
+                if (list.Count >= cmdCap) break;
+                IngatContext.AddUnique(list, m.Groups[1].Value.Trim(), max);
+            }
             foreach (Match m in FileRx.Matches(combined))
             {
                 if (list.Count >= max) break;
@@ -494,16 +512,6 @@ namespace Deskmate
                     if (slash > 0 && f.Length > 36) f = f.Substring(slash + 1);
                     IngatContext.AddUnique(list, f, max);
                 }
-            }
-            foreach (Match m in CodeTokenRx.Matches(combined))
-            {
-                if (list.Count >= max) break;
-                IngatContext.AddUnique(list, Regex.Replace(m.Groups[1].Value, @"\s+", " "), max);
-            }
-            foreach (Match m in CmdRx.Matches(combined))
-            {
-                if (list.Count >= max) break;
-                IngatContext.AddUnique(list, m.Groups[1].Value.Trim(), max);
             }
             return list;
         }

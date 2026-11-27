@@ -25,8 +25,10 @@ namespace Deskmate
         public const int MaxChars = 6500, ChatMaxChars = 9000;
 
         static readonly string[] Browsers = { "chrome", "msedge", "brave", "vivaldi", "opera", "firefox", "arc", "zen", "floorp", "librewolf", "thorium" };
+        static readonly string[] Terminals = { "windowsterminal", "wt", "powershell", "pwsh", "cmd", "wezterm-gui", "alacritty", "mintty", "git-bash" };
 
         public static bool IsBrowser(string exe) { return Array.IndexOf(Browsers, (exe ?? "").ToLowerInvariant()) >= 0; }
+        static bool IsTerminal(string exe) { return Array.IndexOf(Terminals, (exe ?? "").ToLowerInvariant()) >= 0; }
 
         [DllImport("user32.dll")] static extern bool IsHungAppWindow(IntPtr hwnd);
 
@@ -39,6 +41,7 @@ namespace Deskmate
         public static bool ChromiumPrivate(IntPtr hwnd, string title, string exe)
         {
             if (hwnd == IntPtr.Zero) return false;
+            // Check window class before cache so a closed non-Chrome window's reused HWND never masks a new Incognito window
             var cls = new StringBuilder(64);
             Native.GetClassName(hwnd, cls, cls.Capacity);
             if (cls.ToString() != "Chrome_WidgetWin_1") return false;
@@ -86,12 +89,12 @@ namespace Deskmate
             public double Left;
             public double Right;
             public string Text;
+            public bool Inline;
         }
 
         static CacheRequest NewCache()
         {
-            // Element-only scope: each GetFirstChild/GetNextSibling(el, cache) batches properties in one COM call
-            // without eagerly serializing hundreds of grandchildren on a single container node
+            // Element-only scope with lean core properties: avoids per-node pattern provider probes on every container/button
             var cr = new CacheRequest
             {
                 TreeFilter = Automation.ControlViewCondition,
@@ -105,6 +108,38 @@ namespace Deskmate
             cr.Add(AutomationElement.BoundingRectangleProperty);
             cr.Add(AutomationElement.ProcessIdProperty);
             return cr;
+        }
+
+        // Shallow container cache: fetches a Window/Pane and its direct children in ONE batched COM call
+        static CacheRequest NewChildrenCache()
+        {
+            var cr = NewCache();
+            cr.TreeScope = TreeScope.Element | TreeScope.Children;
+            return cr;
+        }
+
+        // Single-element cache for FocusedElement: fetches draft/value patterns in one IPC without taxing tree walks
+        static CacheRequest NewFocusedCache()
+        {
+            var cr = NewCache();
+            cr.Add(AutomationElement.IsKeyboardFocusableProperty);
+            cr.Add(AutomationElement.RuntimeIdProperty);
+            cr.Add(ValuePattern.Pattern);
+            cr.Add(ValuePattern.ValueProperty);
+            cr.Add(ValuePattern.IsReadOnlyProperty);
+            return cr;
+        }
+
+        static bool IsLeafDecorative(ControlType type, System.Windows.Rect r)
+        {
+            if (type == ControlType.Image || type == ControlType.Separator || type == ControlType.Thumb ||
+                type == ControlType.ProgressBar || type == ControlType.Slider || type == ControlType.Spinner ||
+                type == ControlType.CheckBox || type == ControlType.RadioButton || type == ControlType.ToolTip)
+                return true;
+            // Small icon/toolbar buttons rarely hold distinct document text; large card buttons are still walked
+            if (type == ControlType.Button && !r.IsEmpty && r.Width <= 140 && r.Height <= 48)
+                return true;
+            return false;
         }
 
         // Structured capture of the active window: URL, focus, headings, ordered main content, navigation, and anchors
@@ -128,53 +163,93 @@ namespace Deskmate
             Native.GetWindowThreadProcessId(hwnd, out winPid);
 
             var cache = NewCache();
+            var childrenCache = NewChildrenCache();
             AutomationElement root;
             try
             {
-                using (cache.Activate()) root = AutomationElement.FromHandle(hwnd);
+                using (childrenCache.Activate()) root = AutomationElement.FromHandle(hwnd);
             }
             catch (Exception) { snap.Source = "window"; return snap; }
             if (root == null) { snap.Source = "window"; return snap; }
 
-            // Focused control first: instant password check and active editor/tab/document text before walking chrome
+            bool browser = IsBrowser(exe);
+            bool terminal = IsTerminal(exe);
+
+            // Focused control first: instant password check, draft read, and active editor/terminal/document text
             string focusedDoc = "";
             try
             {
                 AutomationElement focused;
-                using (cache.Activate()) focused = AutomationElement.FocusedElement;
+                using (NewFocusedCache().Activate()) focused = AutomationElement.FocusedElement;
                 if (focused != null)
                 {
                     if (IsPassword(focused)) { snap.ClearSecret(); return snap; }
+                    snap.HasDraftCheck = true;
                     if (ProcId(focused) == winPid)
                     {
                         var ftype = CtrlType(focused);
-                        string fname = IngatStructure.CleanLine(ElemName(focused));
-                        if (fname.Length >= 2 && fname.Length <= 140 && !LooksLikeUrl(fname))
+                        string rawFname = ElemName(focused);
+                        string fname = IngatStructure.CleanLine(rawFname);
+                        // In chat mode, WalkChat detects the conversation header; avoid treating the message box label as Focus
+                        if (!chatMode && fname.Length >= 2 && fname.Length <= 140 && !LooksLikeUrl(fname, false))
                             snap.Focus = fname;
-                        if (!chatMode && ftype == ControlType.Document)
-                            focusedDoc = DocumentText(focused);
+                        if (browser && snap.Url.Length == 0 && ftype == ControlType.Document)
+                        {
+                            string dv = Value(focused);
+                            if (LooksLikeUrl(dv, true)) snap.Url = NormalizeUrl(dv);
+                        }
+                        if (!chatMode && (ftype == ControlType.Document || ftype == ControlType.Edit || ftype == ControlType.Text || ftype == ControlType.Custom))
+                        {
+                            string lowName = rawFname.ToLowerInvariant();
+                            bool isSearchOrUrl = lowName.Contains("address") || lowName.Contains("alamat") || lowName.Contains("omnibox");
+                            if (!isSearchOrUrl) focusedDoc = DocumentText(focused);
+                        }
+                        // Capture active draft from the same focused element so Capture skips a second FocusedElement IPC
+                        bool draftSecret;
+                        string draftField;
+                        string draft = IngatChat.DraftFromElement(focused, winPid, out draftSecret, out draftField);
+                        if (draftSecret) { snap.ClearSecret(); return snap; }
+                        snap.Draft = draft;
+                        snap.DraftField = draftField;
                     }
                 }
             }
             catch (Exception) { }
 
-            bool browser = IsBrowser(exe);
             if (chatMode)
             {
-                WalkChat(root, cache, browser, winL, winT, winW, winH, snap);
+                WalkChat(root, cache, childrenCache, browser, winL, winT, winW, winH, snap);
                 if (snap.Secret) snap.ClearSecret();
                 return snap;
             }
 
-            WalkStructured(root, cache, browser, hasRect, winL, winT, winW, winH, focusedDoc, snap);
+            WalkStructured(root, cache, childrenCache, browser, terminal, hasRect, winL, winT, winW, winH, focusedDoc, snap);
             if (snap.Secret) { snap.ClearSecret(); return snap; }
-            snap.Kind = IngatStructure.Classify(exe, snap.Url, title, snap.Excerpt(1200));
-            var anchors = IngatStructure.ExtractAnchors(title, snap.Url, snap.FormatText(3500), 12);
+            string mainText = snap.Excerpt(3500);
+            snap.Kind = IngatStructure.Classify(exe, snap.Url, title, mainText.Length > 1200 ? mainText.Substring(0, 1200) : mainText);
+            var anchors = IngatStructure.ExtractAnchors(title, snap.Url, (snap.Focus.Length > 0 ? snap.Focus + "\n" : "") + mainText, 12);
             for (int i = 0; i < anchors.Count; i++) IngatContext.AddUnique(snap.Anchors, anchors[i], 12);
             return snap;
         }
 
-        static void WalkStructured(AutomationElement root, CacheRequest cache, bool browser, bool hasRect,
+        static bool LooksLikeAddressBar(AutomationElement el, double y0Pct)
+        {
+            if (y0Pct <= 18) return true;
+            string n = ElemName(el).ToLowerInvariant();
+            return n.Contains("address") || n.Contains("alamat") || n.Contains("url") || n.Contains("omnibox") || n.Contains("location");
+        }
+
+        static AutomationElementCollection BatchChildren(AutomationElement el, bool alreadyCached, CacheRequest childrenCache)
+        {
+            try
+            {
+                if (alreadyCached) return el.CachedChildren;
+                return el.GetUpdatedCache(childrenCache).CachedChildren;
+            }
+            catch (Exception) { return null; }
+        }
+
+        static void WalkStructured(AutomationElement root, CacheRequest cache, CacheRequest childrenCache, bool browser, bool terminal, bool hasRect,
             double winL, double winT, double winW, double winH, string focusedDoc, IngatSnapshot snap)
         {
             var mainPlaced = new List<PlacedLine>();
@@ -216,6 +291,8 @@ namespace Deskmate
                         continue;
 
                     var r = Bounds(el);
+                    if (IsLeafDecorative(type, r)) continue;
+
                     double x0Pct = hasRect && !r.IsEmpty ? (r.Left - winL) * 100.0 / winW : 50;
                     double x1Pct = hasRect && !r.IsEmpty ? (r.Right - winL) * 100.0 / winW : 50;
                     double y0Pct = hasRect && !r.IsEmpty ? (r.Top - winT) * 100.0 / winH : 50;
@@ -224,16 +301,21 @@ namespace Deskmate
                     if (type == ControlType.Edit)
                     {
                         string v = Value(el);
-                        if (browser && snap.Url.Length == 0 && LooksLikeUrl(v)) { snap.Url = NormalizeUrl(v); continue; }
+                        if (browser && snap.Url.Length == 0 && LooksLikeUrl(v, LooksLikeAddressBar(el, y0Pct))) { snap.Url = NormalizeUrl(v); continue; }
                         string cv = IngatStructure.CleanLine(v);
                         if (cv.Length >= 2 && seen.Add(cv))
                         {
-                            mainPlaced.Add(new PlacedLine { Top = r.IsEmpty ? 1e6 + nodes : r.Top, Left = r.IsEmpty ? 0 : r.Left, Text = cv });
+                            mainPlaced.Add(new PlacedLine { Top = r.IsEmpty ? 1e6 + nodes : r.Top, Left = r.IsEmpty ? 0 : r.Left, Right = r.IsEmpty ? 0 : r.Right, Text = cv });
                             chars += cv.Length;
                         }
                     }
                     else if (type == ControlType.Document)
                     {
+                        if (browser && snap.Url.Length == 0)
+                        {
+                            string dv = Value(el);
+                            if (LooksLikeUrl(dv, true)) snap.Url = NormalizeUrl(dv);
+                        }
                         string doc = DocumentText(el);
                         if (doc.Length > 0)
                         {
@@ -243,8 +325,17 @@ namespace Deskmate
                         string dn = IngatStructure.CleanLine(ElemName(el));
                         if (dn.Length >= 2 && seen.Add(dn))
                         {
-                            mainPlaced.Add(new PlacedLine { Top = r.IsEmpty ? 1e6 + nodes : r.Top, Left = r.IsEmpty ? 0 : r.Left, Text = dn });
+                            mainPlaced.Add(new PlacedLine { Top = r.IsEmpty ? 1e6 + nodes : r.Top, Left = r.IsEmpty ? 0 : r.Left, Right = r.IsEmpty ? 0 : r.Right, Text = dn });
                             chars += dn.Length;
+                        }
+                    }
+                    else if (terminal && docChunks.Count == 0 && (type == ControlType.Custom || type == ControlType.Pane))
+                    {
+                        string tdoc = DocumentText(el);
+                        if (tdoc.Length > 0)
+                        {
+                            chars += AddDocLines(docChunks, seen, tdoc);
+                            continue;
                         }
                     }
                     else if (type == ControlType.TabItem)
@@ -282,50 +373,92 @@ namespace Deskmate
                             {
                                 IngatContext.AddUnique(snap.NavLines, capped, 12);
                                 if (sidePlaced.Count < 30)
-                                    sidePlaced.Add(new PlacedLine { Top = r.IsEmpty ? 1e6 + nodes : r.Top, Left = r.IsEmpty ? 0 : r.Left, Text = capped });
+                                    sidePlaced.Add(new PlacedLine { Top = r.IsEmpty ? 1e6 + nodes : r.Top, Left = r.IsEmpty ? 0 : r.Left, Right = r.IsEmpty ? 0 : r.Right, Text = capped });
                             }
                             else
                             {
                                 if (y0Pct >= 4 && y0Pct <= 18 && s.Length <= 110 && snap.Headings.Count < 6 && type == ControlType.Text)
                                     IngatContext.AddUnique(snap.Headings, s, 8);
-                                mainPlaced.Add(new PlacedLine { Top = r.IsEmpty ? 1e6 + nodes : r.Top, Left = r.IsEmpty ? 0 : r.Left, Text = capped });
+                                mainPlaced.Add(new PlacedLine
+                                {
+                                    Top = r.IsEmpty ? 1e6 + nodes : r.Top,
+                                    Left = r.IsEmpty ? 0 : r.Left,
+                                    Right = r.IsEmpty ? 0 : r.Right,
+                                    Text = capped,
+                                    Inline = type == ControlType.Text || type == ControlType.Hyperlink,
+                                });
                                 chars += capped.Length;
                             }
                         }
                         if (type == ControlType.Text) continue;
                     }
 
-                    if (type == ControlType.ToolBar && !browser) continue;
+                    if (type == ControlType.ToolBar && (!browser || snap.Url.Length > 0)) continue;
                     bool navParent = fromNav || sideArea || type == ControlType.Tree || type == ControlType.Tab || type == ControlType.StatusBar;
                     int maxSiblings = navParent ? 24 : 320;
-                    int count = 0;
-                    var child = walker.GetFirstChild(el, cache);
-                    while (child != null && count < maxSiblings && (nodes == 1 && count < 20 || sw.ElapsedMilliseconds < BudgetMs))
+                    // Batch-read direct children of root and shallow Panes in one COM call instead of N sequential GetNextSibling IPCs
+                    AutomationElementCollection batched = null;
+                    if (nodes == 1) batched = BatchChildren(el, true, childrenCache);
+                    else if (!navParent && type == ControlType.Pane && nodes <= 6) batched = BatchChildren(el, false, childrenCache);
+
+                    if (batched != null)
                     {
-                        count++;
-                        var ct = CtrlType(child);
-                        bool childToNav = navParent || ct == ControlType.Tree || ct == ControlType.TreeItem || ct == ControlType.Tab || ct == ControlType.TabItem || ct == ControlType.StatusBar;
-                        if (!childToNav && hasRect)
+                        if (nodes == 1) sw.Restart();
+                        int lim = Math.Min(batched.Count, maxSiblings);
+                        for (int ci = 0; ci < lim; ci++)
                         {
+                            var child = batched[ci];
+                            if (IsPassword(child)) { snap.Secret = true; return; }
+                            var ct = CtrlType(child);
                             var cr = Bounds(child);
-                            if (!cr.IsEmpty && ct != ControlType.Document && ct != ControlType.Edit)
+                            if (IsLeafDecorative(ct, cr)) continue;
+                            bool childToNav = navParent || ct == ControlType.Tree || ct == ControlType.TreeItem || ct == ControlType.Tab || ct == ControlType.TabItem || ct == ControlType.StatusBar;
+                            if (!childToNav && hasRect && !cr.IsEmpty && ct != ControlType.Document && ct != ControlType.Edit)
                             {
                                 double cx0 = (cr.Left - winL) * 100.0 / winW, cx1 = (cr.Right - winL) * 100.0 / winW, cy0 = (cr.Top - winT) * 100.0 / winH;
                                 if (cx1 <= 20 && (cx1 - cx0) <= 19 && cy0 > 10) childToNav = true;
                             }
+                            if (childToNav)
+                            {
+                                if (navQueue.Count < MaxNavNodes * 2) navQueue.Enqueue(child);
+                            }
+                            else if (mainQueue.Count < MaxNodes * 2)
+                            {
+                                mainQueue.Enqueue(child);
+                            }
                         }
-                        if (childToNav)
-                        {
-                            if (navQueue.Count < MaxNavNodes * 2) navQueue.Enqueue(child);
-                        }
-                        else if (mainQueue.Count < MaxNodes * 2)
-                        {
-                            mainQueue.Enqueue(child);
-                        }
-                        child = walker.GetNextSibling(child, cache);
                     }
-                    // Cold UIA provider handshake happens on root (nodes == 1); start the subtree budget from here
-                    if (nodes == 1) sw.Restart();
+                    else
+                    {
+                        int count = 0;
+                        var child = walker.GetFirstChild(el, cache);
+                        // Cold UIA provider handshake happens on root's first child fetch; start the subtree budget from here
+                        if (nodes == 1) sw.Restart();
+                        while (child != null && count < maxSiblings && sw.ElapsedMilliseconds < BudgetMs)
+                        {
+                            count++;
+                            var ct = CtrlType(child);
+                            var cr = Bounds(child);
+                            if (!IsLeafDecorative(ct, cr))
+                            {
+                                bool childToNav = navParent || ct == ControlType.Tree || ct == ControlType.TreeItem || ct == ControlType.Tab || ct == ControlType.TabItem || ct == ControlType.StatusBar;
+                                if (!childToNav && hasRect && !cr.IsEmpty && ct != ControlType.Document && ct != ControlType.Edit)
+                                {
+                                    double cx0 = (cr.Left - winL) * 100.0 / winW, cx1 = (cr.Right - winL) * 100.0 / winW, cy0 = (cr.Top - winT) * 100.0 / winH;
+                                    if (cx1 <= 20 && (cx1 - cx0) <= 19 && cy0 > 10) childToNav = true;
+                                }
+                                if (childToNav)
+                                {
+                                    if (navQueue.Count < MaxNavNodes * 2) navQueue.Enqueue(child);
+                                }
+                                else if (mainQueue.Count < MaxNodes * 2)
+                                {
+                                    mainQueue.Enqueue(child);
+                                }
+                            }
+                            child = walker.GetNextSibling(child, cache);
+                        }
+                    }
                 }
                 catch (ElementNotAvailableException) { }
                 catch (InvalidOperationException) { }
@@ -345,8 +478,32 @@ namespace Deskmate
                 int rowA = (int)(a.Top / 6.0), rowB = (int)(b.Top / 6.0);
                 return rowA != rowB ? rowA.CompareTo(rowB) : a.Left.CompareTo(b.Left);
             });
+            // Join tight inline HTML/Electron spans on the same line (gap <= 14px) while keeping separate columns/panes intact
             for (int i = 0; i < mainPlaced.Count && snap.MainLines.Count < 260; i++)
-                snap.MainLines.Add(mainPlaced[i].Text);
+            {
+                var cur = mainPlaced[i];
+                if (cur.Inline && cur.Right > cur.Left)
+                {
+                    var line = new StringBuilder(cur.Text);
+                    double right = cur.Right;
+                    double top = cur.Top;
+                    while (i + 1 < mainPlaced.Count)
+                    {
+                        var nxt = mainPlaced[i + 1];
+                        if (!nxt.Inline || nxt.Right <= nxt.Left || Math.Abs(nxt.Top - top) > 6.0) break;
+                        double gap = nxt.Left - right;
+                        if (gap < -4.0 || gap > 14.0 || line.Length + 1 + nxt.Text.Length > 400) break;
+                        line.Append(' ').Append(nxt.Text);
+                        right = Math.Max(right, nxt.Right);
+                        i++;
+                    }
+                    snap.MainLines.Add(line.ToString());
+                }
+                else
+                {
+                    snap.MainLines.Add(cur.Text);
+                }
+            }
         }
 
         static int AddDocLines(List<string> into, HashSet<string> seen, string doc)
@@ -366,7 +523,7 @@ namespace Deskmate
         }
 
         // Chats: every visible line with its horizontal [x0-x1] placement, plus active chat header detection
-        static void WalkChat(AutomationElement root, CacheRequest cache, bool browser, double winL, double winT, double winW, double winH, IngatSnapshot snap)
+        static void WalkChat(AutomationElement root, CacheRequest cache, CacheRequest childrenCache, bool browser, double winL, double winT, double winW, double winH, IngatSnapshot snap)
         {
             var lines = new List<PlacedLine>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -398,12 +555,22 @@ namespace Deskmate
                         continue;
 
                     var r = Bounds(el);
+                    if (IsLeafDecorative(type, r)) continue;
                     bool leftList = winW >= 720 && !r.IsEmpty && ((r.Right - winL) * 100.0 / winW) <= 28;
+                    double y0Pct = !r.IsEmpty ? (r.Top - winT) * 100.0 / winH : 50;
 
                     if (type == ControlType.Edit)
                     {
                         string v = Value(el);
-                        if (browser && snap.Url.Length == 0 && LooksLikeUrl(v)) { snap.Url = NormalizeUrl(v); continue; }
+                        if (browser && snap.Url.Length == 0 && LooksLikeUrl(v, LooksLikeAddressBar(el, y0Pct))) { snap.Url = NormalizeUrl(v); continue; }
+                    }
+                    else if (type == ControlType.Document)
+                    {
+                        if (browser && snap.Url.Length == 0)
+                        {
+                            string dv = Value(el);
+                            if (LooksLikeUrl(dv, true)) snap.Url = NormalizeUrl(dv);
+                        }
                     }
                     else if (type == ControlType.Text || type == ControlType.Hyperlink || type == ControlType.Header || type == ControlType.ListItem)
                     {
@@ -450,18 +617,42 @@ namespace Deskmate
                     }
 
                     int maxSib = (fromSide || leftList) ? 40 : 400;
-                    int cnt = 0;
-                    var child = walker.GetFirstChild(el, cache);
-                    while (child != null && cnt < maxSib && (nodes == 1 && cnt < 20 || sw.ElapsedMilliseconds < ChatBudgetMs))
+                    AutomationElementCollection batched = nodes == 1 ? BatchChildren(el, true, childrenCache) : null;
+                    if (batched != null)
                     {
-                        cnt++;
-                        var cr = Bounds(child);
-                        bool childLeft = fromSide || leftList || (winW >= 720 && !cr.IsEmpty && ((cr.Right - winL) * 100.0 / winW) <= 28);
-                        if (childLeft) { if (sideQueue.Count < 400) sideQueue.Enqueue(child); }
-                        else if (mainQueue.Count < 3500) mainQueue.Enqueue(child);
-                        child = walker.GetNextSibling(child, cache);
+                        sw.Restart();
+                        int lim = Math.Min(batched.Count, maxSib);
+                        for (int ci = 0; ci < lim; ci++)
+                        {
+                            var child = batched[ci];
+                            if (IsPassword(child)) { snap.Secret = true; return; }
+                            var ct = CtrlType(child);
+                            var cr = Bounds(child);
+                            if (IsLeafDecorative(ct, cr)) continue;
+                            bool childLeft = fromSide || leftList || (winW >= 720 && !cr.IsEmpty && ((cr.Right - winL) * 100.0 / winW) <= 28);
+                            if (childLeft) { if (sideQueue.Count < 400) sideQueue.Enqueue(child); }
+                            else if (mainQueue.Count < 3500) mainQueue.Enqueue(child);
+                        }
                     }
-                    if (nodes == 1) sw.Restart();
+                    else
+                    {
+                        int cnt = 0;
+                        var child = walker.GetFirstChild(el, cache);
+                        if (nodes == 1) sw.Restart();
+                        while (child != null && cnt < maxSib && sw.ElapsedMilliseconds < ChatBudgetMs)
+                        {
+                            cnt++;
+                            var ct = CtrlType(child);
+                            var cr = Bounds(child);
+                            if (!IsLeafDecorative(ct, cr))
+                            {
+                                bool childLeft = fromSide || leftList || (winW >= 720 && !cr.IsEmpty && ((cr.Right - winL) * 100.0 / winW) <= 28);
+                                if (childLeft) { if (sideQueue.Count < 400) sideQueue.Enqueue(child); }
+                                else if (mainQueue.Count < 3500) mainQueue.Enqueue(child);
+                            }
+                            child = walker.GetNextSibling(child, cache);
+                        }
+                    }
                 }
                 catch (ElementNotAvailableException) { }
                 catch (InvalidOperationException) { }
@@ -544,6 +735,11 @@ namespace Deskmate
         static bool IsSelectedTab(AutomationElement el)
         {
             object p;
+            if (el.TryGetCachedPattern(SelectionItemPattern.Pattern, out p))
+            {
+                try { return ((SelectionItemPattern)p).Cached.IsSelected; }
+                catch (Exception) { }
+            }
             if (el.TryGetCurrentPattern(SelectionItemPattern.Pattern, out p))
             {
                 try { return ((SelectionItemPattern)p).Current.IsSelected; }
@@ -555,6 +751,11 @@ namespace Deskmate
         static string Value(AutomationElement el)
         {
             object p;
+            if (el.TryGetCachedPattern(ValuePattern.Pattern, out p))
+            {
+                try { return ((ValuePattern)p).Cached.Value ?? ""; }
+                catch (Exception) { }
+            }
             if (el.TryGetCurrentPattern(ValuePattern.Pattern, out p))
             {
                 try { return ((ValuePattern)p).Current.Value ?? ""; }
@@ -563,7 +764,7 @@ namespace Deskmate
             return "";
         }
 
-        // Visible viewport ranges first so scrolled editors/docs return what is actually on screen
+        // Visible viewport ranges first, then caret/selection window, then document head so scrolled editors return active code
         static string DocumentText(AutomationElement el)
         {
             object p;
@@ -587,24 +788,58 @@ namespace Deskmate
                 }
             }
             catch (Exception) { }
+            try
+            {
+                var sel = tp.GetSelection();
+                if (sel != null && sel.Length > 0 && sel[0] != null)
+                {
+                    var win = sel[0].Clone();
+                    win.MoveEndpointByUnit(System.Windows.Automation.Text.TextPatternRangeEndpoint.Start, System.Windows.Automation.Text.TextUnit.Line, -25);
+                    win.MoveEndpointByUnit(System.Windows.Automation.Text.TextPatternRangeEndpoint.End, System.Windows.Automation.Text.TextUnit.Line, 35);
+                    string around = (win.GetText(MaxChars) ?? "").Trim();
+                    if (around.Length > 0) return around.Length > MaxChars ? around.Substring(0, MaxChars) : around;
+                }
+            }
+            catch (Exception) { }
             try { return tp.DocumentRange.GetText(MaxChars) ?? ""; }
             catch (Exception) { return ""; }
         }
 
-        static bool LooksLikeUrl(string v)
+        static readonly HashSet<string> FileExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            if (string.IsNullOrEmpty(v) || v.Length > 2048 || v.IndexOf(' ') >= 0) return false;
+            "cs", "ts", "tsx", "js", "jsx", "py", "rs", "go", "java", "kt", "cpp", "c", "h", "hpp",
+            "json", "yaml", "yml", "toml", "xml", "css", "scss", "sql", "ps1", "sh", "cmd", "bat",
+            "md", "txt", "log", "pdf", "docx", "xlsx", "pptx", "png", "jpg", "jpeg", "gif", "svg", "exe", "dll",
+        };
+
+        public static bool LooksLikeUrl(string v, bool allowBareHost)
+        {
+            if (string.IsNullOrEmpty(v) || v.Length > 2048 || v.IndexOf(' ') >= 0 || v.IndexOf('\n') >= 0) return false;
             if (v.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                 v.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
                 v.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) return true;
-            int dot = v.IndexOf('.');
-            return dot > 0 && dot < v.Length - 2;
+            if (!allowBareHost) return false;
+            if (v.StartsWith("localhost", StringComparison.OrdinalIgnoreCase) &&
+                (v.Length == 9 || v[9] == ':' || v[9] == '/'))
+                return true;
+            int slash = v.IndexOf('/');
+            string host = slash > 0 ? v.Substring(0, slash) : v;
+            int colon = host.IndexOf(':');
+            if (colon > 0) host = host.Substring(0, colon);
+            int dot = host.LastIndexOf('.');
+            if (dot <= 0 || dot >= host.Length - 2) return false;
+            string tld = host.Substring(dot + 1);
+            if (slash < 0 && FileExts.Contains(tld)) return false;
+            for (int i = 0; i < tld.Length; i++) if (!char.IsLetterOrDigit(tld[i])) return false;
+            return true;
         }
 
         static string NormalizeUrl(string v)
         {
             v = (v ?? "").Trim();
-            return v.Length > 0 && !v.Contains("://") ? "https://" + v : v;
+            if (v.Length == 0 || v.Contains("://")) return v;
+            return v.StartsWith("localhost", StringComparison.OrdinalIgnoreCase) || v.StartsWith("127.0.0.1", StringComparison.Ordinal)
+                ? "http://" + v : "https://" + v;
         }
 
         // Window capture & perceptual hashing
@@ -655,13 +890,19 @@ namespace Deskmate
             return true;
         }
 
+        static readonly object stampGate = new object();
+        static Bitmap stampScratch;
+        static Bitmap screenThumb;
+        static byte[] stampRaw;
+
         // Fast LockBits dual-zone 64-bit dHash: full-window horizontal dHash + inner-viewport vertical dHash (catches scrolling)
         public static IngatStamp Stamp(Bitmap b)
         {
             if (b == null || b.Width < 16 || b.Height < 16) return new IngatStamp();
-            using (var small = new Bitmap(17, 9, PixelFormat.Format24bppRgb))
+            lock (stampGate)
             {
-                using (var g = Graphics.FromImage(small))
+                if (stampScratch == null) stampScratch = new Bitmap(17, 9, PixelFormat.Format24bppRgb);
+                using (var g = Graphics.FromImage(stampScratch))
                 {
                     // HighQualityBilinear area-averages all source pixels instead of point-sampling 2x2
                     g.InterpolationMode = InterpolationMode.HighQualityBilinear;
@@ -671,12 +912,13 @@ namespace Deskmate
                     int iw = Math.Max(8, (int)(b.Width * 0.80)), ih = Math.Max(8, (int)(b.Height * 0.80));
                     g.DrawImage(b, new Rectangle(9, 0, 8, 9), new Rectangle(ix, iy, iw, ih), GraphicsUnit.Pixel);
                 }
-                var data = small.LockBits(new Rectangle(0, 0, 17, 9), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+                var data = stampScratch.LockBits(new Rectangle(0, 0, 17, 9), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
                 try
                 {
                     int stride = Math.Abs(data.Stride);
-                    byte[] raw = new byte[stride * 9];
-                    Marshal.Copy(data.Scan0, raw, 0, raw.Length);
+                    int need = stride * 9;
+                    if (stampRaw == null || stampRaw.Length < need) stampRaw = new byte[need];
+                    Marshal.Copy(data.Scan0, stampRaw, 0, need);
                     ulong full = 0, inner = 0;
                     int bit = 0;
                     for (int y = 0; y < 8; y++)
@@ -686,20 +928,20 @@ namespace Deskmate
                         for (int x = 0; x < 8; x++, bit++)
                         {
                             int p0 = row + x * 3, p1 = p0 + 3;
-                            if (raw[p0] + raw[p0 + 1] + raw[p0 + 2] > raw[p1] + raw[p1 + 1] + raw[p1 + 2])
+                            if (stampRaw[p0] + stampRaw[p0 + 1] + stampRaw[p0 + 2] > stampRaw[p1] + stampRaw[p1 + 1] + stampRaw[p1 + 2])
                                 full |= 1UL << bit;
                             int q0 = row + (9 + x) * 3, q1 = nextRow + (9 + x) * 3;
-                            if (raw[q0] + raw[q0 + 1] + raw[q0 + 2] > raw[q1] + raw[q1 + 1] + raw[q1 + 2])
+                            if (stampRaw[q0] + stampRaw[q0 + 1] + stampRaw[q0 + 2] > stampRaw[q1] + stampRaw[q1 + 1] + stampRaw[q1 + 2])
                                 inner |= 1UL << bit;
                         }
                     }
                     return new IngatStamp { Full = full, Inner = inner, Valid = true };
                 }
-                finally { small.UnlockBits(data); }
+                finally { stampScratch.UnlockBits(data); }
             }
         }
 
-        // Same fingerprint for the foreground window, read off the composed screen into a 160x90 thumbnail:
+        // Same fingerprint for the foreground window, read off the composed screen into a reusable 160x90 thumbnail:
         // no window-sized bitmap and no PrintWindow re-render of the target app on every look.
         // Invalid when the window is not in front (something else may cover it) or is partly off-screen.
         public static IngatStamp ScreenStamp(IntPtr hwnd)
@@ -711,14 +953,15 @@ namespace Deskmate
             if (DwmGetWindowAttribute(hwnd, 9, out r, Marshal.SizeOf(typeof(RECT))) != 0 && !GetWindowRect(hwnd, out r)) return new IngatStamp();
             var bounds = Rectangle.FromLTRB(r.L, r.T, r.R, r.B);
             if (bounds.Width < 200 || bounds.Height < 120 || !System.Windows.Forms.SystemInformation.VirtualScreen.Contains(bounds)) return new IngatStamp();
-            using (var thumb = new Bitmap(160, 90, PixelFormat.Format24bppRgb))
+            lock (stampGate)
             {
+                if (screenThumb == null) screenThumb = new Bitmap(160, 90, PixelFormat.Format24bppRgb);
                 IntPtr screen = Native.GetDC(IntPtr.Zero);
                 if (screen == IntPtr.Zero) return new IngatStamp();
                 bool ok;
                 try
                 {
-                    using (var g = Graphics.FromImage(thumb))
+                    using (var g = Graphics.FromImage(screenThumb))
                     {
                         IntPtr dc = g.GetHdc();
                         try
@@ -732,7 +975,7 @@ namespace Deskmate
                     }
                 }
                 finally { Native.ReleaseDC(IntPtr.Zero, screen); }
-                return ok ? Stamp(thumb) : new IngatStamp();
+                return ok ? Stamp(screenThumb) : new IngatStamp();
             }
         }
 
@@ -749,7 +992,7 @@ namespace Deskmate
         public static bool Changed(IngatStamp prev, IngatStamp cur)
         {
             if (!prev.Valid || !cur.Valid) return true;
-            return Distance(prev.Full, cur.Full) > 4 || Distance(prev.Inner, cur.Inner) > 4;
+            return Distance(prev.Full, cur.Full) > 4 || Distance(prev.Inner, cur.Inner) > 3;
         }
 
         // In-memory OCR with horizontal positions: no disk files

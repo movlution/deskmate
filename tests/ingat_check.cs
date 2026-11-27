@@ -50,6 +50,7 @@ namespace Deskmate
             TestLiveQueriesAndStructuredFallback();
             TestDualZoneStampAndInMemoryOcr();
             TestLiveUiaSnapshotAndChat();
+            TestUrlInlineAndDbOptimizations();
             TestLiveServiceAndMcp();
             return "Ingatan checks passed";
         }
@@ -1070,6 +1071,128 @@ namespace Deskmate
             string chatFmt = chatSnap.FormatText(4000);
             Assert(chatSnap.Focus == "Budi Santoso", "narrow chat header detected: [" + chatSnap.Focus + "]");
             Assert(chatFmt.Contains("Proposal sudah dikirim?") && chatFmt.Contains("Sudah aku kirim barusan"), "chat bubbles captured in order: " + chatFmt);
+        }
+
+        static void TestUrlInlineAndDbOptimizations()
+        {
+            // 1. URL detection accuracy: localhost accepted, code filenames rejected
+            Assert(IngatText.LooksLikeUrl("https://learn.microsoft.com/en-us", false), "scheme url");
+            Assert(IngatText.LooksLikeUrl("localhost:3000/dashboard", true), "localhost with port accepted in address bar");
+            Assert(IngatText.LooksLikeUrl("docs.microsoft.com/win32", true), "bare domain accepted in address bar");
+            Assert(!IngatText.LooksLikeUrl("docs.microsoft.com", false), "bare domain rejected outside address bar");
+            Assert(!IngatText.LooksLikeUrl("IngatText.cs", true), "C# filename not mistaken for URL");
+            Assert(!IngatText.LooksLikeUrl("package.json", true), "json filename not mistaken for URL");
+            Assert(IngatPrivacy.Project("windowsterminal", "faris@dev:~/projects/deskmate") == "deskmate", "unix/wsl terminal project");
+
+            var extAnchors = IngatStructure.ExtractAnchors("Build log", "", "ERR_CONNECTION_REFUSED SQLITE_BUSY MSB4018 in src/App.vue\n$ pytest tests/unit", 12);
+            Assert(extAnchors.Contains("ERR_CONNECTION_REFUSED") && extAnchors.Contains("SQLITE_BUSY") && extAnchors.Contains("src/App.vue"),
+                "expanded error and file anchors extracted: " + string.Join(", ", extAnchors.ToArray()));
+
+            // 2. Inline span joining + decorative toolbar button skipping
+            long ms;
+            var inlineSnap = RunFormSnapshot(delegate
+            {
+                var form = new Form { Text = "Docs - Google Chrome", Size = new Size(1200, 800) };
+                // 40 small toolbar buttons that should be skipped without burning subtree budget
+                for (int i = 0; i < 40; i++)
+                    form.Controls.Add(new Button { Text = "Btn" + i, Bounds = new Rectangle(10 + (i % 20) * 44, 10 + (i / 20) * 30, 38, 24) });
+                // Two tight inline spans on the same visual line inside main viewport (gap = 4px)
+                form.Controls.Add(new Label { Text = "Kesalahan", AutoSize = false, Bounds = new Rectangle(300, 180, 90, 24) });
+                form.Controls.Add(new Label { Text = "SQLITE_BUSY", AutoSize = false, Bounds = new Rectangle(394, 180, 120, 24) });
+                return form;
+            }, "chrome", false, out ms);
+            Assert(inlineSnap.MainLines.Exists(l => l.Contains("Kesalahan SQLITE_BUSY")),
+                "tight inline spans joined cleanly (" + ms + "ms): " + string.Join(" | ", inlineSnap.MainLines.ToArray()));
+
+            // 3. Database query plans, statement cache, lightweight queries, people cache invalidation, and multi-term coverage
+            string path = TempDb();
+            using (var store = new IngatStore(path))
+            {
+                var now = DateTime.UtcNow;
+                long ep1 = store.Open(now.AddMinutes(-40), "Visual Studio Code", "code", "Deskmate", "IngatDb.cs - Deskmate", "", "coding");
+                var upd = store.RecordCapture(ep1, now.AddMinutes(-30), "IngatDb.cs - Deskmate", "", "SQLite WAL prepared statement cache optimization", null, true, "uia", "Visual Studio Code");
+                Assert(upd != null && upd.Body.Length == 0 && upd.Title == "IngatDb.cs - Deskmate", "RecordCapture returns lightweight episode");
+                store.AddEvent(now.AddMinutes(-29), ep1, "uia", "Visual Studio Code", "IngatDb.cs - Deskmate", "", "SQLite WAL prepared statement cache optimization");
+                Assert((long)store.Stats()["events"] == 1, "event hash cache deduplicates identical captures");
+                Assert(store.LastScreenEvent(ep1).Contains("prepared statement cache"), "LastScreenEvent O(1) lookup");
+                store.Close(ep1, now.AddMinutes(-20));
+
+                long ep2 = store.Open(now.AddMinutes(-18), "Visual Studio Code", "code", "Deskmate", "Notes.cs - Deskmate", "", "coding");
+                store.Touch(ep2, now.AddMinutes(-2), "Notes.cs - Deskmate", "", "SQLite notes storage");
+                store.Close(ep2, now.AddMinutes(-2));
+
+                // Streak calculation over the same project across adjacent episodes (20m + 16m = 36m)
+                int streak = store.StreakMinutes("Deskmate", "code", now);
+                Assert(streak >= 34 && streak <= 38, "StreakMinutes aggregates contiguous project episodes: " + streak);
+
+                // RecentLite & GetMany
+                var recLite = store.RecentLite(5);
+                Assert(recLite.Count == 2 && recLite.TrueForAll(e => e.Body.Length == 0), "RecentLite omits bodies");
+                var batch = store.GetMany(new List<long> { ep1, ep2 });
+                Assert(batch.Count == 2 && batch[ep1].Body.Contains("WAL"), "GetMany batch-hydrates bodies");
+
+                // People cache invalidates immediately when a new alias is added
+                long p = store.Person("Dewi Lestari", now);
+                Assert(store.PeopleIn("tanya Dewi soal jadwal").Contains(p), "people cache finds person");
+                store.AddAlias(p, "MbakD");
+                Assert(store.PeopleIn("tanya MbakD soal jadwal").Contains(p), "people cache invalidated on alias add");
+
+                // Multi-term coverage boost: episode matching both 'sqlite' and 'wal' outranks single-term match
+                var settings = new Settings();
+                settings.Set("ingat.ai", "off");
+                var brain = new IngatBrain(store, settings);
+                var multiHits = brain.Search("sqlite wal", now.AddDays(-1), now.AddMinutes(1), 5);
+                Assert(multiHits.Count == 2 && multiHits[0].Id == ep1 && multiHits[0].Body.Contains("WAL"),
+                    "multi-term search ranks full coverage first and hydrates body");
+
+                // Retention runs optimize + FTS merge + WAL checkpoint cleanly
+                store.Retain(14, 180);
+            }
+
+            // 4. Verify SQLite query planner uses the new indexes and schema version is persisted
+            using (var db = new IngatDb(path))
+            {
+                Assert(db.Long("PRAGMA user_version") >= 3, "schema version persisted");
+                Func<string, string> plan = sql =>
+                {
+                    var sb = new StringBuilder();
+                    foreach (var r in db.Query("EXPLAIN QUERY PLAN " + sql))
+                        for (int i = 0; i < r.Length; i++) sb.Append(IngatDb.Str(r[i])).Append(' ');
+                    return sb.ToString();
+                };
+                string rangePlan = plan("SELECT id FROM episodes WHERE end>=100 AND start<=200 ORDER BY start");
+                Assert(rangePlan.Contains("episodes_end_start"), "range query uses episodes_end_start: " + rangePlan);
+                string sumPlan = plan("SELECT id FROM episodes WHERE closed=1 AND summary='' ORDER BY start DESC LIMIT 3");
+                Assert(sumPlan.Contains("episodes_need_summary"), "summary queue uses partial index: " + sumPlan);
+                string inboxPlan = plan("SELECT id FROM conversations WHERE status='awaiting_me' ORDER BY last DESC LIMIT 10");
+                Assert(inboxPlan.Contains("conversations_inbox"), "inbox query uses partial index: " + inboxPlan);
+                string evPlan = plan("SELECT text FROM events WHERE episode=1 AND source IN ('chat','uia','ocr') ORDER BY t DESC, id DESC LIMIT 1");
+                Assert(evPlan.Contains("events_episode_t"), "LastScreenEvent uses events_episode_t: " + evPlan);
+            }
+
+            // 5. Throughput check: 200 episodes + 400 events + 40 searches stay fast
+            string benchPath = TempDb();
+            var bsw = Stopwatch.StartNew();
+            using (var store = new IngatStore(benchPath))
+            {
+                var baseT = DateTime.UtcNow.AddHours(-24);
+                for (int i = 0; i < 200; i++)
+                {
+                    var t = baseT.AddMinutes(i * 5);
+                    long id = store.Open(t, "Visual Studio Code", "code", "Proj" + (i % 5), "File" + i + ".cs - Proj" + (i % 5), "", "coding");
+                    store.RecordCapture(id, t.AddMinutes(2), "File" + i + ".cs - Proj" + (i % 5), "", "token_" + i + " database sqlite index context screen", null, true, "uia", "Visual Studio Code");
+                    store.RecordCapture(id, t.AddMinutes(3), "File" + i + ".cs - Proj" + (i % 5), "", "token_" + i + " database sqlite index context screen", null, true, "uia", "Visual Studio Code");
+                    store.Close(id, t.AddMinutes(4));
+                }
+                for (int i = 0; i < 40; i++)
+                {
+                    var h = store.SearchLite("token_" + (i * 5), baseT.AddHours(-1), DateTime.UtcNow, 5);
+                    Assert(h.Count >= 1, "bench search hit " + i);
+                }
+                Assert(store.TimelineLite(DateTime.UtcNow.AddHours(-12), DateTime.UtcNow, 200).Count > 0, "bench range query");
+            }
+            bsw.Stop();
+            Assert(bsw.ElapsedMilliseconds < 10000, "DB throughput stayed fast (" + bsw.ElapsedMilliseconds + "ms)");
         }
 
         static void TestLiveServiceAndMcp()

@@ -46,58 +46,89 @@ namespace Deskmate
         // Body text an episode keeps for search
         public const int BodyCap = 12000;
 
+        const int SchemaVersion = 3;
         readonly IngatDb db;
 
         public IngatStore(string path)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             db = new IngatDb(path);
+            // Connection-level tuning: WAL + NORMAL sync, in-memory temp B-trees, 8 MB page cache, 64 MB mmap
             db.Script(
                 "PRAGMA journal_mode=WAL;" +
                 "PRAGMA synchronous=NORMAL;" +
-                "CREATE TABLE IF NOT EXISTS episodes(id INTEGER PRIMARY KEY, start INTEGER, end INTEGER, app TEXT, exe TEXT, project TEXT, title TEXT, url TEXT, kind TEXT DEFAULT '', summary TEXT DEFAULT '', body TEXT DEFAULT '', closed INTEGER DEFAULT 0, embedded INTEGER DEFAULT 0, context TEXT DEFAULT '');" +
-                "CREATE INDEX IF NOT EXISTS episodes_start ON episodes(start);" +
-                "CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, t INTEGER, episode INTEGER, source TEXT, app TEXT, title TEXT, url TEXT, text TEXT, hash TEXT);" +
-                "CREATE INDEX IF NOT EXISTS events_t ON events(t);" +
-                // Per-episode lookups (duplicate check on every capture, DropTiny, EventsOf) without scanning all events
-                "CREATE INDEX IF NOT EXISTS events_episode ON events(episode, hash);" +
-                "CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(title, url, body, summary, app, tokenize='unicode61 remove_diacritics 2');" +
-                "CREATE TABLE IF NOT EXISTS embeddings(episode INTEGER PRIMARY KEY, model TEXT, vec BLOB);" +
-                "CREATE TABLE IF NOT EXISTS daily(date TEXT PRIMARY KEY, summary TEXT, made INTEGER);" +
-                "CREATE TABLE IF NOT EXISTS facts(id INTEGER PRIMARY KEY, text TEXT, updated INTEGER);" +
-                "CREATE TABLE IF NOT EXISTS meetings(id INTEGER PRIMARY KEY, path TEXT UNIQUE, start INTEGER, title TEXT, episode INTEGER);" +
-                "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);" +
-                // People and conversations, the same person across apps
-                "CREATE TABLE IF NOT EXISTS people(id INTEGER PRIMARY KEY, name TEXT, norm TEXT UNIQUE, aliases TEXT DEFAULT '', about TEXT DEFAULT '', last INTEGER, mentions INTEGER DEFAULT 0);" +
-                "CREATE TABLE IF NOT EXISTS conversations(id INTEGER PRIMARY KEY, app TEXT, name TEXT, norm TEXT, kind TEXT, person INTEGER, last INTEGER, digest TEXT DEFAULT '', digest_t INTEGER DEFAULT 0, UNIQUE(app, norm));" +
-                "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, conversation INTEGER, t INTEGER, sender TEXT, mine INTEGER, text TEXT, hash TEXT UNIQUE, episode INTEGER);" +
-                "CREATE INDEX IF NOT EXISTS messages_conv ON messages(conversation, t);" +
-                "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(sender, text, conv, tokenize='unicode61 remove_diacritics 2');" +
-                "CREATE TABLE IF NOT EXISTS commitments(id INTEGER PRIMARY KEY, conversation INTEGER, person INTEGER, who TEXT, what TEXT, due TEXT, t INTEGER, done INTEGER DEFAULT 0, hash TEXT UNIQUE);" +
-                "CREATE TABLE IF NOT EXISTS episode_people(episode INTEGER, person INTEGER, PRIMARY KEY(episode, person))");
-            // Columns added after the first release: older databases get them here
-            foreach (var col in new[]
+                "PRAGMA temp_store=MEMORY;" +
+                "PRAGMA cache_size=-8000;" +
+                "PRAGMA wal_autocheckpoint=1000");
+            try { db.Exec("PRAGMA mmap_size=67108864"); } catch (InvalidOperationException) { }
+
+            if (db.Long("PRAGMA user_version") < SchemaVersion)
             {
-                "episodes|channel TEXT DEFAULT ''", "episodes|digested INTEGER DEFAULT 0", "episodes|context TEXT DEFAULT ''",
-                // sent | received | draft (written, never sent); said: the time the chat showed
-                "messages|status TEXT DEFAULT ''", "messages|said TEXT DEFAULT ''",
-                // Where a conversation stands: topic, who waits for whom, questions still open, decisions
-                "conversations|topic TEXT DEFAULT ''", "conversations|status TEXT DEFAULT ''", "conversations|last_from TEXT DEFAULT ''",
-                "conversations|open TEXT DEFAULT ''", "conversations|decisions TEXT DEFAULT ''",
-            })
-            {
-                var p = col.Split('|');
-                try { db.Exec("ALTER TABLE " + p[0] + " ADD COLUMN " + p[1]); }
-                catch (InvalidOperationException) { }
+                db.Script(
+                    "CREATE TABLE IF NOT EXISTS episodes(id INTEGER PRIMARY KEY, start INTEGER, end INTEGER, app TEXT, exe TEXT, project TEXT, title TEXT, url TEXT, kind TEXT DEFAULT '', summary TEXT DEFAULT '', body TEXT DEFAULT '', closed INTEGER DEFAULT 0, embedded INTEGER DEFAULT 0, context TEXT DEFAULT '');" +
+                    "CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, t INTEGER, episode INTEGER, source TEXT, app TEXT, title TEXT, url TEXT, text TEXT, hash TEXT);" +
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(title, url, body, summary, app, tokenize='unicode61 remove_diacritics 2');" +
+                    "CREATE TABLE IF NOT EXISTS embeddings(episode INTEGER PRIMARY KEY, model TEXT, vec BLOB);" +
+                    "CREATE TABLE IF NOT EXISTS daily(date TEXT PRIMARY KEY, summary TEXT, made INTEGER);" +
+                    "CREATE TABLE IF NOT EXISTS facts(id INTEGER PRIMARY KEY, text TEXT, updated INTEGER);" +
+                    "CREATE TABLE IF NOT EXISTS meetings(id INTEGER PRIMARY KEY, path TEXT UNIQUE, start INTEGER, title TEXT, episode INTEGER);" +
+                    "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);" +
+                    // People and conversations, the same person across apps
+                    "CREATE TABLE IF NOT EXISTS people(id INTEGER PRIMARY KEY, name TEXT, norm TEXT UNIQUE, aliases TEXT DEFAULT '', about TEXT DEFAULT '', last INTEGER, mentions INTEGER DEFAULT 0);" +
+                    "CREATE TABLE IF NOT EXISTS conversations(id INTEGER PRIMARY KEY, app TEXT, name TEXT, norm TEXT, kind TEXT, person INTEGER, last INTEGER, digest TEXT DEFAULT '', digest_t INTEGER DEFAULT 0, UNIQUE(app, norm));" +
+                    "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, conversation INTEGER, t INTEGER, sender TEXT, mine INTEGER, text TEXT, hash TEXT UNIQUE, episode INTEGER);" +
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(sender, text, conv, tokenize='unicode61 remove_diacritics 2');" +
+                    "CREATE TABLE IF NOT EXISTS commitments(id INTEGER PRIMARY KEY, conversation INTEGER, person INTEGER, who TEXT, what TEXT, due TEXT, t INTEGER, done INTEGER DEFAULT 0, hash TEXT UNIQUE);" +
+                    "CREATE TABLE IF NOT EXISTS episode_people(episode INTEGER, person INTEGER, PRIMARY KEY(episode, person))");
+                // Columns added after the first release: older databases get them here
+                foreach (var col in new[]
+                {
+                    "episodes|channel TEXT DEFAULT ''", "episodes|digested INTEGER DEFAULT 0", "episodes|context TEXT DEFAULT ''",
+                    // sent | received | draft (written, never sent); said: the time the chat showed
+                    "messages|status TEXT DEFAULT ''", "messages|said TEXT DEFAULT ''",
+                    // Where a conversation stands: topic, who waits for whom, questions still open, decisions
+                    "conversations|topic TEXT DEFAULT ''", "conversations|status TEXT DEFAULT ''", "conversations|last_from TEXT DEFAULT ''",
+                    "conversations|open TEXT DEFAULT ''", "conversations|decisions TEXT DEFAULT ''",
+                })
+                {
+                    var p = col.Split('|');
+                    try { db.Exec("ALTER TABLE " + p[0] + " ADD COLUMN " + p[1]); }
+                    catch (InvalidOperationException) { }
+                }
+                MigrateFacts();
+                MigrateVectors();
+                // Targeted B-tree and partial indexes for range seeks, background queues, chats, and retention
+                db.Script(
+                    "CREATE INDEX IF NOT EXISTS episodes_start ON episodes(start);" +
+                    "CREATE INDEX IF NOT EXISTS episodes_end_start ON episodes(end, start);" +
+                    "CREATE INDEX IF NOT EXISTS episodes_open ON episodes(id) WHERE closed=0;" +
+                    "CREATE INDEX IF NOT EXISTS episodes_need_summary ON episodes(start DESC) WHERE closed=1 AND summary='';" +
+                    "CREATE INDEX IF NOT EXISTS episodes_need_embed ON episodes(start DESC) WHERE closed=1 AND embedded=0 AND summary<>'';" +
+                    "CREATE INDEX IF NOT EXISTS episodes_need_digest ON episodes(start) WHERE closed=1 AND digested=0 AND channel<>'';" +
+                    "CREATE INDEX IF NOT EXISTS episodes_meeting_end ON episodes(end, start) WHERE kind='meeting';" +
+                    "CREATE INDEX IF NOT EXISTS events_t ON events(t);" +
+                    "CREATE INDEX IF NOT EXISTS events_episode ON events(episode, hash);" +
+                    "CREATE INDEX IF NOT EXISTS events_episode_t ON events(episode, t);" +
+                    "CREATE INDEX IF NOT EXISTS messages_conv ON messages(conversation, t);" +
+                    "CREATE INDEX IF NOT EXISTS messages_t ON messages(t);" +
+                    "CREATE INDEX IF NOT EXISTS conversations_inbox ON conversations(last DESC) WHERE status='awaiting_me';" +
+                    "CREATE INDEX IF NOT EXISTS conversations_person ON conversations(person, last DESC);" +
+                    "CREATE INDEX IF NOT EXISTS conversations_norm ON conversations(norm, last DESC);" +
+                    "CREATE INDEX IF NOT EXISTS commitments_open_person ON commitments(person, t DESC) WHERE done=0;" +
+                    "CREATE INDEX IF NOT EXISTS commitments_open_conv ON commitments(conversation, t DESC) WHERE done=0;" +
+                    "CREATE INDEX IF NOT EXISTS meetings_episode ON meetings(episode);" +
+                    "CREATE INDEX IF NOT EXISTS facts_status ON facts(status, last);" +
+                    "CREATE INDEX IF NOT EXISTS people_last ON people(last DESC);" +
+                    "CREATE INDEX IF NOT EXISTS people_mentions ON people(mentions DESC)");
+                db.Exec("PRAGMA user_version=" + SchemaVersion);
             }
-            MigrateFacts();
-            MigrateVectors();
             MigrateTrigram();
         }
 
         public void Dispose()
         {
             try { FlushIndex(); } catch (InvalidOperationException) { }
+            try { db.Exec("PRAGMA optimize"); } catch (InvalidOperationException) { }
             db.Dispose();
         }
 
@@ -105,12 +136,19 @@ namespace Deskmate
 
         public long Open(DateTime t, string app, string exe, string project, string title, string url, string kind)
         {
+            return Open(t, app, exe, project, title, url, kind, "");
+        }
+
+        public long Open(DateTime t, string app, string exe, string project, string title, string url, string kind, string channel)
+        {
             string autoKind = string.IsNullOrEmpty(kind) ? IngatStructure.Classify(exe, url, title, "") : kind;
             var ctx = new IngatContext();
             ctx.Absorb(t, title, url, "", null);
-            long id = db.Insert("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,context) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                t, t, app ?? "", exe ?? "", project ?? "", title ?? "", url ?? "", autoKind, title ?? "", ctx.Encode());
-            Reindex(id);
+            long id = db.Insert("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,context,channel) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                t, t, app ?? "", exe ?? "", project ?? "", title ?? "", url ?? "", autoKind, title ?? "", ctx.Encode(), channel ?? "");
+            // Deferred FTS/trigram indexing: avoids indexing brief pass-through episodes before DropTiny removes them,
+            // while Search/SearchSubstring/Close always flush dirty episodes first.
+            MarkDirty(id);
             return id;
         }
 
@@ -123,6 +161,19 @@ namespace Deskmate
         public void Touch(long id, DateTime t, string title, string url, string text, IngatSnapshot snap)
         {
             db.Tx(() => TouchTx(id, t, title, url, text, snap));
+        }
+
+        // Atomic capture update: merges episode body/context and records the event in one WAL transaction
+        public IngatEpisode RecordCapture(long id, DateTime t, string title, string url, string text, IngatSnapshot snap, bool addEvent, string source, string app)
+        {
+            IngatEpisode updated = null;
+            db.Tx(() =>
+            {
+                TouchTx(id, t, title, url, text, snap);
+                if (addEvent) AddEvent(t, id, source, app, title, url, text);
+                updated = GetLite(id);
+            });
+            return updated;
         }
 
         // Still on the same thing with nothing new to merge: only the end time moves. SQLite rewrites the
@@ -152,16 +203,30 @@ namespace Deskmate
         {
             var rows = db.Query("SELECT body, kind, context, exe, title, url FROM episodes WHERE id=?", id);
             if (rows.Count == 0) return;
-            string body = IngatDb.Str(rows[0][0]);
+            string origBody = IngatDb.Str(rows[0][0]);
+            string body = origBody;
             string curKind = IngatDb.Str(rows[0][1]);
             string rawCtx = IngatDb.Str(rows[0][2]);
             string exe = IngatDb.Str(rows[0][3]);
-            string effTitle = !string.IsNullOrEmpty(title) ? title : IngatDb.Str(rows[0][4]);
-            string effUrl = !string.IsNullOrEmpty(url) ? url : IngatDb.Str(rows[0][5]);
+            string origTitle = IngatDb.Str(rows[0][4]);
+            string origUrl = IngatDb.Str(rows[0][5]);
+            string effTitle = !string.IsNullOrEmpty(title) ? title : origTitle;
+            string effUrl = !string.IsNullOrEmpty(url) ? url : origUrl;
 
-            foreach (var piece in new[] { title, url, text })
-                if (!string.IsNullOrEmpty(piece))
-                    body = IngatStructure.MergeBody(body, piece, BodyCap);
+            // Combine all non-empty pieces into a single MergeBody pass instead of splitting body up to 3x
+            var addSb = new StringBuilder();
+            if (!string.IsNullOrEmpty(title) && origBody.IndexOf(title, StringComparison.Ordinal) < 0) addSb.Append(title);
+            if (!string.IsNullOrEmpty(url) && origBody.IndexOf(url, StringComparison.Ordinal) < 0)
+            {
+                if (addSb.Length > 0) addSb.Append('\n');
+                addSb.Append(url);
+            }
+            if (!string.IsNullOrEmpty(text))
+            {
+                if (addSb.Length > 0) addSb.Append('\n');
+                addSb.Append(text);
+            }
+            if (addSb.Length > 0) body = IngatStructure.MergeBody(body, addSb.ToString(), BodyCap);
 
             var ctx = IngatContext.Parse(rawCtx);
             ctx.Absorb(t, effTitle, effUrl, text, snap);
@@ -176,8 +241,8 @@ namespace Deskmate
 
             string nextCtx = ctx.Encode();
             // A reread that found only what the episode already holds: nothing to rewrite but the end time
-            if (body == IngatDb.Str(rows[0][0]) && nextCtx == rawCtx && nextKind == curKind &&
-                effTitle == IngatDb.Str(rows[0][4]) && effUrl == IngatDb.Str(rows[0][5]))
+            if (body == origBody && nextCtx == rawCtx && nextKind == curKind &&
+                effTitle == origTitle && effUrl == origUrl)
             {
                 TouchEnd(id, t);
                 return;
@@ -246,29 +311,37 @@ namespace Deskmate
         // Brief pass-throughs under 8 s without typed/copied/sent actions are dropped; quick reference lookups stay
         public void DropTiny(long id)
         {
-            int dropped = db.Exec("DELETE FROM episodes WHERE id=? AND end-start<8 AND kind<>'meeting' AND NOT EXISTS(SELECT 1 FROM events WHERE episode=episodes.id AND source IN ('sent','typed','clipboard'))", id);
-            if (dropped > 0)
+            int dropped = 0;
+            db.Tx(() =>
             {
-                lock (db.Gate) dirty.Remove(id);
-                db.Exec("DELETE FROM episodes_fts WHERE rowid=?", id);
-                if (triOn) db.Exec("DELETE FROM episodes_tri WHERE rowid=?", id);
-                db.Exec("DELETE FROM events WHERE episode=?", id);
-                VecDrop();
-            }
+                dropped = db.Exec("DELETE FROM episodes WHERE id=? AND end-start<8 AND kind<>'meeting' AND NOT EXISTS(SELECT 1 FROM events WHERE episode=episodes.id AND source IN ('sent','typed','clipboard'))", id);
+                if (dropped > 0)
+                {
+                    dirty.Remove(id);
+                    if (eventHashEp == id) { eventHashEp = 0; eventHashes.Clear(); }
+                    db.Exec("DELETE FROM episodes_fts WHERE rowid=?", id);
+                    if (triOn) db.Exec("DELETE FROM episodes_tri WHERE rowid=?", id);
+                    db.Exec("DELETE FROM events WHERE episode=?", id);
+                }
+            });
+            if (dropped > 0) VecDrop();
         }
 
         public void Reindex(long id)
         {
-            db.Exec("DELETE FROM episodes_fts WHERE rowid=?", id);
-            var rows = db.Query("SELECT title, project, url, body, summary, app, context FROM episodes WHERE id=?", id);
-            if (rows.Count == 0) return;
-            var r = rows[0];
-            var ctx = IngatContext.Parse(IngatDb.Str(r[6]));
-            string titleIdx = (IngatDb.Str(r[0]) + " " + IngatDb.Str(r[1]) + " " + ctx.SearchTitles()).Trim();
-            string sumIdx = (IngatDb.Str(r[4]) + " " + ctx.SearchSummary()).Trim();
-            db.Exec("INSERT INTO episodes_fts(rowid,title,url,body,summary,app) VALUES(?,?,?,?,?,?)",
-                id, titleIdx, IngatDb.Str(r[2]), IngatDb.Str(r[3]), sumIdx, IngatDb.Str(r[5]));
-            TriIndex(id, titleIdx, sumIdx);
+            db.Tx(() =>
+            {
+                db.Exec("DELETE FROM episodes_fts WHERE rowid=?", id);
+                var rows = db.Query("SELECT title, project, url, body, summary, app, context FROM episodes WHERE id=?", id);
+                if (rows.Count == 0) return;
+                var r = rows[0];
+                var ctx = IngatContext.Parse(IngatDb.Str(r[6]));
+                string titleIdx = (IngatDb.Str(r[0]) + " " + IngatDb.Str(r[1]) + " " + ctx.SearchTitles()).Trim();
+                string sumIdx = (IngatDb.Str(r[4]) + " " + ctx.SearchSummary()).Trim();
+                db.Exec("INSERT INTO episodes_fts(rowid,title,url,body,summary,app) VALUES(?,?,?,?,?,?)",
+                    id, titleIdx, IngatDb.Str(r[2]), IngatDb.Str(r[3]), sumIdx, IngatDb.Str(r[5]));
+                TriIndex(id, titleIdx, sumIdx);
+            });
         }
 
         // Substring index over the short fields (titles, summaries, steps, anchors): "kirim" finds "dikirim",
@@ -326,6 +399,17 @@ namespace Deskmate
         // Words of 3+ letters as substrings of titles and summaries, best first
         public List<IngatEpisode> SearchSubstring(string q, DateTime fromUtc, DateTime toUtc, int limit)
         {
+            return SearchSubstringCore(q, fromUtc, toUtc, limit, false);
+        }
+
+        // Same substring search without loading 12 KB bodies during hybrid candidate scoring
+        public List<IngatEpisode> SearchSubstringLite(string q, DateTime fromUtc, DateTime toUtc, int limit)
+        {
+            return SearchSubstringCore(q, fromUtc, toUtc, limit, true);
+        }
+
+        List<IngatEpisode> SearchSubstringCore(string q, DateTime fromUtc, DateTime toUtc, int limit, bool lite)
+        {
             var list = new List<IngatEpisode>();
             if (!triOn) return list;
             var parts = new List<string>();
@@ -338,7 +422,7 @@ namespace Deskmate
             }
             if (parts.Count == 0) return list;
             FlushIndex();
-            foreach (var r in db.Query("SELECT " + ColsE + ", bm25(episodes_tri) AS s FROM episodes_tri JOIN episodes e ON e.id=episodes_tri.rowid " +
+            foreach (var r in db.Query("SELECT " + (lite ? LiteColsE : ColsE) + ", bm25(episodes_tri) AS s FROM episodes_tri JOIN episodes e ON e.id=episodes_tri.rowid " +
                 "WHERE episodes_tri MATCH ? AND e.end>=? AND e.start<=? ORDER BY s LIMIT ?", string.Join(" OR ", parts), fromUtc, toUtc, limit))
             {
                 var ep = Read(r);
@@ -349,6 +433,7 @@ namespace Deskmate
         }
 
         const string ColsE = "e.id,e.start,e.end,e.app,e.exe,e.project,e.title,e.url,e.kind,e.summary,e.body,e.closed,e.context";
+        const string LiteColsE = "e.id,e.start,e.end,e.app,e.exe,e.project,e.title,e.url,e.kind,e.summary,'',e.closed,e.context";
 
         public void SetSummary(long id, string summary, string kind)
         {
@@ -357,27 +442,50 @@ namespace Deskmate
 
         public void SetSummary(long id, string summary, string kind, string[] points, string[] anchors)
         {
-            if (points != null || anchors != null)
+            db.Tx(() =>
             {
-                string raw = IngatDb.Str(db.Scalar("SELECT context FROM episodes WHERE id=?", id));
-                var ctx = IngatContext.Parse(raw);
-                ctx.ApplyAi(points, anchors);
-                db.Exec("UPDATE episodes SET summary=?, kind=CASE WHEN ?<>'' THEN ? ELSE kind END, context=? WHERE id=?",
-                    summary ?? "", kind ?? "", kind ?? "", ctx.Encode(), id);
-            }
-            else
-            {
-                db.Exec("UPDATE episodes SET summary=?, kind=CASE WHEN ?<>'' THEN ? ELSE kind END WHERE id=?", summary ?? "", kind ?? "", kind ?? "", id);
-            }
-            Reindex(id);
+                if (points != null || anchors != null)
+                {
+                    string raw = IngatDb.Str(db.Scalar("SELECT context FROM episodes WHERE id=?", id));
+                    var ctx = IngatContext.Parse(raw);
+                    ctx.ApplyAi(points, anchors);
+                    db.Exec("UPDATE episodes SET summary=?, kind=CASE WHEN ?<>'' THEN ? ELSE kind END, context=? WHERE id=?",
+                        summary ?? "", kind ?? "", kind ?? "", ctx.Encode(), id);
+                }
+                else
+                {
+                    db.Exec("UPDATE episodes SET summary=?, kind=CASE WHEN ?<>'' THEN ? ELSE kind END WHERE id=?", summary ?? "", kind ?? "", kind ?? "", id);
+                }
+                Reindex(id);
+            });
         }
+
+        // Per-episode hash cache avoids repeated SQLite duplicate probes during rapid captures
+        long eventHashEp;
+        readonly HashSet<string> eventHashes = new HashSet<string>(StringComparer.Ordinal);
 
         public void AddEvent(DateTime t, long episode, string source, string app, string title, string url, string text)
         {
             string hash = Json.Sha256(source + "|" + app + "|" + title + "|" + url + "|" + text).Substring(0, 16);
-            // Same thing seen again inside this episode: once is enough
-            if (db.Long("SELECT COUNT(*) FROM events WHERE episode=? AND hash=?", episode, hash) > 0) return;
-            db.Exec("INSERT INTO events(t,episode,source,app,title,url,text,hash) VALUES(?,?,?,?,?,?,?,?)", t, episode, source, app, title, url, text, hash);
+            lock (db.Gate)
+            {
+                if (episode == eventHashEp && eventHashes.Contains(hash)) return;
+                // Same thing seen again inside this episode: once is enough (LIMIT 1 stops on first hit)
+                if (db.Scalar("SELECT 1 FROM events WHERE episode=? AND hash=? LIMIT 1", episode, hash) != null)
+                {
+                    RememberEventHash(episode, hash);
+                    return;
+                }
+                db.Exec("INSERT INTO events(t,episode,source,app,title,url,text,hash) VALUES(?,?,?,?,?,?,?,?)", t, episode, source, app, title, url, text, hash);
+                RememberEventHash(episode, hash);
+            }
+        }
+
+        void RememberEventHash(long episode, string hash)
+        {
+            if (episode != eventHashEp) { eventHashEp = episode; eventHashes.Clear(); }
+            if (eventHashes.Count >= 512) eventHashes.Clear();
+            eventHashes.Add(hash);
         }
 
         const string Cols = "id,start,end,app,exe,project,title,url,kind,summary,body,closed,context";
@@ -409,6 +517,44 @@ namespace Deskmate
             return rows.Count > 0 ? Read(rows[0]) : null;
         }
 
+        public IngatEpisode GetLite(long id)
+        {
+            var rows = db.Query("SELECT " + LiteCols + " FROM episodes WHERE id=?", id);
+            return rows.Count > 0 ? Read(rows[0]) : null;
+        }
+
+        // Batch-loads full episodes for a small set of winner ids in one round-trip without polluting the statement cache
+        public Dictionary<long, IngatEpisode> GetMany(IList<long> ids)
+        {
+            return GetManyCore(ids, Cols);
+        }
+
+        // Batch-loads lightweight episodes (no 12 KB bodies) for semantic candidate scoring
+        public Dictionary<long, IngatEpisode> GetManyLite(IList<long> ids)
+        {
+            return GetManyCore(ids, LiteCols);
+        }
+
+        Dictionary<long, IngatEpisode> GetManyCore(IList<long> ids, string cols)
+        {
+            var map = new Dictionary<long, IngatEpisode>(ids == null ? 0 : ids.Count);
+            if (ids == null || ids.Count == 0) return map;
+            var sb = new StringBuilder("SELECT ");
+            sb.Append(cols).Append(" FROM episodes WHERE id IN (");
+            for (int i = 0; i < ids.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append(ids[i].ToString(CultureInfo.InvariantCulture));
+            }
+            sb.Append(')');
+            foreach (var r in db.QueryDirect(sb.ToString()))
+            {
+                var ep = Read(r);
+                map[ep.Id] = ep;
+            }
+            return map;
+        }
+
         public List<IngatEpisode> Timeline(DateTime fromUtc, DateTime toUtc, int limit)
         {
             return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE end>=? AND start<=? ORDER BY start LIMIT ?", fromUtc, toUtc, limit));
@@ -427,9 +573,40 @@ namespace Deskmate
             return ReadAll(db.Query("SELECT " + Cols + " FROM episodes ORDER BY start DESC LIMIT ?", limit));
         }
 
+        public List<IngatEpisode> RecentLite(int limit)
+        {
+            return ReadAll(db.Query("SELECT " + LiteCols + " FROM episodes ORDER BY start DESC LIMIT ?", limit));
+        }
+
         public List<IngatEpisode> Meetings(DateTime fromUtc, DateTime toUtc, int limit)
         {
             return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE kind='meeting' AND end>=? AND start<=? ORDER BY start DESC LIMIT ?", fromUtc, toUtc, limit));
+        }
+
+        public List<IngatEpisode> MeetingsLite(DateTime fromUtc, DateTime toUtc, int limit)
+        {
+            return ReadAll(db.Query("SELECT " + LiteCols + " FROM episodes WHERE kind='meeting' AND end>=? AND start<=? ORDER BY start DESC LIMIT ?", fromUtc, toUtc, limit));
+        }
+
+        // Fast 4-column streak calculation over the last 6 hours using episodes_end_start
+        public int StreakMinutes(string project, string exe, DateTime nowUtc)
+        {
+            var rows = db.Query("SELECT start, end, project, exe FROM episodes WHERE end>=? AND start<=? ORDER BY start DESC LIMIT 400", nowUtc.AddHours(-6), nowUtc);
+            double minutes = 0;
+            DateTime edge = nowUtc;
+            bool byProj = !string.IsNullOrEmpty(project);
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var r = rows[i];
+                var s = IngatDb.FromUnix(IngatDb.Num(r[0]));
+                var e = IngatDb.FromUnix(IngatDb.Num(r[1]));
+                bool same = byProj ? IngatDb.Str(r[2]) == project : IngatDb.Str(r[3]) == exe;
+                if (!same) { if ((e - s).TotalMinutes > 10) break; continue; }
+                if ((edge - e).TotalMinutes > 10) break;
+                minutes += Math.Max(0, (e - s).TotalMinutes);
+                edge = s;
+            }
+            return (int)Math.Round(minutes);
         }
 
         // Words become quoted OR terms: no FTS syntax from user text reaches SQLite
@@ -500,14 +677,25 @@ namespace Deskmate
 
         public List<IngatEpisode> Search(string q, DateTime fromUtc, DateTime toUtc, int limit)
         {
+            return SearchCore(q, fromUtc, toUtc, limit, false);
+        }
+
+        public List<IngatEpisode> SearchLite(string q, DateTime fromUtc, DateTime toUtc, int limit)
+        {
+            return SearchCore(q, fromUtc, toUtc, limit, true);
+        }
+
+        List<IngatEpisode> SearchCore(string q, DateTime fromUtc, DateTime toUtc, int limit, bool lite)
+        {
             string fts = FtsQuery(q);
             FlushIndex();
             // No topic words ("what was I doing?"): the latest moments, not the oldest
-            if (fts.Length == 0) return ReadAll(db.Query("SELECT " + Cols + " FROM episodes WHERE end>=? AND start<=? ORDER BY start DESC LIMIT ?", fromUtc, toUtc, limit));
-            var rows = db.Query("SELECT e.id,e.start,e.end,e.app,e.exe,e.project,e.title,e.url,e.kind,e.summary,e.body,e.closed,e.context, bm25(episodes_fts, 4.0, 2.0, 1.0, 3.0, 2.0) AS s " +
+            if (fts.Length == 0)
+                return ReadAll(db.Query("SELECT " + (lite ? LiteCols : Cols) + " FROM episodes WHERE end>=? AND start<=? ORDER BY start DESC LIMIT ?", fromUtc, toUtc, limit));
+            var rows = db.Query("SELECT " + (lite ? LiteColsE : ColsE) + ", bm25(episodes_fts, 4.0, 2.0, 1.0, 3.0, 2.0) AS s " +
                 "FROM episodes_fts JOIN episodes e ON e.id=episodes_fts.rowid WHERE episodes_fts MATCH ? AND e.end>=? AND e.start<=? ORDER BY s LIMIT ?",
                 fts, fromUtc, toUtc, limit);
-            var list = new List<IngatEpisode>();
+            var list = new List<IngatEpisode>(rows.Count);
             foreach (var r in rows)
             {
                 var ep = Read(r);
@@ -568,6 +756,12 @@ namespace Deskmate
             return list;
         }
 
+        // Latest screen snapshot text for an episode in O(1) via events_episode_t
+        public string LastScreenEvent(long episode)
+        {
+            return IngatDb.Str(db.Scalar("SELECT text FROM events WHERE episode=? AND source IN ('chat','uia','ocr') ORDER BY t DESC, id DESC LIMIT 1", episode));
+        }
+
         // One row per person; a new spelling of a known name becomes an alias
         public long Person(string name, DateTime seenUtc)
         {
@@ -579,9 +773,12 @@ namespace Deskmate
             {
                 long id = IngatDb.Num(row[0][0]);
                 db.Exec("UPDATE people SET last=MAX(COALESCE(last,0),?), mentions=mentions+1 WHERE id=?", seenUtc, id);
+                DropPeopleCache();
                 return id;
             }
-            return db.Insert("INSERT INTO people(name,norm,last,mentions) VALUES(?,?,?,1)", name.Trim(), norm, seenUtc);
+            long created = db.Insert("INSERT INTO people(name,norm,last,mentions) VALUES(?,?,?,1)", name.Trim(), norm, seenUtc);
+            DropPeopleCache();
+            return created;
         }
 
         // Lookup only: 0 when nobody by that name or alias is known
@@ -601,6 +798,7 @@ namespace Deskmate
             var cur = IngatDb.Str(db.Scalar("SELECT aliases FROM people WHERE id=?", person));
             if (("|" + cur + "|").Contains("|" + norm + "|") || IngatDb.Str(db.Scalar("SELECT norm FROM people WHERE id=?", person)) == norm) return;
             db.Exec("UPDATE people SET aliases=? WHERE id=?", cur.Length == 0 ? norm : cur + "|" + norm, person);
+            DropPeopleCache();
         }
 
         public void SetAbout(long person, string about) { if (person != 0 && !string.IsNullOrEmpty(about)) db.Exec("UPDATE people SET about=? WHERE id=?", about, person); }
@@ -636,16 +834,21 @@ namespace Deskmate
             bool mine = status == "sent" || status == "draft";
             string same = Regex.Replace(text.ToLowerInvariant(), @"\s+", " ").TrimEnd('.', '!', '?', ' ');
             string hash = Json.Sha256(conversation + "|" + (mine ? "me" : IngatChat.Norm(sender)) + "|" + same).Substring(0, 20);
-            var known = db.Query("SELECT id, status FROM messages WHERE hash=?", hash);
-            if (known.Count > 0)
+            bool inserted = false;
+            db.Tx(() =>
             {
-                if (status == "sent" && IngatDb.Str(known[0][1]) == "draft") db.Exec("UPDATE messages SET status='sent', t=? WHERE id=?", t, IngatDb.Num(known[0][0]));
-                if (!string.IsNullOrEmpty(said)) db.Exec("UPDATE messages SET said=? WHERE id=? AND said=''", said, IngatDb.Num(known[0][0]));
-                return false;
-            }
-            long id = db.Insert("INSERT INTO messages(conversation,t,sender,mine,text,hash,episode,status,said) VALUES(?,?,?,?,?,?,?,?,?)", conversation, t, mine ? "me" : sender, mine, text, hash, episode, status, said ?? "");
-            db.Exec("INSERT INTO messages_fts(rowid,sender,text,conv) SELECT ?, ?, ?, name FROM conversations WHERE id=?", id, sender, text, conversation);
-            return true;
+                var known = db.Query("SELECT id, status FROM messages WHERE hash=?", hash);
+                if (known.Count > 0)
+                {
+                    if (status == "sent" && IngatDb.Str(known[0][1]) == "draft") db.Exec("UPDATE messages SET status='sent', t=? WHERE id=?", t, IngatDb.Num(known[0][0]));
+                    if (!string.IsNullOrEmpty(said)) db.Exec("UPDATE messages SET said=? WHERE id=? AND said=''", said, IngatDb.Num(known[0][0]));
+                    return;
+                }
+                long id = db.Insert("INSERT INTO messages(conversation,t,sender,mine,text,hash,episode,status,said) VALUES(?,?,?,?,?,?,?,?,?)", conversation, t, mine ? "me" : sender, mine, text, hash, episode, status, said ?? "");
+                db.Exec("INSERT INTO messages_fts(rowid,sender,text,conv) SELECT ?, ?, ?, name FROM conversations WHERE id=?", id, sender, text, conversation);
+                inserted = true;
+            });
+            return inserted;
         }
 
         public void AddCommitment(long conversation, long person, string who, string what, string due, DateTime t)
@@ -680,25 +883,65 @@ namespace Deskmate
 
         public void LinkPerson(long episode, long person) { if (person != 0) db.Exec("INSERT OR IGNORE INTO episode_people(episode,person) VALUES(?,?)", episode, person); }
 
+        sealed class PersonIndexRow
+        {
+            public long Id;
+            public string Norm, FirstNorm;
+            public string[] Aliases;
+        }
+
+        readonly object peopleGate = new object();
+        List<PersonIndexRow> peopleCache;
+        static readonly Regex NameWordRx = new Regex(@"[^\p{L}\p{N}]+", RegexOptions.Compiled);
+
+        void DropPeopleCache() { lock (peopleGate) peopleCache = null; }
+
+        List<PersonIndexRow> PeopleIndex()
+        {
+            lock (peopleGate) if (peopleCache != null) return peopleCache;
+            var rows = db.Query("SELECT id, norm, aliases, name FROM people ORDER BY mentions DESC LIMIT 2000");
+            var list = new List<PersonIndexRow>(rows.Count);
+            foreach (var r in rows)
+            {
+                string rawName = IngatDb.Str(r[3]).Trim();
+                int sp = rawName.IndexOf(' ');
+                string first = sp > 0 ? rawName.Substring(0, sp) : rawName;
+                string fn = IngatTime.Stop(first) ? "" : IngatChat.Norm(first);
+                if (fn.Length < 3) fn = "";
+                string rawAliases = IngatDb.Str(r[2]);
+                list.Add(new PersonIndexRow
+                {
+                    Id = IngatDb.Num(r[0]),
+                    Norm = IngatDb.Str(r[1]),
+                    FirstNorm = fn,
+                    Aliases = rawAliases.Length == 0 ? new string[0] : rawAliases.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries),
+                });
+            }
+            lock (peopleGate) peopleCache = list;
+            return list;
+        }
+
         // People named in a question: whole name, alias, or first name of a known person
         public List<long> PeopleIn(string text)
         {
             var found = new List<long>();
+            if (string.IsNullOrEmpty(text)) return found;
+            var index = PeopleIndex();
+            if (index.Count == 0) return found;
             string all = IngatChat.Norm(text);
-            var words = new HashSet<string>();
-            foreach (var w in Regex.Split(text ?? "", @"[^\p{L}\p{N}]+")) if (w.Length >= 3) words.Add(IngatChat.Norm(w));
-            foreach (var r in db.Query("SELECT id, norm, aliases, name FROM people ORDER BY mentions DESC LIMIT 2000"))
+            var words = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var w in NameWordRx.Split(text)) if (w.Length >= 3) words.Add(IngatChat.Norm(w));
+            for (int i = 0; i < index.Count; i++)
             {
-                string norm = IngatDb.Str(r[1]);
-                bool hit = norm.Length >= 4 && all.Contains(norm);
-                if (!hit) foreach (var a in IngatDb.Str(r[2]).Split('|')) if (a.Length >= 4 && all.Contains(a)) { hit = true; break; }
+                var p = index[i];
+                bool hit = p.Norm.Length >= 4 && all.Contains(p.Norm);
                 if (!hit)
                 {
-                    var first = Regex.Split(IngatDb.Str(r[3]), @"\s+")[0];
-                    string fn = IngatChat.Norm(first);
-                    hit = fn.Length >= 3 && words.Contains(fn) && !IngatTime.Stop(first);
+                    for (int a = 0; a < p.Aliases.Length; a++)
+                        if (p.Aliases[a].Length >= 4 && all.Contains(p.Aliases[a])) { hit = true; break; }
                 }
-                if (hit) { found.Add(IngatDb.Num(r[0])); if (found.Count == 3) break; }
+                if (!hit && p.FirstNorm.Length >= 3 && words.Contains(p.FirstNorm)) hit = true;
+                if (hit) { found.Add(p.Id); if (found.Count == 3) break; }
             }
             return found;
         }
@@ -743,8 +986,20 @@ namespace Deskmate
         public List<Dictionary<string, object>> Commitments(long person, bool all, int limit)
         {
             var list = new List<Dictionary<string, object>>();
-            string where = (person != 0 ? "k.person=" + person.ToString(CultureInfo.InvariantCulture) : "1=1") + (all ? "" : " AND k.done=0");
-            foreach (var r in db.Query("SELECT k.id, k.who, k.what, k.due, k.t, k.done, c.app, c.name, p.name FROM commitments k LEFT JOIN conversations c ON c.id=k.conversation LEFT JOIN people p ON p.id=k.person WHERE " + where + " ORDER BY k.t DESC LIMIT ?", limit))
+            List<object[]> rows;
+            if (person != 0)
+            {
+                rows = all
+                    ? db.Query("SELECT k.id, k.who, k.what, k.due, k.t, k.done, c.app, c.name, p.name FROM commitments k LEFT JOIN conversations c ON c.id=k.conversation LEFT JOIN people p ON p.id=k.person WHERE k.person=? ORDER BY k.t DESC LIMIT ?", person, limit)
+                    : db.Query("SELECT k.id, k.who, k.what, k.due, k.t, k.done, c.app, c.name, p.name FROM commitments k LEFT JOIN conversations c ON c.id=k.conversation LEFT JOIN people p ON p.id=k.person WHERE k.person=? AND k.done=0 ORDER BY k.t DESC LIMIT ?", person, limit);
+            }
+            else
+            {
+                rows = all
+                    ? db.Query("SELECT k.id, k.who, k.what, k.due, k.t, k.done, c.app, c.name, p.name FROM commitments k LEFT JOIN conversations c ON c.id=k.conversation LEFT JOIN people p ON p.id=k.person ORDER BY k.t DESC LIMIT ?", limit)
+                    : db.Query("SELECT k.id, k.who, k.what, k.due, k.t, k.done, c.app, c.name, p.name FROM commitments k LEFT JOIN conversations c ON c.id=k.conversation LEFT JOIN people p ON p.id=k.person WHERE k.done=0 ORDER BY k.t DESC LIMIT ?", limit);
+            }
+            foreach (var r in rows)
                 list.Add(new Dictionary<string, object>
                 {
                     { "id", IngatDb.Num(r[0]) }, { "who", IngatDb.Str(r[1]) }, { "what", IngatDb.Str(r[2]) }, { "due", IngatDb.Str(r[3]) }, { "when", Local(r[4]) },
@@ -863,9 +1118,13 @@ namespace Deskmate
         public long AddMeeting(string path, DateTime startUtc, DateTime endUtc, string app, string title, string text)
         {
             if (text.Length > BodyCap * 4) text = text.Substring(0, BodyCap * 4);
-            long id = db.Insert("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,closed) VALUES(?,?,?,?,?,?,?,?,?,1)", startUtc, endUtc, app, "", "", title, "", "meeting", text);
-            db.Exec("INSERT OR IGNORE INTO meetings(path,start,title,episode) VALUES(?,?,?,?)", path, startUtc, title, id);
-            Reindex(id);
+            long id = 0;
+            db.Tx(() =>
+            {
+                id = db.Insert("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,closed) VALUES(?,?,?,?,?,?,?,?,?,1)", startUtc, endUtc, app, "", "", title, "", "meeting", text);
+                db.Exec("INSERT OR IGNORE INTO meetings(path,start,title,episode) VALUES(?,?,?,?)", path, startUtc, title, id);
+                Reindex(id);
+            });
             return id;
         }
 
@@ -880,8 +1139,15 @@ namespace Deskmate
         public void Retain(int eventDays, int episodeDays)
         {
             db.Tx(() => RetainTx(eventDays, episodeDays));
+            lock (db.Gate) { eventHashEp = 0; eventHashes.Clear(); }
+            DropPeopleCache();
             VecDrop();
             DecayFacts(DateTime.UtcNow.AddDays(-Math.Max(1, episodeDays)));
+            // Keep FTS5 b-trees compact, query planner stats fresh, and WAL file bounded
+            try { db.Exec("INSERT INTO episodes_fts(episodes_fts, rank) VALUES('merge', -8)"); } catch (InvalidOperationException) { }
+            if (triOn) { try { db.Exec("INSERT INTO episodes_tri(episodes_tri, rank) VALUES('merge', -8)"); } catch (InvalidOperationException) { } }
+            try { db.Exec("PRAGMA optimize"); } catch (InvalidOperationException) { }
+            try { db.Exec("PRAGMA wal_checkpoint(PASSIVE)"); } catch (InvalidOperationException) { }
         }
 
         void RetainTx(int eventDays, int episodeDays)
@@ -906,6 +1172,8 @@ namespace Deskmate
         {
             int forgotten = 0;
             db.Tx(() => forgotten = ForgetTx(fromUtc, toUtc));
+            lock (db.Gate) { eventHashEp = 0; eventHashes.Clear(); }
+            DropPeopleCache();
             VecDrop();
             return forgotten;
         }
@@ -937,11 +1205,16 @@ namespace Deskmate
 
         public void ForgetAll()
         {
-            lock (db.Gate) dirty.Clear();
+            lock (db.Gate) { dirty.Clear(); eventHashEp = 0; eventHashes.Clear(); }
+            DropPeopleCache();
             VecDrop();
-            if (triOn) db.Exec("DELETE FROM episodes_tri");
-            db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;DELETE FROM chunks;UPDATE meetings SET episode=0, title='';DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM meta WHERE k LIKE 'facts.folded.%';DELETE FROM facts;DELETE FROM facts_fts;" +
-                "DELETE FROM messages_fts;DELETE FROM messages;DELETE FROM commitments;DELETE FROM conversations;DELETE FROM episode_people;DELETE FROM people");
+            db.Tx(() =>
+            {
+                if (triOn) db.Exec("DELETE FROM episodes_tri");
+                db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;DELETE FROM chunks;UPDATE meetings SET episode=0, title='';DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM meta WHERE k LIKE 'facts.folded.%';DELETE FROM facts;DELETE FROM facts_fts;" +
+                    "DELETE FROM messages_fts;DELETE FROM messages;DELETE FROM commitments;DELETE FROM conversations;DELETE FROM episode_people;DELETE FROM people");
+            });
+            db.ClearStatements();
             db.Exec("VACUUM");
         }
 
@@ -949,13 +1222,18 @@ namespace Deskmate
         {
             long bytes = 0;
             try { bytes = new FileInfo(DbPath).Length; if (File.Exists(DbPath + "-wal")) bytes += new FileInfo(DbPath + "-wal").Length; } catch (Exception) { }
+            var ep = db.Query("SELECT COUNT(*), COALESCE(SUM(CASE WHEN summary<>'' THEN 1 ELSE 0 END),0), COALESCE(SUM(CASE WHEN embedded=1 THEN 1 ELSE 0 END),0), COALESCE(SUM(CASE WHEN kind='meeting' THEN 1 ELSE 0 END),0) FROM episodes");
+            long epTotal = ep.Count > 0 ? IngatDb.Num(ep[0][0]) : 0;
+            long epSum = ep.Count > 0 ? IngatDb.Num(ep[0][1]) : 0;
+            long epEmb = ep.Count > 0 ? IngatDb.Num(ep[0][2]) : 0;
+            long epMeet = ep.Count > 0 ? IngatDb.Num(ep[0][3]) : 0;
             return new Dictionary<string, object>
             {
-                { "episodes", db.Long("SELECT COUNT(*) FROM episodes") },
+                { "episodes", epTotal },
                 { "events", db.Long("SELECT COUNT(*) FROM events") },
-                { "summarized", db.Long("SELECT COUNT(*) FROM episodes WHERE summary<>''") },
-                { "embedded", db.Long("SELECT COUNT(*) FROM episodes WHERE embedded=1") },
-                { "meetings", db.Long("SELECT COUNT(*) FROM episodes WHERE kind='meeting'") },
+                { "summarized", epSum },
+                { "embedded", epEmb },
+                { "meetings", epMeet },
                 { "days", db.Long("SELECT COUNT(*) FROM daily") },
                 { "facts", FactCount() },
                 { "people", db.Long("SELECT COUNT(*) FROM people") },

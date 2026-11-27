@@ -85,34 +85,92 @@ namespace Deskmate
             return Draft(hwnd, out secret, out field);
         }
 
+        static CacheRequest NewDraftCache()
+        {
+            var cr = new CacheRequest { TreeFilter = Automation.ControlViewCondition, TreeScope = TreeScope.Element };
+            cr.Add(AutomationElement.IsPasswordProperty);
+            cr.Add(AutomationElement.ProcessIdProperty);
+            cr.Add(AutomationElement.ControlTypeProperty);
+            cr.Add(AutomationElement.IsKeyboardFocusableProperty);
+            cr.Add(AutomationElement.NameProperty);
+            cr.Add(AutomationElement.RuntimeIdProperty);
+            cr.Add(ValuePattern.Pattern);
+            cr.Add(ValuePattern.ValueProperty);
+            cr.Add(ValuePattern.IsReadOnlyProperty);
+            return cr;
+        }
+
         // field: the element's identity, so another tab or chat in the same window is not "the same box, now empty"
         public static string Draft(IntPtr hwnd, out bool secret, out string field)
         {
             secret = false;
             field = "";
+            int pid;
+            Native.GetWindowThreadProcessId(hwnd, out pid);
             AutomationElement f;
-            try { f = AutomationElement.FocusedElement; }
+            try
+            {
+                using (NewDraftCache().Activate()) f = AutomationElement.FocusedElement;
+            }
             catch (Exception) { return null; }
+            return DraftFromElement(f, pid, out secret, out field);
+        }
+
+        // Reuses an already-fetched focused AutomationElement so Capture never queries FocusedElement twice
+        public static string DraftFromElement(AutomationElement f, int winPid, out bool secret, out string field)
+        {
+            secret = false;
+            field = "";
             if (f == null) return null;
             try
             {
-                var c = f.Current;
-                if (c.IsPassword) { secret = true; return null; }
+                bool isPw;
+                try { isPw = f.Cached.IsPassword; } catch (InvalidOperationException) { isPw = f.Current.IsPassword; }
+                if (isPw) { secret = true; return null; }
+
                 int pid;
-                Native.GetWindowThreadProcessId(hwnd, out pid);
-                if (c.ProcessId != pid) return null;
-                var type = c.ControlType;
-                bool editable = type == ControlType.Edit || type == ControlType.Document || c.IsKeyboardFocusable && (type == ControlType.Group || type == ControlType.Custom || type == ControlType.Pane);
+                try { pid = f.Cached.ProcessId; } catch (InvalidOperationException) { pid = f.Current.ProcessId; }
+                if (pid != winPid) return null;
+
+                ControlType type;
+                try { type = f.Cached.ControlType; } catch (InvalidOperationException) { type = f.Current.ControlType; }
+                bool focusable;
+                try { focusable = f.Cached.IsKeyboardFocusable; } catch (InvalidOperationException) { focusable = f.Current.IsKeyboardFocusable; }
+
+                bool editable = type == ControlType.Edit || type == ControlType.Document || focusable && (type == ControlType.Group || type == ControlType.Custom || type == ControlType.Pane);
                 if (!editable) return null;
-                try { field = string.Join(".", Array.ConvertAll(f.GetRuntimeId(), i => i.ToString(System.Globalization.CultureInfo.InvariantCulture))); } catch (Exception) { field = ""; }
+
+                try
+                {
+                    int[] rid = f.GetRuntimeId();
+                    if (rid != null) field = string.Join(".", Array.ConvertAll(rid, i => i.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                }
+                catch (Exception) { field = ""; }
+
                 object p;
                 string v = null;
-                if (f.TryGetCurrentPattern(ValuePattern.Pattern, out p)) { var vp = (ValuePattern)p; if (vp.Current.IsReadOnly) return null; v = vp.Current.Value; }
-                else if (f.TryGetCurrentPattern(TextPattern.Pattern, out p)) v = ((TextPattern)p).DocumentRange.GetText(4000);
+                if (f.TryGetCachedPattern(ValuePattern.Pattern, out p))
+                {
+                    var vp = (ValuePattern)p;
+                    if (vp.Cached.IsReadOnly) return null;
+                    v = vp.Cached.Value;
+                }
+                else if (f.TryGetCurrentPattern(ValuePattern.Pattern, out p))
+                {
+                    var vp = (ValuePattern)p;
+                    if (vp.Current.IsReadOnly) return null;
+                    v = vp.Current.Value;
+                }
+                else if (f.TryGetCurrentPattern(TextPattern.Pattern, out p))
+                {
+                    v = ((TextPattern)p).DocumentRange.GetText(4000);
+                }
                 if (v == null) return null;
                 v = v.Trim();
                 // Search boxes and address bars are not messages
-                string name = (c.Name ?? "").ToLowerInvariant();
+                string rawName;
+                try { rawName = f.Cached.Name ?? ""; } catch (InvalidOperationException) { rawName = f.Current.Name ?? ""; }
+                string name = rawName.ToLowerInvariant();
                 if (name.Contains("search") || name.Contains("cari") || name.Contains("address") || name.Contains("alamat")) return null;
                 // A whole document (Notepad, Word) is not a message being written; the screen text already has it
                 if (type == ControlType.Document && v.Length > 1500) return null;

@@ -653,21 +653,23 @@ namespace Deskmate
             return ops;
         }
 
-        // Search: keywords, substrings, and meaning, fused by rank (RRF), then nudged toward recent and weighty moments.
-        // The nudges are small next to one rank step, so relevance leads and time and weight break near-ties.
-        const double RrfK = 60, SubstringWeight = 0.7, RecencyWeight = 0.006, ImportanceWeight = 0.004, RecencyHalfLifeDays = 7;
+        // Search: keywords, substrings, and meaning, fused by rank (RRF), then nudged toward multi-term coverage, recent and weighty moments.
+        // The nudges are small next to one rank step, so relevance leads and coverage/time/weight break near-ties.
+        const double RrfK = 60, SubstringWeight = 0.7, RecencyWeight = 0.006, ImportanceWeight = 0.004, CoverageWeight = 0.008, RecencyHalfLifeDays = 7;
 
         public List<IngatEpisode> Search(string q, DateTime fromUtc, DateTime toUtc, int limit)
         {
             var fused = new Dictionary<long, double>();
             var byId = new Dictionary<long, IngatEpisode>();
-            var words = store.Search(q, fromUtc, toUtc, 40);
+            // Candidate phase uses Lite queries (skipping 12 KB body overflow pages) and batch-hydrates only top winners
+            var words = store.SearchLite(q, fromUtc, toUtc, 40);
             for (int i = 0; i < words.Count; i++) { Fuse(fused, words[i].Id, 1.0, i); byId[words[i].Id] = words[i]; }
-            var subs = store.SearchSubstring(q, fromUtc, toUtc, 40);
+            var subs = store.SearchSubstringLite(q, fromUtc, toUtc, 40);
             for (int i = 0; i < subs.Count; i++) { Fuse(fused, subs[i].Id, SubstringWeight, i); byId[subs[i].Id] = subs[i]; }
 
+            var terms = IngatStore.QueryTerms(q);
             string model = EmbedModel;
-            if (EmbedUsable && IngatStore.FtsQuery(q).Length > 0 && store.HasVectors(model))
+            if (EmbedUsable && terms.Count > 0 && store.HasVectors(model))
             {
                 var qv = EmbedSafe(q);
                 if (qv != null)
@@ -681,19 +683,54 @@ namespace Deskmate
                     }
                 }
             }
+            var missing = new List<long>();
+            foreach (var id in fused.Keys) if (!byId.ContainsKey(id)) missing.Add(id);
+            if (missing.Count > 0)
+            {
+                foreach (var kv in store.GetManyLite(missing)) byId[kv.Key] = kv.Value;
+            }
             var now = DateTime.UtcNow;
-            var order = new List<IngatEpisode>();
+            var order = new List<IngatEpisode>(fused.Count);
             foreach (var kv in fused)
             {
                 IngatEpisode ep;
-                if (!byId.TryGetValue(kv.Key, out ep)) ep = store.Get(kv.Key);
-                if (ep == null) continue;
-                ep.Score = kv.Value + Boost(ep, now);
+                if (!byId.TryGetValue(kv.Key, out ep) || ep == null) continue;
+                ep.Score = kv.Value + Boost(ep, now) + CoverageBoost(ep, terms);
                 order.Add(ep);
             }
             order.Sort((a, b) => b.Score.CompareTo(a.Score));
             if (order.Count > limit) order.RemoveRange(limit, order.Count - limit);
+
+            // Batch-hydrate full bodies for the winning top-K episodes in one SQLite round-trip
+            var needBody = new List<long>();
+            for (int i = 0; i < order.Count; i++)
+                if (order[i].Body.Length == 0) needBody.Add(order[i].Id);
+            if (needBody.Count > 0)
+            {
+                var full = store.GetMany(needBody);
+                for (int i = 0; i < order.Count; i++)
+                {
+                    IngatEpisode f;
+                    if (full.TryGetValue(order[i].Id, out f))
+                    {
+                        f.Score = order[i].Score;
+                        order[i] = f;
+                    }
+                }
+            }
             return order;
+        }
+
+        // Rewards multi-term queries when several requested terms hit the episode's title, project, summary, or anchors
+        static double CoverageBoost(IngatEpisode ep, List<string> terms)
+        {
+            if (terms == null || terms.Count < 2) return 0;
+            string hay = (ep.Title + " " + ep.Project + " " + ep.Summary + " " + ep.Url + " " + ep.App + " " + ep.Context).ToLowerInvariant();
+            int matched = 0;
+            for (int i = 0; i < terms.Count; i++)
+                if (hay.IndexOf(terms[i], StringComparison.Ordinal) >= 0) matched++;
+            if (matched <= 1) return 0;
+            return CoverageWeight * ((double)matched / terms.Count);
         }
 
         double EmbedMin()
@@ -759,7 +796,7 @@ namespace Deskmate
                 var anch = Json.Arr(scr, "anchors");
                 if (anch.Length > 0) sb.Append("  Anchors: ").Append(JoinObjs(anch, ", ", 220)).Append('\n');
                 string ex = Json.Str(scr, "excerpt");
-                if (ex.Length > 0) sb.Append("  On screen: ").Append(Fmt.OneLine(ex, 450));
+                if (ex.Length > 0) sb.Append("  On screen: ").Append(Fmt.OneLine(ex, 1000));
             }
             return sb.ToString().TrimEnd();
         }
@@ -830,15 +867,22 @@ namespace Deskmate
 
         static List<IngatEpisode> BroadRangeHits(IngatStore store, DateTime fromUtc, DateTime toUtc, int maxLongest)
         {
-            var all = store.Timeline(fromUtc, toUtc, 300);
+            var all = store.TimelineLite(fromUtc, toUtc, 300);
             if (all.Count == 0) return all;
             var picked = Longest(all, maxLongest);
             var ids = new HashSet<long>();
             for (int i = 0; i < picked.Count; i++) ids.Add(picked[i].Id);
             for (int i = Math.Max(0, all.Count - 2); i < all.Count; i++)
                 if (ids.Add(all[i].Id)) picked.Add(all[i]);
-            picked.Sort((a, b) => a.StartUtc.CompareTo(b.StartUtc));
-            return picked;
+            var full = store.GetMany(new List<long>(ids));
+            var hydrated = new List<IngatEpisode>(picked.Count);
+            for (int i = 0; i < picked.Count; i++)
+            {
+                IngatEpisode f;
+                hydrated.Add(full.TryGetValue(picked[i].Id, out f) ? f : picked[i]);
+            }
+            hydrated.Sort((a, b) => a.StartUtc.CompareTo(b.StartUtc));
+            return hydrated;
         }
 
         // Answer from memory, with structured moments and live screen awareness
