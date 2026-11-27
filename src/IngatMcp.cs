@@ -134,6 +134,8 @@ namespace Deskmate
                     }, new[] { "name" }),
                 Tool("get_promises", "Open promises and requests from conversations: what the user promised others and what others promised the user.",
                     new Dictionary<string, object> { { "person", P("string", "Optional person name") }, { "include_done", P("boolean", "Include finished ones") } }, new string[0]),
+                Tool("get_entity_graph", "Find related projects, files, errors, domains, people, and recent episodes linked to a specific entity (project name, filename, error code, or host).",
+                    new Dictionary<string, object> { { "entity", P("string", "Project, file, error code, or domain name") }, { "limit", P("integer", "Maximum related items (default 15)") } }, new[] { "entity" }),
             };
         }
 
@@ -188,6 +190,9 @@ namespace Deskmate
                     break;
                 case "get_promises":
                     r = IngatClient.Get("/promises?person=" + IngatClient.Q(Json.Str(a, "person")) + (Json.Str(a, "include_done").ToLowerInvariant() == "true" ? "&all=1" : ""), 10000);
+                    break;
+                case "get_entity_graph":
+                    r = IngatClient.Get("/entity?q=" + IngatClient.Q(Json.Str(a, "entity")) + "&limit=" + ((int)Json.Num(a, "limit", 15)).ToString(CultureInfo.InvariantCulture), 10000);
                     break;
                 default:
                     return Text("Unknown tool: " + name, true);

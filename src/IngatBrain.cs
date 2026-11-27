@@ -52,10 +52,16 @@ namespace Deskmate
 
         float[] EmbedSafe(string text)
         {
-            if (!EmbedUsable) return null;
+            var batch = EmbedBatchSafe(new[] { text });
+            return batch != null && batch.Count == 1 ? batch[0] : null;
+        }
+
+        List<float[]> EmbedBatchSafe(IList<string> texts)
+        {
+            if (!EmbedUsable || texts == null || texts.Count == 0) return null;
             string error;
-            var v = Ai.Embed(Provider, EmbedModel, text, out error);
-            if (v != null) return v;
+            var vs = Ai.EmbedBatch(Provider, EmbedModel, texts, out error);
+            if (vs != null && vs.Count == texts.Count) return vs;
             if (embedDownFor != EmbedKey) Log.Write("ingat embed: " + Fmt.OneLine(error, 200) + " (dijeda 6 jam)");
             embedDownFor = EmbedKey;
             embedDownUntil = DateTime.UtcNow.AddHours(6);
@@ -114,10 +120,14 @@ namespace Deskmate
                 }
             }
             if (!did && EmbedUsable)
-                // Up to MaxChunks calls each: two episodes a round keeps the embedding server unhurried
-                foreach (var ep in store.NeedEmbedding(2)) { if (!EmbedEpisode(ep)) break; did = true; }
-            // No model needed: fill the substring index for episodes from before it existed
+            {
+                // Batched per-episode embedding: up to 3 episodes per round with 1 HTTP call each
+                foreach (var ep in store.NeedEmbedding(3)) { if (!EmbedEpisode(ep)) break; did = true; }
+                if (!did) did = EmbedItems();
+            }
+            // No model needed: fill the substring index and entity graph for episodes from before they existed
             if (!did) did = store.BackfillTrigram(500);
+            if (!did) did = store.BackfillEntities(300);
             // Read the vectors into RAM while idle, so the first question does not pay for it
             if (!did && EmbedUsable) store.WarmVectors(EmbedModel);
             return did;
@@ -349,10 +359,11 @@ namespace Deskmate
             return list.ToArray();
         }
 
-        // People named in a question, and messages that match it: the context that makes "what did Budi ask?" answerable
-        string PeopleContext(string question, DateTime fromUtc, DateTime toUtc, List<object> sources)
+        // People named in a question, semantically matched conversations, and messages that match it
+        string PeopleContext(string question, DateTime fromUtc, DateTime toUtc, List<object> sources, float[] queryVec = null)
         {
             var sb = new StringBuilder();
+            var shownConvs = new HashSet<long>();
             foreach (var pid in store.PeopleIn(question))
             {
                 var v = store.PersonView(pid, 20);
@@ -360,7 +371,11 @@ namespace Deskmate
                 sb.Append("Person: ").Append(Json.Str(v, "name"));
                 if (Json.Str(v, "about").Length > 0) sb.Append(" (").Append(Json.Str(v, "about")).Append(')');
                 sb.Append('\n');
-                foreach (var c in Json.Arr(v, "conversations")) AppendConversation(sb, c, "  ");
+                foreach (var c in Json.Arr(v, "conversations"))
+                {
+                    shownConvs.Add((long)Json.Num(c, "id", 0));
+                    AppendConversation(sb, c, "  ");
+                }
                 var msgs = Json.Arr(v, "messages");
                 if (msgs.Length > 0) sb.Append("  Latest messages (oldest first):\n");
                 foreach (var m in msgs) AppendMessage(sb, m, Json.Str(v, "name"), "    ");
@@ -369,6 +384,22 @@ namespace Deskmate
                 foreach (var p in prom)
                     sb.Append("    - ").Append(Json.Str(p, "who")).Append(": ").Append(Json.Str(p, "what")).Append(Json.Str(p, "due").Length > 0 ? " (by " + Json.Str(p, "due") + ")" : "").Append('\n');
                 if (sources != null) sources.Add(new Dictionary<string, object> { { "person", Json.Str(v, "name") } });
+            }
+            // Semantic conversation recall: finds relevant chats by meaning even when neither person nor exact word is named
+            if (queryVec != null && EmbedModel.Length > 0)
+            {
+                var semConvs = store.NearestItems("conv", EmbedModel, queryVec, 3, 0.32);
+                for (int i = 0; i < semConvs.Count; i++)
+                {
+                    long cid = semConvs[i].Key;
+                    if (!shownConvs.Add(cid)) continue;
+                    var cv = store.ConversationView(cid, 8);
+                    if (cv == null) continue;
+                    AppendConversation(sb, cv, "  ");
+                    foreach (var m in Json.Arr(cv, "messages")) AppendMessage(sb, m, Json.Str(cv, "name"), "    ");
+                    foreach (var p in Json.Arr(cv, "promises"))
+                        sb.Append("    - Promise (").Append(Json.Str(p, "who")).Append("): ").Append(Json.Str(p, "what")).Append('\n');
+                }
             }
             var hits = store.SearchMessages(question, fromUtc, toUtc, 10);
             if (hits.Count > 0) sb.Append("Messages matching the question:\n");
@@ -502,18 +533,48 @@ namespace Deskmate
             return chunks;
         }
 
-        // False: the server refused; the episode waits for a later try. All chunks or none are saved.
+        // False: the server refused; the episode waits for a later try. All chunks are sent in ONE batch HTTP call.
         bool EmbedEpisode(IngatEpisode ep)
         {
             string model = EmbedModel;
-            var vecs = new List<float[]>();
-            foreach (var text in EmbedChunks(ep))
-            {
-                var v = EmbedSafe(text);
-                if (v == null) return false;
-                vecs.Add(Normalize(v));
-            }
+            var chunks = EmbedChunks(ep);
+            var raw = EmbedBatchSafe(chunks);
+            if (raw == null || raw.Count != chunks.Count) return false;
+            var vecs = new List<float[]>(raw.Count);
+            for (int i = 0; i < raw.Count; i++) vecs.Add(Normalize(raw[i]));
             store.SaveVectors(ep.Id, model, vecs);
+            return true;
+        }
+
+        // Batches pending active facts and digested conversations for semantic recall
+        bool EmbedItems()
+        {
+            string model = EmbedModel;
+            if (string.IsNullOrEmpty(model)) return false;
+            var facts = store.FactsNeedingVectors(model, 16);
+            if (facts.Count > 0) return SaveItemBatch("fact", model, facts);
+            var convs = store.ConversationsNeedingVectors(model, 12);
+            if (convs.Count > 0) return SaveItemBatch("conv", model, convs);
+            return false;
+        }
+
+        bool SaveItemBatch(string kind, string model, List<KeyValuePair<long, string>> pending)
+        {
+            var texts = new List<string>(pending.Count);
+            for (int i = 0; i < pending.Count; i++) texts.Add(pending[i].Value);
+            var raw = EmbedBatchSafe(texts);
+            if (raw == null || raw.Count != pending.Count) return false;
+            var inputs = new List<IngatStore.ItemVecInput>(pending.Count);
+            for (int i = 0; i < pending.Count; i++)
+            {
+                inputs.Add(new IngatStore.ItemVecInput
+                {
+                    Id = pending[i].Key,
+                    Hash = IngatStore.ItemTextHash(pending[i].Value),
+                    Vec = Normalize(raw[i]),
+                });
+            }
+            store.SaveItemVectors(kind, model, inputs);
             return true;
         }
 
@@ -659,8 +720,15 @@ namespace Deskmate
 
         public List<IngatEpisode> Search(string q, DateTime fromUtc, DateTime toUtc, int limit)
         {
+            float[] qv = null;
+            return Search(q, fromUtc, toUtc, limit, ref qv);
+        }
+
+        public List<IngatEpisode> Search(string q, DateTime fromUtc, DateTime toUtc, int limit, ref float[] queryVec)
+        {
             var fused = new Dictionary<long, double>();
             var byId = new Dictionary<long, IngatEpisode>();
+            Dictionary<long, int> bestChunks = null;
             // Candidate phase uses Lite queries (skipping 12 KB body overflow pages) and batch-hydrates only top winners
             var words = store.SearchLite(q, fromUtc, toUtc, 40);
             for (int i = 0; i < words.Count; i++) { Fuse(fused, words[i].Id, 1.0, i); byId[words[i].Id] = words[i]; }
@@ -668,13 +736,24 @@ namespace Deskmate
             for (int i = 0; i < subs.Count; i++) { Fuse(fused, subs[i].Id, SubstringWeight, i); byId[subs[i].Id] = subs[i]; }
 
             var terms = IngatStore.QueryTerms(q);
+            // Exact entity graph boost: instantly surfaces episodes tied to a named project, file, error code, or domain
+            for (int ti = 0; ti < Math.Min(4, terms.Count); ti++)
+            {
+                if (terms[ti].Length < 3) continue;
+                var ents = store.EpisodesByEntityLite(terms[ti], fromUtc, toUtc, 20);
+                for (int i = 0; i < ents.Count; i++) { Fuse(fused, ents[i].Id, 0.85, i); byId[ents[i].Id] = ents[i]; }
+            }
             string model = EmbedModel;
             if (EmbedUsable && terms.Count > 0 && store.HasVectors(model))
             {
-                var qv = EmbedSafe(q);
-                if (qv != null)
+                if (queryVec == null)
                 {
-                    var near = store.Nearest(model, Normalize(qv), fromUtc, toUtc);
+                    var raw = EmbedSafe(q);
+                    if (raw != null) queryVec = Normalize(raw);
+                }
+                if (queryVec != null)
+                {
+                    var near = store.Nearest(model, queryVec, fromUtc, toUtc, out bestChunks);
                     double cutoff = SemanticCut(near, EmbedMin());
                     for (int i = 0; i < Math.Min(40, near.Count); i++)
                     {
@@ -696,6 +775,8 @@ namespace Deskmate
                 IngatEpisode ep;
                 if (!byId.TryGetValue(kv.Key, out ep) || ep == null) continue;
                 ep.Score = kv.Value + Boost(ep, now) + CoverageBoost(ep, terms);
+                int bc;
+                if (bestChunks != null && bestChunks.TryGetValue(ep.Id, out bc)) ep.BestChunk = bc;
                 order.Add(ep);
             }
             order.Sort((a, b) => b.Score.CompareTo(a.Score));
@@ -714,6 +795,7 @@ namespace Deskmate
                     if (full.TryGetValue(order[i].Id, out f))
                     {
                         f.Score = order[i].Score;
+                        f.BestChunk = order[i].BestChunk;
                         order[i] = f;
                     }
                 }
@@ -791,6 +873,8 @@ namespace Deskmate
                 if (sb.Length > 0) sb.Append('\n');
                 string focus = Json.Str(scr, "focus");
                 if (focus.Length > 0) sb.Append("  Focus: ").Append(focus).Append('\n');
+                string companion = Json.Str(scr, "companion");
+                if (companion.Length > 0) sb.Append("  Side-by-side window: ").Append(companion).Append('\n');
                 var heads = Json.Arr(scr, "headings");
                 if (heads.Length > 0) sb.Append("  Sections: ").Append(JoinObjs(heads, " · ", 220)).Append('\n');
                 var anch = Json.Arr(scr, "anchors");
@@ -815,7 +899,99 @@ namespace Deskmate
             return sb.ToString();
         }
 
-        static void AppendEpisodeContext(StringBuilder ctx, IngatEpisode ep, bool detailed)
+        // Pulls the highest-density matching passage from a long episode body instead of blindly taking the opening chars.
+        // Falls back to the best semantic chunk window when the match came from vectors with no literal word overlap.
+        public static string RelevantExcerpt(string body, List<string> terms, int maxChars, int bestChunk = -1)
+        {
+            if (string.IsNullOrEmpty(body) || maxChars <= 0) return "";
+            if (body.Length <= maxChars) return Fmt.OneLine(body, maxChars);
+
+            var needles = new List<KeyValuePair<string, int>>(); // needle -> term group index
+            var seenNeedle = new HashSet<string>(StringComparer.Ordinal);
+            if (terms != null)
+            {
+                for (int ti = 0; ti < terms.Count; ti++)
+                {
+                    string t = (terms[ti] ?? "").ToLowerInvariant();
+                    if (t.Length >= 2 && seenNeedle.Add(t)) needles.Add(new KeyValuePair<string, int>(t, ti));
+                    foreach (var f in IngatStore.IdForms(t))
+                        if (f.Length >= 3 && seenNeedle.Add(f)) needles.Add(new KeyValuePair<string, int>(f, ti));
+                }
+            }
+
+            int bestStart = -1;
+            if (needles.Count > 0)
+            {
+                string low = body.ToLowerInvariant();
+                var hits = new List<KeyValuePair<int, int>>(); // (pos, termGroup)
+                for (int ni = 0; ni < needles.Count; ni++)
+                {
+                    string n = needles[ni].Key;
+                    int group = needles[ni].Value;
+                    int pos = 0, foundForNeedle = 0;
+                    while (foundForNeedle < 12 && (pos = low.IndexOf(n, pos, StringComparison.Ordinal)) >= 0)
+                    {
+                        hits.Add(new KeyValuePair<int, int>(pos, group));
+                        pos += n.Length;
+                        foundForNeedle++;
+                    }
+                }
+                if (hits.Count > 0)
+                {
+                    hits.Sort((a, b) => a.Key.CompareTo(b.Key));
+                    double bestScore = -1;
+                    int bestAnchor = hits[0].Key;
+                    int span = Math.Max(80, maxChars - 80);
+                    for (int i = 0; i < hits.Count; i++)
+                    {
+                        int winStart = hits[i].Key;
+                        int winEnd = winStart + span;
+                        int mask = 0, distinct = 0, count = 0;
+                        for (int j = i; j < hits.Count && hits[j].Key <= winEnd; j++)
+                        {
+                            count++;
+                            int bit = 1 << (hits[j].Value & 31);
+                            if ((mask & bit) == 0) { mask |= bit; distinct++; }
+                        }
+                        double score = distinct * 4.0 + Math.Min(count, 6) * 0.5;
+                        if (score > bestScore)
+                        {
+                            bestScore = score;
+                            bestAnchor = winStart;
+                        }
+                    }
+                    // Lead-in context before the first hit in the winning cluster
+                    bestStart = Math.Max(0, bestAnchor - Math.Min(120, maxChars / 4));
+                }
+            }
+
+            // Semantic-only hit with no literal match: jump directly to the winning chunk's byte window
+            if (bestStart < 0 && bestChunk > 0)
+            {
+                const int Overlap = 150, MinWindow = 1000;
+                int window = Math.Max(MinWindow, (body.Length + Overlap * (IngatStore.MaxChunks - 1) + IngatStore.MaxChunks - 1) / IngatStore.MaxChunks);
+                int step = window - Overlap;
+                bestStart = Math.Min(Math.Max(0, body.Length - maxChars), bestChunk * step);
+            }
+            if (bestStart <= 0) return Fmt.OneLine(body, maxChars);
+
+            // Snap start forward to a clean whitespace/line boundary (surrogate-safe)
+            int start = bestStart;
+            if (start < body.Length && char.IsLowSurrogate(body[start])) start++;
+            int snapLimit = Math.Min(body.Length, start + 40);
+            int ws = -1;
+            for (int i = start; i < snapLimit; i++) if (char.IsWhiteSpace(body[i])) { ws = i + 1; break; }
+            if (ws > start && ws < body.Length - 20) start = ws;
+            if (start < body.Length && char.IsLowSurrogate(body[start])) start++;
+
+            int room = Math.Max(40, maxChars - 4);
+            int len = Math.Min(room, body.Length - start);
+            if (start + len < body.Length && len > 0 && char.IsHighSurrogate(body[start + len - 1])) len--;
+            string slice = Fmt.OneLine(body.Substring(start, len), room);
+            return (start > 0 ? "… " : "") + slice + (start + len < body.Length ? " …" : "");
+        }
+
+        static void AppendEpisodeContext(StringBuilder ctx, IngatEpisode ep, bool detailed, List<string> queryTerms = null)
         {
             var ectx = IngatContext.Parse(ep.Context);
             ctx.Append(detailed ? "[#" + ep.Id + "] " : "- ");
@@ -846,13 +1022,13 @@ namespace Deskmate
                     }
                     ctx.Append("\n  trail: ").Append(string.Join(" -> ", st.ToArray()));
                 }
-                string body = Fmt.OneLine(ep.Body, ep.Kind == "meeting" ? 1500 : 500);
+                string body = RelevantExcerpt(ep.Body, queryTerms, ep.Kind == "meeting" ? 1500 : 650, ep.BestChunk);
                 if (body.Length > 0) ctx.Append("\n  text: ").Append(body);
             }
             else
             {
                 if (ep.Summary.Length > 0) ctx.Append(" — ").Append(ep.Summary);
-                else ctx.Append(" — ").Append(Fmt.OneLine(ep.Body, ep.Kind == "meeting" ? 900 : 300));
+                else ctx.Append(" — ").Append(RelevantExcerpt(ep.Body, queryTerms, ep.Kind == "meeting" ? 900 : 340, ep.BestChunk));
                 if (ectx.Anchors.Count > 0)
                     ctx.Append(" (").Append(string.Join(", ", ectx.Anchors.GetRange(0, Math.Min(5, ectx.Anchors.Count)).ToArray())).Append(')');
             }
@@ -899,18 +1075,25 @@ namespace Deskmate
             var fromUtc = ranged ? fromL.ToUniversalTime() : DateTime.UtcNow.AddYears(-5);
             var toUtc = ranged ? toL.ToUniversalTime() : DateTime.UtcNow.AddMinutes(1);
             bool hasKeywords = IngatStore.FtsQuery(question).Length > 0;
+            float[] qv = null;
             var hits = ranged && !hasKeywords
                 ? BroadRangeHits(store, fromUtc, toUtc, 10)
-                : Search(question, fromUtc, toUtc, 8);
+                : Search(question, fromUtc, toUtc, 8, ref qv);
             if (hits.Count == 0 && ranged) hits = BroadRangeHits(store, fromUtc, toUtc, 10);
+            if (qv == null && hasKeywords && EmbedUsable && store.HasItemVectors(EmbedModel))
+            {
+                var raw = EmbedSafe(question);
+                if (raw != null) qv = Normalize(raw);
+            }
 
+            var queryTerms = IngatStore.QueryTerms(question);
             var ctx = new StringBuilder();
             var sources = new List<object>();
             var seen = new HashSet<long>();
             foreach (var ep in hits)
             {
                 seen.Add(ep.Id);
-                AppendEpisodeContext(ctx, ep, true);
+                AppendEpisodeContext(ctx, ep, true, queryTerms);
                 sources.Add(ep.ToJson(false));
             }
             var recent = new StringBuilder();
@@ -928,8 +1111,8 @@ namespace Deskmate
                     string s = store.Daily(d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
                     if (s.Length > 0) ctx.Append("Day recap ").Append(d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append(": ").Append(s).Append('\n');
                 }
-            var facts = store.FactsFor(question, 12);
-            string people = PeopleContext(question, fromUtc, toUtc, sources);
+            var facts = store.FactsFor(question, 12, EmbedModel, qv);
+            string people = PeopleContext(question, fromUtc, toUtc, sources, qv);
             var grouped = IngatStructure.GroupTimeline(hits);
 
             var result = new Dictionary<string, object>
@@ -1010,18 +1193,25 @@ namespace Deskmate
             var fromUtc = ranged ? fromL.ToUniversalTime() : DateTime.UtcNow.AddYears(-5);
             var toUtc = ranged ? toL.ToUniversalTime() : DateTime.UtcNow.AddMinutes(1);
             bool hasKeywords = IngatStore.FtsQuery(question).Length > 0;
+            float[] qv = null;
             var hits = ranged && !hasKeywords
                 ? BroadRangeHits(store, fromUtc, toUtc, 8)
-                : Search(question, fromUtc, toUtc, 6);
+                : Search(question, fromUtc, toUtc, 6, ref qv);
             if (hits.Count == 0 && ranged) hits = BroadRangeHits(store, fromUtc, toUtc, 8);
+            if (qv == null && hasKeywords && EmbedUsable && store.HasItemVectors(EmbedModel))
+            {
+                var raw = EmbedSafe(question);
+                if (raw != null) qv = Normalize(raw);
+            }
 
+            var queryTerms = IngatStore.QueryTerms(question);
             var ctx = new StringBuilder();
             var sources = new List<object>();
             var seen = new HashSet<long>();
             foreach (var ep in hits)
             {
                 seen.Add(ep.Id);
-                AppendEpisodeContext(ctx, ep, false);
+                AppendEpisodeContext(ctx, ep, false, queryTerms);
                 sources.Add(ep.ToJson(false));
             }
             // "What was I just doing?" needs the latest moments even when no word matched
@@ -1032,8 +1222,8 @@ namespace Deskmate
                 AppendEpisodeContext(recent, ep, false);
             }
             string current = FormatNow(now);
-            var facts = store.FactsFor(question, 12);
-            string people = PeopleContext(question, fromUtc, toUtc, sources);
+            var facts = store.FactsFor(question, 12, EmbedModel, qv);
+            string people = PeopleContext(question, fromUtc, toUtc, sources, qv);
 
             var result = new Dictionary<string, object> { { "sources", sources.ToArray() } };
             if (!Thinking)

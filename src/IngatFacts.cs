@@ -122,8 +122,13 @@ namespace Deskmate
             return ids;
         }
 
-        // What a prompt needs: a few core facts always, then the ones about the question, then the strongest of the rest
+        // What a prompt needs: a few core facts always, then the ones about the question (FTS5 + semantic vectors), then the strongest of the rest
         public List<string> FactsFor(string question, int k)
+        {
+            return FactsFor(question, k, "", null);
+        }
+
+        public List<string> FactsFor(string question, int k, string embedModel, float[] queryVec)
         {
             var active = ActiveFacts();
             var byId = new Dictionary<long, FactRow>();
@@ -131,14 +136,28 @@ namespace Deskmate
             var picked = new List<FactRow>();
             var taken = new HashSet<long>();
             for (int i = 0; i < active.Count && picked.Count < Math.Min(3, k); i++) { picked.Add(active[i]); taken.Add(active[i].Id); }
-            var related = new List<KeyValuePair<FactRow, double>>();
+            var scores = new Dictionary<long, double>();
             var matches = FactMatches(question);
             for (int i = 0; i < matches.Count; i++)
             {
                 FactRow f;
                 if (!byId.TryGetValue(matches[i], out f) || taken.Contains(f.Id)) continue;
-                related.Add(new KeyValuePair<FactRow, double>(f, f.Strength + 1.5 / (1 + i)));
+                scores[f.Id] = f.Strength + 1.5 / (1 + i);
             }
+            if (queryVec != null && !string.IsNullOrEmpty(embedModel))
+            {
+                var sem = NearestItems("fact", embedModel, queryVec, 12, 0.28);
+                for (int i = 0; i < sem.Count; i++)
+                {
+                    FactRow f;
+                    if (!byId.TryGetValue(sem[i].Key, out f) || taken.Contains(f.Id)) continue;
+                    double cur;
+                    scores.TryGetValue(f.Id, out cur);
+                    scores[f.Id] = (cur > 0 ? cur : f.Strength) + sem[i].Value * 1.4;
+                }
+            }
+            var related = new List<KeyValuePair<FactRow, double>>(scores.Count);
+            foreach (var kv in scores) related.Add(new KeyValuePair<FactRow, double>(byId[kv.Key], kv.Value));
             related.Sort((a, b) => b.Value.CompareTo(a.Value));
             foreach (var kv in related) { if (picked.Count >= k) break; picked.Add(kv.Key); taken.Add(kv.Key.Id); }
             foreach (var f in active) { if (picked.Count >= k) break; if (taken.Add(f.Id)) picked.Add(f); }
@@ -240,6 +259,7 @@ namespace Deskmate
         {
             db.Exec("UPDATE facts SET status='archived' WHERE id=?", id);
             db.Exec("DELETE FROM facts_fts WHERE rowid=?", id);
+            DeleteItemVector("fact", id);
         }
 
         // Folds one day's operations into memory; returns what changed: added, updated, reinforced, archived
@@ -357,6 +377,7 @@ namespace Deskmate
                 {
                     db.Exec("DELETE FROM facts_fts WHERE rowid=?", f.Id);
                     db.Exec("DELETE FROM facts WHERE id=?", f.Id);
+                    DeleteItemVector("fact", f.Id);
                 }
                 else
                 {

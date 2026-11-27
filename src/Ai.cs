@@ -290,20 +290,69 @@ namespace Deskmate
         // OpenAI-compatible /embeddings; null when the provider has none or the call failed
         public static float[] Embed(AiProvider p, string model, string text, out string error, int timeoutMs = 15000)
         {
+            var batch = EmbedBatch(p, model, new[] { text }, out error, timeoutMs);
+            return batch != null && batch.Count == 1 ? batch[0] : null;
+        }
+
+        // Batched OpenAI/Ollama-compatible /embeddings: embeds multiple chunks/items in ONE HTTP round-trip,
+        // falling back to sequential single calls if a custom server rejects array input.
+        public static List<float[]> EmbedBatch(AiProvider p, string model, IList<string> texts, out string error, int timeoutMs = 25000)
+        {
             error = null;
             if (p == null || p.Anthropic || p.Cli != null || !Ready(p)) { error = "no embeddings"; return null; }
-            var payload = new Dictionary<string, object> { { "model", model }, { "input", text } };
+            if (texts == null || texts.Count == 0) return new List<float[]>();
+            object input = texts.Count == 1 ? (object)texts[0] : new List<string>(texts).ToArray();
+            var payload = new Dictionary<string, object> { { "model", model }, { "input", input } };
             var r = Web.Send("POST", BaseUrl(p) + "embeddings", Auth(p, Key(p)), Json.Encode(payload), timeoutMs);
-            if (!r.Ok) { error = Error(p, r); return null; }
+            if (!r.Ok)
+            {
+                // Server rejected batch array (e.g. legacy single-input server): retry one-by-one before failing
+                if (texts.Count > 1 && r.Status >= 400 && r.Status < 500)
+                {
+                    var seq = new List<float[]>(texts.Count);
+                    for (int i = 0; i < texts.Count; i++)
+                    {
+                        var single = new Dictionary<string, object> { { "model", model }, { "input", texts[i] } };
+                        var sr = Web.Send("POST", BaseUrl(p) + "embeddings", Auth(p, Key(p)), Json.Encode(single), timeoutMs);
+                        if (!sr.Ok) { error = Error(p, sr); return null; }
+                        var one = ParseEmbedBatch(sr.Body, 1, out error);
+                        if (one == null || one.Count != 1) return null;
+                        seq.Add(one[0]);
+                    }
+                    return seq;
+                }
+                error = Error(p, r);
+                return null;
+            }
+            return ParseEmbedBatch(r.Body, texts.Count, out error);
+        }
+
+        public static List<float[]> ParseEmbedBatch(string body, int expected, out string error)
+        {
+            error = null;
             try
             {
-                var d = Json.Parse(r.Body) as Dictionary<string, object>;
-                var first = Json.Arr(d, "data");
-                if (first.Length == 0) { error = "empty"; return null; }
-                var nums = Json.Arr(first[0], "embedding");
-                var v = new float[nums.Length];
-                for (int i = 0; i < nums.Length; i++) v[i] = Convert.ToSingle(nums[i], CultureInfo.InvariantCulture);
-                return v.Length > 0 ? v : null;
+                var d = Json.Parse(body) as Dictionary<string, object>;
+                var data = Json.Arr(d, "data");
+                if (data.Length < expected) { error = "empty"; return null; }
+                var ordered = new float[expected][];
+                for (int i = 0; i < data.Length; i++)
+                {
+                    int idx = (int)Json.Num(data[i], "index", i);
+                    if (idx < 0 || idx >= expected) continue;
+                    var nums = Json.Arr(data[i], "embedding");
+                    if (nums.Length == 0) { error = "empty"; return null; }
+                    var v = new float[nums.Length];
+                    for (int k = 0; k < nums.Length; k++) v[k] = Convert.ToSingle(nums[k], CultureInfo.InvariantCulture);
+                    ordered[idx] = v;
+                }
+                var list = new List<float[]>(expected);
+                for (int i = 0; i < expected; i++)
+                {
+                    if (ordered[i] == null || ordered[i].Length == 0) { error = "incomplete"; return null; }
+                    list.Add(ordered[i]);
+                }
+                return list;
             }
             catch (Exception ex) { error = ex.Message; return null; }
         }

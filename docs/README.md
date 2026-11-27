@@ -42,6 +42,7 @@ Indeks panduan dan catatan teknis. Semua dokumen ditulis dalam bahasa Indonesia.
 
 | Dokumen | Isi |
 |---|---|
+| [`rilis-2.21.0.md`](rilis-2.21.0.md) | Catatan rilis 2.21.0. |
 | [`rilis-2.20.1.md`](rilis-2.20.1.md) | Catatan rilis 2.20.1. |
 | [`rilis-2.20.0.md`](rilis-2.20.0.md) | Catatan rilis 2.20.0. |
 | [`rilis-2.19.1.md`](rilis-2.19.1.md) | Catatan rilis 2.19.1. |

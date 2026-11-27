@@ -26,9 +26,11 @@ namespace Deskmate
 
         static readonly string[] Browsers = { "chrome", "msedge", "brave", "vivaldi", "opera", "firefox", "arc", "zen", "floorp", "librewolf", "thorium" };
         static readonly string[] Terminals = { "windowsterminal", "wt", "powershell", "pwsh", "cmd", "wezterm-gui", "alacritty", "mintty", "git-bash" };
+        static readonly string[] CodeEditors = { "code", "code - insiders", "cursor", "windsurf", "zed", "devenv", "notepad", "notepad++", "sublime_text" };
 
         public static bool IsBrowser(string exe) { return Array.IndexOf(Browsers, (exe ?? "").ToLowerInvariant()) >= 0; }
         static bool IsTerminal(string exe) { return Array.IndexOf(Terminals, (exe ?? "").ToLowerInvariant()) >= 0; }
+        static bool IsCodeEditor(string exe) { return Array.IndexOf(CodeEditors, (exe ?? "").ToLowerInvariant()) >= 0; }
 
         [DllImport("user32.dll")] static extern bool IsHungAppWindow(IntPtr hwnd);
 
@@ -174,6 +176,7 @@ namespace Deskmate
 
             bool browser = IsBrowser(exe);
             bool terminal = IsTerminal(exe);
+            bool fastDocApp = terminal || IsCodeEditor(exe);
 
             // Focused control first: instant password check, draft read, and active editor/terminal/document text
             string focusedDoc = "";
@@ -223,7 +226,7 @@ namespace Deskmate
                 return snap;
             }
 
-            WalkStructured(root, cache, childrenCache, browser, terminal, hasRect, winL, winT, winW, winH, focusedDoc, snap);
+            WalkStructured(root, cache, childrenCache, browser, terminal, fastDocApp, hasRect, winL, winT, winW, winH, focusedDoc, snap);
             if (snap.Secret) { snap.ClearSecret(); return snap; }
             string mainText = snap.Excerpt(3500);
             snap.Kind = IngatStructure.Classify(exe, snap.Url, title, mainText.Length > 1200 ? mainText.Substring(0, 1200) : mainText);
@@ -249,7 +252,7 @@ namespace Deskmate
             catch (Exception) { return null; }
         }
 
-        static void WalkStructured(AutomationElement root, CacheRequest cache, CacheRequest childrenCache, bool browser, bool terminal, bool hasRect,
+        static void WalkStructured(AutomationElement root, CacheRequest cache, CacheRequest childrenCache, bool browser, bool terminal, bool fastDocApp, bool hasRect,
             double winL, double winT, double winW, double winH, string focusedDoc, IngatSnapshot snap)
         {
             var mainPlaced = new List<PlacedLine>();
@@ -257,6 +260,10 @@ namespace Deskmate
             var docChunks = new List<string>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
             if (focusedDoc.Length > 0) AddDocLines(docChunks, seen, focusedDoc);
+
+            // Fast-path: when a focused editor/terminal already delivered rich live text, trim subtree walk to grab tabs/headings quickly
+            int nodeLimit = fastDocApp && focusedDoc.Length >= 400 ? 75 : MaxNodes;
+            int budgetMs = fastDocApp && focusedDoc.Length >= 400 ? 110 : BudgetMs;
 
             var sw = Stopwatch.StartNew();
             // Main viewport nodes are always drained before sidebars/trees/tabs so large file trees never starve content
@@ -268,7 +275,7 @@ namespace Deskmate
 
             bool navWanted = true;
             while ((mainQueue.Count > 0 || (navWanted && navQueue.Count > 0 && navNodes < MaxNavNodes)) &&
-                   nodes < MaxNodes && (nodes <= 2 || sw.ElapsedMilliseconds < BudgetMs) && chars < MaxChars)
+                   nodes < nodeLimit && (nodes <= 2 || sw.ElapsedMilliseconds < budgetMs) && chars < MaxChars)
             {
                 bool fromNav = mainQueue.Count == 0;
                 var el = fromNav ? navQueue.Dequeue() : mainQueue.Dequeue();
@@ -1005,6 +1012,32 @@ namespace Deskmate
                 return text.Length > ChatMaxChars ? text.Substring(text.Length - ChatMaxChars) : text;
             }
             catch (Exception ex) { Log.Write("ingat ocr: " + ex.Message); return ""; }
+        }
+
+        // Viewport-cropped OCR for hybrid apps whose UIA exposed sidebar/toolbar chrome but an empty/canvas main area
+        public static string OcrViewport(Bitmap b, bool cropSidebar)
+        {
+            if (b == null || !Deskmate.Ocr.Available) return "";
+            if (!cropSidebar || b.Width < 500 || b.Height < 300) return OcrPlaced(b);
+            int x = (int)(b.Width * 0.18), y = (int)(b.Height * 0.08);
+            int w = b.Width - x, h = b.Height - y;
+            if (w < 240 || h < 160) return OcrPlaced(b);
+            try
+            {
+                using (var crop = b.Clone(new Rectangle(x, y, w, h), b.PixelFormat))
+                    return OcrPlaced(crop);
+            }
+            catch (Exception) { return OcrPlaced(b); }
+        }
+
+        // True when another window is visibly side-by-side with the active window (split-screen, <55% occluded)
+        public static bool IsSideBySide(Rectangle active, Rectangle other)
+        {
+            if (active.Width < 200 || active.Height < 120 || other.Width < 320 || other.Height < 240) return false;
+            var inter = Rectangle.Intersect(active, other);
+            long otherArea = (long)other.Width * other.Height;
+            long overlap = inter.IsEmpty ? 0L : (long)inter.Width * inter.Height;
+            return overlap * 100L < otherArea * 55L;
         }
 
         public static string Ocr(Bitmap b)

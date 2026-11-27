@@ -15,6 +15,7 @@ namespace Deskmate
         public string App = "", Exe = "", Project = "", Title = "", Url = "", Kind = "", Summary = "", Body = "", Context = "";
         public bool Closed;
         public double Score;
+        public int BestChunk = -1;
 
         public Dictionary<string, object> ToJson(bool withBody)
         {
@@ -46,7 +47,7 @@ namespace Deskmate
         // Body text an episode keeps for search
         public const int BodyCap = 12000;
 
-        const int SchemaVersion = 3;
+        const int SchemaVersion = 4;
         readonly IngatDb db;
 
         public IngatStore(string path)
@@ -79,7 +80,8 @@ namespace Deskmate
                     "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, conversation INTEGER, t INTEGER, sender TEXT, mine INTEGER, text TEXT, hash TEXT UNIQUE, episode INTEGER);" +
                     "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(sender, text, conv, tokenize='unicode61 remove_diacritics 2');" +
                     "CREATE TABLE IF NOT EXISTS commitments(id INTEGER PRIMARY KEY, conversation INTEGER, person INTEGER, who TEXT, what TEXT, due TEXT, t INTEGER, done INTEGER DEFAULT 0, hash TEXT UNIQUE);" +
-                    "CREATE TABLE IF NOT EXISTS episode_people(episode INTEGER, person INTEGER, PRIMARY KEY(episode, person))");
+                    "CREATE TABLE IF NOT EXISTS episode_people(episode INTEGER, person INTEGER, PRIMARY KEY(episode, person));" +
+                    "CREATE TABLE IF NOT EXISTS episode_entities(episode INTEGER, kind TEXT, value TEXT, PRIMARY KEY(episode, kind, value))");
                 // Columns added after the first release: older databases get them here
                 foreach (var col in new[]
                 {
@@ -119,7 +121,10 @@ namespace Deskmate
                     "CREATE INDEX IF NOT EXISTS meetings_episode ON meetings(episode);" +
                     "CREATE INDEX IF NOT EXISTS facts_status ON facts(status, last);" +
                     "CREATE INDEX IF NOT EXISTS people_last ON people(last DESC);" +
-                    "CREATE INDEX IF NOT EXISTS people_mentions ON people(mentions DESC)");
+                    "CREATE INDEX IF NOT EXISTS people_mentions ON people(mentions DESC);" +
+                    "CREATE INDEX IF NOT EXISTS episode_entities_kv ON episode_entities(value, kind, episode)");
+                if (Meta("ent.upto").Length == 0)
+                    SetMeta("ent.upto", db.Long("SELECT COALESCE(MAX(id),0) FROM episodes").ToString(CultureInfo.InvariantCulture));
                 db.Exec("PRAGMA user_version=" + SchemaVersion);
             }
             MigrateTrigram();
@@ -144,8 +149,13 @@ namespace Deskmate
             string autoKind = string.IsNullOrEmpty(kind) ? IngatStructure.Classify(exe, url, title, "") : kind;
             var ctx = new IngatContext();
             ctx.Absorb(t, title, url, "", null);
-            long id = db.Insert("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,context,channel) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                t, t, app ?? "", exe ?? "", project ?? "", title ?? "", url ?? "", autoKind, title ?? "", ctx.Encode(), channel ?? "");
+            long id = 0;
+            db.Tx(() =>
+            {
+                id = db.Insert("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,context,channel) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    t, t, app ?? "", exe ?? "", project ?? "", title ?? "", url ?? "", autoKind, title ?? "", ctx.Encode(), channel ?? "");
+                SyncEntitiesTx(id, app, project, url, ctx);
+            });
             // Deferred FTS/trigram indexing: avoids indexing brief pass-through episodes before DropTiny removes them,
             // while Search/SearchSubstring/Close always flush dirty episodes first.
             MarkDirty(id);
@@ -201,7 +211,7 @@ namespace Deskmate
 
         void TouchTx(long id, DateTime t, string title, string url, string text, IngatSnapshot snap)
         {
-            var rows = db.Query("SELECT body, kind, context, exe, title, url FROM episodes WHERE id=?", id);
+            var rows = db.Query("SELECT body, kind, context, exe, title, url, app, project FROM episodes WHERE id=?", id);
             if (rows.Count == 0) return;
             string origBody = IngatDb.Str(rows[0][0]);
             string body = origBody;
@@ -210,6 +220,8 @@ namespace Deskmate
             string exe = IngatDb.Str(rows[0][3]);
             string origTitle = IngatDb.Str(rows[0][4]);
             string origUrl = IngatDb.Str(rows[0][5]);
+            string app = IngatDb.Str(rows[0][6]);
+            string project = IngatDb.Str(rows[0][7]);
             string effTitle = !string.IsNullOrEmpty(title) ? title : origTitle;
             string effUrl = !string.IsNullOrEmpty(url) ? url : origUrl;
 
@@ -249,6 +261,7 @@ namespace Deskmate
             }
             db.Exec("UPDATE episodes SET end=?, title=CASE WHEN ?<>'' THEN ? ELSE title END, url=CASE WHEN ?<>'' THEN ? ELSE url END, kind=?, body=?, context=? WHERE id=?",
                 t, title ?? "", title ?? "", url ?? "", url ?? "", nextKind, body, nextCtx, id);
+            if (nextCtx != rawCtx || effUrl != origUrl) SyncEntitiesTx(id, app, project, effUrl, ctx);
             lock (db.Gate) EndSaved(id);
             // The open episode must be findable too, not only once it closes: reindexed at most every
             // ReindexSeconds while it grows, and always before a search reads the index
@@ -321,6 +334,7 @@ namespace Deskmate
                     if (eventHashEp == id) { eventHashEp = 0; eventHashes.Clear(); }
                     db.Exec("DELETE FROM episodes_fts WHERE rowid=?", id);
                     if (triOn) db.Exec("DELETE FROM episodes_tri WHERE rowid=?", id);
+                    db.Exec("DELETE FROM episode_entities WHERE episode=?", id);
                     db.Exec("DELETE FROM events WHERE episode=?", id);
                 }
             });
@@ -446,11 +460,13 @@ namespace Deskmate
             {
                 if (points != null || anchors != null)
                 {
-                    string raw = IngatDb.Str(db.Scalar("SELECT context FROM episodes WHERE id=?", id));
+                    var rows = db.Query("SELECT context, app, project, url FROM episodes WHERE id=?", id);
+                    string raw = rows.Count > 0 ? IngatDb.Str(rows[0][0]) : "";
                     var ctx = IngatContext.Parse(raw);
                     ctx.ApplyAi(points, anchors);
                     db.Exec("UPDATE episodes SET summary=?, kind=CASE WHEN ?<>'' THEN ? ELSE kind END, context=? WHERE id=?",
                         summary ?? "", kind ?? "", kind ?? "", ctx.Encode(), id);
+                    if (rows.Count > 0) SyncEntitiesTx(id, IngatDb.Str(rows[0][1]), IngatDb.Str(rows[0][2]), IngatDb.Str(rows[0][3]), ctx);
                 }
                 else
                 {
@@ -654,8 +670,9 @@ namespace Deskmate
         static readonly string[] IdPrefixes = { "ter", "ber", "di", "ke", "se" };
         static readonly string[] IdSuffixes = { "nya", "kan", "lah", "kah", "an" };
 
-        // Conservative: one common affix each side, and the root keeps at least 5 letters.
-        // me-/pe- are left alone: their sound changes (mengirim → kirim) need a dictionary to undo.
+        static bool IsVowel(char c) { return c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u'; }
+
+        // Conservative: Indonesian affixes (including nasalized me-/pe- rules) and light English suffixes.
         public static string IdRoot(string w)
         {
             var forms = IdForms(w);
@@ -663,15 +680,103 @@ namespace Deskmate
         }
 
         // The word without its suffix, then without its prefix too; the word itself is not included
-        static List<string> IdForms(string w)
+        public static List<string> IdForms(string w)
         {
             var forms = new List<string>();
-            foreach (char c in w) if (!char.IsLetter(c)) return forms;
-            string r = w;
+            if (string.IsNullOrEmpty(w) || w.Length < 5) return forms;
+            string lw = w.ToLowerInvariant();
+            for (int i = 0; i < lw.Length; i++) if (!char.IsLetter(lw[i])) return forms;
+            Action<string> add = f =>
+            {
+                if (f.Length >= 4 && f != lw && !forms.Contains(f)) forms.Add(f);
+            };
+
+            string r = lw;
             foreach (var s in IdSuffixes)
-                if (r.Length - s.Length >= 5 && r.EndsWith(s, StringComparison.Ordinal)) { r = r.Substring(0, r.Length - s.Length); forms.Add(r); break; }
+            {
+                // me-...-an is not an Indonesian circumfix (prevents stripping -an from roots like "menyimpan", "memesan")
+                if (s == "an" && r.StartsWith("me", StringComparison.Ordinal)) continue;
+                if (r.Length - s.Length >= 5 && r.EndsWith(s, StringComparison.Ordinal)) { r = r.Substring(0, r.Length - s.Length); add(r); break; }
+            }
+
+            bool prefixed = false;
             foreach (var p in IdPrefixes)
-                if (r.Length - p.Length >= 5 && r.StartsWith(p, StringComparison.Ordinal)) { forms.Add(r.Substring(p.Length)); break; }
+            {
+                if (r.Length - p.Length >= 5 && r.StartsWith(p, StringComparison.Ordinal))
+                {
+                    add(r.Substring(p.Length));
+                    prefixed = true;
+                    break;
+                }
+            }
+            if (!prefixed)
+            {
+                // Indonesian nasalized me-/pe- prefixes: mengirim->kirim, menulis->tulis, membuat->buat, menyimpan->simpan, pembayaran->bayar
+                if ((r.StartsWith("meng", StringComparison.Ordinal) || r.StartsWith("peng", StringComparison.Ordinal)) && r.Length >= 8)
+                {
+                    string rest = r.Substring(4);
+                    if (IsVowel(rest[0])) add("k" + rest);
+                    if (rest.Length >= 5) add(rest);
+                    prefixed = true;
+                }
+                else if ((r.StartsWith("meny", StringComparison.Ordinal) || r.StartsWith("peny", StringComparison.Ordinal)) && r.Length >= 8)
+                {
+                    string rest = r.Substring(4);
+                    if (IsVowel(rest[0])) { add("s" + rest); prefixed = true; }
+                }
+                else if ((r.StartsWith("mem", StringComparison.Ordinal) || r.StartsWith("pem", StringComparison.Ordinal)) && r.Length >= 7)
+                {
+                    string rest = r.Substring(3);
+                    char c0 = rest[0];
+                    if (IsVowel(c0)) { add("p" + rest); prefixed = true; }
+                    else if (c0 == 'b' || c0 == 'f' || c0 == 'v' || c0 == 'p') { add(rest); prefixed = true; }
+                }
+                else if ((r.StartsWith("men", StringComparison.Ordinal) || r.StartsWith("pen", StringComparison.Ordinal)) && r.Length >= 7)
+                {
+                    string rest = r.Substring(3);
+                    char c0 = rest[0];
+                    if (IsVowel(c0)) { add("t" + rest); prefixed = true; }
+                    else if (c0 == 'c' || c0 == 'd' || c0 == 'j' || c0 == 'z') { add(rest); prefixed = true; }
+                }
+                else if ((r.StartsWith("me", StringComparison.Ordinal) || r.StartsWith("pe", StringComparison.Ordinal)) && r.Length >= 7)
+                {
+                    string rest = r.Substring(2);
+                    char c0 = rest[0];
+                    if (c0 == 'l' || c0 == 'r' || c0 == 'w' || c0 == 'y' || c0 == 'm' || c0 == 'n') { add(rest); prefixed = true; }
+                }
+            }
+
+            // Conservative English suffix stemming when no Indonesian affix matched (debugging->debug, commits->commit, queries->query)
+            if (forms.Count == 0 && !prefixed)
+            {
+                if (lw.Length >= 7 && lw.EndsWith("ing", StringComparison.Ordinal))
+                {
+                    string stem = lw.Substring(0, lw.Length - 3);
+                    if (stem.Length >= 5 && stem[stem.Length - 1] == stem[stem.Length - 2] && !IsVowel(stem[stem.Length - 1]))
+                        stem = stem.Substring(0, stem.Length - 1);
+                    add(stem);
+                }
+                else if (lw.Length >= 6 && lw.EndsWith("ies", StringComparison.Ordinal))
+                {
+                    add(lw.Substring(0, lw.Length - 3) + "y");
+                }
+                else if (lw.Length >= 6 && lw.EndsWith("ied", StringComparison.Ordinal))
+                {
+                    add(lw.Substring(0, lw.Length - 3) + "y");
+                }
+                else if (lw.Length >= 6 && lw.EndsWith("ed", StringComparison.Ordinal))
+                {
+                    string stem = lw.Substring(0, lw.Length - 2);
+                    if (stem.Length >= 5 && stem[stem.Length - 1] == stem[stem.Length - 2] && !IsVowel(stem[stem.Length - 1]))
+                        stem = stem.Substring(0, stem.Length - 1);
+                    add(stem);
+                }
+                else if (lw.Length >= 5 && lw.EndsWith("s", StringComparison.Ordinal) &&
+                         !lw.EndsWith("ss", StringComparison.Ordinal) && !lw.EndsWith("us", StringComparison.Ordinal) && !lw.EndsWith("is", StringComparison.Ordinal))
+                {
+                    add(lw.Substring(0, lw.Length - 1));
+                }
+            }
             return forms;
         }
 
@@ -1123,6 +1228,7 @@ namespace Deskmate
             {
                 id = db.Insert("INSERT INTO episodes(start,end,app,exe,project,title,url,kind,body,closed) VALUES(?,?,?,?,?,?,?,?,?,1)", startUtc, endUtc, app, "", "", title, "", "meeting", text);
                 db.Exec("INSERT OR IGNORE INTO meetings(path,start,title,episode) VALUES(?,?,?,?)", path, startUtc, title, id);
+                SyncEntitiesTx(id, app, "", "", null);
                 Reindex(id);
             });
             return id;
@@ -1134,6 +1240,86 @@ namespace Deskmate
 
         public string Meta(string k) { return IngatDb.Str(db.Scalar("SELECT v FROM meta WHERE k=?", k)); }
         public void SetMeta(string k, string v) { db.Exec("INSERT OR REPLACE INTO meta(k,v) VALUES(?,?)", k, v); }
+
+        // Lightweight Entity Graph: links episodes to projects, domains, files, error codes, commands, and apps
+
+        void SyncEntitiesTx(long episode, string app, string project, string url, IngatContext ctx)
+        {
+            if (episode == 0) return;
+            Action<string, string> put = (kind, raw) =>
+            {
+                string v = (raw ?? "").Trim().ToLowerInvariant();
+                if (v.Length < 2 || v.Length > 100) return;
+                db.Exec("INSERT OR IGNORE INTO episode_entities(episode,kind,value) VALUES(?,?,?)", episode, kind, v);
+            };
+            put("project", project);
+            put("app", app);
+            put("host", IngatPrivacy.Host(url));
+            if (ctx != null)
+                for (int i = 0; i < ctx.Anchors.Count; i++) put("anchor", ctx.Anchors[i]);
+        }
+
+        // Incremental worker backfill for episodes created before schema v4
+        public bool BackfillEntities(int max)
+        {
+            long upto, through;
+            long.TryParse(Meta("ent.upto"), out upto);
+            long.TryParse(Meta("ent.through"), out through);
+            if (through >= upto) return false;
+            db.Tx(() =>
+            {
+                long last = through;
+                foreach (var r in db.Query("SELECT id, app, project, url, context FROM episodes WHERE id>? AND id<=? ORDER BY id LIMIT ?", through, upto, max))
+                {
+                    last = IngatDb.Num(r[0]);
+                    SyncEntitiesTx(last, IngatDb.Str(r[1]), IngatDb.Str(r[2]), IngatDb.Str(r[3]), IngatContext.Parse(IngatDb.Str(r[4])));
+                }
+                SetMeta("ent.through", (last == through ? upto : last).ToString(CultureInfo.InvariantCulture));
+            });
+            return true;
+        }
+
+        // O(log N) lookup of episodes linked to a concrete entity (project, file, error code, command, or domain)
+        public List<IngatEpisode> EpisodesByEntityLite(string value, DateTime fromUtc, DateTime toUtc, int limit)
+        {
+            string norm = (value ?? "").Trim().ToLowerInvariant();
+            if (norm.Length < 2) return new List<IngatEpisode>();
+            return ReadAll(db.Query(
+                "SELECT DISTINCT " + LiteColsE + " FROM episode_entities ee JOIN episodes e ON e.id=ee.episode " +
+                "WHERE ee.value=? AND ee.kind IN ('project','anchor','host') AND e.end>=? AND e.start<=? ORDER BY e.end DESC LIMIT ?",
+                norm, fromUtc, toUtc, limit));
+        }
+
+        // Co-occurring projects, files, errors, apps, and people linked with an entity across episodes
+        public Dictionary<string, object> EntityGraph(string value, int limit)
+        {
+            string norm = (value ?? "").Trim().ToLowerInvariant();
+            var d = new Dictionary<string, object> { { "entity", norm }, { "related", new object[0] }, { "people", new object[0] }, { "episodes", new object[0] } };
+            if (norm.Length < 2) return d;
+            var rel = new List<object>();
+            foreach (var r in db.Query(
+                "SELECT b.kind, b.value, COUNT(DISTINCT b.episode) AS c FROM episode_entities a " +
+                "JOIN episode_entities b ON b.episode=a.episode AND (b.value<>a.value OR b.kind<>a.kind) " +
+                "WHERE a.value=? GROUP BY b.kind, b.value ORDER BY c DESC LIMIT ?", norm, limit))
+            {
+                rel.Add(new Dictionary<string, object> { { "kind", IngatDb.Str(r[0]) }, { "value", IngatDb.Str(r[1]) }, { "episodes", IngatDb.Num(r[2]) } });
+            }
+            d["related"] = rel.ToArray();
+            var ppl = new List<object>();
+            foreach (var r in db.Query(
+                "SELECT p.name, COUNT(DISTINCT ep.episode) AS c FROM episode_entities a " +
+                "JOIN episode_people ep ON ep.episode=a.episode JOIN people p ON p.id=ep.person " +
+                "WHERE a.value=? GROUP BY p.id ORDER BY c DESC LIMIT 10", norm))
+            {
+                ppl.Add(new Dictionary<string, object> { { "name", IngatDb.Str(r[0]) }, { "episodes", IngatDb.Num(r[1]) } });
+            }
+            d["people"] = ppl.ToArray();
+            var eps = EpisodesByEntityLite(norm, DateTime.UtcNow.AddYears(-5), DateTime.UtcNow.AddMinutes(1), Math.Min(20, Math.Max(1, limit)));
+            var ej = new object[eps.Count];
+            for (int i = 0; i < eps.Count; i++) ej[i] = eps[i].ToJson(false);
+            d["episodes"] = ej;
+            return d;
+        }
 
         // Raw events go first; episodes keep the gist much longer
         public void Retain(int eventDays, int episodeDays)
@@ -1160,11 +1346,14 @@ namespace Deskmate
             // A meeting keeps a blank tombstone row: the transcript file stays in rapat\, and the scan would bring it back otherwise
             db.Exec("UPDATE meetings SET episode=0, title='' WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
             db.Exec("DELETE FROM episode_people WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
+            db.Exec("DELETE FROM episode_entities WHERE episode IN (SELECT id FROM episodes WHERE end<?)", cut);
             db.Exec("DELETE FROM episodes WHERE end<?", cut);
             // Messages follow episodes; people and promises stay while anything still points at them
             db.Exec("DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE t<?)", cut);
             db.Exec("DELETE FROM messages WHERE t<?", cut);
             db.Exec("DELETE FROM commitments WHERE done=1 AND t<?", cut);
+            db.Exec("DELETE FROM item_vectors WHERE kind='fact' AND item_id NOT IN (SELECT id FROM facts WHERE status='active')");
+            db.Exec("DELETE FROM item_vectors WHERE kind='conv' AND item_id NOT IN (SELECT id FROM conversations)");
         }
 
         // Forget a stretch of time entirely
@@ -1187,9 +1376,11 @@ namespace Deskmate
             db.Exec("UPDATE meetings SET episode=0, title='' WHERE episode IN (" + ids + ")", fromUtc, toUtc);
             db.Exec("DELETE FROM events WHERE t>=? AND t<=?", fromUtc, toUtc);
             db.Exec("DELETE FROM episode_people WHERE episode IN (" + ids + ")", fromUtc, toUtc);
+            db.Exec("DELETE FROM episode_entities WHERE episode IN (" + ids + ")", fromUtc, toUtc);
             db.Exec("DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE t>=? AND t<=?)", fromUtc, toUtc);
             db.Exec("DELETE FROM messages WHERE t>=? AND t<=?", fromUtc, toUtc);
             db.Exec("DELETE FROM commitments WHERE t>=? AND t<=?", fromUtc, toUtc);
+            db.Exec("DELETE FROM item_vectors WHERE kind='conv' AND item_id IN (SELECT id FROM conversations WHERE last>=? AND last<=?)", fromUtc, toUtc);
             int n = db.Exec("DELETE FROM episodes WHERE end>=? AND start<=?", fromUtc, toUtc);
             var from = fromUtc.ToLocalTime().Date;
             for (var d = from; d <= toUtc.ToLocalTime().Date; d = d.AddDays(1))
@@ -1211,8 +1402,8 @@ namespace Deskmate
             db.Tx(() =>
             {
                 if (triOn) db.Exec("DELETE FROM episodes_tri");
-                db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;DELETE FROM chunks;UPDATE meetings SET episode=0, title='';DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM meta WHERE k LIKE 'facts.folded.%';DELETE FROM facts;DELETE FROM facts_fts;" +
-                    "DELETE FROM messages_fts;DELETE FROM messages;DELETE FROM commitments;DELETE FROM conversations;DELETE FROM episode_people;DELETE FROM people");
+                db.Script("DELETE FROM episodes_fts;DELETE FROM embeddings;DELETE FROM chunks;DELETE FROM item_vectors;UPDATE meetings SET episode=0, title='';DELETE FROM events;DELETE FROM episodes;DELETE FROM daily;DELETE FROM meta WHERE k LIKE 'facts.folded.%';DELETE FROM facts;DELETE FROM facts_fts;" +
+                    "DELETE FROM messages_fts;DELETE FROM messages;DELETE FROM commitments;DELETE FROM conversations;DELETE FROM episode_people;DELETE FROM episode_entities;DELETE FROM people");
             });
             db.ClearStatements();
             db.Exec("VACUUM");

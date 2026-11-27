@@ -20,6 +20,15 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.21.0",
+                Items = new[]
+                {
+                    new[] { "Ingatan lebih cerdas mencari & menghubungkan", "Pencarian kini memahami fakta & percakapan secara semantik, mendukung imbuhan Indonesia/Inggris lebih luas, mengambil potongan teks paling relevan, serta mengelompokkan aktivitas lintas aplikasi menjadi alur kerja (workstream) dan graf entitas.", "" },
+                    new[] { "Konteks layar & embedding jauh lebih cepat", "Embedding episode, fakta, dan percakapan dikirim sekaligus dalam satu batch, pencarian vektor int8 lebih kencang, editor/terminal dibaca dengan jalur cepat, OCR fokus pada area isi utama, dan jendela split-screen pendamping ikut dikenali.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.20.1",
                 Items = new[]
                 {

@@ -8,6 +8,11 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.21.0
+            AddOnce(en, "Ingatan lebih cerdas mencari & menghubungkan", "Smarter Memory search & connections");
+            AddOnce(en, "Pencarian kini memahami fakta & percakapan secara semantik, mendukung imbuhan Indonesia/Inggris lebih luas, mengambil potongan teks paling relevan, serta mengelompokkan aktivitas lintas aplikasi menjadi alur kerja (workstream) dan graf entitas.", "Search now understands facts and conversations semantically, supports richer Indonesian/English stemming, extracts the most relevant passages, and groups cross-app activity into workstreams and an entity graph.");
+            AddOnce(en, "Konteks layar & embedding jauh lebih cepat", "Faster screen context & embeddings");
+            AddOnce(en, "Embedding episode, fakta, dan percakapan dikirim sekaligus dalam satu batch, pencarian vektor int8 lebih kencang, editor/terminal dibaca dengan jalur cepat, OCR fokus pada area isi utama, dan jendela split-screen pendamping ikut dikenali.", "Episode, fact, and conversation embeddings are now batched in a single request, int8 vector search is faster, editors/terminals use a fast UIA path, OCR targets the main viewport, and side-by-side split-screen windows are recognized.");
             // What's new 2.20.1
             AddOnce(en, "Ingatan lebih cepat & akurat", "Faster & more accurate Memory");
             AddOnce(en, "Pembacaan konteks layar (UI Automation & OCR), pencarian memori hibrida, dan database SQLite lokal kini lebih cepat, lebih akurat membaca fokus/URL/error, dan jauh lebih hemat baca-tulis disk.", "Screen context capture (UI Automation & OCR), hybrid memory search, and the local SQLite database are now faster, more accurate at reading focus/URLs/errors, and much lighter on disk I/O.");
