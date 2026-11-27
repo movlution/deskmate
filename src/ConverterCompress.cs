@@ -28,6 +28,7 @@ namespace Deskmate
         // Smaller copy beside the original
         static void Compress(ConvJob job, string src, ConvKind kind, string dir, string name)
         {
+            var o = job.Opts;
             string stem = name + " (" + Lang.T("kompres") + ")";
             switch (kind)
             {
@@ -35,8 +36,8 @@ namespace Deskmate
                     string pdf = UniqueFile(dir, stem, ".pdf");
                     Shrunk(job, src, pdf, delegate
                     {
-                        // About 150 dpi on a full page
-                        PdfLite.Compress(src, pdf, 1800, 68, k => { if (job.Cancelled) throw new OperationCanceledException(); job.Part = k; job.Ping(); });
+                        // About 200, 150, or 100 dpi on a full page
+                        PdfLite.Compress(src, pdf, o.By(2400, 1800, 1200), o.By(80L, 68L, 55L), k => { if (job.Cancelled) throw new OperationCanceledException(); job.Part = k; job.Ping(); });
                         Verify(src, pdf);
                     });
                     break;
@@ -48,26 +49,27 @@ namespace Deskmate
                         string img = UniqueFile(dir, stem, alpha ? ".png" : ".jpg");
                         Shrunk(job, src, img, delegate
                         {
-                            double k = Math.Min(1.0, 2560.0 / Math.Max(bmp.Width, bmp.Height));
+                            double k = Math.Min(1.0, o.By(3840.0, 2560.0, 1920.0) / Math.Max(bmp.Width, bmp.Height));
                             using (var small = Scaled(bmp, Math.Max(1, (int)Math.Round(bmp.Width * k)), Math.Max(1, (int)Math.Round(bmp.Height * k))))
                             {
                                 if (alpha) small.Save(img, ImageFormat.Png);
-                                else File.WriteAllBytes(img, Jpeg(small, 78));
+                                else File.WriteAllBytes(img, Jpeg(small, o.By(86L, 78L, 65L)));
                             }
                         });
                     }
                     break;
                 case ConvKind.Video:
                     string mp4 = UniqueFile(dir, stem, ".mp4");
-                    // Long side at most 1080p's width, even sizes for H.264
+                    // Long side at most 1080p's width unless a resolution is picked; even sizes for H.264
+                    string fit = o.Res > 0 ? ScaleFilter(o) : " -vf \"scale='if(gt(iw,ih),trunc(min(1920,iw)/2)*2,-2)':'if(gt(iw,ih),-2,trunc(min(1920,ih)/2)*2)'\"";
                     Shrunk(job, src, mp4, delegate
                     {
-                        Ffmpeg(job, src, mp4, "-c:v libx264 -preset medium -crf 28 -vf \"scale='if(gt(iw,ih),trunc(min(1920,iw)/2)*2,-2)':'if(gt(iw,ih),-2,trunc(min(1920,ih)/2)*2)'\" -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart");
+                        Ffmpeg(job, src, mp4, "-c:v libx264 -preset medium -crf " + o.By(24, 28, 32) + fit + " -pix_fmt yuv420p -c:a aac -b:a " + o.By("160k", "128k", "96k") + " -movflags +faststart");
                     });
                     break;
                 case ConvKind.Audio:
                     string mp3 = UniqueFile(dir, stem, ".mp3");
-                    Shrunk(job, src, mp3, delegate { Ffmpeg(job, src, mp3, "-vn -c:a libmp3lame -b:a 128k"); });
+                    Shrunk(job, src, mp3, delegate { Ffmpeg(job, src, mp3, "-vn -c:a libmp3lame -b:a " + o.By("192k", "128k", "96k")); });
                     break;
                 default:
                     throw new NotSupportedException(Lang.T("Berkas ini tidak bisa dikompres"));

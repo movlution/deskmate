@@ -125,14 +125,45 @@ namespace Deskmate
         // One PDF from many, pages in order
         public static void Merge(IList<string> files, string dst, Action<float> progress)
         {
+            var picks = new List<KeyValuePair<PdfFile, int>>();
+            foreach (var f in files)
+            {
+                var file = PdfFile.Open(f);
+                if (file.Encrypted) throw new InvalidOperationException(Path.GetFileName(f) + ": " + Lang.T("PDF dikunci kata sandi"));
+                picks.Add(new KeyValuePair<PdfFile, int>(file, -1));
+            }
+            Assemble(picks, dst, progress);
+        }
+
+        // One PDF per page; dstFor names page i. Returns the files made
+        public static List<string> Split(string src, Func<int, string> dstFor, Action<float> progress)
+        {
+            var file = PdfFile.Open(src);
+            if (file.Encrypted) throw new InvalidOperationException(Lang.T("PDF dikunci kata sandi"));
+            int n = file.Pages().Count;
+            if (n < 2) throw new InvalidOperationException(Lang.T("PDF ini cuma satu halaman"));
+            var made = new List<string>();
+            for (int i = 0; i < n; i++)
+            {
+                string dst = dstFor(i);
+                Assemble(new List<KeyValuePair<PdfFile, int>> { new KeyValuePair<PdfFile, int>(file, i) }, dst, null);
+                made.Add(dst);
+                if (progress != null) progress((float)(i + 1) / n);
+            }
+            return made;
+        }
+
+        // Pages copied into a fresh file: every page of a source (-1), or just one
+        static void Assemble(List<KeyValuePair<PdfFile, int>> picks, string dst, Action<float> progress)
+        {
             var doc = new Doc();
             int pagesNum = doc.Add(null);
             var kids = new List<object>();
             string version = "1.4";
-            for (int f = 0; f < files.Count; f++)
+            for (int f = 0; f < picks.Count; f++)
             {
-                var file = PdfFile.Open(files[f]);
-                if (file.Encrypted) throw new InvalidOperationException(Path.GetFileName(files[f]) + ": " + Lang.T("PDF dikunci kata sandi"));
+                var file = picks[f].Key;
+                int only = picks[f].Value;
                 if (string.CompareOrdinal(file.Version, version) > 0) version = file.Version;
                 var imp = new Importer(file, doc);
                 var pages = file.Pages();
@@ -140,8 +171,12 @@ namespace Deskmate
                 MapTree(file, file.Root.Get("Pages"), imp, pagesNum, pages);
                 var rootRef = file.Trailer.Get("Root") as PdfRef;
                 if (rootRef != null) imp.Map[rootRef.Num] = 0;
-                foreach (var pg in pages)
+                // Pages left out stay out, even where a link points at them
+                if (only >= 0) for (int i = 0; i < pages.Count; i++) if (i != only) imp.Map[pages[i].Key.Num] = 0;
+                for (int i = 0; i < pages.Count; i++)
                 {
+                    if (only >= 0 && i != only) continue;
+                    var pg = pages[i];
                     var made = imp.Ref(pg.Key) as PdfRef;
                     if (made == null) continue;
                     imp.Drain();
@@ -153,7 +188,7 @@ namespace Deskmate
                     dict.Set("Parent", new PdfRef(pagesNum, 0));
                     kids.Add(made);
                 }
-                if (progress != null) progress(0.9f * (f + 1) / files.Count);
+                if (progress != null) progress(0.9f * (f + 1) / picks.Count);
             }
             var pagesDict = new PdfDict();
             pagesDict.Set("Type", new PdfName("Pages"));

@@ -11,9 +11,22 @@ namespace Deskmate
     {
         const char IcoConvert = '', IcoAlert = '';
         const float ConvertW = 420, ConvPad = 18, ConvChipH = 34, ConvGap = 8, ConvHead = 72;
+        const float ConvOptH = 28, ConvOptGap = 6, ConvOptLabelW = 104;
         const int ConvCols = 4;
         List<ShelfItem> convItems;
         List<ConvTarget> convTargets;
+        // Chip cells, laid out once per box; long labels take two
+        RectangleF[] convChipRects = new RectangleF[0];
+        int convChipRowCount = 1;
+        // Option rows that matter for these files
+        List<ConvOptRow> convOptRows = new List<ConvOptRow>();
+
+        class ConvOptRow
+        {
+            public string Key, Label;
+            public string[] Choices;
+            public int Default;
+        }
         ConvJob convJob;
         DateTime convSeenUtc, convDoneUtc;
         // Worked out once per box, not per frame
@@ -49,11 +62,15 @@ namespace Deskmate
                 list.Add(new ShelfItem { Path = full, Name = Path.GetFileName(full.TrimEnd('\\')), Id = ++shelfIds, AddedUtc = DateTime.UtcNow });
             }
             if (list.Count == 0) { ShowInfo(IcoConvert, Lang.T("Tidak ada yang bisa diubah"), "", true); return; }
+            // Merged pages follow the names, page2 before page10
+            list.Sort((a, b) => Converter.CompareNatural(a.Path, b.Path));
             DropConvertItems();
             convItems = list;
             for (int i = 0; i < Math.Min(2, list.Count); i++) LoadThumb(list[i]);
             convTargets = Converter.Targets(ConvPaths());
             foreach (var t in convTargets) t.Ok = t.Ready;
+            LayoutConvChips();
+            convOptRows = ConvOptionRows();
             convKind = Converter.KindName(ConvPaths());
             convMissing = ConvMissing();
             convBytes = ConvBytes();
@@ -82,7 +99,7 @@ namespace Deskmate
         void StartConvert(ConvTarget target)
         {
             if (ConvRunning || convItems == null) return;
-            var job = new ConvJob { Files = ConvPaths(), Target = target };
+            var job = new ConvJob { Files = ConvPaths(), Target = target, Opts = ConvOptsNow() };
             convIndexSeen = 0;
             convKnownSeen = job.Files.Count > 1;
             job.Changed += delegate { ConvChanged(job); };
@@ -140,12 +157,177 @@ namespace Deskmate
 
         float ConvertHeight()
         {
-            if (convJob == null) return ConvHead + ConvChipRows() * (ConvChipH + ConvGap) - ConvGap + (convMissing.Length > 0 ? 30 : 0) + ConvPad;
+            if (convJob == null) return ConvChipsBottom() + (convMissing.Length > 0 ? 30 : 0) + ConvOptsHeight() + ConvPad;
             if (!convJob.Finished) return 100;
             return ConvHead + ConvChipH + ConvPad;
         }
 
-        int ConvChipRows() { return Math.Max(1, (convTargets.Count + ConvCols - 1) / ConvCols); }
+        float ConvChipsBottom() { return ConvHead + convChipRowCount * (ConvChipH + ConvGap) - ConvGap; }
+
+        // Label too long for one cell: it takes two
+        static int ConvSpan(ConvTarget t) { return t.Label.Length > 10 ? 2 : 1; }
+
+        // Rows fill in order; a later short chip fills a gap a wide one left
+        void LayoutConvChips()
+        {
+            int n = convTargets.Count;
+            var rects = new RectangleF[n];
+            var left = new List<int>();
+            for (int i = 0; i < n; i++) left.Add(i);
+            float cell = (ConvertW - 2 * ConvPad - (ConvCols - 1) * ConvGap) / ConvCols;
+            int row = 0;
+            while (left.Count > 0)
+            {
+                int col = 0;
+                for (int k = 0; k < left.Count && col < ConvCols;)
+                {
+                    int i = left[k], span = Math.Min(ConvCols, ConvSpan(convTargets[i]));
+                    if (col + span > ConvCols) { k++; continue; }
+                    rects[i] = new RectangleF(ConvPad + col * (cell + ConvGap), ConvHead + row * (ConvChipH + ConvGap), span * cell + (span - 1) * ConvGap, ConvChipH);
+                    col += span;
+                    left.RemoveAt(k);
+                }
+                row++;
+            }
+            convChipRects = rects;
+            convChipRowCount = Math.Max(1, row);
+        }
+
+        // Options
+
+        bool ConvOptsOpen { get { return settings.GetBool("convert.options", false); } }
+
+        List<ConvOptRow> ConvOptionRows()
+        {
+            var rows = new List<ConvOptRow>();
+            bool image = false, video = false, quality = false, toPdf = false;
+            foreach (var i in convItems)
+            {
+                var k = Converter.KindOf(i.Path);
+                if (k == ConvKind.Image) image = true;
+                if (k == ConvKind.Video) video = true;
+                if (k == ConvKind.Image || k == ConvKind.Video || k == ConvKind.Audio || k == ConvKind.Pdf || k == ConvKind.Doc || k == ConvKind.Slides) quality = true;
+            }
+            foreach (var t in convTargets) if (t.Id == "pdf" || t.Id == "pdf1") toPdf = true;
+            if (quality) rows.Add(new ConvOptRow { Key = "quality", Label = Lang.T("Kualitas"), Choices = new[] { Lang.T("Terbaik"), Lang.T("Seimbang"), Lang.T("Kecil") }, Default = 1 });
+            if (image) rows.Add(new ConvOptRow { Key = "scale", Label = Lang.T("Ukuran"), Choices = new[] { Lang.T("Asli"), "75%", "50%", "25%" } });
+            if (image && toPdf) rows.Add(new ConvOptRow { Key = "page", Label = Lang.T("Halaman PDF"), Choices = new[] { "A4", "Letter", Lang.T("Pas gambar") } });
+            if (video) rows.Add(new ConvOptRow { Key = "res", Label = Lang.T("Resolusi"), Choices = new[] { Lang.T("Asli"), "1080p", "720p", "480p" } });
+            rows.Add(new ConvOptRow { Key = "out", Label = Lang.T("Simpan ke"), Choices = new[] { Lang.T("Samping asli"), Lang.T("Folder lain…") } });
+            return rows;
+        }
+
+        string ConvOutDir { get { return settings.Get("convert.outdir", ""); } }
+
+        int ConvOptValue(ConvOptRow row)
+        {
+            if (row.Key == "out") return ConvOutDir.Length > 0 ? 1 : 0;
+            return Math.Max(0, Math.Min(row.Choices.Length - 1, settings.GetInt("convert." + row.Key, row.Default)));
+        }
+
+        string ConvOptChoice(ConvOptRow row, int i)
+        {
+            // The picked folder shows by name
+            if (row.Key == "out" && i == 1 && ConvOutDir.Length > 0)
+            {
+                string name = Path.GetFileName(ConvOutDir.TrimEnd('\\'));
+                return name.Length > 0 ? name : ConvOutDir;
+            }
+            return row.Choices[i];
+        }
+
+        void SetConvOpt(ConvOptRow row, int i)
+        {
+            if (row.Key == "out")
+            {
+                if (i == 0) settings.Remove("convert.outdir");
+                else
+                {
+                    string start = ConvOutDir.Length > 0 ? ConvOutDir : convItems != null && convItems.Count > 0 ? Path.GetDirectoryName(convItems[0].Path.TrimEnd('\\')) : "";
+                    string picked = FolderPicker.Show(Handle, Lang.T("Pilih folder hasil"), start);
+                    if (string.IsNullOrEmpty(picked)) return;
+                    settings.Set("convert.outdir", picked);
+                }
+            }
+            else settings.Set("convert." + row.Key, i);
+            settings.Save();
+            convSeenUtc = DateTime.UtcNow;
+            Kick();
+        }
+
+        ConvOpts ConvOptsNow()
+        {
+            string dir = ConvOutDir;
+            return new ConvOpts
+            {
+                Quality = Math.Max(0, Math.Min(2, settings.GetInt("convert.quality", 1))),
+                Scale = Math.Max(0, Math.Min(3, settings.GetInt("convert.scale", 0))),
+                Page = Math.Max(0, Math.Min(2, settings.GetInt("convert.page", 0))),
+                Res = Math.Max(0, Math.Min(3, settings.GetInt("convert.res", 0))),
+                OutDir = dir.Length > 0 && Directory.Exists(dir) ? dir : ""
+            };
+        }
+
+        float ConvOptsHeight()
+        {
+            if (convOptRows.Count == 0) return 0;
+            return 10 + ConvOptH + (ConvOptsOpen ? ConvOptGap + convOptRows.Count * (ConvOptH + ConvOptGap) - ConvOptGap : 0);
+        }
+
+        // Closed: what differs from the defaults
+        string ConvOptsSummary()
+        {
+            var parts = new List<string>();
+            foreach (var row in convOptRows)
+            {
+                int v = ConvOptValue(row);
+                if (v != row.Default) parts.Add(row.Label + " " + ConvOptChoice(row, v));
+            }
+            return parts.Count == 0 ? Lang.T("Bawaan") : string.Join(" · ", parts.ToArray());
+        }
+
+        void DrawConvOptions(float w, float y)
+        {
+            if (convOptRows.Count == 0) return;
+            bool open = ConvOptsOpen;
+            var bar = new RectangleF(ConvPad, y, w - 2 * ConvPad, ConvOptH);
+            AddHit(bar, "convOpts", delegate { settings.Toggle("convert.options", false); convSeenUtc = DateTime.UtcNow; Kick(); });
+            if (Hover("convOpts")) p.FillRound(bar, ConvOptH / 2, Pressed("convOpts") ? p.T.FillPressed : p.T.FillHover);
+            float cy = bar.Y + bar.Height / 2, tx = bar.X + 12;
+            string head = Lang.T("Opsi");
+            p.Text(head, Ink.Semi(12.5f), p.T.Text, tx, cy, 120, StringAlignment.Near);
+            float sx = tx + p.Measure(head, Ink.Semi(12.5f)) + 10;
+            if (!open) p.Text(ConvOptsSummary(), Ink.Text(12f), p.T.Sub, sx, cy, bar.Right - 30 - sx, StringAlignment.Near);
+            p.Symbol(open ? Sym.ChevronUp : Sym.ChevronDown, bar.Right - 16, cy, 8f, Hover("convOpts") ? p.T.Text : p.T.Sub);
+            if (!open) return;
+            float ry = bar.Bottom + ConvOptGap;
+            foreach (var row in convOptRows)
+            {
+                p.Text(row.Label, Ink.Text(12.5f), p.T.Sub, ConvPad + 12, ry + ConvOptH / 2, ConvOptLabelW - 16, StringAlignment.Near);
+                ConvSegment(new RectangleF(ConvPad + ConvOptLabelW, ry, w - 2 * ConvPad - ConvOptLabelW, ConvOptH), row);
+                ry += ConvOptH + ConvOptGap;
+            }
+        }
+
+        // One track, the chosen part solid
+        void ConvSegment(RectangleF track, ConvOptRow row)
+        {
+            int n = row.Choices.Length, on = ConvOptValue(row);
+            p.Module(track, track.Height / 2, p.T.Fill);
+            float sw = track.Width / n;
+            for (int i = 0; i < n; i++)
+            {
+                var r = new RectangleF(track.X + i * sw + 2, track.Y + 2, sw - 4, track.Height - 4);
+                string id = "convopt_" + row.Key + i;
+                int pick = i;
+                var at = row;
+                AddHit(r, id, delegate { SetConvOpt(at, pick); });
+                bool sel = i == on;
+                if (sel) p.FillRound(r, r.Height / 2, p.T.Text);
+                else if (Hover(id)) p.FillRound(r, r.Height / 2, Pressed(id) ? p.T.FillPressed : p.T.FillHover);
+                p.Text(ConvOptChoice(row, i), Ink.Semi(12f), sel ? p.T.Bg : Hover(id) ? p.T.Text : p.T.Sub, r.X + r.Width / 2, r.Y + r.Height / 2, r.Width - 10, StringAlignment.Center);
+            }
+        }
 
         // Tools behind the dimmed chips
         string ConvMissing()
@@ -225,19 +407,19 @@ namespace Deskmate
             string title = convItems.Count == 1 ? convItems[0].Name : Lang.F("{0} berkas", convItems.Count);
             ConvHeader(w, title, convBytes > 0 ? convKind + " · " + Fmt.Bytes(convBytes) : convKind);
             ConvClose(w);
-            float chipW = (w - 2 * ConvPad - (ConvCols - 1) * ConvGap) / ConvCols;
-            for (int i = 0; i < convTargets.Count; i++)
+            for (int i = 0; i < convTargets.Count && i < convChipRects.Length; i++)
             {
                 var t = convTargets[i];
-                var r = new RectangleF(ConvPad + (i % ConvCols) * (chipW + ConvGap), ConvHead + (i / ConvCols) * (ConvChipH + ConvGap), chipW, ConvChipH);
-                Pill(r, "conv_" + t.Id, t.Label, PillKind.Secondary, delegate { StartConvert(t); }, t.Ok);
+                Pill(convChipRects[i], "conv_" + t.Id, t.Label, PillKind.Secondary, delegate { StartConvert(t); }, t.Ok);
             }
+            float y = ConvChipsBottom();
             string missing = convMissing;
             if (missing.Length > 0)
             {
-                float y = ConvHead + ConvChipRows() * (ConvChipH + ConvGap) - ConvGap + 18;
-                p.Text(Lang.F("Yang redup perlu {0} terpasang", missing), Ink.Text(12f), p.T.Sub, ConvPad, y, w - 2 * ConvPad, StringAlignment.Near);
+                p.Text(Lang.F("Yang redup perlu {0} terpasang", missing), Ink.Text(12f), p.T.Sub, ConvPad, y + 18, w - 2 * ConvPad, StringAlignment.Near);
+                y += 30;
             }
+            DrawConvOptions(w, y + 10);
         }
 
         void DrawConvertRun(float w, ConvJob job, DateTime now)
@@ -307,9 +489,12 @@ namespace Deskmate
                 p.Circle(cx, cy, 18, p.T.Fill);
                 p.Icon(IcoAlert, 15f, p.T.Negative, cx, cy);
             }
+            string folder = job.Opts.OutDir.Length > 0 ? Path.GetFileName(job.Opts.OutDir.TrimEnd('\\')) : "";
+            if (job.Opts.OutDir.Length > 0 && folder.Length == 0) folder = job.Opts.OutDir;
             string detail = job.Errors.Count > 0 ? ConvError(job)
                 : ConvSmall(job) ? Lang.T("Berkas asli tetap dipakai")
                 : job.BytesIn > 0 ? Lang.F("{0} jadi {1}", Fmt.Bytes(job.BytesIn), Fmt.Bytes(job.BytesOut))
+                : folder.Length > 0 ? (ShelfOn ? Lang.F("Di folder {0}, juga di Rak", folder) : Lang.F("Di folder {0}", folder))
                 : ShelfOn ? Lang.T("Di samping berkas asli, juga di Rak") : Lang.T("Di samping berkas asli");
             ConvHeader(w, ConvTitle(job), detail);
             ConvClose(w);
