@@ -51,6 +51,7 @@ namespace Deskmate
             TestDualZoneStampAndInMemoryOcr();
             TestLiveUiaSnapshotAndChat();
             TestUrlInlineAndDbOptimizations();
+            TestNextGenMemoryAlgorithms();
             TestLiveServiceAndMcp();
             return "Ingatan checks passed";
         }
@@ -1195,6 +1196,144 @@ namespace Deskmate
             Assert(bsw.ElapsedMilliseconds < 10000, "DB throughput stayed fast (" + bsw.ElapsedMilliseconds + "ms)");
         }
 
+        static void TestNextGenMemoryAlgorithms()
+        {
+            // 1. Indonesian me-/pe- nasalized stemmer & conservative English suffixes
+            Assert(IngatStore.IdRoot("mengirim") == "kirim" && IngatStore.IdRoot("mengirimkan") == "kirim", "meng- k-drop: " + IngatStore.IdRoot("mengirim"));
+            Assert(IngatStore.IdRoot("menulis") == "tulis", "men- t-drop: " + IngatStore.IdRoot("menulis"));
+            Assert(IngatStore.IdRoot("membuat") == "buat" && IngatStore.IdRoot("pembayaran") == "bayar", "mem-/pem-: " + IngatStore.IdRoot("pembayaran"));
+            Assert(IngatStore.IdRoot("menyimpan") == "simpan", "meny- s-drop: " + IngatStore.IdRoot("menyimpan"));
+            Assert(IngatStore.IdRoot("debugging") == "debug", "EN -ing double consonant: " + IngatStore.IdRoot("debugging"));
+            Assert(IngatStore.IdRoot("commits") == "commit" && IngatStore.IdRoot("queries") == "query", "EN plural/ies: " + IngatStore.IdRoot("queries"));
+
+            // 2. Relevant snippet extraction finds deep match window & semantic chunk window
+            var pad = new StringBuilder();
+            for (int i = 0; i < 60; i++) pad.Append("Baris pembuka panjang mengenai konfigurasi rutin nomor ").Append(i).Append(". ");
+            pad.Append("Terjadi ERR_CONNECTION_REFUSED pada port 8443 saat memuat layanan lokal. ");
+            for (int i = 0; i < 40; i++) pad.Append("Baris penutup standar setelah kejadian nomor ").Append(i).Append(". ");
+            string longBody = pad.ToString();
+            string snip = IngatBrain.RelevantExcerpt(longBody, new List<string> { "err_connection_refused", "8443" }, 220);
+            Assert(snip.StartsWith("… ", StringComparison.Ordinal) && snip.Contains("ERR_CONNECTION_REFUSED") && snip.Contains("8443"),
+                "RelevantExcerpt pulls matching middle window: " + snip);
+            string semSnip = IngatBrain.RelevantExcerpt(longBody, new List<string> { "tidakada" }, 220, 2);
+            Assert(semSnip.StartsWith("… ", StringComparison.Ordinal) && !semSnip.Contains("nomor 0."),
+                "RelevantExcerpt jumps to semantic bestChunk offset: " + semSnip);
+
+            // 3. Batch embedding parser preserves index order
+            string err;
+            var batch = Ai.ParseEmbedBatch("{\"data\":[{\"index\":1,\"embedding\":[0,1]},{\"index\":0,\"embedding\":[1,0]}]}", 2, out err);
+            Assert(batch != null && batch.Count == 2 && Math.Abs(batch[0][0] - 1f) < 1e-6 && Math.Abs(batch[1][1] - 1f) < 1e-6, "ParseEmbedBatch orders by index");
+
+            // 4. Int8 x Int8 quantized dot product keeps cosine close
+            var rng = new Random(7);
+            var a = new float[768];
+            var b = new float[768];
+            double na = 0, nb = 0;
+            for (int i = 0; i < 768; i++) { a[i] = (float)(rng.NextDouble() - 0.5); b[i] = a[i] * 0.7f + (float)(rng.NextDouble() - 0.5) * 0.5f; na += a[i] * a[i]; nb += b[i] * b[i]; }
+            for (int i = 0; i < 768; i++) { a[i] /= (float)Math.Sqrt(na); b[i] /= (float)Math.Sqrt(nb); }
+            float sa, sb;
+            var qa = IngatStore.QuantizeForCheck(a, out sa);
+            var qb = IngatStore.QuantizeForCheck(b, out sb);
+            double exact = IngatStore.Dot(a, b);
+            double q8 = IngatStore.DotQ8(qa, sa, qb, sb);
+            Assert(Math.Abs(exact - q8) < 0.025, "int8x8 cosine error: " + Math.Abs(exact - q8));
+
+            // 5. Split-screen companion geometry & viewport MainTextLength
+            Assert(IngatText.IsSideBySide(new Rectangle(0, 0, 960, 1040), new Rectangle(960, 0, 960, 1040)), "side-by-side split screen detected");
+            Assert(!IngatText.IsSideBySide(new Rectangle(0, 0, 1920, 1040), new Rectangle(100, 100, 800, 600)), "occluded window behind fullscreen is not companion");
+            var vSnap = new IngatSnapshot { App = "Chrome", Title = "Figma Canvas", Companion = "VS Code · mail budi@contoh.com" };
+            for (int i = 0; i < 8; i++) vSnap.NavLines.Add("Sidebar navigation label item " + i);
+            vSnap.RedactAll();
+            Assert(vSnap.MainTextLength() == 0 && !vSnap.Companion.Contains("budi@contoh.com") && Json.Str(vSnap.ToJson(), "companion").Length > 0,
+                "MainTextLength isolates viewport and Companion is redacted in JSON");
+
+            // 6. Semantic item vectors (facts & conversations), Entity Graph, and Workstreams
+            string path = TempDb();
+            using (var store = new IngatStore(path))
+            {
+                var now = DateTime.UtcNow;
+                // Facts semantic search
+                store.ApplyFactOps(new List<IngatFactOp>
+                {
+                    Op("add", 0, "Mengembangkan aplikasi desktop Deskmate"),
+                    Op("add", 0, "Biasa minum kopi hitam tanpa gula"),
+                    Op("add", 0, "Rapat mingguan tiap Selasa"),
+                    Op("add", 0, "Memakai Windows Terminal untuk build"),
+                }, "2026-11-27");
+                var pendingFacts = store.FactsNeedingVectors("m", 10);
+                Assert(pendingFacts.Count == 4, "all active facts queued for item vectors: " + pendingFacts.Count);
+                var fInputs = new List<IngatStore.ItemVecInput>();
+                long coffeeId = 0;
+                foreach (var kv in pendingFacts)
+                {
+                    bool isCoffee = kv.Value.Contains("kopi");
+                    if (isCoffee) coffeeId = kv.Key;
+                    fInputs.Add(new IngatStore.ItemVecInput { Id = kv.Key, Hash = IngatStore.ItemTextHash(kv.Value), Vec = isCoffee ? new float[] { 0f, 1f } : new float[] { 1f, 0f } });
+                }
+                store.SaveItemVectors("fact", "m", fInputs);
+                Assert(store.HasItemVectors("m") && !store.HasItemVectors("other-model"), "HasItemVectors tracks available model vectors");
+                Assert(store.FactsNeedingVectors("m", 10).Count == 0, "embedded facts not re-queued");
+                var semFacts = store.FactsFor("minuman kafein", 4, "m", new float[] { 0f, 1f });
+                Assert(semFacts.Contains("Biasa minum kopi hitam tanpa gula"), "semantic fact recall works without literal word match");
+                store.DeleteItemVector("fact", coffeeId);
+                Assert(store.NearestItems("fact", "m", new float[] { 0f, 1f }, 5, 0.5).Count == 0, "deleted item vector removed from cache");
+
+                // Conversation semantic search
+                long rina = store.Person("Rina", now);
+                long conv = store.Conversation("WhatsApp", "Rina", "person", rina, now);
+                store.SetDigest(conv, "Rina menanyakan invoice proyek bulan November");
+                var pendingConvs = store.ConversationsNeedingVectors("m", 10);
+                Assert(pendingConvs.Count == 1 && pendingConvs[0].Key == conv, "digested conversation queued for vector");
+                store.SaveItemVectors("conv", "m", new List<IngatStore.ItemVecInput>
+                {
+                    new IngatStore.ItemVecInput { Id = conv, Hash = IngatStore.ItemTextHash(pendingConvs[0].Value), Vec = new float[] { 0f, 1f } }
+                });
+                var semConvs = store.NearestItems("conv", "m", new float[] { 0f, 1f }, 3, 0.5);
+                Assert(semConvs.Count == 1 && semConvs[0].Key == conv, "semantic conversation recall hits Rina");
+
+                // Entity graph & workstreams across VS Code + Chrome Docs + separate Spotify stretch
+                long e1 = store.Open(now.AddMinutes(-60), "Visual Studio Code", "code", "Deskmate", "IngatText.cs - Deskmate", "", "coding");
+                store.Touch(e1, now.AddMinutes(-45), "IngatText.cs - Deskmate", "", "Error CS0103 di src/IngatText.cs");
+                store.LinkPerson(e1, rina);
+                store.Close(e1, now.AddMinutes(-45));
+
+                long e2 = store.Open(now.AddMinutes(-43), "Google Chrome", "chrome", "", "Win32 UIA Docs", "https://learn.microsoft.com/en-us/win32", "reading");
+                store.Touch(e2, now.AddMinutes(-35), "Win32 UIA Docs", "https://learn.microsoft.com/en-us/win32", "Perbaikan src/IngatText.cs UIA");
+                store.Close(e2, now.AddMinutes(-35));
+
+                long e3 = store.Open(now.AddMinutes(-5), "Spotify", "spotify", "", "Chill Playlist", "", "media");
+                store.Close(e3, now.AddMinutes(-1));
+
+                var graph = store.EntityGraph("deskmate", 15);
+                Assert(Json.Arr(graph, "episodes").Length == 1 && Json.Arr(graph, "people").Length == 1 && Json.Arr(graph, "related").Length >= 2,
+                    "entity graph links project, anchors, and people");
+                Assert(store.EpisodesByEntityLite("cs0103", now.AddHours(-2), now, 5).Count == 1, "EpisodesByEntityLite finds error anchor");
+
+                var ws = IngatStructure.BuildWorkstreams(store.TimelineLite(now.AddHours(-2), now, 20));
+                Assert(ws.Length == 2 && (int)Json.Num(ws[0], "episodes", 0) == 2 && Json.Arr(ws[0], "apps").Length == 2,
+                    "workstreams cluster related VS Code + Docs episodes and separate unrelated media: " + ws.Length);
+
+                // AddMeeting closes the episode and registers its app entity
+                long mId = store.AddMeeting("C:\\rapat\\sync.txt", now.AddMinutes(-20), now.AddMinutes(-10), "Zoom", "Sync Mingguan", "Pembahasan arsitektur");
+                var mEp = store.Get(mId);
+                Assert(mEp != null && mEp.Closed && mEp.Kind == "meeting", "AddMeeting inserts closed meeting episode");
+
+                // Forget cleans up episode_entities and item_vectors
+                store.Forget(now.AddHours(-2), now);
+                Assert(store.EpisodesByEntityLite("cs0103", now.AddHours(-2), now, 5).Count == 0, "Forget cleans up episode_entities");
+                Assert(store.NearestItems("conv", "m", new float[] { 0f, 1f }, 3, 0.5).Count == 0, "Forget cleans up conversation item_vectors");
+            }
+
+            using (var db = new IngatDb(path))
+            {
+                Assert(db.Long("PRAGMA user_version") >= 4, "schema v4 persisted");
+                var planSb = new StringBuilder();
+                foreach (var r in db.Query("EXPLAIN QUERY PLAN SELECT DISTINCT e.id FROM episode_entities ee JOIN episodes e ON e.id=ee.episode WHERE ee.value='deskmate' AND ee.kind IN ('project','anchor','host')"))
+                    for (int i = 0; i < r.Length; i++) planSb.Append(IngatDb.Str(r[i])).Append(' ');
+                Assert(planSb.ToString().Contains("episode_entities_kv"), "entity lookup uses episode_entities_kv index: " + planSb);
+            }
+        }
+
         static void TestLiveServiceAndMcp()
         {
             string exe = typeof(IngatCheck).Assembly.Location;
@@ -1236,6 +1375,9 @@ namespace Deskmate
                     var sr = IngatClient.Get("/search?q=wasapi", 3000);
                     Assert(sr != null && Json.Obj(sr, "structured") != null, "live /search includes structured grouping");
 
+                    var ent = IngatClient.Get("/entity?q=deskmate", 3000);
+                    Assert(ent != null && ent.ContainsKey("episodes") && ent.ContainsKey("related"), "live /entity returns graph payload");
+
                     var ask = IngatClient.Call("POST", "/ask", new Dictionary<string, object> { { "q", "apa yang saya kerjakan hari ini?" } }, 5000);
                     Assert(ask != null && ask.ContainsKey("answer") && Json.Obj(ask, "structured") != null, "live /ask returns structured metadata");
 
@@ -1258,7 +1400,7 @@ namespace Deskmate
                         mcp.StandardInput.Close();
                         string mcpOut = mcp.StandardOutput.ReadToEnd();
                         mcp.WaitForExit(5000);
-                        Assert(mcpOut.Contains("get_screen_context") && mcpOut.Contains("current_context"), "MCP exposes get_screen_context tool");
+                        Assert(mcpOut.Contains("get_screen_context") && mcpOut.Contains("current_context") && mcpOut.Contains("get_entity_graph"), "MCP exposes get_screen_context and get_entity_graph tools");
                         Assert(mcpOut.Contains("inboxWaiting") && !mcpOut.Contains("\"isError\":true"), "MCP get_screen_context call succeeded: " + mcpOut);
                     }
                 }

@@ -485,22 +485,31 @@ namespace Deskmate
                     else
                     {
                         text = snap.FormatText(IngatText.MaxChars);
-                        // Nothing readable via UIA: in-memory placed OCR structures the window without disk writes
-                        if (snap.MainLines.Count == 0 || text.Length < 80)
+                        int mainChars = snap.MainTextLength();
+                        // Trigger viewport OCR when MainLines are empty/sparse even if sidebar/toolbar UIA had >80 chars
+                        if (snap.MainLines.Count == 0 || mainChars < 60)
                         {
                             if (settings.GetBool("ingat.ocr", true) && !LowPower() && !Fullscreen(hwnd))
                             {
                                 if (shot == null) shot = IngatText.Snap(hwnd);
                                 if (shot != null)
                                 {
-                                    string seen = IngatText.OcrPlaced(shot);
-                                    if (seen.Length > text.Length)
+                                    bool hasSidebar = snap.NavLines.Count >= 3;
+                                    string seen = IngatText.OcrViewport(shot, hasSidebar);
+                                    if (seen.Length > 0)
                                     {
-                                        snap.Source = "ocr";
-                                        snap.MainLines.Clear();
-                                        IngatStructure.FromPlacedOcr(seen, snap, false);
-                                        text = snap.FormatText(IngatText.MaxChars);
-                                        source = "ocr";
+                                        var ocrSnap = new IngatSnapshot { Title = snap.Title, Url = snap.Url };
+                                        IngatStructure.FromPlacedOcr(seen, ocrSnap, false);
+                                        if (ocrSnap.MainTextLength() > mainChars)
+                                        {
+                                            snap.Source = snap.MainLines.Count > 0 ? "uia+ocr" : "ocr";
+                                            snap.MainLines.Clear();
+                                            snap.MainLines.AddRange(ocrSnap.MainLines);
+                                            for (int i = 0; i < ocrSnap.Headings.Count; i++) IngatContext.AddUnique(snap.Headings, ocrSnap.Headings[i], 8);
+                                            for (int i = 0; i < ocrSnap.Anchors.Count; i++) IngatContext.AddUnique(snap.Anchors, ocrSnap.Anchors[i], 12);
+                                            text = snap.FormatText(IngatText.MaxChars);
+                                            source = "ocr";
+                                        }
                                     }
                                 }
                             }
@@ -547,6 +556,8 @@ namespace Deskmate
                 snap.Title = cleanTitle;
                 if (url.Length > 0) snap.Url = url;
                 if (snap.Kind.Length == 0 || snap.Kind == "other") snap.Kind = kind;
+                if (snap.Companion.Length == 0 && !Fullscreen(hwnd))
+                    snap.Companion = FindCompanion(hwnd, blockedApps, blockedSites);
                 snap.RedactAll();
             }
 
@@ -954,6 +965,33 @@ namespace Deskmate
             if (exe.Length == 0 || IsSelfProcess(pid, exe)) return false;
             if (exe == "explorer" && (t == "Program Manager" || t == "Windows Input Experience")) return false;
             return true;
+        }
+
+        // Fast Win32 Z-order peek (<0.5ms, zero UIA): detects a visibly side-by-side split-screen companion window
+        string FindCompanion(IntPtr activeHwnd, HashSet<string> blockedApps, HashSet<string> blockedSites)
+        {
+            WRECT ar;
+            if (!GetWindowRect(activeHwnd, out ar)) return "";
+            var activeRect = Rectangle.FromLTRB(ar.L, ar.T, ar.R, ar.B);
+            IntPtr cur = GetTopWindow(IntPtr.Zero);
+            for (int n = 0; cur != IntPtr.Zero && n < 20; n++, cur = GetWindow(cur, 2))
+            {
+                if (cur == activeHwnd) continue;
+                int cpid;
+                string cexe;
+                if (!IsUsableUserWindow(cur, out cpid, out cexe)) continue;
+                WRECT cr;
+                if (!GetWindowRect(cur, out cr)) continue;
+                var candRect = Rectangle.FromLTRB(cr.L, cr.T, cr.R, cr.B);
+                if (!IngatText.IsSideBySide(activeRect, candRect)) continue;
+                string ct = Title(cur);
+                if (IngatPrivacy.BlockedApp(cexe, blockedApps) || IngatPrivacy.PrivateWindow(ct, "", blockedSites) || IngatText.ChromiumPrivate(cur, ct, cexe))
+                    continue;
+                string capp = AppName(cexe);
+                string cproj = IngatPrivacy.Project(cexe, ct);
+                return capp + (cproj.Length > 0 ? " [" + cproj + "]" : "") + " · " + Fmt.OneLine(IngatPrivacy.Redact(ct), 90);
+            }
+            return "";
         }
 
         // Foreground window first; if Deskmate's own Pet/Suruh overlay holds focus during a query, inspect the active user window behind it

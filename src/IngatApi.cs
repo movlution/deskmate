@@ -235,6 +235,8 @@ namespace Deskmate
                 case "GET /facts":
                     // "facts" stays a list of strings for older clients; "detail" adds strength, sources, and kind
                     return new Dictionary<string, object> { { "facts", store.Facts().ToArray() }, { "detail", store.FactDetails().ToArray() } };
+                case "GET /entity":
+                    return store.EntityGraph(Get(q, "q"), Clamp(Get(q, "limit"), 15, 1, 50));
                 case "POST /ask":
                     svc.EnsureFresh(900);
                     return svc.Brain.Ask(Fmt.OneLine(Json.Str(body, "q"), 500), svc.Now());

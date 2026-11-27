@@ -11,7 +11,7 @@ namespace Deskmate
     sealed class IngatSnapshot
     {
         public string Source = "window";
-        public string App = "", Exe = "", Project = "", Title = "", Url = "", Kind = "", Focus = "";
+        public string App = "", Exe = "", Project = "", Title = "", Url = "", Kind = "", Focus = "", Companion = "";
         public readonly List<string> Headings = new List<string>();
         public readonly List<string> MainLines = new List<string>();
         public readonly List<string> NavLines = new List<string>();
@@ -27,6 +27,7 @@ namespace Deskmate
             Secret = true;
             Source = "window";
             Focus = "";
+            Companion = "";
             Draft = null;
             DraftField = "";
             Headings.Clear();
@@ -40,10 +41,19 @@ namespace Deskmate
             Title = IngatPrivacy.Redact(Title);
             Url = IngatPrivacy.CleanUrl(Url);
             Focus = IngatPrivacy.Redact(Focus);
+            Companion = IngatPrivacy.Redact(Companion);
             RedactList(Headings);
             RedactList(MainLines);
             RedactList(NavLines);
             RedactList(Anchors);
+        }
+
+        // Character count of real viewport content only (excludes sidebar navigation and headers)
+        public int MainTextLength()
+        {
+            int n = 0;
+            for (int i = 0; i < MainLines.Count; i++) n += MainLines[i].Length;
+            return n;
         }
 
         static void RedactList(List<string> list)
@@ -96,6 +106,8 @@ namespace Deskmate
                 string nav = JoinCap(NavLines, " · ", Math.Min(360, maxChars - sb.Length - 14));
                 if (nav.Length > 0) sb.Append("[Navigasi] ").Append(nav).Append('\n');
             }
+            if (Companion.Length > 0 && sb.Length + 30 < maxChars)
+                sb.Append("[Pendamping] ").Append(Fmt.OneLine(Companion, Math.Min(160, maxChars - sb.Length - 14))).Append('\n');
             string res = sb.ToString().TrimEnd();
             return res.Length > maxChars ? res.Substring(0, maxChars) : res;
         }
@@ -133,6 +145,7 @@ namespace Deskmate
             };
             if (Url.Length > 0) d["url"] = Url;
             if (Focus.Length > 0) d["focus"] = Focus;
+            if (Companion.Length > 0) d["companion"] = Companion;
             if (Headings.Count > 0) d["headings"] = Headings.ToArray();
             if (Anchors.Count > 0) d["anchors"] = Anchors.ToArray();
             var hi = new List<string>();
@@ -566,7 +579,8 @@ namespace Deskmate
                      k.StartsWith("[Fokus] ", StringComparison.Ordinal) ||
                      k.StartsWith("[Bagian] ", StringComparison.Ordinal) ||
                      k.StartsWith("[Konteks] ", StringComparison.Ordinal) ||
-                     k.StartsWith("[Navigasi] ", StringComparison.Ordinal)))
+                     k.StartsWith("[Navigasi] ", StringComparison.Ordinal) ||
+                     k.StartsWith("[Pendamping] ", StringComparison.Ordinal)))
                     continue;
                 if (!known.Add(k)) continue;
                 if (added.Length > 0) added.Append('\n');
@@ -738,7 +752,100 @@ namespace Deskmate
                 { "byProject", byProject.ToArray() },
                 { "byKind", byKind.ToArray() },
                 { "anchors", allAnchors.ToArray() },
+                { "workstreams", BuildWorkstreams(eps) },
             };
+        }
+
+        // Clusters nearby episodes across apps (e.g. VS Code + Terminal + Docs browser) into coherent workstreams
+        public static object[] BuildWorkstreams(List<IngatEpisode> eps)
+        {
+            if (eps == null || eps.Count == 0) return new object[0];
+            var sorted = new List<IngatEpisode>(eps);
+            sorted.Sort((a, b) => a.StartUtc.CompareTo(b.StartUtc));
+
+            var clusters = new List<Dictionary<string, object>>();
+            DateTime curStart = DateTime.MinValue, curEnd = DateTime.MinValue;
+            string curProject = "", curKind = "";
+            var curApps = new List<string>();
+            var curAnchors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var curAnchorList = new List<string>();
+            int curCount = 0;
+
+            Action flush = () =>
+            {
+                if (curCount == 0) return;
+                string label = curProject.Length > 0 ? curProject : curApps.Count > 0 ? curApps[0] : curKind;
+                var item = new Dictionary<string, object>
+                {
+                    { "name", label },
+                    { "start", curStart.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture) },
+                    { "end", curEnd.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture) },
+                    { "minutes", Math.Max(1, (int)Math.Round((curEnd - curStart).TotalMinutes)) },
+                    { "episodes", curCount },
+                    { "apps", curApps.ToArray() },
+                };
+                if (curAnchorList.Count > 0) item["anchors"] = curAnchorList.ToArray();
+                clusters.Add(item);
+            };
+
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                var ep = sorted[i];
+                var ctx = IngatContext.Parse(ep.Context);
+                string kind = ep.Kind.Length > 0 ? ep.Kind : Classify(ep.Exe, ep.Url, ep.Title, "");
+                bool related = false;
+                if (curCount > 0)
+                {
+                    double gapMin = (ep.StartUtc - curEnd).TotalMinutes;
+                    if (gapMin <= 15)
+                    {
+                        if (curProject.Length > 0 && ep.Project.Length > 0 && string.Equals(curProject, ep.Project, StringComparison.OrdinalIgnoreCase))
+                            related = true;
+                        else if (curAnchors.Count > 0)
+                        {
+                            for (int a = 0; a < ctx.Anchors.Count; a++)
+                                if (curAnchors.Contains(ctx.Anchors[a])) { related = true; break; }
+                        }
+                        // Companion research/terminal switches inside a coding/writing stretch within 5 min join the active workstream
+                        if (!related && gapMin <= 5 &&
+                            ((curKind == "coding" && (kind == "coding" || kind == "reading")) ||
+                             (curKind == "reading" && kind == "coding") ||
+                             (curKind == "writing" && (kind == "writing" || kind == "reading"))))
+                        {
+                            if (curProject.Length == 0 || ep.Project.Length == 0 || string.Equals(curProject, ep.Project, StringComparison.OrdinalIgnoreCase))
+                                related = true;
+                        }
+                    }
+                }
+                if (!related)
+                {
+                    flush();
+                    curStart = ep.StartUtc;
+                    curEnd = ep.EndUtc;
+                    curProject = ep.Project;
+                    curKind = kind;
+                    curApps.Clear();
+                    curAnchors.Clear();
+                    curAnchorList.Clear();
+                    curCount = 0;
+                }
+                else
+                {
+                    if (ep.EndUtc > curEnd) curEnd = ep.EndUtc;
+                    if (curProject.Length == 0 && ep.Project.Length > 0) curProject = ep.Project;
+                    if (curKind == "reading" && kind == "coding") curKind = "coding";
+                }
+                curCount++;
+                if (ep.App.Length > 0) IngatContext.AddUnique(curApps, ep.App, 6);
+                for (int a = 0; a < ctx.Anchors.Count; a++)
+                {
+                    curAnchors.Add(ctx.Anchors[a]);
+                    IngatContext.AddUnique(curAnchorList, ctx.Anchors[a], 8);
+                }
+            }
+            flush();
+            if (clusters.Count > 16) clusters.RemoveRange(0, clusters.Count - 16);
+            return clusters.ToArray();
         }
     }
 }
