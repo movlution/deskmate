@@ -425,7 +425,7 @@ namespace Deskmate
         {
             if (controlMode == 2 || controlMode == 3)
                 return Clamp(PanelTop + 2 + CtlSubHeadH + ControlSubRows() * CtlSubRowPitch + 14, 240, 356);
-            float h = PanelTop + 2 + (controlMode == 1 ? CtlRowH + Ink.ModuleGap + DeviceListH() + MixerH() : CtlGridH + Ink.ModuleGap + CtlTimerH);
+            float h = PanelTop + 2 + (controlMode == 1 ? CtlRowH + Ink.ModuleGap + DeviceListH() + MixerH() : CtlGridH);
             return Math.Min(MaxH, h + Ink.ModuleInset);
         }
 
@@ -485,8 +485,6 @@ namespace Deskmate
             SoundSlider(new RectangleF(x1, ry + dy, col, sh));
             p.Alpha = keep * RowIn(3, now, out dy);
             DeviceChip(new RectangleF(x1, y + CtlGridH - CtlRowH + dy, col, CtlRowH));
-            p.Alpha = keep * RowIn(4, now, out dy);
-            DrawTimerModule(new RectangleF(x0, y + CtlGridH + gap + dy, full, CtlTimerH), now, live);
             p.Alpha = keep;
         }
 

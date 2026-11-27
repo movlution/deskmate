@@ -224,17 +224,17 @@ namespace Deskmate
                         int place = island.placeMode;
                         if (place == PlaceTop)
                             add(Row(Lang.T("Geser"), null, Slider(-ShiftMax, ShiftMax, 5, settings.GetInt("position", 0), v => v == 0 ? Lang.T("tengah") : (v < 0 ? Lang.T("kiri") : Lang.T("kanan")) + " " + Math.Abs(v) + "%",
-                                v => { island.SetLayout("position", v); Preview(); })));
+                                v => { island.SetLayout("position", v, true); Preview(); })));
                         else if (place == PlaceTopLeft || place == PlaceTopRight)
-                            add(Row(Lang.T("Jarak dari pojok"), null, Slider(0, 320, 4, (int)island.placeInset, v => v + " px", v => island.SetPlaceValue("place.inset", v))));
+                            add(Row(Lang.T("Jarak dari pojok"), null, Slider(0, 320, 4, (int)island.placeInset, v => v + " px", v => island.SetPlaceValue("place.inset", v, true))));
                         else
-                            add(Row(Lang.T("Tinggi"), Lang.T("Dari tepi atas layar"), Slider(0, 100, 2, (int)Math.Round(island.placeY * 100), v => v + "%", v => island.SetPlaceValue("place.y", v))));
+                            add(Row(Lang.T("Tinggi"), Lang.T("Dari tepi atas layar"), Slider(0, 100, 2, (int)Math.Round(island.placeY * 100), v => v + "%", v => island.SetPlaceValue("place.y", v, true))));
                         add(Row(Lang.T("Geser dengan mouse"), Lang.T("Seret island untuk memindahkannya di sepanjang tepi layar"), Switch("place.drag", true, null)));
                         cap(Lang.T("Bentuk"));
                         add(Row(Lang.T("Menempel di tepi layar"), Lang.T("Bentuk island yang menyatu dengan tepi"), Switch("dock", true, null)));
                         add(Row(Lang.T("Garis cahaya"), Lang.T("Progres timer, unduhan, dan cas di tepi island; kilau saat pesan masuk"), Switch("edge.light", true, null)));
                         cap(Lang.T("Ukuran dan layar"));
-                        add(Row(Lang.T("Lebar panel"), null, Slider(440, 640, 8, (int)island.PanelW, v => v + " px", v => { island.SetLayout("panel.width", v); Preview(); })));
+                        add(Row(Lang.T("Lebar panel"), null, Slider(440, 640, 8, (int)island.PanelW, v => v + " px", v => { island.SetLayout("panel.width", v, true); Preview(); })));
                         var screens = Screen.AllScreens;
                         var labels = new string[screens.Length + 1];
                         labels[0] = Lang.T("Semua layar");
@@ -264,7 +264,7 @@ namespace Deskmate
                         add(Row(Lang.T("Notifikasi saat mini"), null, Switch("mini.notif", true, null)));
                         cap(Lang.T("Panel"));
                         bool byClick = settings.Get("panel.open", "hover") == "click";
-                        var delay = Slider(150, 800, 50, settings.GetInt("panel.delay", 330), v => v + " ms", v => { settings.Set("panel.delay", v); settings.Save(); });
+                        var delay = Slider(150, 800, 50, settings.GetInt("panel.delay", 330), v => v + " ms", v => { settings.Set("panel.delay", v); settings.SaveDeferred(); });
                         delay.Enabled = !byClick;
                         add(Row(Lang.T("Buka panel"), null, Seg(new[] { Lang.T("Arahkan kursor"), Lang.T("Klik") }, byClick ? 1 : 0, i =>
                         {
@@ -310,13 +310,25 @@ namespace Deskmate
                         });
                         add(Row(Lang.T("Tambah aplikasi"), Lang.T("Atur perilaku Island saat aplikasi di depan"), pick));
                         cap(Lang.T("Saat Diam"));
-                        add(Row(Lang.T("Mata"), null, Switch("island.eyes", true, on => { island.SetFlag("island.eyes", on); BeginInvoke(new Action(Relayout)); })));
+                        KitSwitch follow = null;
+                        KitRow followRow = null;
+                        add(Row(Lang.T("Mata"), null, Switch("island.eyes", true, on =>
+                        {
+                            island.SetFlag("island.eyes", on);
+                            if (follow != null && !follow.IsDisposed) follow.Enabled = on;
+                            if (followRow != null && !followRow.IsDisposed)
+                            {
+                                followRow.Detail = on ? Lang.T("Mata melirik ke arah kursor") : Lang.T("Nyalakan Mata dulu");
+                                followRow.Invalidate();
+                            }
+                        })));
                         // Only means something while eyes show
-                        var follow = Switch("island.follow", true, null);
+                        follow = Switch("island.follow", true, null);
                         follow.Enabled = settings.GetBool("island.eyes", true);
-                        add(Row(Lang.T("Ikuti kursor"), follow.Enabled ? Lang.T("Mata melirik ke arah kursor") : Lang.T("Nyalakan Mata dulu"), follow));
+                        followRow = Row(Lang.T("Ikuti kursor"), follow.Enabled ? Lang.T("Mata melirik ke arah kursor") : Lang.T("Nyalakan Mata dulu"), follow);
+                        add(followRow);
                         // The face also decides what the mini island shows, so it stays usable
-                        var face = Seg(new[] { Lang.T("Mata"), Lang.T("Jam") }, settings.Get("idle.face", "eyes") == "clock" ? 1 : 0, i => { island.SetChoice("idle.face", i == 1 ? "clock" : "eyes"); BeginInvoke(new Action(Relayout)); });
+                        var face = Seg(new[] { Lang.T("Mata"), Lang.T("Jam") }, settings.Get("idle.face", "eyes") == "clock" ? 1 : 0, i => island.SetChoice("idle.face", i == 1 ? "clock" : "eyes"));
                         face.Enabled = island.EyesAllowed;
                         add(Row(Lang.T("Saat diam"), face.Enabled ? Lang.T("Isi island saat tidak ada aktivitas, juga di mini") : Lang.T("Tema ini tidak memakai mata"), face));
                         cap(Lang.T("Isi samping"));
@@ -328,7 +340,6 @@ namespace Deskmate
                         }
                         break;
                     case "tabs":
-                    case "home":
                         string style = settings.Get("tabs.style", "auto");
                         add(Row(Lang.T("Gaya tab"), Lang.T("Otomatis: titik bila tab banyak"),
                             Seg(new[] { Lang.T("Otomatis"), Lang.T("Ikon"), Lang.T("Titik") }, style == "icons" ? 1 : style == "dots" ? 2 : 0, i => island.SetChoice("tabs.style", i == 1 ? "icons" : i == 2 ? "dots" : "auto"))));
@@ -352,7 +363,6 @@ namespace Deskmate
                         // Shown in order, hidden after
                         var cards = new List<HomeCard>(island.homeCards);
                         foreach (HomeCard c in Enum.GetValues(typeof(HomeCard))) if (!cards.Contains(c)) cards.Add(c);
-                        tabFocus.Clear();
                         foreach (var c in cards) add(CardRow(c));
                         break;
                     case "dock":
@@ -367,12 +377,9 @@ namespace Deskmate
                     case "work":
                         add(Row(Lang.T("Tugas dan catatan"), Lang.T("Buka daftar tugas dan editor catatan lokal"),
                             Button(Lang.T("Buka"), true, delegate { island.OpenWork(); })));
-                        add(Row(Lang.T("Tombol di dock"), Lang.T("Satu tombol untuk mengakses Tugas dan catatan"), Switch("dockbar.work", true, null)));
-                        add(Row(Lang.T("Pintasan keyboard"), island.HotkeyText(WorkHotkey),
-                            Button(Lang.T("Atur pintasan"), false, delegate { Go("keys"); })));
                         cap(Lang.T("Fokus & Prioritas"));
                         add(Row(Lang.T("Tahan notifikasi saat fokus"), Lang.T("Notifikasi biasa ditunda sampai sesi fokus selesai"), Switch("focus.hold", true, null)));
-                        add(Row(Lang.T("Istirahat fokus"), null, Slider(1, 30, 1, settings.GetInt("focus.break", 5), v => v + Lang.T(" menit"), v => { settings.Set("focus.break", v); settings.Save(); })));
+                        add(Row(Lang.T("Istirahat fokus"), null, Slider(1, 30, 1, settings.GetInt("focus.break", 5), v => v + Lang.T(" menit"), v => { settings.Set("focus.break", v); settings.SaveDeferred(); })));
                         add(Row(Lang.T("3 Prioritas Hari Ini"), Lang.F("{0}/{1} selesai hari ini", island.PriorityDoneCount, island.PriorityCount), Button(Lang.T("Tambah"), false, delegate { island.PromptAddPriority(); })));
                         KitButton resetFocusBtn = null;
                         KitRow resetFocusRow = null;
@@ -417,11 +424,6 @@ namespace Deskmate
                         resetFocusRow = Row(Lang.T("Statistik Fokus"), resetFocusNote, resetFocusBtn);
                         add(resetFocusRow);
                         break;
-                    case "music":
-                        add(Row(Lang.T("Lirik di island"), null, Switch("lyrics", true, null)));
-                        add(Row(Lang.T("Cari lirik online"), Lang.T("Judul, artis, dan durasi ke LRCLIB, cadangannya NetEase"), Switch("lyrics.online", true, null)));
-                        add(Row(Lang.T("Visualizer"), null, Switch("visualizer", true, null)));
-                        break;
                     case "messages":
                         cap(Lang.T("Aturan notifikasi aplikasi"));
                         var notifApps = island.NotifApps(selectedNotifAppId, selectedNotifAppName);
@@ -440,13 +442,25 @@ namespace Deskmate
                             add(Row(app.Value, island.NotifAppRuleStatus(app.Key), ruleButton));
                         }
                         cap(Lang.T("Pengaturan umum"));
-                        add(Row(Lang.T("Notifikasi pesan"), null, Switch("notif", true, on => { island.SetFlag("notif", on); Relayout(); })));
-                        var body = Switch("notif.content", true, null);
+                        KitSwitch body = null;
+                        KitRow bodyRow = null;
+                        add(Row(Lang.T("Notifikasi pesan"), null, Switch("notif", true, on =>
+                        {
+                            island.SetFlag("notif", on);
+                            if (body != null && !body.IsDisposed) body.Enabled = on;
+                            if (bodyRow != null && !bodyRow.IsDisposed)
+                            {
+                                bodyRow.Detail = on ? "" : Lang.T("Ikut notifikasi pesan");
+                                bodyRow.Invalidate();
+                            }
+                        })));
+                        body = Switch("notif.content", true, null);
                         body.Enabled = settings.GetBool("notif", true);
-                        add(Row(Lang.T("Tampilkan isi pesan"), body.Enabled ? null : Lang.T("Ikut notifikasi pesan"), body));
+                        bodyRow = Row(Lang.T("Tampilkan isi pesan"), body.Enabled ? null : Lang.T("Ikut notifikasi pesan"), body);
+                        add(bodyRow);
                         bool deskmateBanner = settings.Get("notif.banner", "auto") == "deskmate";
                         add(Row(Lang.T("Banner pesan"), deskmateBanner ? Lang.T("Deskmate selalu muncul; matikan banner Windows supaya tidak dobel") : Lang.T("Deskmate muncul hanya untuk aplikasi yang banner Windows-nya mati"),
-                            Seg(new[] { Lang.T("Otomatis"), "Deskmate" }, deskmateBanner ? 1 : 0, i => { settings.Set("notif.banner", i == 1 ? "deskmate" : "auto"); settings.Save(); Relayout(); })));
+                            Seg(new[] { Lang.T("Otomatis"), "Deskmate" }, deskmateBanner ? 1 : 0, i => { settings.Set("notif.banner", i == 1 ? "deskmate" : "auto"); settings.Save(); RefreshContent(); })));
                         // Deskmate first: one click turns Windows banners off, one click brings them back
                         int muted = settings.Get("notif.muted", "").Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries).Length;
                         if (muted == 0)
@@ -455,12 +469,12 @@ namespace Deskmate
                                 {
                                     int n = island.MakeDeskmatePrimary();
                                     island.ShowInfo('', n > 0 ? Lang.F("Banner Windows dimatikan untuk {0} aplikasi", n) : Lang.T("Banner Windows sudah mati"), Lang.T("Semua notifikasi lewat Deskmate"), true);
-                                    Relayout();
+                                    RefreshContent();
                                 })));
                         else
                             add(Row(Lang.T("Deskmate penerima utama"), Lang.F("Banner Windows dimatikan untuk {0} aplikasi", muted),
-                                Button(Lang.T("Kembalikan banner Windows"), false, delegate { island.RestoreWindowsBanners(); Relayout(); })));
-                        var doubled = island.DoubledApps();
+                                Button(Lang.T("Kembalikan banner Windows"), false, delegate { island.RestoreWindowsBanners(); RefreshContent(); })));
+                        var doubled = indexing ? new List<string>() : island.DoubledApps();
                         if (deskmateBanner && doubled.Count > 0)
                             add(Row(Lang.T("Banner Windows masih nyala"), string.Join(", ", doubled.ToArray()), Button(Lang.T("Buka pengaturan Windows"), false, delegate { try { Process.Start("ms-settings:notifications"); } catch (Exception ex) { Log.Write("ms-settings: " + ex.Message); } })));
                         add(ListRow(Lang.T("Aplikasi chat tambahan"), Lang.T("Nama aplikasi dipisah koma, Enter menyimpan"), "notif.apps", "Element, Zalo"));
@@ -477,7 +491,6 @@ namespace Deskmate
                         add(Row("Caps Lock", Lang.T("HUD saat ditekan, penanda selama nyala"), Switch("keys.caps", true, null)));
                         add(Row("Num Lock, Scroll Lock", Lang.T("HUD saat ditekan"), Switch("keys.num", false, null)));
                         add(Row(Lang.T("Bahasa input"), Lang.T("HUD saat layout keyboard berganti"), Switch("keys.lang", true, null)));
-                        add(Row(Lang.T("Kustomisasi gamifikasi"), Lang.T("Suara, Fever Mode, penalti, XP, dan Sprint 30 detik"), Button(Lang.T("Buka"), false, delegate { Go("combo"); })));
                         cap(Lang.T("Perangkat"));
                         int[] unplugAt = { 0, 80, 85, 90 };
                         add(Row(Lang.T("Ingatkan cabut charger"), Lang.T("Menjaga umur baterai"), Popup(new[] { Lang.T("Mati"), "80%", "85%", "90%" }, Math.Max(0, Array.IndexOf(unplugAt, settings.GetInt("battery.unplug", 0))), i => { settings.Set("battery.unplug", unplugAt[i]); settings.Save(); })));
@@ -490,7 +503,7 @@ namespace Deskmate
                         break;
                     case "combo":
                         cap(Lang.T("Umum"));
-                        add(Row(Lang.T("Combo Ketikan"), Lang.T("Hitungan combo, peringkat, dan efek seru saat mengetik cepat"), Switch("keys.combo", false, on => { island.SetFlag("keys.combo", on); island.SyncComboHook(); Relayout(); })));
+                        add(Row(Lang.T("Combo Ketikan"), Lang.T("Hitungan combo, peringkat, dan efek seru saat mengetik cepat"), Switch("keys.combo", false, on => { island.SetFlag("keys.combo", on); island.SyncComboHook(); })));
                         add(Row(Lang.T("Overdrive / Fever Mode"), Lang.T("Efek api, multiplier 2x/4x, dan pendaran tepi saat 100x+"), Switch("keys.combo.fever", true, on => { island.SetFlag("keys.combo.fever", on); island.ReloadComboSettings(); })));
                         add(Row(Lang.T("Finisher tombol Enter"), Lang.T("Gelombang kejut & partikel saat tekan Enter di 25x+"), Switch("keys.combo.enter", true, on => { island.SetFlag("keys.combo.enter", on); island.ReloadComboSettings(); })));
                         cap(Lang.T("Suara ketikan"));
@@ -506,7 +519,7 @@ namespace Deskmate
                         int penAt = Math.Max(0, Array.IndexOf(penIds, settings.Get("keys.combo.penalty", "shield")));
                         add(Row(Lang.T("Mode penalti"), Lang.T("Perilaku tombol Backspace saat combo berjalan; 25 ketikan bersih memberi Perfect Chain"), Popup(penNames, penAt, i => { settings.Set("keys.combo.penalty", penIds[i]); settings.Save(); island.ReloadComboSettings(); })));
                         cap(Lang.T("Level, XP & Target Harian"));
-                        add(Row(Lang.T("Level, XP & Achievement"), Lang.T("Catat XP, target harian, dan lencana pencapaian"), Switch("keys.combo.rpg", true, on => { island.SetFlag("keys.combo.rpg", on); island.ReloadComboSettings(); Relayout(); })));
+                        add(Row(Lang.T("Level, XP & Achievement"), Lang.T("Catat XP, target harian, dan lencana pencapaian"), Switch("keys.combo.rpg", true, on => { island.SetFlag("keys.combo.rpg", on); island.ReloadComboSettings(); })));
                         int[] charGoals = { 2000, 5000, 10000, 20000 };
                         string[] charGoalLabels = { "2.000", "5.000", "10.000", "20.000" };
                         int charAt = Math.Max(0, Array.IndexOf(charGoals, settings.GetInt("keys.combo.quest.chars", 5000)));
@@ -587,7 +600,7 @@ namespace Deskmate
                         add(Row(Lang.T("Riwayat clipboard"), Lang.T("Hanya di memori"), Switch("clipboard", false, null)));
                         add(Row(Lang.T("Preview screenshot"), Lang.T("Gambar yang disalin tampil di island"), Switch("shots", true, null)));
                         cap(Lang.T("Downloads"));
-                        add(Row(Lang.T("Rapikan Downloads"), Lang.T("Berkas lepas dipindah ke folder per jenis; bisa diurungkan 1 jam"), Switch("tidy", false, on => { island.SetFlag("tidy", on); Relayout(); })));
+                        add(Row(Lang.T("Rapikan Downloads"), Lang.T("Berkas lepas dipindah ke folder per jenis; bisa diurungkan 1 jam"), Switch("tidy", false, on => { island.SetFlag("tidy", on); })));
                         add(Row(Lang.T("Susunan folder"), Lang.T("Folder lama tidak diubah"), Seg(new[] { Lang.T("Per jenis"), Lang.T("Tahun, lalu jenis") }, settings.Get("tidy.layout", "type") == "year" ? 1 : 0, i => { settings.Set("tidy.layout", i == 1 ? "year" : "type"); settings.Save(); })));
                         int[] nudgeAt = { 0, 5, 15, 30 };
                         add(Row(Lang.T("Tawarkan saat"), Lang.T("Jumlah berkas lepas sebelum Deskmate bertanya"), Popup(new[] { Lang.T("Tidak pernah"), Lang.F("{0} berkas", 5), Lang.F("{0} berkas", 15), Lang.F("{0} berkas", 30) },
@@ -597,30 +610,37 @@ namespace Deskmate
                         if (undoLeft > 0) add(Row(Lang.T("Urungkan rapikan terakhir"), Lang.F("Masih bisa {0} menit lagi", undoLeft), Button(Lang.T("Urungkan"), false, delegate { island.UndoTidy(); Relayout(); })));
                         break;
                     case "agents":
-                        island.HooksInstalled();
+                        if (!indexing) island.HooksInstalled();
                         add(Row("Claude Code", island.hookProfiles == 0 ? Lang.T("tidak ditemukan") : island.hooksOn ? Lang.F("terhubung · {0} profil", island.hookProfiles) : Lang.T("belum terhubung"),
-                            AgentButton(island.hookProfiles > 0, island.hooksOn, delegate { island.ToggleHooks(); Relayout(); })));
+                            AgentButton(island.hookProfiles > 0, island.hooksOn, delegate { island.ToggleHooks(); RefreshContent(); })));
                         foreach (var agentId in AgentSetup.Ids)
                         {
                             string aid = agentId;
-                            bool present = AgentSetup.Present(aid), on = false;
+                            bool present = !indexing && AgentSetup.Present(aid), on = false;
                             try { on = present && AgentSetup.Installed(aid); } catch (Exception) { }
                             var agentRow = Row(AgentSetup.Label(aid), !present ? Lang.T("tidak ditemukan") : on ? Lang.T("terhubung") : Lang.T("belum terhubung"),
-                                AgentButton(present, on, delegate { island.ToggleAgent(aid); Relayout(); }));
+                                AgentButton(present, on, delegate { island.ToggleAgent(aid); RefreshContent(); }));
                             agentRow.Glyph = '\uE756';
                             add(agentRow);
                         }
                         // One switch: every agent's quota
-                        var quota = new KitSwitch { Checked = island.QuotaOn, Size = new Size((int)(46 * Ui), (int)(26 * Ui)) };
-                        quota.CheckedChanged += delegate { if (building) return; island.SetQuota(quota.Checked); Relayout(); };
-                        add(Row(Lang.T("Kuota agent"), island.QuotaNote(), quota));
+                        var quota = new KitSwitch { Checked = island.QuotaOn, Size = new Size((int)(38 * Ui), (int)(22 * Ui)) };
+                        KitRow quotaRow = null;
+                        quota.CheckedChanged += delegate
+                        {
+                            if (building) return;
+                            island.SetQuota(quota.Checked);
+                            if (quotaRow != null && !quotaRow.IsDisposed) { quotaRow.Detail = island.QuotaNote(); quotaRow.Invalidate(); }
+                        };
+                        quotaRow = Row(Lang.T("Kuota agent"), island.QuotaNote(), quota);
+                        add(quotaRow);
                         cap(Lang.T("Pemberitahuan"));
                         add(Row(Lang.T("Suara"), Lang.T("Saat agen minta izin atau selesai, dan saat --run selesai"), Switch("sound.agent", false, null)));
                         cap(Lang.T("Server hook"));
                         int port = island.hub != null ? island.hub.Port : settings.GetInt("agent.port", 47821);
                         add(Row(Lang.F("Port {0}", port), port == 47821 ? Lang.T("Port bawaan lama; port acak lebih sulit ditebak") : Lang.T("Hanya bisa dijangkau dari laptop ini"),
-                            Button(Lang.T("Ganti port acak"), false, delegate { island.MoveToRandomPort(); Relayout(); })));
-                        add(Row(Lang.T("Menahan izin"), Lang.T("Lewat batas ini, izin dijawab di terminal"), Slider(30, 300, 10, settings.GetInt("agent.wait", 110), v => v + Lang.T(" dtk"), v => { settings.Set("agent.wait", v); settings.Save(); })));
+                            Button(Lang.T("Ganti port acak"), false, delegate { island.MoveToRandomPort(); RefreshContent(); })));
+                        add(Row(Lang.T("Menahan izin"), Lang.T("Lewat batas ini, izin dijawab di terminal"), Slider(30, 300, 10, settings.GetInt("agent.wait", 110), v => v + Lang.T(" dtk"), v => { settings.Set("agent.wait", v); settings.SaveDeferred(); })));
                         break;
                     case "dikte":
                         DictateRows(add, cap);
@@ -668,7 +688,6 @@ namespace Deskmate
                         add(Row(Lang.T("Notifikasi HP"), linked ? Lang.T("Pesan dari HP ikut masuk ke Pesan") : Lang.T("Nyalakan Hubungkan HP dulu"), fromNotifs));
                         add(Row(Lang.T("Kode OTP"), linked ? Lang.T("Di island; hilang dari clipboard 1 menit kemudian") : Lang.T("Nyalakan Hubungkan HP dulu"), fromOtp));
                         break;
-                    case "kulia":
                     case "integrasi":
                         Integrations(add, cap, show);
                         break;
@@ -691,7 +710,7 @@ namespace Deskmate
                             island.Kick();
                             BeginInvoke(new Action(Relayout));
                         })));
-                        add(Row(Lang.T("Ingatkan sebelum"), null, Slider(0, 30, 5, settings.GetInt("pray.before", 10), v => v == 0 ? Lang.T("tidak") : v + Lang.T(" menit"), v => { settings.Set("pray.before", v); settings.Save(); })));
+                        add(Row(Lang.T("Ingatkan sebelum"), null, Slider(0, 30, 5, settings.GetInt("pray.before", 10), v => v == 0 ? Lang.T("tidak") : v + Lang.T(" menit"), v => { settings.Set("pray.before", v); settings.SaveDeferred(); })));
                         // Adzan rows only once Sholat is on
                         if (settings.GetBool("pray", false))
                         {
@@ -701,17 +720,16 @@ namespace Deskmate
                         IbadahRows(add, cap);
                         cap(Lang.T("Kesehatan"));
                         add(Row(Lang.T("Minum air"), null, Switch("drink", false, null)));
-                        add(Row(Lang.T("Selang minum"), null, Slider(30, 120, 15, settings.GetInt("drink.every", 60), v => v + Lang.T(" menit"), v => { settings.Set("drink.every", v); settings.Save(); })));
-                        add(Row(Lang.T("Target harian"), null, Slider(4, 12, 1, island.DrinkGoal, v => v + Lang.T(" gelas"), v => { settings.Set("drink.goal", v); settings.Save(); })));
+                        add(Row(Lang.T("Selang minum"), null, Slider(30, 120, 15, settings.GetInt("drink.every", 60), v => v + Lang.T(" menit"), v => { settings.Set("drink.every", v); settings.SaveDeferred(); })));
+                        add(Row(Lang.T("Target harian"), null, Slider(4, 12, 1, island.DrinkGoal, v => v + Lang.T(" gelas"), v => { settings.Set("drink.goal", v); settings.SaveDeferred(); })));
                         add(Row(Lang.T("Suara minum"), null, SoundSetting("sound.drink", Lang.T("Bawaan"))));
                         add(Row(Lang.T("Istirahat mata 20-20-20"), Lang.T("Tiap 20 menit di layar, pandang jauh 20 detik"), Switch("eyes", false, null)));
                         add(Row(Lang.T("Suara istirahat mata"), null, SoundSetting("sound.eyes", Lang.T("Bawaan"))));
                         add(Row(Lang.T("Peregangan"), null, Switch("stretch", false, null)));
-                        add(Row(Lang.T("Selang peregangan"), null, Slider(30, 120, 15, settings.GetInt("stretch.every", 60), v => v + Lang.T(" menit"), v => { settings.Set("stretch.every", v); settings.Save(); })));
+                        add(Row(Lang.T("Selang peregangan"), null, Slider(30, 120, 15, settings.GetInt("stretch.every", 60), v => v + Lang.T(" menit"), v => { settings.Set("stretch.every", v); settings.SaveDeferred(); })));
                         add(Row(Lang.T("Suara peregangan"), null, SoundSetting("sound.stretch", Lang.T("Bawaan"))));
                         // Focus & Timer live in Tugas & Fokus
                         break;
-                    case "access":
                     case "keys":
                         cap(Lang.T("Aksesibilitas"));
                         add(Row(Lang.T("Tampil di rekaman layar"), Lang.T("Ikut screenshot dan screen share, tanpa efek kaca"), Switch("capture.show", false, null)));

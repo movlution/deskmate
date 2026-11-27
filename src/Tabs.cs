@@ -12,14 +12,14 @@ namespace Deskmate
         const int PageHome = 0, PageMusic = 1, PageAgents = 2, PageClass = 3, PageMessages = 4, PageShelf = 5, PageControl = 6, PageRemind = 7, PagePhone = 8;
         // Ids for settings; names for labels
         static readonly string[] PageIds = { "home", "music", "agents", "class", "messages", "shelf", "control", "remind", "phone", "convert", "suara" };
-        static readonly string[] PageNames = { "Ringkasan", "Musik", "Agen", "Kuliah", "Pesan", "Rak", "Kontrol", "Pengingat", "HP", "Ubah", "Bicara" };
+        static readonly string[] PageNames = { "Ringkasan", "Musik", "Agen", "Kerja", "Pesan", "Rak", "Kontrol", "Pengingat", "HP", "Ubah", "Bicara" };
         // HP joins once a phone is linked
         const string DefaultTabs = "home,music,agents,class,messages,shelf,control,remind,convert,suara";
         const float PanelTop = 54, SegTop = 36;
         float panelW = 560;
         float PanelW { get { return panelW; } }
         int[] tabs = { 0, 1, 2, 3, 4, 5, 6, 7 };
-        // Segments: Kuliah tasks/schedule, Rak files/clipboard
+        // Segments: Kerja tasks/schedule/pomodoro, Rak files/clipboard
         int classSeg, shelfSeg;
         // Hit offset under a segment bar
         float hitDy;
@@ -79,11 +79,13 @@ namespace Deskmate
         const float RowStaggerSeconds = 0.014f;
         int prevPage, prevSeg;
         readonly Spring agentScroll = new Spring(0, 300, 34, 0.2f), taskScroll = new Spring(0, 300, 34, 0.2f), notifScroll = new Spring(0, 300, 34, 0.2f), controlScroll = new Spring(0, 300, 34, 0.2f);
-        readonly Spring classSegX = new Spring(0, 420, 34, 0.004f), shelfSegX = new Spring(0, 420, 34, 0.004f);
+        readonly Spring classSegX = new Spring(0, 460, 34, 0.004f), shelfSegX = new Spring(0, 460, 34, 0.004f);
 
         // Deep links into segments
         void ShowTasks() { SetSegment(PageClass, 0, true); Show(PageClass); }
-        void ShowSchedule() { SetSegment(PageClass, 1, true); Show(PageClass); }
+        void ShowPomodoro() { SetSegment(PageClass, 1, true); Show(PageClass); }
+        void ExpandPomodoro() { SetSegment(PageClass, 1, true); Expand(PageClass); }
+        void ShowSchedule() { SetSegment(PageClass, 2, true); Show(PageClass); }
         void ShowClips() { SetSegment(PageShelf, 1, true); Show(PageShelf); }
         void Show(int pg) { if (expanded) SetPage(pg, false); else Expand(pg); }
 
@@ -99,7 +101,7 @@ namespace Deskmate
                 case PageHome: return HomeHeight();
                 case PageMusic: return MusicHeight();
                 case PageAgents: return AgentsHeight();
-                case PageClass: return Math.Min(MaxH, SegTop + (classSeg == 0 ? TasksHeight() : ScheduleHeight()));
+                case PageClass: return Math.Min(MaxH, SegTop + (classSeg == 0 ? TasksHeight() : classSeg == 1 ? PomodoroHeight() : ScheduleHeight()));
                 case PageShelf: return Math.Min(MaxH, SegTop + (shelfSeg == 0 ? ShelfHeight() : ClipGalleryH));
                 case PageControl: return ControlHeight();
                 case PageRemind: return RemindHeight();
@@ -123,7 +125,9 @@ namespace Deskmate
             // Room for the button
             if (state == DataState.Off || state == DataState.Failed) return 252;
             if (state != DataState.Ready) return 214;
-            return Clamp(PanelTop + 14 + tasks.Count * 54 + TaskFoot(), 150, 372);
+            int n = FilteredTasks().Count;
+            if (n == 0) return 214;
+            return Clamp(PanelTop + TaskBarH + 14 + n * 54 + TaskFoot(), 170, 372);
         }
 
         float MessagesHeight()
@@ -154,7 +158,7 @@ namespace Deskmate
             }
             if (snap) prevPage = pg;
             if (pg == PageMessages) unread = 0;
-            if (pg == PageClass) RefreshTasksIfStale();
+            if (pg == PageClass && classSeg != 1) RefreshTasksIfStale();
             if (pg == PageShelf) ShelfClipCheck();
             if (pg == PageControl)
             {
@@ -175,7 +179,7 @@ namespace Deskmate
             if (Anim.Reduced) sx.Snap(seg);
             else sx.Target = seg;
             segSwitchUtc = DateTime.UtcNow;
-            if (pg == PageClass) RefreshTasksIfStale();
+            if (pg == PageClass && seg != 1) RefreshTasksIfStale();
             Kick();
         }
 
@@ -249,8 +253,8 @@ namespace Deskmate
             float content, step;
             if (page == PageHome && !HomeQuiet) { s = homeScroll; content = homeContentH; view = HomeView(); step = 72; }
             else if (page == PageAgents) { s = agentScroll; content = AgentsPageContentH(); view = AgentsHeight() - PanelTop - 14; step = 84; }
-            else if (page == PageClass && classSeg == 0) { s = taskScroll; content = (tasks != null ? tasks.Count : 0) * 54 + TaskFoot(); step = 81; }
-            else if (page == PageClass) { s = scheduleScroll; content = ScheduleContentH() + EventFoot(); step = ClassRowH * 1.5f; }
+            else if (page == PageClass && classSeg == 0) { s = taskScroll; content = FilteredTasks().Count * 54 + TaskFoot(); view -= TaskBarH; step = 81; }
+            else if (page == PageClass && classSeg == 2) { s = scheduleScroll; content = ScheduleContentH() + EventFoot(); step = ClassRowH * 1.5f; }
             else if (page == PageMessages) { s = notifScroll; content = notifs.Count * 50; step = 75; }
             else if (page == PageShelf && shelfSeg == 1) return ScrollClipCards(-Math.Sign(delta));
             else if (page == PageShelf) { s = shelfScroll; content = ShelfContentH(); step = 60; }
@@ -371,7 +375,12 @@ namespace Deskmate
         {
             bool isClass = pg == PageClass;
             int seg = isClass ? classSeg : shelfSeg;
-            DrawSegments(w, pg, isClass ? Lang.T("Tugas") : Lang.T("Berkas"), isClass ? Lang.T("Jadwal") : Lang.T("Clipboard"));
+            if (isClass)
+            {
+                string taskTab = tasks != null && tasks.Count > 0 ? Lang.T("Tugas") + " · " + tasks.Count : Lang.T("Tugas");
+                DrawSegments(w, pg, taskTab, Lang.T("Pomodoro"), Lang.T("Jadwal"));
+            }
+            else DrawSegments(w, pg, Lang.T("Berkas"), Lang.T("Clipboard"));
             float k = Anim.Reduced || pg != page || prevSeg == seg ? 1 : Ease.OutCubic((float)((now - segSwitchUtc).TotalSeconds / SegmentTransitionSeconds));
             int dir = seg > prevSeg ? 1 : -1;
             var st = g.Save();
@@ -402,27 +411,49 @@ namespace Deskmate
 
         void DrawSub(int pg, int seg, float w, float h, DateTime now)
         {
-            if (pg == PageClass) { if (seg == 0) DrawTasksPage(w, h, now); else DrawSchedulePage(w, h, now); }
+            if (pg == PageClass)
+            {
+                if (seg == 0) DrawTasksPage(w, h, now);
+                else if (seg == 1) DrawPomodoroPage(w, h, now);
+                else DrawSchedulePage(w, h, now);
+            }
             else { if (seg == 0) DrawShelfPage(w, h, now); else DrawClipsPage(w, h, now); }
         }
 
-        // Two-way switch with a sliding thumb
-        void DrawSegments(float w, int pg, string a, string b)
+        // Segmented switch with a sliding thumb
+        void DrawSegments(float w, int pg, params string[] labels)
         {
+            int n = labels.Length;
             int seg = pg == PageClass ? classSeg : shelfSeg;
             var sx = pg == PageClass ? classSegX : shelfSegX;
-            var box = new RectangleF(w / 2 - 112, PanelTop, 224, 28);
+            float boxW = n <= 2 ? 224 : Math.Min(w - 32, n * 106f);
+            var box = new RectangleF(w / 2 - boxW / 2, PanelTop, boxW, 28);
             p.FillRound(box, 14, p.T.Fill);
-            float half = (box.Width - 4) / 2;
-            var thumb = new RectangleF(box.X + 2 + half * Math.Max(-0.05f, Math.Min(1.05f, sx.Value)), box.Y + 2, half, box.Height - 4);
+            p.StrokeRound(box, 14, p.T.Line, 1f);
+            float segW = (box.Width - 4) / n;
+            var thumb = new RectangleF(box.X + 2 + segW * Math.Max(-0.05f, Math.Min(n - 1 + 0.05f, sx.Value)), box.Y + 2, segW, box.Height - 4);
             p.FillRound(thumb, 12, Ink.Mix(p.T.FillHover, p.T.Text, 0.12f));
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < n; i++)
             {
-                var r = new RectangleF(box.X + 2 + half * i, box.Y + 2, half, box.Height - 4);
+                var r = new RectangleF(box.X + 2 + segW * i, box.Y + 2, segW, box.Height - 4);
                 string id = "seg" + pg + "_" + i;
                 int to = i;
                 AddHit(r, id, delegate { SetSegment(pg, to, false); });
-                p.TextCenter(i == 0 ? a : b, Ink.Semi(12f), i == seg || Hover(id) ? p.T.Text : p.T.Sub, r.X + r.Width / 2, r.Y + r.Height / 2);
+                float sq = Squish(id, r, 0.95f);
+                bool dot = pg == PageClass && ((i == 1 && TimerOn) || (i == 2 && ClassNow() != null));
+                float cy = r.Y + r.Height / 2;
+                if (dot)
+                {
+                    float tw = p.Measure(labels[i], Ink.Semi(12f));
+                    float cx = r.X + r.Width / 2;
+                    p.Circle(cx - tw / 2 - 5, cy, 2.8f, p.T.Accent);
+                    p.TextCenter(labels[i], Ink.Semi(12f), i == seg || Hover(id) ? p.T.Text : p.T.Sub, cx + 4, cy);
+                }
+                else
+                {
+                    p.TextCenter(labels[i], Ink.Semi(12f), i == seg || Hover(id) ? p.T.Text : p.T.Sub, r.X + r.Width / 2, cy);
+                }
+                Unsquish(r, sq);
             }
         }
 
@@ -706,7 +737,7 @@ namespace Deskmate
                             using (var tile = Ink.Round(new RectangleF(cx - 7.5f + gx * 8.5f, cy - 7.5f + gy * 8.5f, 6.5f, 6.5f), 2f)) g.DrawPath(p.P(c, 1.5f), tile);
                     break;
                 case PageClass:
-                    p.Icon('', 16f, c, cx, cy);
+                    p.Icon('\uE821', 15f, c, cx, cy);
                     break;
                 case PageShelf:
                     // Tray with a lip
@@ -854,7 +885,7 @@ namespace Deskmate
                     p.Circle(cx, cy, 2f, c);
                 }
             }
-            else if (page == PageClass && (classSeg == 0 ? TaskState() : ScheduleState()) != DataState.Off)
+            else if (page == PageClass && classSeg != 1 && (classSeg == 0 ? TaskState() : ScheduleState()) != DataState.Off)
             {
                 int what = classSeg == 0 ? 1 : 2;
                 if (tasksLoading && classSeg == 0) p.Orbit(r.X + 17, r.Y + TabH / 2, 6.5f, orbitPhase, p.T.Sub);

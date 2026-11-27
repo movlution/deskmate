@@ -376,6 +376,8 @@ namespace Deskmate
                 if (disposed || Handle == IntPtr.Zero || !shown) return;
                 Native.ShowWindow(Handle, Native.SW_HIDE);
                 if (root != null) root.IsVisible = false;
+                if (maskG != null) { maskG.Dispose(); maskG = null; }
+                if (maskBmp != null) { maskBmp.Dispose(); maskBmp = null; }
                 shown = false;
             }
 

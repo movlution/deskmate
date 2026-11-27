@@ -12,14 +12,47 @@ namespace Deskmate
             class PlacePicker : KitControl
             {
                 public event Action<int> Changed;
-                int selected, hover = -1;
+                int selected, hover = -1, pillFor = -1;
+                readonly Spring px = new Spring(0, 1, 1, 0.25f);
+                readonly Spring py = new Spring(0, 1, 1, 0.25f);
+                readonly Spring pw = new Spring(0, 1, 1, 0.25f);
+                readonly Spring ph = new Spring(0, 1, 1, 0.25f);
+                int lastTick;
+                readonly Timer anim = new Timer { Interval = 15 };
                 // Reading order for arrow keys
                 static readonly int[] Order = { PlaceTopLeft, PlaceTop, PlaceTopRight, PlaceLeft, PlaceRight };
+
+                public PlacePicker()
+                {
+                    anim.Tick += delegate
+                    {
+                        int now = Environment.TickCount;
+                        float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
+                        lastTick = now;
+                        if (Anim.Reduced) { SnapPill(selected); anim.Stop(); Invalidate(); return; }
+                        px.Step(dt); py.Step(dt); pw.Step(dt); ph.Step(dt);
+                        if (px.Settled && py.Settled && pw.Settled && ph.Settled)
+                        {
+                            SnapPill(selected);
+                            anim.Stop();
+                        }
+                        Invalidate();
+                    };
+                }
+
+                void SnapPill(int place)
+                {
+                    var r = Spot(place);
+                    px.Snap(r.X); py.Snap(r.Y); pw.Snap(r.Width); ph.Snap(r.Height);
+                    pillFor = place;
+                }
+
+                protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
 
                 public int Selected
                 {
                     get { return selected; }
-                    set { if (value == selected) return; selected = value; Invalidate(); AccessibilityNotifyClients(AccessibleEvents.Selection, value); }
+                    set { if (value == selected) return; selected = value; pillFor = -1; anim.Stop(); Invalidate(); AccessibilityNotifyClients(AccessibleEvents.Selection, value); }
                 }
 
                 RectangleF Screen { get { float s = Ui; return new RectangleF(8 * s, 6 * s, Width - 16 * s, Height - 12 * s); } }
@@ -56,7 +89,24 @@ namespace Deskmate
                 void Pick(int i)
                 {
                     if (i < 0 || i == selected) return;
-                    Selected = i;
+                    int prev = selected;
+                    selected = i;
+                    if (IsHandleCreated && Visible && !Anim.Reduced)
+                    {
+                        if (pillFor != prev) SnapPill(prev);
+                        var dst = Spot(i);
+                        Springs.Tune(px, 0.26f, 0.80f);
+                        Springs.Tune(py, 0.26f, 0.80f);
+                        Springs.Tune(pw, 0.26f, 0.84f);
+                        Springs.Tune(ph, 0.26f, 0.84f);
+                        px.Target = dst.X; py.Target = dst.Y; pw.Target = dst.Width; ph.Target = dst.Height;
+                        pillFor = i;
+                        lastTick = Environment.TickCount;
+                        anim.Start();
+                    }
+                    else pillFor = -1;
+                    Invalidate();
+                    AccessibilityNotifyClients(AccessibleEvents.Selection, i);
                     var h = Changed;
                     if (h != null) h(i);
                 }
@@ -96,20 +146,28 @@ namespace Deskmate
                     var sc = Screen;
                     // The screen, a touch lighter than its group
                     Fill(g, sc, 9 * s, KitInk.Line);
+                    if (pillFor != selected) SnapPill(selected);
                     foreach (int i in Order)
                     {
                         var r = Spot(i);
-                        bool on = i == selected;
-                        // The chosen spot wears the accent; others stay quiet ink
-                        Fill(g, r, r.Height / 2, on ? KitInk.Accent : i == hover ? KitInk.Sub : KitInk.Faint);
-                        if (!on) continue;
-                        // Two dots: the island's eyes
-                        var dot = KitInk.BrushOf(KitInk.OnAccent);
-                        bool upright = r.Height > r.Width;
-                        float cy = r.Y + (upright ? r.Width * 0.9f : r.Height / 2), cx = r.X + r.Width / 2, d = (upright ? 2.1f : 2.6f) * s, gap = (upright ? 2.3f : 3.4f) * s;
-                        g.FillEllipse(dot, cx - gap - d / 2, cy - d / 2, d, d);
-                        g.FillEllipse(dot, cx + gap - d / 2, cy - d / 2, d, d);
+                        if (i == selected && anim.Enabled)
+                        {
+                            // Quiet resting slot under the gliding island
+                            Fill(g, r, Math.Min(r.Width, r.Height) / 2, KitInk.Faint);
+                            continue;
+                        }
+                        if (i == selected) continue;
+                        // Unchosen spots stay quiet ink
+                        Fill(g, r, Math.Min(r.Width, r.Height) / 2, i == hover ? KitInk.Sub : KitInk.Faint);
                     }
+                    var active = anim.Enabled ? new RectangleF(px.Value, py.Value, Math.Max(4 * s, pw.Value), Math.Max(4 * s, ph.Value)) : Spot(selected);
+                    Fill(g, active, Math.Min(active.Width, active.Height) / 2, KitInk.Accent);
+                    // Two dots: the island's eyes
+                    var dot = KitInk.BrushOf(KitInk.OnAccent);
+                    bool upright = active.Height > active.Width;
+                    float cy = active.Y + (upright ? active.Width * 0.9f : active.Height / 2), cx = active.X + active.Width / 2, d = (upright ? 2.1f : 2.6f) * s, gap = (upright ? 2.3f : 3.4f) * s;
+                    g.FillEllipse(dot, cx - gap - d / 2, cy - d / 2, d, d);
+                    g.FillEllipse(dot, cx + gap - d / 2, cy - d / 2, d, d);
                     Ring(g, Cell(selected), 10 * s);
                 }
 

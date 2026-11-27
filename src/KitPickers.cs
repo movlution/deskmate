@@ -15,6 +15,11 @@ namespace Deskmate
         public string[][] PresetsLight = new string[0][];
         int selected = -1;
         int hovered = -1;
+        float ringIndex = -1f;
+        readonly Spring ringSpring = new Spring(0, 1, 1, 0.002f);
+        readonly Spring popSpring = new Spring(1, 1, 1, 0.002f);
+        int lastTick;
+        readonly Timer anim = new Timer { Interval = 15 };
         public event Action<int, string> Picked;
 
         public KitPalette()
@@ -22,12 +27,40 @@ namespace Deskmate
             SetStyle(ControlStyles.Selectable | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
             TabStop = true;
             Cursor = Cursors.Hand;
+            anim.Tick += delegate
+            {
+                int now = Environment.TickCount;
+                float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
+                lastTick = now;
+                if (Anim.Reduced)
+                {
+                    ringIndex = selected;
+                    ringSpring.Snap(selected);
+                    popSpring.Snap(1f);
+                    anim.Stop();
+                    Invalidate();
+                    return;
+                }
+                ringSpring.Step(dt);
+                popSpring.Step(dt);
+                ringIndex = ringSpring.Value;
+                if (ringSpring.Settled && popSpring.Settled)
+                {
+                    ringIndex = selected;
+                    ringSpring.Snap(selected);
+                    popSpring.Snap(1f);
+                    anim.Stop();
+                }
+                Invalidate();
+            };
         }
+
+        protected override void Dispose(bool disposing) { if (disposing && anim != null) anim.Dispose(); base.Dispose(disposing); }
 
         public int SelectedIndex
         {
             get { return selected; }
-            set { if (selected == value) return; selected = value; Invalidate(); }
+            set { if (selected == value) return; selected = value; ringIndex = value; ringSpring.Snap(value); popSpring.Snap(1f); anim.Stop(); Invalidate(); }
         }
 
         public string SelectedHex
@@ -44,6 +77,10 @@ namespace Deskmate
                         break;
                     }
                 }
+                ringIndex = selected;
+                ringSpring.Snap(selected);
+                popSpring.Snap(1f);
+                anim.Stop();
                 Invalidate();
             }
         }
@@ -97,7 +134,26 @@ namespace Deskmate
         void Pick(int i)
         {
             if (i < 0 || i >= Presets.Length) return;
+            int prev = selected;
             selected = i;
+            if (IsHandleCreated && Visible && !Anim.Reduced)
+            {
+                Springs.Tune(ringSpring, 0.24f, 0.80f);
+                ringSpring.Value = prev >= 0 ? (ringIndex >= 0 ? ringIndex : prev) : i;
+                ringSpring.Target = i;
+                Springs.Tune(popSpring, 0.22f, 0.70f);
+                popSpring.Value = 0.84f;
+                popSpring.Velocity = 2.8f;
+                popSpring.Target = 1f;
+                lastTick = Environment.TickCount;
+                anim.Start();
+            }
+            else
+            {
+                ringIndex = i;
+                ringSpring.Snap(i);
+                popSpring.Snap(1f);
+            }
             Invalidate();
             var table = Ink.Light && PresetsLight != null && PresetsLight.Length == Presets.Length ? PresetsLight : Presets;
             var h = Picked;
@@ -138,13 +194,16 @@ namespace Deskmate
                 }
                 if (!live) dotColor = Ink.Mix(dotColor, under, 0.55f);
 
-                if (i == selected || (i == hovered && live))
+                if (i == hovered && i != selected && live)
                 {
                     float ringR = r + 3.5f * s;
-                    g.DrawEllipse(KitInk.PenOf(i == selected ? dotColor : Color.FromArgb(110, dotColor), (i == selected ? 2f : 1.5f) * s), pt.X - ringR, pt.Y - ringR, ringR * 2, ringR * 2);
+                    g.DrawEllipse(KitInk.PenOf(Color.FromArgb(110, dotColor), 1.5f * s), pt.X - ringR, pt.Y - ringR, ringR * 2, ringR * 2);
                 }
 
-                g.FillEllipse(KitInk.BrushOf(dotColor), pt.X - r, pt.Y - r, r * 2, r * 2);
+                float dotR = r;
+                if (i == selected && anim.Enabled && !Anim.Reduced) dotR *= popSpring.Value;
+                else if (i == hovered && live) dotR += 0.8f * s;
+                g.FillEllipse(KitInk.BrushOf(dotColor), pt.X - dotR, pt.Y - dotR, dotR * 2, dotR * 2);
                 if (i == selected)
                 {
                     // A check keeps the selection readable without relying on colour alone
@@ -154,6 +213,22 @@ namespace Deskmate
                     g.DrawLine(pen, x, y, x + 1.5f * s, y + 1.6f * s);
                     g.DrawLine(pen, x + 1.5f * s, y + 1.6f * s, x + 4.1f * s, y - 1.8f * s);
                 }
+            }
+
+            // Gliding selection ring around the chosen swatch
+            if (selected >= 0 && selected < Presets.Length)
+            {
+                float idx = anim.Enabled ? ringIndex : selected;
+                float step = ItemStep;
+                float totalW = step * Presets.Length;
+                float startX = (Width - totalW) / 2f + step / 2f;
+                var rpt = new PointF(startX + idx * step, Height / 2f);
+                string hex = table[selected][1];
+                Color ringColor = string.IsNullOrEmpty(hex) ? Ink.Mix(under, KitInk.Text, 0.6f) : KitInk.Accent;
+                if (!string.IsNullOrEmpty(hex)) { try { ringColor = ColorTranslator.FromHtml(hex); } catch (Exception) { } }
+                if (!live) ringColor = Ink.Mix(ringColor, under, 0.55f);
+                float ringR = r + 3.5f * s;
+                g.DrawEllipse(KitInk.PenOf(ringColor, 2f * s), rpt.X - ringR, rpt.Y - ringR, ringR * 2, ringR * 2);
             }
 
             // Focus rides on the swatch the arrows move
@@ -166,7 +241,7 @@ namespace Deskmate
         }
     }
 
-    // Slider: arrows, Home/End, drag
+    // Slider: arrows, Home/End, drag with smooth spring thumb glide
     class KitSlider : KitControl
     {
         public int Minimum, Maximum = 100, Step = 1, Value;
@@ -174,14 +249,81 @@ namespace Deskmate
         // Value text left of the track
         public bool ShowValue;
         public event Action<int> Changed;
-        bool dragging;
+        public event Action Committed;
+        bool dragging, hasDisplay;
+        float displayValue, hoverT;
+        readonly Spring thumbSpring = new Spring(0, 1, 1, 0.002f);
+        int lastTick;
+        Timer anim;
+
+        bool AnimRunning { get { return anim != null && anim.Enabled; } }
+
+        void EnsureAnim()
+        {
+            if (anim != null) return;
+            anim = new Timer { Interval = 15 };
+            anim.Tick += delegate
+            {
+                int now = Environment.TickCount;
+                float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
+                lastTick = now;
+                float hWant = (dragging || Hovered) && Enabled ? 1f : 0f;
+                if (Anim.Reduced)
+                {
+                    displayValue = Value;
+                    thumbSpring.Snap(Value);
+                    hoverT = hWant;
+                    anim.Stop();
+                    Invalidate();
+                    return;
+                }
+                thumbSpring.Target = Value;
+                thumbSpring.Step(dt);
+                displayValue = thumbSpring.Value;
+                float rate = Math.Min(1f, dt / Math.Max(0.03f, Anim.Response(0.08f)));
+                hoverT += (hWant - hoverT) * rate;
+                if (Math.Abs(hWant - hoverT) < 0.01f) hoverT = hWant;
+                if (thumbSpring.Settled && hoverT == hWant)
+                {
+                    displayValue = Value;
+                    thumbSpring.Snap(Value);
+                    anim.Stop();
+                }
+                Invalidate();
+            };
+        }
+
+        void StartAnim(bool fast)
+        {
+            if (!IsHandleCreated || !Visible || Anim.Reduced)
+            {
+                displayValue = Value;
+                thumbSpring.Snap(Value);
+                hoverT = (dragging || Hovered) && Enabled ? 1f : 0f;
+                hasDisplay = true;
+                if (anim != null) anim.Stop();
+                Invalidate();
+                return;
+            }
+            if (!hasDisplay) { displayValue = Value; thumbSpring.Snap(Value); hasDisplay = true; }
+            Springs.Tune(thumbSpring, fast ? 0.12f : 0.22f, fast ? 0.96f : 0.86f);
+            thumbSpring.Value = displayValue;
+            thumbSpring.Target = Value;
+            EnsureAnim();
+            if (!anim.Enabled)
+            {
+                lastTick = Environment.TickCount;
+                anim.Start();
+            }
+            Invalidate();
+        }
 
         void Set(int v)
         {
             v = Math.Max(Minimum, Math.Min(Maximum, (int)Math.Round((double)(v - Minimum) / Step) * Step + Minimum));
             if (v == Value) return;
             Value = v;
-            Invalidate();
+            StartAnim(dragging);
             AccessibilityNotifyClients(AccessibleEvents.ValueChange, -1);
             var h = Changed;
             if (h != null) h(v);
@@ -193,9 +335,19 @@ namespace Deskmate
 
         int At(int x) { var t = Track; return Minimum + (int)Math.Round((Maximum - Minimum) * Ease.Clamp01((x - t.X) / Math.Max(1, t.Width))); }
 
-        protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); Focus(); dragging = true; Capture = true; Set(At(e.X)); }
+        protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); StartAnim(true); }
+        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); StartAnim(true); }
+        protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); Focus(); dragging = true; Capture = true; Set(At(e.X)); StartAnim(true); }
         protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); if (dragging) Set(At(e.X)); }
-        protected override void OnMouseUp(MouseEventArgs e) { base.OnMouseUp(e); dragging = false; Capture = false; Invalidate(); }
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            bool wasDragging = dragging;
+            dragging = false;
+            Capture = false;
+            StartAnim(true);
+            if (wasDragging) { var c = Committed; if (c != null) c(); }
+        }
 
         protected override bool IsInputKey(Keys key) { return key == Keys.Left || key == Keys.Right || key == Keys.Home || key == Keys.End || base.IsInputKey(key); }
 
@@ -206,6 +358,9 @@ namespace Deskmate
             else if (e.KeyCode == Keys.Right) Set(Value + Step);
             else if (e.KeyCode == Keys.Home) Set(Minimum);
             else if (e.KeyCode == Keys.End) Set(Maximum);
+            else return;
+            var c = Committed;
+            if (c != null) c();
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -213,15 +368,17 @@ namespace Deskmate
             var g = e.Graphics;
             KitInk.Smooth(g);
             g.Clear(KitInk.Under(this));
-            float s = Ui, f = (float)(Value - Minimum) / Math.Max(1, Maximum - Minimum);
+            if (!hasDisplay || !AnimRunning) { displayValue = Value; thumbSpring.Snap(Value); hasDisplay = true; }
+            float ht = AnimRunning ? hoverT : ((dragging || Hovered) && Enabled ? 1f : 0f);
+            float s = Ui, f = Ease.Clamp01((displayValue - Minimum) / Math.Max(1f, Maximum - Minimum));
             var t = Track;
             Fill(g, t, t.Height / 2, KitInk.Line);
             Fill(g, new RectangleF(t.X, t.Y, Math.Max(t.Height, t.Width * f), t.Height), t.Height / 2, Enabled ? KitInk.Accent : KitInk.Disabled);
-            float r = ((dragging || Hovered) && Enabled ? 9 : 8) * s, cx = t.X + t.Width * f, cy = t.Y + t.Height / 2;
+            float r = (8f + (dragging ? 1.5f : 1.1f) * ht) * s, cx = t.X + t.Width * f, cy = t.Y + t.Height / 2;
             var knob = new RectangleF(cx - r, cy - r, r * 2, r * 2);
             if (Enabled)
             {
-                KitInk.Lift(g, knob, r, s);
+                KitInk.Lift(g, knob, r, s * (1f + 0.25f * ht));
                 KitInk.FillRound(g, knob, r, KitInk.Knob);
                 // Paper knob needs an edge on the ivory canvas
                 if (Ink.Light) KitInk.StrokeRound(g, RectangleF.Inflate(knob, -0.5f, -0.5f), r - 0.5f, KitInk.Line, 1f);
@@ -232,6 +389,8 @@ namespace Deskmate
                     TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
             Ring(g, new RectangleF(1, 1, Width - 3, Height - 3), Ink.RadiusControl * s);
         }
+
+        protected override void Dispose(bool disposing) { if (disposing && anim != null) anim.Dispose(); base.Dispose(disposing); }
 
         protected override AccessibleObject CreateAccessibilityInstance() { return new Access(this); }
 

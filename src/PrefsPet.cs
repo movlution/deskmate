@@ -35,7 +35,7 @@ namespace Deskmate
                     names.Clear();
                     ids.AddRange(new[] { "cat", "dog", "chao" });
                     names.AddRange(new[] { Lang.T("Kucing"), Lang.T("Anjing"), Lang.T("Chao") });
-                    foreach (var n in PetSheet.Custom()) { ids.Add("custom:" + n); names.Add(n); }
+                    if (!indexing) foreach (var n in PetSheet.Custom()) { ids.Add("custom:" + n); names.Add(n); }
                     int found = ids.IndexOf(kind);
                     // A chosen folder that has gone still shows, with the reason below
                     if (found < 0 && kind.StartsWith("custom:", StringComparison.Ordinal)) { ids.Add(kind); names.Add(kind.Substring(7)); found = ids.Count - 1; }
@@ -94,7 +94,11 @@ namespace Deskmate
                 areaRow.Glyph = (char)0xE707;
                 add(areaRow);
 
-                var speed = Slider(50, 200, 10, island.PetSpeed, v => v + "%", v => change("pet.speed", v));
+                var speed = Slider(50, 200, 10, island.PetSpeed, v => v + "%", v =>
+                {
+                    island.SetPetChoice("pet.speed", v, true);
+                    refresh();
+                });
                 var speedRow = Row(Lang.T("Kecepatan jalan"), null, speed);
                 speedRow.Glyph = (char)0xEC4A;
                 add(speedRow);
@@ -261,6 +265,7 @@ namespace Deskmate
                 joinRow.Height = (int)(58 * Ui);
                 joinRow.Glyph = (char)0xE71B;
                 add(joinRow);
+                if (indexing) return;
 
                 syncUi = () =>
                 {

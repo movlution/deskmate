@@ -370,6 +370,17 @@ namespace Deskmate
             google.Failures = 0;
             if (!google.Busy) Queue(google);
             else google.NextUtc = DateTime.UtcNow;
+            if (GoogleTasks.Enabled)
+            {
+                GoogleTasks.Gone = false;
+                GoogleTasks.Version++;
+                GoogleTasks.Stopped = false;
+                GoogleTasks.Error = null;
+                GoogleTasks.HoldUtc = DateTime.MinValue;
+                GoogleTasks.Failures = 0;
+                if (!GoogleTasks.Busy) Queue(GoogleTasks);
+                else GoogleTasks.NextUtc = DateTime.UtcNow;
+            }
             Raise(true);
         }
 

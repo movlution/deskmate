@@ -112,7 +112,7 @@ namespace Deskmate
             var now = DateTime.UtcNow;
             // Date-only tasks have no countdown
             foreach (var t in tasks)
-                if (!t.DateOnly && t.DeadlineUtc > now && (t.DeadlineUtc - now).TotalHours <= 6) return t;
+                if (!t.DateOnly && !t.NoDue && t.DeadlineUtc > now && (t.DeadlineUtc - now).TotalHours <= 6) return t;
             return null;
         }
 
@@ -121,8 +121,9 @@ namespace Deskmate
             if (tasks == null) return;
             foreach (var t in tasks)
             {
+                if (t.DateOnly || t.NoDue || t.DeadlineUtc == DateTime.MinValue) continue;
                 double mins = (t.DeadlineUtc - now).TotalMinutes;
-                if (t.DateOnly || mins <= 0 || mins > 60 || warnedTasks.Contains(t.Id)) continue;
+                if (mins <= 0 || mins > 60 || warnedTasks.Contains(t.Id)) continue;
                 warnedTasks.Add(t.Id);
                 var ts = ShowToast(View.Deadline, 8, 3, false);
                 if (ts != null) ts.Data = t;

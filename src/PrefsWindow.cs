@@ -15,8 +15,9 @@ namespace Deskmate
             readonly Island island;
             readonly Settings settings;
             readonly Timer preview = new Timer { Interval = 2500 };
-            // Opens on Umum, like System Settings
+            // Opens on Main Menu Hub; section stays "general" as default target
             string section = "general", beforeSearch = "general";
+            bool inHub = true, beforeSearchInHub = true;
             // Part a caller asked for inside a merged page; Fill scrolls to it once
             string focusPart;
             readonly Dictionary<string, int> partTop = new Dictionary<string, int>();
@@ -28,16 +29,22 @@ namespace Deskmate
 
             void EnsureSearchIndex()
             {
-                foreach (var s in Sections)
-                    foreach (var part in PartsOf(s[0]))
-                    {
-                        if (searchIndex.ContainsKey(part)) continue;
-                        var rows = new List<KitRow>();
-                        Build(part, rows, false);
-                        var text = new List<string>();
-                        foreach (var r in rows) { text.Add(r.Title + "\n" + r.Detail); if (r.Field != null) r.Field.Dispose(); r.Dispose(); }
-                        searchIndex[part] = text;
-                    }
+                bool wasIndexing = indexing;
+                indexing = true;
+                try
+                {
+                    foreach (var s in Sections)
+                        foreach (var part in PartsOf(s[0]))
+                        {
+                            if (searchIndex.ContainsKey(part)) continue;
+                            var rows = new List<KitRow>();
+                            Build(part, rows, false);
+                            var text = new List<string>();
+                            foreach (var r in rows) { text.Add(r.Title + "\n" + r.Detail); if (r.Field != null) r.Field.Dispose(); r.Dispose(); }
+                            searchIndex[part] = text;
+                        }
+                }
+                finally { indexing = wasIndexing; }
             }
 
             bool PartMatches(string part, string q)
@@ -47,10 +54,123 @@ namespace Deskmate
                 foreach (var t in text) if (t.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
                 return false;
             }
-            readonly Panel content = new Panel();
-            readonly SideList side = new SideList();
-            bool building;
-            bool overClear;
+            readonly KitScrollPanel content = new KitScrollPanel();
+            readonly SettingsHub hub = new SettingsHub();
+            bool building, indexing, redrawFrozen, animateNextFill, syncingPartNav, partJumpActive;
+            bool overClear, overBack, downBack;
+            PartTabStrip partNav;
+            PageHeader activeHeader;
+            Color activeGroupTile;
+            string[] activeParts = new string[0];
+            readonly Stack<string> navBack = new Stack<string>();
+            readonly Stack<string> navForward = new Stack<string>();
+            readonly Timer entranceTimer = new Timer { Interval = 15 };
+            readonly List<Control> entranceControls = new List<Control>();
+            readonly List<int> entranceTargets = new List<int>();
+            int entranceStart, entranceOffset;
+
+            // Double-buffered scroll host with smooth wheel inertia (snaps under Reduced Motion)
+            sealed class KitScrollPanel : Panel
+            {
+                readonly Timer wheelTimer = new Timer { Interval = 15 };
+                float targetY, currentY;
+                int lastTick;
+                bool programmaticScroll;
+                public bool IsProgrammaticScrolling { get { return programmaticScroll; } }
+                public event Action UserScrolled;
+                public event Action ScrollPositionChanged;
+
+                public KitScrollPanel()
+                {
+                    AutoScroll = true;
+                    SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
+                    wheelTimer.Tick += delegate
+                    {
+                        if (IsDisposed || !Visible || Anim.Reduced)
+                        {
+                            StopScroll();
+                            return;
+                        }
+                        int now = Environment.TickCount;
+                        float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
+                        lastTick = now;
+                        float rate = Math.Min(1f, dt / Math.Max(0.03f, Anim.Response(0.075f)));
+                        currentY += (targetY - currentY) * rate;
+                        if (Math.Abs(targetY - currentY) < 0.6f)
+                        {
+                            currentY = targetY;
+                            wheelTimer.Stop();
+                            programmaticScroll = false;
+                        }
+                        AutoScrollPosition = new Point(-AutoScrollPosition.X, (int)Math.Round(currentY));
+                        var ch = ScrollPositionChanged;
+                        if (ch != null) ch();
+                    };
+                }
+
+                public void StopScroll() { wheelTimer.Stop(); programmaticScroll = false; }
+
+                public void SmoothScrollTo(int y)
+                {
+                    int maxY = Math.Max(0, VerticalScroll.Maximum - VerticalScroll.LargeChange + 1);
+                    y = Math.Max(0, Math.Min(maxY, y));
+                    if (Anim.Reduced || !Visible)
+                    {
+                        StopScroll();
+                        AutoScrollPosition = new Point(-AutoScrollPosition.X, y);
+                        return;
+                    }
+                    programmaticScroll = true;
+                    currentY = -AutoScrollPosition.Y;
+                    targetY = y;
+                    if (Math.Abs(targetY - currentY) < 1f) { programmaticScroll = false; return; }
+                    lastTick = Environment.TickCount;
+                    if (!wheelTimer.Enabled) wheelTimer.Start();
+                }
+
+                protected override void OnMouseWheel(MouseEventArgs e)
+                {
+                    programmaticScroll = false;
+                    var u = UserScrolled;
+                    if (u != null) u();
+                    if (Anim.Reduced || !VerticalScroll.Visible)
+                    {
+                        base.OnMouseWheel(e);
+                        var ch = ScrollPositionChanged;
+                        if (ch != null) ch();
+                        return;
+                    }
+                    int maxY = Math.Max(0, VerticalScroll.Maximum - VerticalScroll.LargeChange + 1);
+                    if (maxY <= 0) { base.OnMouseWheel(e); return; }
+                    if (!wheelTimer.Enabled)
+                    {
+                        currentY = -AutoScrollPosition.Y;
+                        targetY = currentY;
+                        lastTick = Environment.TickCount;
+                    }
+                    float step = Math.Max(42f, SystemInformation.MouseWheelScrollLines * 24f);
+                    targetY = Math.Max(0f, Math.Min(maxY, targetY - (e.Delta / 120f) * step));
+                    if (!wheelTimer.Enabled) wheelTimer.Start();
+                    var he = e as HandledMouseEventArgs;
+                    if (he != null) he.Handled = true;
+                }
+
+                protected override void OnScroll(ScrollEventArgs se)
+                {
+                    StopScroll();
+                    var u = UserScrolled;
+                    if (u != null) u();
+                    base.OnScroll(se);
+                    var ch = ScrollPositionChanged;
+                    if (ch != null) ch();
+                }
+
+                protected override void Dispose(bool disposing)
+                {
+                    if (disposing) wheelTimer.Dispose();
+                    base.Dispose(disposing);
+                }
+            }
 
             // { id, title, glyph, sidebar group, tile color (Ink.Labels key) }; the Deskmate card leads
             static readonly string[][] Sections =
@@ -82,14 +202,36 @@ namespace Deskmate
                 { "system", new[] { "system", "phone" } },
             };
 
+            static bool IsTabbedPage(string page) { return Parts.ContainsKey(page); }
+            readonly Dictionary<string, string> activeSubTab = new Dictionary<string, string>();
+
             static readonly Dictionary<string, string> PartTitles = new Dictionary<string, string>
             {
+                { "island", "Island" },
                 { "tabs", "Tab dan kartu" },
                 { "combo", "Ketikan" },
                 { "pet", "Pet" },
+                { "work", "Tugas & Fokus" },
                 { "integrasi", "Integrasi dan kalender" },
+                { "ai", "Layanan AI" },
                 { "dikte", "Dikte dan rapat" },
+                { "system", "Perangkat" },
                 { "phone", "HP Android" },
+            };
+
+            // { glyph, tile color key, short subtitle } for each part of a merged page
+            static readonly Dictionary<string, string[]> PartMeta = new Dictionary<string, string[]>
+            {
+                { "island", new[] { "\uE737", "sky", "Posisi, bentuk, ukuran, layar, perilaku, dan saat diam" } },
+                { "tabs", new[] { "\uECA5", "violet", "Gaya tab, urutan tab panel, dan kartu Ringkasan" } },
+                { "combo", new[] { "\uE765", "amber", "Combo ketikan, efek suara, Fever Mode, XP, dan Sprint 30 detik" } },
+                { "pet", new[] { "\uEB51", "emerald", "Hewan pendamping di dock, pet buatan sendiri, dan teman online" } },
+                { "work", new[] { "\uE73A", "amber", "Daftar tugas lokal, catatan, fokus, dan prioritas harian" } },
+                { "integrasi", new[] { "\uE71B", "sky", "Kulia, Notion, Todoist, iCal, dan Google Calendar" } },
+                { "ai", new[] { "\uE8F2", "violet", "Penyedia teks, mesin suara, kunci API, dan model offline" } },
+                { "dikte", new[] { "\uE720", "rose", "Tombol dikte, kamus, snippet, dan rekaman rapat" } },
+                { "system", new[] { "\uE9D9", "sky", "HUD keyboard, baterai, flashdisk, unduhan, dan penjaga beban" } },
+                { "phone", new[] { "\uE8EA", "emerald", "Hubungkan HP lewat Wi-Fi, kode QR, notifikasi, dan OTP" } },
             };
 
             static string[] PartsOf(string page) { string[] p; return Parts.TryGetValue(page, out p) ? p : new[] { page }; }
@@ -179,32 +321,25 @@ namespace Deskmate
                 StartPosition = FormStartPosition.Manual;
                 Icon = island.tray != null ? island.tray.Icon : null;
                 preview.Tick += delegate { preview.Stop(); island.PreviewLayout(false); };
-                FormClosed += delegate { preview.Stop(); island.PreviewLayout(false); };
-                content.AutoScroll = true;
+                FormClosed += delegate { preview.Stop(); entranceTimer.Stop(); content.StopScroll(); settings.FlushSave(); island.PreviewLayout(false); };
+                entranceTimer.Tick += delegate { StepPageEntrance(); };
+                content.UserScrolled += delegate { partJumpActive = false; FinishPageEntrance(); };
+                content.ScrollPositionChanged += delegate { SyncPartNavFromScroll(); };
                 search.BorderStyle = BorderStyle.None;
                 searchTimer.Tick += delegate { ApplySearch(); };
                 search.TextChanged += delegate
                 {
                     searchTimer.Stop();
                     if (building) return;
+                    PlaceSearchBox();
                     Invalidate(Rectangle.Ceiling(SearchWell()));
                     string query = search.Text.Trim();
                     if (query.Length == 0) ApplySearch();
                     else if (query != appliedSearch) searchTimer.Start();
                 };
-                search.GotFocus += delegate { BeginInvoke(new Action(EnsureSearchIndex)); Invalidate(new Rectangle(0, 0, (int)(SideW * Ui), (int)(52 * Ui))); };
-                search.LostFocus += delegate { Invalidate(new Rectangle(0, 0, (int)(SideW * Ui), (int)(52 * Ui))); };
-                side.Picked += id =>
-                {
-                    section = NormalizeSection(id);
-                    focusPart = null;
-                    building = true;
-                    appliedSearch = "";
-                    search.Text = "";
-                    building = false;
-                    Invalidate(Rectangle.Ceiling(SearchWell()));
-                    Fill();
-                };
+                search.GotFocus += delegate { BeginInvoke(new Action(EnsureSearchIndex)); PlaceSearchBox(); Invalidate(TopBarRect()); };
+                search.LostFocus += delegate { PlaceSearchBox(); Invalidate(TopBarRect()); };
+                hub.Picked += id => EnterSection(id, null, true);
                 search.KeyDown += delegate(object s, KeyEventArgs e)
                 {
                     if (e.KeyCode == Keys.Enter && searchTimer.Enabled)
@@ -218,9 +353,53 @@ namespace Deskmate
                         e.SuppressKeyPress = true;
                     }
                 };
+                hub.Visible = true;
+                content.Visible = false;
                 Controls.Add(search);
-                Controls.Add(side);
+                Controls.Add(hub);
                 Controls.Add(content);
+            }
+
+            void EnterSection(string id, string part, bool animate)
+            {
+                string next = NormalizeSection(id);
+                if (!inHub && section != "search" && section != next)
+                {
+                    navBack.Push(section);
+                    navForward.Clear();
+                }
+                inHub = false;
+                section = next;
+                focusPart = part;
+                building = true;
+                appliedSearch = "";
+                search.Text = "";
+                building = false;
+                hub.Visible = false;
+                content.Visible = true;
+                animateNextFill = animate;
+                Invalidate(TopBarRect());
+                if (IsHandleCreated) Fill();
+            }
+
+            void ShowHub(bool animate)
+            {
+                FinishPageEntrance();
+                content.StopScroll();
+                navBack.Clear();
+                navForward.Clear();
+                inHub = true;
+                building = true;
+                appliedSearch = "";
+                search.Text = "";
+                building = false;
+                content.Visible = false;
+                hub.Visible = true;
+                BindHub(section);
+                if (animate && IsHandleCreated && Visible) hub.PlayEntrance(section);
+                PlaceSearchBox();
+                Invalidate(TopBarRect());
+                if (IsHandleCreated && Visible) hub.Focus();
             }
 
             void ApplySearch()
@@ -232,16 +411,37 @@ namespace Deskmate
                 appliedSearch = query;
                 if (query.Length > 0)
                 {
-                    if (section != "search") beforeSearch = section;
+                    if (section != "search") { beforeSearch = section; beforeSearchInHub = inHub; }
+                    inHub = false;
                     section = "search";
+                    hub.Visible = false;
+                    content.Visible = true;
+                    Invalidate(TopBarRect());
+                    Fill();
                 }
-                else if (section == "search") section = beforeSearch;
-                Fill();
+                else if (section == "search")
+                {
+                    section = beforeSearch;
+                    if (beforeSearchInHub) ShowHub(true);
+                    else
+                    {
+                        inHub = false;
+                        hub.Visible = false;
+                        content.Visible = true;
+                        Invalidate(TopBarRect());
+                        Fill();
+                    }
+                }
             }
 
             protected override void OnShown(EventArgs e)
             {
                 base.OnShown(e);
+                if (inHub)
+                {
+                    hub.PlayEntrance(section);
+                    hub.Focus();
+                }
                 BeginInvoke(new Action(delegate { island.OfferWhatsNew(this); }));
             }
 
@@ -257,7 +457,7 @@ namespace Deskmate
 
             public void RefreshNotifApps()
             {
-                if (searchTimer.Enabled || (section != "messages" && section != "search")) return;
+                if (searchTimer.Enabled || inHub || (section != "messages" && section != "search")) return;
                 var at = content.AutoScrollPosition;
                 Fill();
                 content.AutoScrollPosition = new Point(-at.X, -at.Y);
@@ -265,56 +465,113 @@ namespace Deskmate
 
             public void Go(string id)
             {
+                if (id == "hub")
+                {
+                    ShowHub(false);
+                    return;
+                }
+                inHub = false;
                 section = NormalizeSection(id);
                 focusPart = string.IsNullOrEmpty(id) ? null : AliasOf(id);
                 building = true;
                 appliedSearch = "";
                 search.Text = "";
                 building = false;
-                Invalidate(Rectangle.Ceiling(SearchWell()));
-                if (IsHandleCreated) { Fill(); side.RevealSelected(); }
+                hub.Visible = false;
+                content.Visible = true;
+                Invalidate(TopBarRect());
+                if (IsHandleCreated) Fill();
             }
 
             protected override void OnHandleCreated(EventArgs e)
             {
                 base.OnHandleCreated(e);
                 var area = Screen.FromHandle(Handle).WorkingArea;
-                // Tall enough that the whole sidebar shows
                 int chromeW = Width - ClientSize.Width, chromeH = Height - ClientSize.Height;
-                float wantH = 680;
-                Size = new Size((int)Math.Min(940 * Ui + chromeW, area.Width - 40), (int)Math.Min(wantH * Ui + chromeH, area.Height - 40));
-                MinimumSize = new Size((int)(680 * Ui), (int)(440 * Ui));
+                float wantW = 960, wantH = 700;
+                Size = new Size((int)Math.Min(wantW * Ui + chromeW, area.Width - 40), (int)Math.Min(wantH * Ui + chromeH, area.Height - 40));
+                MinimumSize = new Size((int)(680 * Ui), (int)(460 * Ui));
                 Location = new Point(area.X + (area.Width - Width) / 2, area.Y + (area.Height - Height) / 2);
                 Relayout();
             }
 
-            protected override void OnResize(EventArgs e) { base.OnResize(e); if (IsHandleCreated) { Place(); Fill(); } }
-
-            public override void Relayout()
+            protected override void OnResize(EventArgs e)
             {
-                BackColor = KitInk.Window;
-                Native.DarkFrame(Handle, !Ink.Light);
-                // Scrollbar follows the theme
-                try { SetWindowTheme(content.Handle, Ink.Light ? "Explorer" : "DarkMode_Explorer", null); } catch (Exception) { }
-                Text = Lang.T("Pengaturan Deskmate");
-                side.Items = new List<string[]>();
-                // The card reads its version; every other row its title
-                foreach (var s in Sections) side.Items.Add(new[] { s[0], Lang.T(s[1]), s[2], s[3], s[4], s[0] == "about" ? Lang.F("Versi {0}", AppVersion) : "" });
-                side.Selected = NormalizeSection(section);
-                search.Font = UiFont(13f);
-                search.BackColor = KitInk.Hover;
-                search.ForeColor = KitInk.Text;
-                // Hint stays while focused
-                SendMessage(search.Handle, 0x1501, (IntPtr)1, Lang.T("Cari pengaturan"));
-                searchIndex.Clear();
+                base.OnResize(e);
+                if (!IsHandleCreated) return;
                 Place();
-                // A setting changed in place: the page rebuilds where the reader was,
-                // drawn once when done instead of row by row from the top
+                if (inHub)
+                {
+                    hub.Invalidate();
+                }
+                else
+                {
+                    if (content.Controls.Count == 0) Fill();
+                    else ReflowContent();
+                }
+            }
+
+            // Reposition existing page controls on window resize without destroying or losing scroll/state
+            void ReflowContent()
+            {
+                FinishPageEntrance();
+                int room = content.Width - SystemInformation.VerticalScrollBarWidth;
+                int newRowW = Math.Max((int)(280 * Ui), Math.Min((int)(840 * Ui), room - (int)(52 * Ui)));
+                int newLeft = Math.Max((int)(26 * Ui), (room - newRowW) / 2);
+                if (newRowW == rowW && newLeft == left) return;
+                rowW = newRowW;
+                left = newLeft;
+                content.SuspendLayout();
+                foreach (Control c in content.Controls)
+                {
+                    var head = c as PageHeader;
+                    if (head != null) { head.Left = left; head.Width = rowW; head.Invalidate(); continue; }
+                    var cap = c as DeckCaption;
+                    if (cap != null) { cap.Left = left; cap.Width = rowW; cap.Invalidate(); continue; }
+                    var banner = c as PartBanner;
+                    if (banner != null) { banner.Left = left; banner.Width = rowW; banner.Reflow(); continue; }
+                    var foot = c as SubMenuFooter;
+                    if (foot != null) { foot.Left = left; foot.Width = rowW; foot.Invalidate(); continue; }
+                    var empty = c as SearchEmptyCard;
+                    if (empty != null) { empty.Left = left; empty.Width = rowW; empty.Reflow(); continue; }
+                    if (c == partNav && partNav != null) { partNav.Left = left; partNav.Width = rowW; partNav.Invalidate(); continue; }
+                    var g = c as KitGroup;
+                    if (g != null)
+                    {
+                        g.Left = left;
+                        g.Width = rowW;
+                        foreach (Control child in g.Controls)
+                        {
+                            var r = child as KitRow;
+                            if (r == null) continue;
+                            r.Width = rowW;
+                            PlaceField(r);
+                        }
+                        g.Invalidate(true);
+                        continue;
+                    }
+                    var lbl = c as Label;
+                    if (lbl != null && lbl.Tag is int)
+                        lbl.Left = left + (int)lbl.Tag;
+                }
+                content.ResumeLayout();
+            }
+
+            // Rebuild current page content in place (preserving scroll) without clearing searchIndex
+            void RefreshContent()
+            {
+                if (!IsHandleCreated || IsDisposed) return;
+                if (inHub)
+                {
+                    hub.UpdateStatuses(HubStatus);
+                    return;
+                }
                 var at = content.AutoScrollPosition;
-                bool frozen = content.IsHandleCreated && content.Visible;
-                if (frozen) SendMessage(content.Handle, WmSetRedraw, IntPtr.Zero, null);
+                bool frozen = content.IsHandleCreated && content.Visible && !redrawFrozen;
+                if (frozen) { redrawFrozen = true; SendMessage(content.Handle, WmSetRedraw, IntPtr.Zero, null); }
                 try
                 {
+                    animateNextFill = false;
                     Fill();
                     if (at.Y != 0)
                     {
@@ -326,31 +583,230 @@ namespace Deskmate
                 {
                     if (frozen)
                     {
+                        redrawFrozen = false;
                         SendMessage(content.Handle, WmSetRedraw, (IntPtr)1, null);
                         RedrawWindow(content.Handle, IntPtr.Zero, IntPtr.Zero, RdwErase | RdwFrame | RdwInvalidate | RdwAllChildren | RdwUpdateNow);
                     }
                 }
-                Invalidate(false);
-                side.Invalidate();
             }
 
-            // Sidebar width, 1x px
-            const float SideW = 220;
+            void BindHub(string focusId)
+            {
+                var decks = new[]
+                {
+                    Lang.T("Utama & Tampilan"),
+                    Lang.T("Produktivitas & Harian"),
+                    Lang.T("AI, Agen & Sistem"),
+                    Lang.T("Bermain, Kontrol & Info"),
+                };
+                // Curated Bento deck order: featured Hero cards lead
+                var spec = new[]
+                {
+                    // Deck 0: Hero pair + Wide pair
+                    new object[] { "look", 0, true, false, true },
+                    new object[] { "island", 0, true, false, false },
+                    new object[] { "dock", 0, false, true, false },
+                    new object[] { "general", 0, false, true, false },
+                    // Deck 1: Productivity & Daily
+                    new object[] { "messages", 1, false, false, false },
+                    new object[] { "work", 1, false, false, false },
+                    new object[] { "remind", 1, false, false, false },
+                    // Deck 2: AI featured (2-col) + Agents + Memory, Files, Devices
+                    new object[] { "ai", 2, true, false, false },
+                    new object[] { "agents", 2, false, false, false },
+                    new object[] { "ingat", 2, false, false, false },
+                    new object[] { "files", 2, false, false, false },
+                    new object[] { "system", 2, false, false, false },
+                    // Deck 3: Play, Controls & About
+                    new object[] { "game", 3, false, false, false },
+                    new object[] { "keys", 3, false, false, false },
+                    new object[] { "about", 3, false, false, false },
+                };
+                var cards = new List<SettingsHub.Card>();
+                for (int i = 0; i < spec.Length; i++)
+                {
+                    string id = (string)spec[i][0];
+                    string[] sec = FindSection(id);
+                    if (sec == null) continue;
+                    string note;
+                    SectionNotes.TryGetValue(id, out note);
+                    cards.Add(new SettingsHub.Card
+                    {
+                        Id = id,
+                        Title = Lang.T(sec[1]),
+                        Subtitle = note != null ? Lang.T(note) : "",
+                        Status = HubStatus(id),
+                        Glyph = sec[2].Length > 0 ? sec[2][0] : '\uE713',
+                        TileKey = sec[4],
+                        Deck = (int)spec[i][1],
+                        Featured = (bool)spec[i][2],
+                        Wide = (bool)spec[i][3],
+                        ShowPaletteDots = (bool)spec[i][4],
+                    });
+                }
+                hub.Bind(cards, decks, focusId);
+            }
+
+            static string[] FindSection(string id)
+            {
+                for (int i = 0; i < Sections.Length; i++)
+                    if (Sections[i][0] == id) return Sections[i];
+                return null;
+            }
+
+            // Real-time live status badge for each Hub card (zero filler stats)
+            string HubStatus(string id)
+            {
+                switch (id)
+                {
+                    case "look":
+                    {
+                        string theme = island.ThemeMode();
+                        string tName = theme == "terang" ? Lang.T("Terang") : theme == "gelap" ? Lang.T("Gelap") : Lang.T("Sistem");
+                        string mat = settings.Get("material", "frost");
+                        string mName = mat == "solid" ? "Solid" : mat == "liquid" ? "Liquid" : mat == "clear" ? Lang.T("Bening") : mat == "calm" ? Lang.T("Kalem") : "Frost";
+                        return tName + " · " + mName;
+                    }
+                    case "island":
+                    {
+                        string mode = settings.Get("mini", "auto");
+                        return mode == "always" ? Lang.T("Mini") : mode == "off" ? Lang.T("Penuh") : Lang.T("Otomatis");
+                    }
+                    case "dock":
+                    {
+                        bool on = settings.GetBool("dockbar.on", false);
+                        if (!on) return Lang.T("Mati");
+                        return settings.GetBool("dockbar.replace", false) ? Lang.T("Ganti Taskbar") : Lang.T("Aktif");
+                    }
+                    case "general":
+                        return (Lang.English ? "EN" : "ID") + " · " + (settings.GetBool("clock.24", true) ? Lang.T("24 jam") : Lang.T("12 jam"));
+                    case "messages":
+                        return settings.GetBool("notif", true) ? Lang.T("Aktif") : Lang.T("Mati");
+                    case "work":
+                        return Lang.T("Tugas & Fokus");
+                    case "remind":
+                    {
+                        string city = Cities.NameOf(settings.Get("pray.city", ""));
+                        if (!string.IsNullOrEmpty(city)) return city;
+                        return settings.GetBool("pray", false) ? Lang.T("Sholat") : Lang.T("Cuaca");
+                    }
+                    case "ai":
+                    {
+                        bool dict = settings.GetBool("dictate", false);
+                        return dict ? Lang.T("Dikte Aktif") : Lang.T("Siap");
+                    }
+                    case "agents":
+                        return "Claude · Codex";
+                    case "ingat":
+                        return settings.GetBool("ingat", false) ? Lang.T("Aktif") : Lang.T("Mati");
+                    case "files":
+                        return settings.GetBool("lyrics", true) ? Lang.T("Lirik & Rak") : Lang.T("Rak Berkas");
+                    case "system":
+                        return Lang.T("HUD & HP");
+                    case "game":
+                    {
+                        bool combo = settings.GetBool("keys.combo", false);
+                        bool pet = settings.GetBool("pet.on", false);
+                        if (combo && pet) return "Combo · Pet";
+                        if (combo) return "Combo";
+                        if (pet) return "Pet";
+                        return Lang.T("Mati");
+                    }
+                    case "keys":
+                    {
+                        string feel = settings.Get("motion.feel", "bawaan");
+                        return feel == "lincah" ? Lang.T("Lincah") : feel == "tenang" ? Lang.T("Tenang") : Lang.T("Bawaan");
+                    }
+                    case "about":
+                        return "v" + AppVersion;
+                }
+                return "";
+            }
+
+            public override void Relayout()
+            {
+                BackColor = KitInk.Window;
+                Native.DarkFrame(Handle, !Ink.Light);
+                // Scrollbar follows the theme
+                try { SetWindowTheme(content.Handle, Ink.Light ? "Explorer" : "DarkMode_Explorer", null); } catch (Exception) { }
+                Text = Lang.T("Pengaturan Deskmate");
+                search.Font = Ink.Text(12.5f * Ui);
+                search.BackColor = KitInk.Hover;
+                search.ForeColor = KitInk.Text;
+                // Hint stays while focused
+                SendMessage(search.Handle, 0x1501, (IntPtr)1, Lang.T("Cari pengaturan"));
+                searchIndex.Clear();
+                BindHub(section);
+                Place();
+                if (!inHub)
+                {
+                    // A setting changed in place: the page rebuilds where the reader was,
+                    // drawn once when done instead of row by row from the top
+                    var at = content.AutoScrollPosition;
+                    bool frozen = content.IsHandleCreated && content.Visible && !redrawFrozen;
+                    if (frozen) { redrawFrozen = true; SendMessage(content.Handle, WmSetRedraw, IntPtr.Zero, null); }
+                    try
+                    {
+                        animateNextFill = false;
+                        Fill();
+                        if (at.Y != 0)
+                        {
+                            foreach (Control c in content.Controls) if (!c.IsHandleCreated) { var h = c.Handle; }
+                            content.AutoScrollPosition = new Point(-at.X, -at.Y);
+                        }
+                    }
+                    finally
+                    {
+                        if (frozen)
+                        {
+                            redrawFrozen = false;
+                            SendMessage(content.Handle, WmSetRedraw, (IntPtr)1, null);
+                            RedrawWindow(content.Handle, IntPtr.Zero, IntPtr.Zero, RdwErase | RdwFrame | RdwInvalidate | RdwAllChildren | RdwUpdateNow);
+                        }
+                    }
+                }
+                Invalidate(false);
+                hub.Invalidate();
+            }
+
+            // Fixed top command bar height, 1x px
+            const float TopBarH = 56;
+
+            Rectangle TopBarRect() { return new Rectangle(0, 0, ClientSize.Width, (int)Math.Ceiling(TopBarH * Ui) + 2); }
+
+            void PlaceSearchBox()
+            {
+                float s = Ui;
+                var sw = SearchWell();
+                int h = search.PreferredHeight;
+                bool showHint = !search.Focused && search.Text.Length == 0;
+                float rightPad = showHint ? 56f * s : 28f * s;
+                search.SetBounds(
+                    (int)(sw.X + 28 * s),
+                    (int)Math.Round(sw.Y + sw.Height / 2f - h / 2f + 1 * s),
+                    Math.Max(40, (int)(sw.Width - 28 * s - rightPad)),
+                    h);
+            }
 
             void Place()
             {
                 float s = Ui;
-                int sideW = (int)(SideW * s);
-                // Text centred on the well, by its real height
-                int h = search.PreferredHeight;
-                search.SetBounds((int)(36 * s), (int)Math.Round(SearchWell().Y + SearchWell().Height / 2 - h / 2f + 1 * s), sideW - (int)(72 * s), h);
-                side.SetBounds(0, (int)(52 * s), sideW, ClientSize.Height - (int)(52 * s));
-                content.SetBounds(sideW, 0, Math.Max(10, ClientSize.Width - sideW), ClientSize.Height);
+                int topH = (int)(TopBarH * s);
+                PlaceSearchBox();
+                hub.SetBounds(0, topH, Math.Max(10, ClientSize.Width), Math.Max(10, ClientSize.Height - topH));
+                content.SetBounds(0, topH, Math.Max(10, ClientSize.Width), Math.Max(10, ClientSize.Height - topH));
                 content.BackColor = KitInk.Window;
-                side.Invalidate();
+                hub.Invalidate();
+                Invalidate(TopBarRect());
             }
 
-            RectangleF SearchWell() { return new RectangleF(12 * Ui, 14 * Ui, SideW * Ui - 24 * Ui, 28 * Ui); }
+            RectangleF SearchWell()
+            {
+                float s = Ui;
+                float w = Math.Max(180 * s, Math.Min(270 * s, ClientSize.Width * 0.30f));
+                float h = 30 * s;
+                return new RectangleF(ClientSize.Width - w - 20 * s, (TopBarH * s - h) / 2f, w, h);
+            }
 
             RectangleF SearchClearRect()
             {
@@ -358,26 +814,67 @@ namespace Deskmate
                 return new RectangleF(r.Right - 26 * Ui, r.Y + 2 * Ui, 24 * Ui, r.Height - 4 * Ui);
             }
 
+            RectangleF BackButtonRect()
+            {
+                float s = Ui;
+                string label = Lang.T("Menu Utama");
+                int tw = TextRenderer.MeasureText(label, Ink.Semi(12.5f * s)).Width;
+                float w = tw + 68 * s;
+                float h = 32 * s;
+                return new RectangleF(18 * s, (TopBarH * s - h) / 2f, w, h);
+            }
+
             protected override void OnMouseMove(MouseEventArgs e)
             {
                 base.OnMouseMove(e);
-                bool over = search.Text.Length > 0 && SearchClearRect().Contains(e.Location);
-                if (over == overClear) return;
-                overClear = over;
-                Cursor = over ? Cursors.Hand : Cursors.Default;
-                Invalidate(Rectangle.Ceiling(SearchWell()));
+                bool oClear = search.Text.Length > 0 && SearchClearRect().Contains(e.Location);
+                bool oBack = !inHub && BackButtonRect().Contains(e.Location);
+                if (oClear == overClear && oBack == overBack) return;
+                overClear = oClear;
+                overBack = oBack;
+                Cursor = (overClear || overBack) ? Cursors.Hand : Cursors.Default;
+                Invalidate(TopBarRect());
             }
 
             protected override void OnMouseLeave(EventArgs e)
             {
                 base.OnMouseLeave(e);
-                if (overClear) { overClear = false; Cursor = Cursors.Default; Invalidate(Rectangle.Ceiling(SearchWell())); }
+                if (overClear || overBack || downBack)
+                {
+                    overClear = overBack = downBack = false;
+                    Cursor = Cursors.Default;
+                    Invalidate(TopBarRect());
+                }
+            }
+
+            protected override void OnMouseDown(MouseEventArgs e)
+            {
+                base.OnMouseDown(e);
+                if (e.Button != MouseButtons.Left) return;
+                if (!inHub && BackButtonRect().Contains(e.Location))
+                {
+                    downBack = true;
+                    Invalidate(TopBarRect());
+                    return;
+                }
+                if (SearchWell().Contains(e.Location) && !(search.Text.Length > 0 && SearchClearRect().Contains(e.Location)))
+                {
+                    search.Focus();
+                }
             }
 
             protected override void OnMouseUp(MouseEventArgs e)
             {
                 base.OnMouseUp(e);
-                if (e.Button == MouseButtons.Left && search.Text.Length > 0 && SearchClearRect().Contains(e.Location))
+                bool wasDownBack = downBack;
+                if (downBack) { downBack = false; Invalidate(TopBarRect()); }
+                if (e.Button != MouseButtons.Left) return;
+                if (wasDownBack && !inHub && BackButtonRect().Contains(e.Location))
+                {
+                    ShowHub(true);
+                    return;
+                }
+                if (search.Text.Length > 0 && SearchClearRect().Contains(e.Location))
                 {
                     search.Text = "";
                     search.Focus();
@@ -387,20 +884,100 @@ namespace Deskmate
             protected override void OnPaintBackground(PaintEventArgs e)
             {
                 var g = e.Graphics;
+                float s = Ui;
+                int topH = (int)(TopBarH * s);
                 g.Clear(KitInk.Window);
-                g.FillRectangle(KitInk.BrushOf(KitInk.Side), 0, 0, (int)(SideW * Ui), ClientSize.Height);
-                // Search field: a soft well; keyboard focus draws the accent edge
-                var r = SearchWell();
+                g.FillRectangle(KitInk.BrushOf(KitInk.Side), 0, 0, ClientSize.Width, topH);
+                g.DrawLine(KitInk.PenOf(KitInk.Line, 1f), 0, topH - 1, ClientSize.Width, topH - 1);
                 KitInk.Smooth(g);
-                KitInk.FillRound(g, r, 7 * Ui, search.BackColor);
-                if (search.Focused) KitInk.StrokeRound(g, r, 7 * Ui, KitInk.Focus, 1.5f * Ui);
-                // Magnifier leads the field
-                KitInk.Draw(g, "\uE721", Ink.Icons(12f * Ui), KitInk.Sub, new RectangleF(r.X + 3 * Ui, r.Y, 22 * Ui, r.Height), ContentAlignment.MiddleCenter);
+
+                var sw = SearchWell();
+
+                if (inHub)
+                {
+                    // Brand mark + Pengaturan title + version pill
+                    var ico = new RectangleF(20 * s, (topH - 26 * s) / 2f, 26 * s, 26 * s);
+                    g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(ico));
+                    string title = Lang.T("Pengaturan");
+                    Font tf = Ink.Semi(15.5f * s);
+                    int tw = TextRenderer.MeasureText(title, tf).Width;
+                    KitInk.Draw(g, title, tf, KitInk.Text, new RectangleF(54 * s, 0, tw + 8 * s, topH), ContentAlignment.MiddleLeft);
+                    string ver = "v" + AppVersion;
+                    Font vf = Ink.Semi(10.5f * s);
+                    int vw = TextRenderer.MeasureText(ver, vf).Width;
+                    var vr = new RectangleF(54 * s + tw + 10 * s, (topH - 20 * s) / 2f, vw + 14 * s, 20 * s);
+                    if (vr.Right < sw.Left - 14 * s)
+                    {
+                        KitInk.FillRound(g, vr, 10 * s, KitInk.Hover);
+                        KitInk.Draw(g, ver, vf, KitInk.Sub, vr, ContentAlignment.MiddleCenter);
+                    }
+                }
+                else
+                {
+                    // Tactile "← Menu Utama [Esc]" back button + breadcrumb
+                    var br = BackButtonRect();
+                    Color secTile = SectionTileColor(section);
+                    Color bBg = downBack ? Ink.Mix(KitInk.Hover, secTile, 0.22f)
+                        : overBack ? Ink.Mix(KitInk.Group, secTile, Ink.Light ? 0.10f : 0.16f)
+                        : KitInk.Group;
+                    Color bEdge = overBack || downBack ? Ink.Mix(KitInk.Line, secTile, 0.65f) : KitInk.Line;
+                    KitInk.FillRound(g, br, 9 * s, bBg);
+                    KitInk.StrokeRound(g, br, 9 * s, bEdge, 1f * s);
+                    KitInk.Draw(g, "\uE72B", Ink.Icons(12f * s), overBack ? secTile : KitInk.Text, new RectangleF(br.X + 8 * s, br.Y, 18 * s, br.Height), ContentAlignment.MiddleCenter);
+                    KitInk.Draw(g, Lang.T("Menu Utama"), Ink.Semi(12.5f * s), KitInk.Text, new RectangleF(br.X + 27 * s, br.Y, br.Width - 62 * s, br.Height), ContentAlignment.MiddleLeft);
+                    var escR = new RectangleF(br.Right - 32 * s, br.Y + 6 * s, 26 * s, br.Height - 12 * s);
+                    KitInk.FillRound(g, escR, 5 * s, Ink.Mix(bBg, KitInk.Text, Ink.Light ? 0.06f : 0.09f));
+                    KitInk.StrokeRound(g, escR, 5 * s, KitInk.Line, 1f * s);
+                    KitInk.Draw(g, "Esc", Ink.Semi(9f * s), KitInk.Faint, escR, ContentAlignment.MiddleCenter);
+
+                    // Breadcrumb separator + current section badge & title
+                    float bx = br.Right + 10 * s;
+                    if (bx + 80 * s < sw.Left)
+                    {
+                        KitInk.Draw(g, "\uE76C", Ink.Icons(9.5f * s), KitInk.Faint, new RectangleF(bx, 0, 14 * s, topH), ContentAlignment.MiddleCenter);
+                        bx += 18 * s;
+                        if (section == "search")
+                        {
+                            KitInk.Draw(g, Lang.T("Cari pengaturan"), Ink.Semi(13f * s), KitInk.Sub, new RectangleF(bx, 0, Math.Max(40 * s, sw.Left - bx - 12 * s), topH), ContentAlignment.MiddleLeft);
+                        }
+                        else
+                        {
+                            var sec = FindSection(section);
+                            if (sec != null)
+                            {
+                                var tileR = new RectangleF(bx, (topH - 20 * s) / 2f, 20 * s, 20 * s);
+                                if (sec[2].Length > 0 && sec[2][0] == KitRow.MarkGlyph)
+                                    g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(tileR));
+                                else
+                                {
+                                    Color tc = sec[4].Length > 0 ? Ink.Label(sec[4], true) : Ink.Label("slate", true);
+                                    KitInk.FillRound(g, tileR, 5 * s, tc);
+                                    KitInk.Draw(g, sec[2], Ink.Icons(11f * s), Ink.On(tc), tileR, ContentAlignment.MiddleCenter);
+                                }
+                                bx += 28 * s;
+                                KitInk.Draw(g, Lang.T(sec[1]), Ink.Semi(13.5f * s), KitInk.Text, new RectangleF(bx, 0, Math.Max(40 * s, sw.Left - bx - 12 * s), topH), ContentAlignment.MiddleLeft);
+                            }
+                        }
+                    }
+                }
+
+                // Search pill well on the right of Top Command Bar
+                KitInk.FillRound(g, sw, 9 * s, search.BackColor);
+                if (search.Focused) KitInk.StrokeRound(g, sw, 9 * s, KitInk.Focus, 1.5f * s);
+                else KitInk.StrokeRound(g, sw, 9 * s, KitInk.Line, 1f * s);
+                KitInk.Draw(g, "\uE721", Ink.Icons(12f * s), KitInk.Sub, new RectangleF(sw.X + 4 * s, sw.Y, 22 * s, sw.Height), ContentAlignment.MiddleCenter);
                 if (search.Text.Length > 0)
                 {
                     var cr = SearchClearRect();
-                    if (overClear) KitInk.FillRound(g, cr, 6 * Ui, KitInk.Hover);
-                    KitInk.Draw(g, "\uE711", Ink.Icons(10f * Ui), overClear ? KitInk.Text : KitInk.Sub, cr, ContentAlignment.MiddleCenter);
+                    if (overClear) KitInk.FillRound(g, cr, 6 * s, KitInk.Hover);
+                    KitInk.Draw(g, "\uE711", Ink.Icons(10f * s), overClear ? KitInk.Text : KitInk.Sub, cr, ContentAlignment.MiddleCenter);
+                }
+                else if (!search.Focused)
+                {
+                    var kr = new RectangleF(sw.Right - 50 * s, sw.Y + 5 * s, 44 * s, sw.Height - 10 * s);
+                    KitInk.FillRound(g, kr, 5 * s, KitInk.Group);
+                    KitInk.StrokeRound(g, kr, 5 * s, KitInk.Line, 1f * s);
+                    KitInk.Draw(g, "Ctrl+F", Ink.Semi(9.5f * s), KitInk.Faint, kr, ContentAlignment.MiddleCenter);
                 }
             }
 
@@ -412,170 +989,355 @@ namespace Deskmate
             void Fill()
             {
                 if (!IsHandleCreated) return;
+                bool doEntrance = animateNextFill;
+                animateNextFill = false;
+                FinishPageEntrance();
+                content.StopScroll();
                 building = true;
+                bool freeze = content.IsHandleCreated && content.Visible && !redrawFrozen;
+                if (freeze) { redrawFrozen = true; SendMessage(content.Handle, WmSetRedraw, IntPtr.Zero, null); }
+                try
+                {
+                    content.SuspendLayout();
+                    var old = new List<Control>();
+                    foreach (Control c in content.Controls) old.Add(c);
+                    content.Controls.Clear();
+                    foreach (var c in old) c.Dispose();
+                    content.AutoScrollPosition = Point.Empty;
+                    // Outer width: the old page's scrollbar must not narrow rows. One centred column, at most 840
+                    int room = content.Width - SystemInformation.VerticalScrollBarWidth;
+                    rowW = Math.Max((int)(280 * Ui), Math.Min((int)(840 * Ui), room - (int)(52 * Ui)));
+                    left = Math.Max((int)(26 * Ui), (room - rowW) / 2);
+                    y = Ink.Sp20 * Ui;
+                    partTop.Clear();
+                    partNav = null;
+                    partJumpActive = false;
+                    activeHeader = null;
+                    activeGroupTile = SectionTileColor(section);
+                    activeParts = new string[0];
+                    if (section == "search")
+                    {
+                        string q = appliedSearch;
+                        var searchHead = new PageHeader
+                        {
+                            Glyph = '\uE721',
+                            Title = Lang.F("Hasil untuk \"{0}\"", q),
+                            Note = Lang.T("Menampilkan pengaturan yang cocok di semua kategori"),
+                            Tile = KitInk.Accent,
+                            Status = "",
+                        };
+                        searchHead.SetBounds(left, (int)y, rowW, (int)(86 * Ui));
+                        content.Controls.Add(searchHead);
+                        activeHeader = searchHead;
+                        y += (86 + Ink.Sp20) * Ui;
+
+                        int found = 0;
+                        EnsureSearchIndex();
+                        foreach (var s in Sections)
+                        {
+                            string kw;
+                            SectionKeywords.TryGetValue(s[0], out kw);
+                            bool secMatch = Lang.T(s[1]).IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0 || (kw != null && kw.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0);
+                            var rows = new List<KitRow>();
+                            foreach (var part in PartsOf(s[0])) if (secMatch || PartMatches(part, q)) Build(part, rows, false);
+                            var hits = secMatch ? rows : rows.FindAll(r => r.Title.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0 || r.Detail.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0);
+                            if (!secMatch) foreach (var r in rows) if (!hits.Contains(r)) { if (r.Field != null && !r.Field.IsDisposed) r.Field.Dispose(); r.Dispose(); }
+                            if (hits.Count == 0) continue;
+                            found += hits.Count;
+                            activeGroupTile = SectionTileColor(s[0]);
+                            Caption(Lang.T(s[1]));
+                            Group(hits);
+                        }
+                        if (found > 0)
+                        {
+                            searchHead.Status = Lang.F("{0} hasil", found);
+                            searchHead.Invalidate();
+                        }
+                        else
+                        {
+                            searchHead.Status = Lang.T("0 hasil");
+                            searchHead.Invalidate();
+                            var empty = new SearchEmptyCard(
+                                Lang.T("Tidak ada yang cocok"),
+                                Lang.T("Coba kata kunci lain seperti tema, dock, sholat, atau dikte"),
+                                Ui);
+                            empty.SetBounds(left, (int)y, rowW, empty.Height);
+                            empty.Reflow();
+                            content.Controls.Add(empty);
+                            y += empty.Height + Ink.Sp20 * Ui;
+                        }
+                    }
+                    else
+                    {
+                        section = NormalizeSection(section);
+                        activeGroupTile = SectionTileColor(section);
+                        Head(section);
+                        var parts = PartsOf(section);
+                        activeParts = parts;
+                        if (IsTabbedPage(section) && parts.Length > 1)
+                        {
+                            string curTab = null;
+                            if (!string.IsNullOrEmpty(focusPart) && Array.IndexOf(parts, focusPart) >= 0) curTab = focusPart;
+                            else if (!activeSubTab.TryGetValue(section, out curTab) || Array.IndexOf(parts, curTab) < 0) curTab = parts[0];
+                            activeSubTab[section] = curTab;
+                            int tabIdx = Math.Max(0, Array.IndexOf(parts, curTab));
+                            AddPartSwitcher(parts, tabIdx);
+                            BuildTabbedPart(curTab);
+                        }
+                        else
+                        {
+                            if (parts.Length > 1) AddPartSwitcher(parts, 0);
+                            for (int i = 0; i < parts.Length; i++)
+                            {
+                                partTop[parts[i]] = i == 0 ? 0 : Math.Max(0, (int)(y + Ink.Sp8 * Ui));
+                                string[] meta;
+                                if (PartMeta.TryGetValue(parts[i], out meta) && meta != null && meta[1].Length > 0)
+                                {
+                                    var pt = Ink.Label(meta[1], true);
+                                    if (!pt.IsEmpty) activeGroupTile = pt;
+                                }
+                                string title;
+                                if (parts.Length > 1 && PartTitles.TryGetValue(parts[i], out title))
+                                    PartTitle(parts[i], Lang.T(title), i > 0);
+                                Build(parts[i], new List<KitRow>(), true);
+                            }
+                            AddSubMenuFooter(section);
+                        }
+                    }
+                    // Room under the last group
+                    var spacer = new Panel { Location = new Point(0, (int)y), Size = new Size(1, (int)(Ink.Sp16 * Ui)), BackColor = KitInk.Window };
+                    content.Controls.Add(spacer);
+                    content.ResumeLayout();
+                    // A caller named a later part of this page: start there, once
+                    int at;
+                    bool jumped = false;
+                    if (!IsTabbedPage(section) && focusPart != null && focusPart != PartsOf(section)[0] && partTop.TryGetValue(focusPart, out at))
+                    {
+                        // WinForms scrolls only children that have a window; make them all first
+                        foreach (Control c in content.Controls) if (!c.IsHandleCreated) { var h = c.Handle; }
+                        content.AutoScrollPosition = new Point(0, at);
+                        int idx = Array.IndexOf(activeParts, focusPart);
+                        if (partNav != null && idx >= 0) { syncingPartNav = true; partNav.Selected = idx; syncingPartNav = false; }
+                        jumped = true;
+                    }
+                    focusPart = null;
+                    if (doEntrance && !jumped && Visible && !Anim.Reduced) StartPageEntrance();
+                }
+                finally
+                {
+                    building = false;
+                    if (freeze)
+                    {
+                        redrawFrozen = false;
+                        SendMessage(content.Handle, WmSetRedraw, (IntPtr)1, null);
+                        RedrawWindow(content.Handle, IntPtr.Zero, IntPtr.Zero, RdwErase | RdwFrame | RdwInvalidate | RdwAllChildren | RdwUpdateNow);
+                    }
+                }
+            }
+
+            // Game-platform forward slide-in: sub-menu glides smoothly in from the right
+            void StartPageEntrance(Control afterControl = null)
+            {
+                entranceControls.Clear();
+                entranceTargets.Clear();
+                int availRight = Math.Max(0, content.ClientSize.Width - (left + rowW) - 4);
+                entranceOffset = Math.Min(availRight, Math.Max(14, (int)Math.Round(24 * Ui)));
+                if (entranceOffset < 4) return;
+                bool past = afterControl == null;
+                foreach (Control c in content.Controls)
+                {
+                    if (!past) { if (c == afterControl) past = true; continue; }
+                    if (c.Top > content.Height + 32) continue;
+                    entranceControls.Add(c);
+                    entranceTargets.Add(c.Left);
+                    c.Left += entranceOffset;
+                }
+                if (entranceControls.Count == 0) return;
+                entranceStart = Environment.TickCount;
+                entranceTimer.Start();
+            }
+
+            void StepPageEntrance()
+            {
+                if (IsDisposed || entranceControls.Count == 0 || Anim.Reduced)
+                {
+                    FinishPageEntrance();
+                    return;
+                }
+                float duration = 1000f * Anim.Response(0.17f);
+                float t = Ease.Clamp01(unchecked((uint)(Environment.TickCount - entranceStart)) / Math.Max(40f, duration));
+                int dx = (int)Math.Round(entranceOffset * (1f - Ease.OutCubic(t)));
                 content.SuspendLayout();
-                var old = new List<Control>();
-                foreach (Control c in content.Controls) old.Add(c);
-                content.Controls.Clear();
-                foreach (var c in old) c.Dispose();
-                content.AutoScrollPosition = Point.Empty;
-                // Outer width: the old page's scrollbar must not narrow rows. One centred column, at most 720
-                int room = content.Width - SystemInformation.VerticalScrollBarWidth;
-                rowW = Math.Min((int)(720 * Ui), room - (int)(56 * Ui));
-                left = Math.Max((int)(28 * Ui), (room - rowW) / 2);
-                y = Ink.Sp20 * Ui;
-                partTop.Clear();
-                if (section == "search")
+                for (int i = 0; i < entranceControls.Count; i++)
                 {
-                    string q = appliedSearch;
-                    Heading(Lang.F("Hasil untuk \"{0}\"", q));
-                    int found = 0;
-                    EnsureSearchIndex();
-                    foreach (var s in Sections)
-                    {
-                        string kw;
-                        SectionKeywords.TryGetValue(s[0], out kw);
-                        bool secMatch = Lang.T(s[1]).IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0 || (kw != null && kw.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0);
-                        var rows = new List<KitRow>();
-                        foreach (var part in PartsOf(s[0])) if (secMatch || PartMatches(part, q)) Build(part, rows, false);
-                        var hits = secMatch ? rows : rows.FindAll(r => r.Title.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0 || r.Detail.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0);
-                        if (!secMatch) foreach (var r in rows) if (!hits.Contains(r)) r.Dispose();
-                        if (hits.Count == 0) continue;
-                        found += hits.Count;
-                        Caption(Lang.T(s[1]));
-                        Group(hits);
-                    }
-                    if (found == 0) Caption(Lang.T("Tidak ada yang cocok"));
+                    var c = entranceControls[i];
+                    if (!c.IsDisposed) c.Left = entranceTargets[i] + dx;
                 }
-                else
-                {
-                    section = NormalizeSection(section);
-                    side.Selected = section;
-                    side.Invalidate();
-                    Head(section);
-                    var parts = PartsOf(section);
-                    for (int i = 0; i < parts.Length; i++)
-                    {
-                        partTop[parts[i]] = Math.Max(0, (int)(y - Ink.Sp12 * Ui));
-                        string title;
-                        if (parts.Length > 1 && parts[i] != section && PartTitles.TryGetValue(parts[i], out title)) PartTitle(Lang.T(title));
-                        Build(parts[i], new List<KitRow>(), true);
-                    }
-                }
-                // Room under the last group
-                var spacer = new Panel { Location = new Point(0, (int)y), Size = new Size(1, (int)(Ink.Sp16 * Ui)), BackColor = KitInk.Window };
-                content.Controls.Add(spacer);
                 content.ResumeLayout();
-                // A caller named a later part of this page: start there, once
-                int at;
-                if (focusPart != null && focusPart != PartsOf(section)[0] && partTop.TryGetValue(focusPart, out at))
+                if (t >= 1f || dx <= 0) FinishPageEntrance();
+            }
+
+            void FinishPageEntrance()
+            {
+                if (entranceTimer.Enabled) entranceTimer.Stop();
+                if (entranceControls.Count == 0) return;
+                for (int i = 0; i < entranceControls.Count; i++)
                 {
-                    // WinForms scrolls only children that have a window; make them all first
-                    foreach (Control c in content.Controls) if (!c.IsHandleCreated) { var h = c.Handle; }
-                    content.AutoScrollPosition = new Point(0, at);
+                    var c = entranceControls[i];
+                    if (!c.IsDisposed && c.Left != entranceTargets[i]) c.Left = entranceTargets[i];
                 }
-                focusPart = null;
-                building = false;
+                entranceControls.Clear();
+                entranceTargets.Clear();
             }
 
             // Display changes only rebuild the visible display page; other pages keep their controls.
             internal void RefreshDisplayPicker()
             {
-                if (IsDisposed || !Visible || building || section != "island") return;
+                if (IsDisposed || !Visible || building || inHub || section != "island") return;
                 Fill();
             }
 
-            // Blank a Label draws before its first letter
+            static readonly Dictionary<string, int> labelPadCache = new Dictionary<string, int>();
+
+            // Blank a Label draws before its first letter (cached per font + leading glyph)
             static int LabelPad(Label l)
             {
+                string lead = string.IsNullOrEmpty(l.Text) ? "" : l.Text[0].ToString();
+                string key = l.Font.Name + "|" + l.Font.Size.ToString("0.##", CultureInfo.InvariantCulture) + "|" + (int)l.Font.Style + "|" + lead;
+                int cached;
+                if (labelPadCache.TryGetValue(key, out cached)) return cached;
                 var size = l.PreferredSize;
                 if (size.Width <= 0 || size.Height <= 0) return 0;
+                int pad = 0;
                 using (var bmp = new Bitmap(size.Width, size.Height))
                 {
                     l.Size = size;
                     l.DrawToBitmap(bmp, new Rectangle(Point.Empty, size));
                     var back = l.BackColor;
-                    for (int x = 0; x < size.Width; x++)
+                    for (int x = 0; x < size.Width && pad == 0; x++)
                         for (int y = 0; y < size.Height; y++)
                         {
                             var c = bmp.GetPixel(x, y);
-                            if (Math.Abs(c.R - back.R) + Math.Abs(c.G - back.G) + Math.Abs(c.B - back.B) > 90) return x;
+                            if (Math.Abs(c.R - back.R) + Math.Abs(c.G - back.G) + Math.Abs(c.B - back.B) > 90) { pad = x; break; }
                         }
                 }
-                return 0;
+                if (labelPadCache.Count > 256) labelPadCache.Clear();
+                labelPadCache[key] = pad;
+                return pad;
             }
 
-            void Heading(string text)
+            Label Heading(string text)
             {
                 // UseMnemonic off: an "&" in a title is text, not an access key
                 var l = new Label { Text = text, Font = Ink.Display(20f * Ui), ForeColor = KitInk.Text, BackColor = KitInk.Window, AutoSize = true, UseMnemonic = false };
                 // Ink on the group's edge
-                l.Location = new Point(left - LabelPad(l), (int)y);
+                int off = -LabelPad(l);
+                l.Tag = off;
+                l.Location = new Point(left + off, (int)y);
                 content.Controls.Add(l);
                 y += 46 * Ui;
+                return l;
             }
 
-            // Head: the category, or "Category > Page" with a way back
+            // Hero Banner matching the Hub Featured card language
             void Head(string page)
             {
                 string note = null;
-                string[] sec = null;
-                foreach (var s in Sections) if (s[0] == page) sec = s;
+                string[] sec = FindSection(page);
                 if (page != null) SectionNotes.TryGetValue(page, out note);
                 var head = new PageHeader
                 {
                     Glyph = sec != null ? sec[2][0] : '\uE713',
                     Title = sec != null ? Lang.T(sec[1]) : "",
                     Note = note != null ? Lang.T(note) : "",
+                    Status = HubStatus(page),
                     Tile = sec != null && sec[4].Length > 0 ? Ink.Label(sec[4], true) : Color.Empty,
+                    ShowPaletteDots = page == "look",
                 };
                 head.AccessibleName = head.Title;
                 head.AccessibleDescription = head.Note;
-                head.SetBounds(left, (int)y, rowW, (int)(72 * Ui));
+                head.SetBounds(left, (int)y, rowW, (int)(86 * Ui));
                 content.Controls.Add(head);
+                activeHeader = head;
                 tabFocus["head"] = head;
-                y += (72 + Ink.Sp24) * Ui;
+                y += (86 + Ink.Sp20) * Ui;
+            }
+
+            void RefreshHeroStatus()
+            {
+                if (activeHeader != null && !activeHeader.IsDisposed && !inHub && section != "search")
+                {
+                    string next = HubStatus(section);
+                    if (activeHeader.Status != next)
+                    {
+                        activeHeader.Status = next;
+                        activeHeader.Invalidate();
+                    }
+                }
             }
 
             protected override bool ProcessCmdKey(ref Message msg, Keys keys)
             {
-                if (keys == Keys.Escape && search.Focused && search.Text.Length > 0)
+                if (keys == (Keys.Control | Keys.F))
                 {
-                    search.Text = "";
+                    search.Focus();
+                    search.SelectAll();
                     return true;
+                }
+                if (keys == (Keys.Alt | Keys.Left))
+                {
+                    if (navBack.Count > 0)
+                    {
+                        string prev = navBack.Pop();
+                        if (!inHub && section != "search") navForward.Push(section);
+                        NavigateHistory(prev);
+                        return true;
+                    }
+                    if (!inHub)
+                    {
+                        ShowHub(true);
+                        return true;
+                    }
+                }
+                if (keys == (Keys.Alt | Keys.Right) && navForward.Count > 0)
+                {
+                    string next = navForward.Pop();
+                    if (!inHub && section != "search") navBack.Push(section);
+                    NavigateHistory(next);
+                    return true;
+                }
+                if (keys == Keys.Escape)
+                {
+                    if (search.Focused)
+                    {
+                        if (search.Text.Length > 0) search.Text = "";
+                        else if (inHub) hub.Focus();
+                        else content.Focus();
+                        return true;
+                    }
+                    if (!inHub && !(ActiveControl is TextBoxBase) && !(ActiveControl is KitHotkey))
+                    {
+                        ShowHub(true);
+                        return true;
+                    }
                 }
                 return base.ProcessCmdKey(ref msg, keys);
             }
 
-            // Page head
-            class PageHeader : KitControl
+            void NavigateHistory(string target)
             {
-                public char Glyph;
-                public string Title = "", Note = "";
-                // Category color, the same tile as in the sidebar; Empty for the Deskmate card
-                public Color Tile;
-
-                public PageHeader() { TabStop = false; }
-
-                // Hero card: the category tile, one size up, beside the title and its note
-                protected override void OnPaint(PaintEventArgs e)
-                {
-                    var g = e.Graphics;
-                    KitInk.Smooth(g);
-                    g.Clear(KitInk.Under(this));
-                    float s = Ui;
-                    Fill(g, new RectangleF(0, 0, Width - 1, Height - 1), Ink.RadiusList * s, KitInk.Group);
-                    var tile = new RectangleF(14 * s, (Height - 44 * s) / 2, 44 * s, 44 * s);
-                    if (Glyph == KitRow.MarkGlyph || Tile.IsEmpty) g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(tile));
-                    else
-                    {
-                        Fill(g, tile, 11 * s, Tile);
-                        KitInk.Draw(g, Ink.Str(Glyph), Ink.Icons(22f * s), Ink.On(Tile), tile, ContentAlignment.MiddleCenter);
-                    }
-                    float x = 72 * s, w = Width - x - 14 * s;
-                    KitInk.Draw(g, Title, Ink.Semi(15f * s), KitInk.Text, new RectangleF(x, 14 * s, w, 22 * s), ContentAlignment.MiddleLeft);
-                    KitInk.Draw(g, Note, Ink.Text(12f * s), KitInk.Sub, new RectangleF(x, 37 * s, w, 20 * s), ContentAlignment.MiddleLeft);
-                }
+                inHub = false;
+                section = NormalizeSection(target);
+                focusPart = null;
+                building = true;
+                appliedSearch = "";
+                search.Text = "";
+                building = false;
+                hub.Visible = false;
+                content.Visible = true;
+                Invalidate(TopBarRect());
+                animateNextFill = true;
+                Fill();
             }
 
             // Deskmate 2.0 big, build digits tiny
@@ -587,42 +1349,289 @@ namespace Deskmate
                 return r;
             }
 
-            // Section heading: semibold body ink, 8 above its group (macOS list heading)
+            // Section deck heading: category accent pill + real child Label + trailing hairline
             void Caption(string text)
             {
-                var l = new Label { Text = text, Font = Ink.Semi(13f * Ui), ForeColor = KitInk.Text, BackColor = KitInk.Window, AutoSize = true, UseMnemonic = false };
-                l.Location = new Point(left + (int)(4 * Ui) - LabelPad(l), (int)y);
-                content.Controls.Add(l);
-                y += 26 * Ui;
+                var cap = new DeckCaption(text, activeGroupTile, Ui);
+                cap.SetBounds(left, (int)y, rowW, cap.Height);
+                content.Controls.Add(cap);
+                y += cap.Height + 6 * Ui;
             }
 
-            // Later part of a merged page: a title one step under the hero
-            void PartTitle(string text)
+            void BuildTabbedPart(string partId)
             {
-                y += Ink.Sp12 * Ui;
-                var l = new Label { Text = text, Font = Ink.Semi(17f * Ui), ForeColor = KitInk.Text, BackColor = KitInk.Window, AutoSize = true, UseMnemonic = false };
-                l.Location = new Point(left + (int)(2 * Ui) - LabelPad(l), (int)y);
-                content.Controls.Add(l);
-                y += 34 * Ui;
+                string[] meta;
+                if (PartMeta.TryGetValue(partId, out meta) && meta != null && meta[1].Length > 0)
+                {
+                    var pt = Ink.Label(meta[1], true);
+                    if (!pt.IsEmpty) activeGroupTile = pt;
+                }
+                Build(partId, new List<KitRow>(), true);
+                AddSubMenuFooter(section);
+            }
+
+            void SwitchTabbedContent(string partId)
+            {
+                if (!IsHandleCreated || IsDisposed || partNav == null || partNav.IsDisposed) return;
+                FinishPageEntrance();
+                content.StopScroll();
+                building = true;
+                bool freeze = content.IsHandleCreated && content.Visible && !redrawFrozen;
+                if (freeze) { redrawFrozen = true; SendMessage(content.Handle, WmSetRedraw, IntPtr.Zero, null); }
+                try
+                {
+                    content.SuspendLayout();
+                    content.AutoScrollPosition = Point.Empty;
+                    int keepIdx = content.Controls.IndexOf(partNav);
+                    var drop = new List<Control>();
+                    for (int i = keepIdx + 1; i < content.Controls.Count; i++) drop.Add(content.Controls[i]);
+                    foreach (var c in drop) { content.Controls.Remove(c); c.Dispose(); }
+                    y = partNav.Bottom + Ink.Sp16 * Ui;
+                    BuildTabbedPart(partId);
+                    var spacer = new Panel { Location = new Point(0, (int)y), Size = new Size(1, (int)(Ink.Sp16 * Ui)), BackColor = KitInk.Window };
+                    content.Controls.Add(spacer);
+                    content.ResumeLayout();
+                    if (Visible && !Anim.Reduced) StartPageEntrance(partNav);
+                }
+                finally
+                {
+                    building = false;
+                    if (freeze)
+                    {
+                        redrawFrozen = false;
+                        SendMessage(content.Handle, WmSetRedraw, (IntPtr)1, null);
+                        RedrawWindow(content.Handle, IntPtr.Zero, IntPtr.Zero, RdwErase | RdwFrame | RdwInvalidate | RdwAllChildren | RdwUpdateNow);
+                    }
+                }
+            }
+
+            // Icon-enhanced spring-gliding chapter bar right below the Hero banner on merged pages
+            void AddPartSwitcher(string[] parts, int initialSelected)
+            {
+                var labels = new string[parts.Length];
+                var glyphs = new char[parts.Length];
+                var tiles = new Color[parts.Length];
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    string t;
+                    labels[i] = PartTitles.TryGetValue(parts[i], out t) ? Lang.T(t) : parts[i];
+                    string[] meta;
+                    if (PartMeta.TryGetValue(parts[i], out meta) && meta != null)
+                    {
+                        glyphs[i] = meta[0].Length > 0 ? meta[0][0] : '\0';
+                        tiles[i] = meta[1].Length > 0 ? Ink.Label(meta[1], true) : KitInk.Accent;
+                    }
+                    else
+                    {
+                        glyphs[i] = '\0';
+                        tiles[i] = KitInk.Accent;
+                    }
+                }
+                int h = (int)(38 * Ui);
+                var nav = new PartTabStrip { Labels = labels, Glyphs = glyphs, Tiles = tiles, Selected = initialSelected };
+                nav.SetBounds(left, (int)(y - Ink.Sp8 * Ui), rowW, h);
+                nav.Changed += idx =>
+                {
+                    if (building || syncingPartNav || idx < 0 || idx >= parts.Length) return;
+                    if (IsTabbedPage(section))
+                    {
+                        activeSubTab[section] = parts[idx];
+                        SwitchTabbedContent(parts[idx]);
+                        return;
+                    }
+                    int targetY;
+                    if (!partTop.TryGetValue(parts[idx], out targetY)) return;
+                    partJumpActive = true;
+                    foreach (Control c in content.Controls) if (!c.IsHandleCreated) { var hnd = c.Handle; }
+                    content.SmoothScrollTo(targetY);
+                };
+                partNav = nav;
+                content.Controls.Add(nav);
+                y = nav.Bottom + Ink.Sp16 * Ui;
+            }
+
+            void SyncPartNavFromScroll()
+            {
+                if (partNav == null || partNav.IsDisposed || activeParts.Length < 2 || building || partJumpActive || content.IsProgrammaticScrolling || IsTabbedPage(section)) return;
+                int scrollY = -content.AutoScrollPosition.Y;
+                int maxScroll = Math.Max(0, content.VerticalScroll.Maximum - content.VerticalScroll.LargeChange + 1);
+                int best = 0;
+                int threshold = (int)(90 * Ui);
+                for (int i = 1; i < activeParts.Length; i++)
+                {
+                    int py;
+                    if (partTop.TryGetValue(activeParts[i], out py))
+                    {
+                        int trigger = maxScroll > 0 ? Math.Min(py, maxScroll) : py;
+                        if (scrollY + threshold >= trigger) best = i;
+                    }
+                }
+                if (partNav.Selected != best)
+                {
+                    syncingPartNav = true;
+                    partNav.Selected = best;
+                    syncingPartNav = false;
+                }
+            }
+
+            // Distinct visual part chapter banner (colored icon badge + title + subtitle)
+            void PartTitle(string partId, string text, bool withDivider)
+            {
+                if (withDivider) y += Ink.Sp12 * Ui;
+                string[] meta;
+                PartMeta.TryGetValue(partId, out meta);
+                char glyph = meta != null && meta[0].Length > 0 ? meta[0][0] : '\uE713';
+                Color tile = meta != null && meta[1].Length > 0 ? Ink.Label(meta[1], true) : Ink.Label("slate", true);
+                string sub = meta != null && meta.Length > 2 ? Lang.T(meta[2]) : "";
+                var banner = new PartBanner(glyph, tile, text, sub, withDivider, Ui);
+                banner.SetBounds(left, (int)y, rowW, banner.PreferredH);
+                content.Controls.Add(banner);
+                y += banner.Height + Ink.Sp12 * Ui;
+            }
+
+            // Sleek chapter banner for each part of a merged page; keeps real child Labels for a11y/tests
+            sealed class PartBanner : Panel
+            {
+                readonly char glyph;
+                readonly Color tile;
+                readonly bool divider;
+                readonly float ui;
+                readonly Label titleLabel;
+                readonly Label subLabel;
+                public readonly int PreferredH;
+
+                public PartBanner(char glyph, Color tile, string title, string sub, bool divider, float ui)
+                {
+                    this.glyph = glyph;
+                    this.tile = tile;
+                    this.divider = divider;
+                    this.ui = ui;
+                    SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+                    BackColor = KitInk.Window;
+                    TabStop = false;
+
+                    int topPad = divider ? (int)(16 * ui) : 0;
+                    int padY = (int)(8 * ui);
+                    Color stripBg = Ink.Mix(KitInk.Window, tile, Ink.Light ? 0.065f : 0.11f);
+                    int badgeSize = (int)(32 * ui);
+                    int tx = (int)(12 * ui) + badgeSize + (int)(11 * ui);
+
+                    titleLabel = new Label
+                    {
+                        Text = title,
+                        Font = Ink.Semi(14.5f * ui),
+                        ForeColor = KitInk.Text,
+                        BackColor = stripBg,
+                        AutoSize = true,
+                        UseMnemonic = false,
+                        Location = new Point(tx, topPad + padY),
+                    };
+                    int titleH = titleLabel.PreferredHeight;
+                    Controls.Add(titleLabel);
+
+                    if (!string.IsNullOrEmpty(sub))
+                    {
+                        int subGap = (int)(2 * ui);
+                        subLabel = new Label
+                        {
+                            Text = sub,
+                            Font = Ink.Text(11.5f * ui),
+                            ForeColor = KitInk.Sub,
+                            BackColor = stripBg,
+                            AutoSize = false,
+                            AutoEllipsis = true,
+                            UseMnemonic = false,
+                            Location = new Point(tx, topPad + padY + titleH + subGap),
+                        };
+                        int subH = Math.Max((int)(18 * ui), subLabel.PreferredHeight);
+                        subLabel.Height = subH;
+                        Controls.Add(subLabel);
+                        PreferredH = topPad + Math.Max((int)(58 * ui), padY + titleH + subGap + subH + padY);
+                    }
+                    else
+                    {
+                        PreferredH = topPad + Math.Max((int)(48 * ui), padY * 2 + titleH);
+                        titleLabel.Location = new Point(tx, topPad + Math.Max(0, (PreferredH - topPad - titleH) / 2));
+                    }
+                }
+
+                public void Reflow()
+                {
+                    if (subLabel != null) subLabel.Width = Math.Max(40, Width - subLabel.Left - (int)(12 * ui));
+                    Invalidate();
+                }
+
+                protected override void OnResize(EventArgs e)
+                {
+                    base.OnResize(e);
+                    if (subLabel != null) subLabel.Width = Math.Max(40, Width - subLabel.Left - (int)(12 * ui));
+                }
+
+                protected override void OnPaint(PaintEventArgs e)
+                {
+                    var g = e.Graphics;
+                    KitInk.Smooth(g);
+                    g.Clear(KitInk.Window);
+                    float s = ui;
+                    if (divider)
+                    {
+                        var pen = KitInk.PenOf(Ink.Mix(KitInk.Line, KitInk.Sub, 0.25f), Math.Max(1f, s));
+                        g.DrawLine(pen, 0, 1f * s, Width - 1, 1f * s);
+                    }
+                    float topPad = divider ? 16f * s : 0f;
+                    var strip = new RectangleF(0.5f, topPad + 0.5f, Width - 1.5f, Height - topPad - 1.5f);
+                    Color stripBg = Ink.Mix(KitInk.Window, tile, Ink.Light ? 0.065f : 0.11f);
+                    Color stripEdge = Ink.Mix(KitInk.Line, tile, Ink.Light ? 0.24f : 0.34f);
+                    KitInk.FillRound(g, strip, 11f * s, stripBg);
+                    KitInk.StrokeRound(g, strip, 11f * s, stripEdge, 1f * s);
+                    float badgeSize = 32f * s;
+                    var badge = new RectangleF(12f * s, strip.Y + (strip.Height - badgeSize) / 2f, badgeSize, badgeSize);
+                    KitInk.FillRound(g, badge, 9f * s, tile);
+                    KitInk.Draw(g, Ink.Str(glyph), Ink.Icons(15f * s), Ink.On(tile), badge, ContentAlignment.MiddleCenter);
+                }
+            }
+
+            void AddSubMenuFooter(string currentPage)
+            {
+                int idx = Array.IndexOf(HubOrder, currentPage);
+                if (idx < 0) return;
+                string prevId = HubOrder[(idx - 1 + HubOrder.Length) % HubOrder.Length];
+                string nextId = HubOrder[(idx + 1) % HubOrder.Length];
+                var prevSec = FindSection(prevId);
+                var nextSec = FindSection(nextId);
+                if (prevSec == null || nextSec == null) return;
+                var footer = new SubMenuFooter(
+                    prevId, Lang.T(prevSec[1]), prevSec[2].Length > 0 ? prevSec[2][0] : '\uE713',
+                    prevSec[4].Length > 0 ? Ink.Label(prevSec[4], true) : Color.Empty,
+                    nextId, Lang.T(nextSec[1]), nextSec[2].Length > 0 ? nextSec[2][0] : '\uE713',
+                    nextSec[4].Length > 0 ? Ink.Label(nextSec[4], true) : Color.Empty);
+                footer.Picked += id => EnterSection(id, null, true);
+                footer.GoHub += delegate { ShowHub(true); };
+                footer.SetBounds(left, (int)(y + 4 * Ui), rowW, (int)(66 * Ui));
+                content.Controls.Add(footer);
+                y = footer.Bottom + Ink.Sp12 * Ui;
             }
 
             // Guidance under a heading: body weight, so it never reads as another heading
             void Note(string text)
             {
                 var l = new Label { Text = text, Font = Ink.Text(12.5f * Ui), ForeColor = KitInk.Sub, BackColor = KitInk.Window, AutoSize = true, UseMnemonic = false };
-                l.Location = new Point(left + (int)(4 * Ui) - LabelPad(l), (int)y);
+                int off = (int)(4 * Ui) - LabelPad(l);
+                l.Tag = off;
+                l.Location = new Point(left + off, (int)y);
                 content.Controls.Add(l);
                 y += 22 * Ui;
             }
 
-            // Rows into one rounded group
+            // Rows into one rounded category-cohesive card
             void Group(List<KitRow> rows)
             {
                 if (rows.Count == 0) return;
-                var g = new KitGroup { Left = left, Top = (int)y, Width = rowW };
+                var g = new KitGroup { Left = left, Top = (int)y, Width = rowW, AccentTile = activeGroupTile };
                 int top = 0;
                 foreach (var r in rows)
                 {
+                    r.AccentTile = activeGroupTile;
                     r.Width = rowW;
                     r.Top = top;
                     r.Left = 0;
@@ -814,6 +1823,7 @@ namespace Deskmate
                         row.Invalidate();
                         island.prayToday = null;
                         island.Kick();
+                        RefreshHeroStatus();
                         return;
                     }
                     row.Detail = Lang.T("Mencari lokasi…");
@@ -822,29 +1832,35 @@ namespace Deskmate
                     {
                         string error;
                         var hits = Cities.Search(typed, out error);
-                        BeginInvoke(new Action(delegate
+                        if (IsDisposed || !IsHandleCreated) return;
+                        try
                         {
-                            if (hits.Count == 0)
+                            BeginInvoke(new Action(delegate
                             {
-                                row.Detail = error != null ? Lang.T("Pencarian gagal, coba lagi") : Lang.T("Lokasi tidak ditemukan");
+                                if (IsDisposed || row.IsDisposed || f.IsDisposed) return;
+                                if (hits.Count == 0)
+                                {
+                                    row.Detail = error != null ? Lang.T("Pencarian gagal, coba lagi") : Lang.T("Lokasi tidak ditemukan");
+                                    row.Invalidate();
+                                    return;
+                                }
+                                // First match wins: it is the closest name match from the service
+                                var hit = hits[0];
+                                string packed = Cities.Pack((string)hit[0], Convert.ToDouble(hit[1]), Convert.ToDouble(hit[2]), Convert.ToDouble(hit[3]),
+                                                            (string)hit[4], (string)hit[5], (string)hit[6]);
+                                Cities.Remember(packed);
+                                settings.Set("pray.city", packed);
+                                settings.Save();
+                                f.Box.Text = (string)hit[0];
+                                row.Detail = PlaceDetail(hit);
                                 row.Invalidate();
-                                return;
-                            }
-                            // First match wins: it is the closest name match from the service
-                            var hit = hits[0];
-                            string packed = Cities.Pack((string)hit[0], Convert.ToDouble(hit[1]), Convert.ToDouble(hit[2]), Convert.ToDouble(hit[3]),
-                                                        (string)hit[4], (string)hit[5], (string)hit[6]);
-                            Cities.Remember(packed);
-                            settings.Set("pray.city", packed);
-                            settings.Save();
-                            f.Box.Text = (string)hit[0];
-                            row.Detail = PlaceDetail(hit);
-                            row.Invalidate();
-                            island.prayToday = null;
-                            island.Kick();
-                            // Weather and the ring follow the new coordinates
-                            Relayout();
-                        }));
+                                island.prayToday = null;
+                                island.Kick();
+                                // Weather and the ring follow the new coordinates
+                                RefreshContent();
+                            }));
+                        }
+                        catch (Exception) { }
                     });
                 };
 
@@ -858,7 +1874,7 @@ namespace Deskmate
             KitSwitch Switch(string key, bool fallback, Action<bool> after)
             {
                 var s = new KitSwitch { Checked = settings.GetBool(key, fallback), Size = new Size((int)(38 * Ui), (int)(22 * Ui)) };
-                s.CheckedChanged += delegate { if (building) return; if (after != null) after(s.Checked); else island.SetFlag(key, s.Checked); };
+                s.CheckedChanged += delegate { if (building) return; if (after != null) after(s.Checked); else island.SetFlag(key, s.Checked); RefreshHeroStatus(); };
                 return s;
             }
 
@@ -868,14 +1884,15 @@ namespace Deskmate
                 foreach (var it in items) w = Math.Max(w, TextRenderer.MeasureText(it, Ink.Semi(12.5f * Ui)).Width);
                 var c = new KitSegmented { Items = items, Size = new Size((int)((w + 30 * Ui) * items.Length), (int)(ControlH * Ui)) };
                 c.Selected = selected;
-                c.Changed += i => { if (!building) changed(i); };
+                c.Changed += i => { if (!building) { changed(i); RefreshHeroStatus(); } };
                 return c;
             }
 
             KitSlider Slider(int min, int max, int step, int value, Func<int, string> fmt, Action<int> changed)
             {
                 var c = new KitSlider { Minimum = min, Maximum = max, Step = step, Value = Math.Max(min, Math.Min(max, value)), Format = fmt, ShowValue = true, Size = new Size((int)(270 * Ui), (int)(ControlH * Ui)) };
-                c.Changed += v => { if (!building) { changed(v); content.Invalidate(true); } };
+                c.Changed += v => { if (!building) changed(v); };
+                c.Committed += delegate { if (!building) settings.FlushSave(); };
                 return c;
             }
 
@@ -886,7 +1903,7 @@ namespace Deskmate
                 float w = 0;
                 foreach (var it in items) w = Math.Max(w, TextRenderer.MeasureText(it + "  ▾", c.Font).Width);
                 c.Size = new Size((int)Math.Min(260 * Ui, w + 30 * Ui), (int)(ControlH * Ui));
-                c.Changed += i => { if (!building) changed(i); };
+                c.Changed += i => { if (!building) { changed(i); RefreshHeroStatus(); } };
                 return c;
             }
 
@@ -898,7 +1915,7 @@ namespace Deskmate
                 f.Box.Text = settings.Get(key, "");
                 var row = Row(title, detail, f);
                 var back = new System.Windows.Forms.Timer { Interval = 2500 };
-                back.Tick += delegate { back.Stop(); row.Detail = detail; row.Invalidate(); };
+                back.Tick += delegate { back.Stop(); if (row.IsDisposed) return; row.Detail = detail; row.Invalidate(); };
                 f.Disposed += delegate { back.Dispose(); };
                 Action save = delegate
                 {

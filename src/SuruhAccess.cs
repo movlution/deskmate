@@ -504,6 +504,10 @@ namespace Deskmate
                 case "calendar":
                     if (!expanded && !CanExpand()) return AskOpenBlocked();
                     ShowSchedule(); label = "Jadwal"; break;
+                case "pomodoro":
+                case "timer":
+                    if (!expanded && !CanExpand()) return AskOpenBlocked();
+                    ShowPomodoro(); label = "Pomodoro"; break;
                 case "clipboard":
                     if (!expanded && !CanExpand()) return AskOpenBlocked();
                     ShowClips(); label = "Clipboard"; break;
@@ -514,7 +518,7 @@ namespace Deskmate
                 case "chat": OpenSuruh(); label = "Obrolan"; break;
                 case "quick_note": OpenNote(); label = "Catatan kilat"; break;
                 default:
-                    int page = Array.IndexOf(PageIds, section == "voice" ? "suara" : section == "reminders" ? "remind" : section);
+                    int page = Array.IndexOf(PageIds, section == "voice" ? "suara" : section == "reminders" ? "remind" : section == "work" ? "class" : section);
                     if (page < 0) return null;
                     if (!expanded && !CanExpand()) return AskOpenBlocked();
                     if (page == PageShelf) SetSegment(PageShelf, 0, true);

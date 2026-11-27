@@ -11,13 +11,13 @@ namespace Deskmate
 {
     class KuliaTask
     {
-        public string Id = "", Title = "", Course = "", Kind = "tugas", Status = "belum";
+        public string Id = "", Title = "", Course = "", Kind = "tugas", Status = "belum", ListId = "";
         public DateTime DeadlineUtc;
         public bool Personal;
-        // kulia, notion, todoist, ics:<id>
+        // kulia, notion, todoist, gtasks, ics:<id>
         public string Source = "kulia";
-        // No time of day; no done action
-        public bool DateOnly, ReadOnly;
+        // No time of day; no due date; no done action
+        public bool DateOnly, NoDue, ReadOnly;
         string url;
 
         public bool Closed { get { return Status == "selesai" || Status == "dilewati"; } }

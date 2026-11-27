@@ -42,9 +42,9 @@ namespace Deskmate
         {
             void DictateRows(Action<KitRow> add, Action<string> cap)
             {
-                var words = Words.Load();
+                var words = indexing ? null : Words.Load();
                 string keyName = settings.Get("dictate.key", "rctrl") == "ralt" ? Lang.T("Alt kanan") : Lang.T("Ctrl kanan");
-                string missing = settings.GetBool("dictate", false) ? island.DictMissing() : null;
+                string missing = (!indexing && settings.GetBool("dictate", false)) ? island.DictMissing() : null;
                 add(Row(Lang.T("Dikte"), missing ?? Lang.F("Tahan {0}, bicara, lepas. Teks ditempel di aplikasi yang sedang aktif.", keyName), Switch("dictate", false, on =>
                 {
                     settings.Set("dictate", on);
@@ -58,12 +58,8 @@ namespace Deskmate
                 add(Row(Lang.T("Bahasa ucapan"), Lang.T("Istilah Inggris tetap dikenali"),
                     Seg(new[] { "Indonesia", "English", Lang.T("Otomatis") }, lang == "en" ? 1 : lang == "auto" ? 2 : 0, i => { settings.Set("dictate.lang", i == 1 ? "en" : i == 2 ? "auto" : "id"); settings.Save(); })));
 
-                var sp = Ai.Stt;
-                string engine = Ai.SttId == Ai.Offline ? Lang.T("Offline") : sp != null ? Ai.Label(sp) : "?";
-                add(Row(Lang.T("Mesin dikte"), Lang.F("{0} · diatur di halaman AI", engine), Button(Lang.T("Buka AI"), false, delegate { Go("ai"); })));
-
                 cap(Lang.T("Hasil"));
-                add(Row(Lang.T("Kamus dan snippet"), Lang.F("{0} istilah, {1} pengganti, {2} snippet", words.Terms.Count, words.Swaps.Count, words.Snippets.Count),
+                add(Row(Lang.T("Kamus dan snippet"), words == null ? "" : Lang.F("{0} istilah, {1} pengganti, {2} snippet", words.Terms.Count, words.Swaps.Count, words.Snippets.Count),
                     Button(Lang.T("Ubah…"), false, delegate { using (var w = new WordsWindow()) w.ShowDialog(this); island.ApplyDictate(); Rebuild(); })));
                 add(Row(Lang.T("Buang kata pengisi"), Lang.T("eh, em, anu, apa namanya"), Switch("dictate.fillers", true, null)));
                 add(Row(Lang.T("Perintah baris baru"), Lang.T("Ucapkan \"baris baru\" atau \"paragraf baru\""), Switch("dictate.commands", true, null)));
@@ -107,6 +103,11 @@ namespace Deskmate
                 }
                 add(Row(Lang.T("Model offline"), Lang.T("Makin besar, makin teliti dan lambat"),
                     Popup(names, at, i => { settings.Set("dictate.model", Speech.Models[i].Id); settings.Save(); Rebuild(); })));
+                if (indexing)
+                {
+                    add(Row(Lang.T("Unduh model"), Lang.T("whisper.cpp dan model dari Hugging Face, dicek SHA-256"), null));
+                    return;
+                }
                 var f = island.dictFetch;
                 if (f != null && f.Running && f.Model == m.Id)
                 {
@@ -139,6 +140,7 @@ namespace Deskmate
 
             void FetchTickHandler(object sender, EventArgs e)
             {
+                if (IsDisposed || fetchRow == null || fetchRow.IsDisposed) { if (fetchTick != null) fetchTick.Stop(); return; }
                 var f = island.dictFetch;
                 if (f == null || !f.Running) { if (fetchTick != null) fetchTick.Stop(); if (sender != null) Rebuild(); return; }
                 long done = Interlocked.Read(ref f.Done);

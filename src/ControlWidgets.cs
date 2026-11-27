@@ -140,6 +140,76 @@ namespace Deskmate
             try { Process.Start(uri); } catch (Exception ex) { Log.Write("settings: " + ex.Message); }
         }
 
+        const float PomodoroStatsH = 68;
+
+        float PomodoroHeight()
+        {
+            return Math.Min(MaxH, PanelTop + 4 + CtlTimerH + Ink.ModuleGap + PomodoroStatsH + Ink.ModuleInset);
+        }
+
+        void DrawPomodoroPage(float w, float h, DateTime now)
+        {
+            ControlActs();
+            float x0 = Ink.ModuleInset, full = w - 2 * x0, y = PanelTop + 4, keep = p.Alpha, dy;
+            p.Alpha = keep * RowIn(0, now, out dy);
+            DrawTimerModule(new RectangleF(x0, y + dy, full, CtlTimerH), now, true);
+            p.Alpha = keep * RowIn(1, now, out dy);
+            DrawPomodoroStats(new RectangleF(x0, y + CtlTimerH + Ink.ModuleGap + dy, full, PomodoroStatsH));
+            p.Alpha = keep;
+        }
+
+        void DrawPomodoroStats(RectangleF r)
+        {
+            Module(r, Ink.RadiusModule);
+            float pad = Ink.ModulePad;
+            float leftX = r.X + pad;
+            float topY = r.Y + 21;
+            float botY = r.Bottom - 20;
+
+            // Left: today's sessions + 4-dot Pomodoro cycle indicator
+            int sessions = FocusSessionsToday;
+            string todayLine = Lang.F("{0} sesi · {1} mnt hari ini", sessions, FocusMinToday);
+            p.Icon('\uE916', 13f, p.T.Accent, leftX + 6, topY);
+            p.Text(todayLine, Ink.Semi(12f), p.T.Text, leftX + 20, topY, r.Width * 0.56f, StringAlignment.Near);
+
+            int cycleFilled = sessions == 0 ? 0 : ((sessions - 1) % 4) + 1;
+            float dotX = leftX + 4;
+            for (int i = 0; i < 4; i++)
+            {
+                bool lit = i < cycleFilled;
+                p.Circle(dotX + i * 13, botY, lit ? 4f : 3.5f, lit ? p.T.Accent : Ink.A(p.T.Text, 0.14f));
+            }
+            int rest = Math.Max(1, settings.GetInt("focus.break", 5));
+            string sub = FocusStreakDays > 0
+                ? Lang.F("Streak {0} hari", FocusStreakDays) + " · " + Lang.F("Istirahat {0} mnt", rest)
+                : Lang.F("Istirahat {0} mnt", rest);
+            p.Text(sub, Ink.Caption, FocusStreakDays > 0 ? p.T.Accent : p.T.Sub, dotX + 56, botY, r.Width * 0.45f, StringAlignment.Near);
+
+            // Right: 7-day focus sparkline bars
+            int[] bars = FocusWeekBars();
+            int maxMin = 25;
+            for (int i = 0; i < bars.Length; i++) if (bars[i] > maxMin) maxMin = bars[i];
+            const float bw = 7f, bgap = 5f, maxH = 26f;
+            float totalW = bars.Length * bw + (bars.Length - 1) * bgap;
+            float bx0 = r.Right - pad - totalW;
+            float baseY = r.Bottom - 14;
+            for (int i = 0; i < bars.Length; i++)
+            {
+                float frac = bars[i] <= 0 ? 0f : Math.Max(0.18f, Math.Min(1f, (float)bars[i] / maxMin));
+                float bh = bars[i] <= 0 ? 4f : frac * maxH;
+                var br = new RectangleF(bx0 + i * (bw + bgap), baseY - bh, bw, bh);
+                bool isToday = i == bars.Length - 1;
+                Color bc = bars[i] <= 0
+                    ? Ink.A(p.T.Text, 0.10f)
+                    : isToday ? p.T.Accent : Ink.Mix(p.T.FillHover, p.T.Text, 0.28f);
+                p.FillRound(br, bw / 2f, bc);
+            }
+            string wkText = FocusWeekTotalMin > 0
+                ? Lang.T("Minggu ini") + " · " + FocusWeekTotalMin + "m"
+                : Lang.T("Minggu ini");
+            p.Text(wkText, Ink.Small(10.5f), p.T.Faint, r.Right - pad, r.Y + 14, totalW + 44, StringAlignment.Far);
+        }
+
         // Timer: presets idle, countdown when running
         void DrawTimerModule(RectangleF r, DateTime now, bool live)
         {
@@ -147,23 +217,26 @@ namespace Deskmate
             float pad = Ink.ModulePad;
             if (!TimerOn)
             {
-                p.Icon(Ink.IcoTimer, 15f, p.T.Sub, r.X + 25, r.Y + 26);
-                p.Text(Lang.T("Timer"), Ink.Headline, p.T.Text, r.X + 46, r.Y + 26, 120, StringAlignment.Near);
+                p.Icon(Ink.IcoTimer, 15f, p.T.Accent, r.X + 25, r.Y + 26);
+                p.Text(Lang.T("Pomodoro"), Ink.Headline, p.T.Text, r.X + 46, r.Y + 26, 120, StringAlignment.Near);
                 string taskChip = FocusTaskTitle.Length > 0 ? FocusTaskTitle : Lang.T("Pilih tugas fokus…");
                 float chipW = Math.Min(r.Width - 130, Math.Max(128, p.Measure(taskChip, Ink.Caption) + 34));
                 var chipRect = new RectangleF(r.Right - pad - chipW, r.Y + 14, chipW, 24);
                 AddHit(chipRect, "tmPickTask", PickFocusTaskMenu);
-                p.Module(chipRect, 12, Hover("tmPickTask") ? p.T.FillHover : p.T.Fill);
+                float csq = Squish("tmPickTask", chipRect, 0.95f);
+                p.Module(chipRect, 12, Pressed("tmPickTask") ? p.T.FillPressed : Hover("tmPickTask") ? p.T.FillHover : p.T.Fill);
+                p.StrokeRound(chipRect, 12, FocusTaskTitle.Length > 0 ? Ink.A(p.T.Accent, 0.4f) : p.T.Line, 1f);
                 p.Icon('\uE762', 11f, FocusTaskTitle.Length > 0 ? p.T.Accent : p.T.Sub, chipRect.X + 14, chipRect.Y + 12);
                 p.Text(taskChip, Ink.Caption, FocusTaskTitle.Length > 0 ? p.T.Text : p.T.Sub, chipRect.X + 24, chipRect.Y + 12, chipW - 34, StringAlignment.Near);
-                // Presets share the width evenly
+                Unsquish(chipRect, csq);
+                // Presets share the width evenly; Fokus 25 leads with accent
                 int n = ChipNames.Length;
                 float gap = 8, cw = (r.Width - 2 * pad - gap * (n - 1)) / n;
                 for (int i = 0; i < n; i++)
                 {
                     var pr = new RectangleF(r.X + pad + i * (cw + gap), r.Bottom - pad - 32, cw, 32);
-                    Pill(pr, ChipIds[i], Lang.T(ChipNames[i]), PillKind.Secondary, chipActs[i]);
-                    p.StrokeRound(pr, pr.Height / 2, p.T.Line, 1f);
+                    Pill(pr, ChipIds[i], Lang.T(ChipNames[i]), i == 0 ? PillKind.Primary : PillKind.Secondary, chipActs[i]);
+                    if (i != 0) p.StrokeRound(pr, pr.Height / 2, p.T.Line, 1f);
                 }
                 return;
             }

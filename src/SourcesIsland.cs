@@ -616,7 +616,11 @@ namespace Deskmate
                 // Hit regions key on ids: keep one
                 var ids = new HashSet<string>();
                 all.RemoveAll(t => t.Closed || !ids.Add(t.Id ?? ""));
-                all.Sort((a, b) => a.DeadlineUtc.CompareTo(b.DeadlineUtc));
+                all.Sort((a, b) =>
+                {
+                    if (a.NoDue != b.NoDue) return a.NoDue ? 1 : -1;
+                    return a.DeadlineUtc.CompareTo(b.DeadlineUtc);
+                });
                 if (all.Count > 300) all.RemoveRange(300, all.Count - 300);
             }
             if (slots != null)
@@ -716,16 +720,39 @@ namespace Deskmate
             Kick();
             sources.Close(task, err =>
             {
-                if (err == null) { TaskFinished(task); return; }
+                if (err == null)
+                {
+                    if (task.Source == "gtasks")
+                    {
+                        string rawId = task.Id != null && task.Id.StartsWith("gtasks:", StringComparison.Ordinal) ? task.Id.Substring(7) : task.Id;
+                        EnsureWorkData();
+                        if (todos != null && !string.IsNullOrEmpty(rawId))
+                        {
+                            var local = todos.Find(x => x.GoogleTaskId == rawId && !x.Done);
+                            if (local != null)
+                            {
+                                local.Done = true;
+                                local.DoneAt = DateTime.Now;
+                                local.UpdatedUtc = DateTime.UtcNow;
+                                local.Dirty = false;
+                                TodoFile.Save(todos);
+                                if (workWin != null && !workWin.IsDisposed) workWin.ReloadTasksFromSync();
+                            }
+                        }
+                    }
+                    TaskFinished(task);
+                    return;
+                }
                 task.Status = old;
                 MergeSources();
                 ShowInfo(Ink.IcoLock, err, task.Title, true);
             });
         }
 
-        // Date-only tasks show no time
+        // Date-only tasks show no time; no-due tasks show nothing
         static string Relative(KuliaTask t, DateTime nowUtc)
         {
+            if (t.NoDue || t.DeadlineUtc == DateTime.MinValue) return "";
             if (!t.DateOnly) return Relative(t.DeadlineUtc, nowUtc);
             var day = t.DeadlineUtc.ToLocalTime().Date;
             var today = DateTime.Now.Date;

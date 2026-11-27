@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace Deskmate
@@ -434,6 +435,18 @@ namespace Deskmate
             }
 
             // Parents first, so a subtask can name its parent's Google id
+            static bool HasTaskNoteImages(string notes)
+            {
+                return !string.IsNullOrEmpty(notes) && notes.IndexOf("deskmate-image:", StringComparison.Ordinal) >= 0;
+            }
+
+            // Keep WPF/TaskNoteImages out of the JIT path when tasks have no embedded images.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            static bool SyncTaskNoteImages(ref GoogleCalVault vault, string notes, bool upload, out string imageError)
+            {
+                return TaskNoteImages.Sync(ref vault, notes, upload, out imageError);
+            }
+
             bool Push(HashSet<string> pushed)
             {
                 var todo = Local.FindAll(t => string.IsNullOrEmpty(t.GoogleTaskId) || t.Dirty || t.Moved);
@@ -450,7 +463,7 @@ namespace Deskmate
                         if (FirstErr == null) FirstErr = Lang.T("Deskripsi Google Tasks melebihi 8192 karakter");
                         continue;
                     }
-                    if (!TaskNoteImages.Sync(ref Vault, t.Notes, true, out imageError))
+                    if (HasTaskNoteImages(t.Notes) && !SyncTaskNoteImages(ref Vault, t.Notes, true, out imageError))
                     {
                         if (FirstErr == null) FirstErr = imageError;
                         continue; // Keep Dirty: never publish a task before its images are available.
@@ -538,7 +551,7 @@ namespace Deskmate
                     string rTitle = Json.Str(item, "title");
                     string rNotes = Json.Str(item, "notes");
                     string imageError;
-                    if (!TaskNoteImages.Sync(ref Vault, rNotes, false, out imageError) && FirstErr == null)
+                    if (HasTaskNoteImages(rNotes) && !SyncTaskNoteImages(ref Vault, rNotes, false, out imageError) && FirstErr == null)
                         FirstErr = imageError; // Preserve Markdown even when an image is unavailable; retry next sync.
                     bool rDone = Json.Str(item, "status") == "completed";
                     DateTime? rDue = ParseDueLocal(Json.Str(item, "due"));
@@ -660,21 +673,43 @@ namespace Deskmate
                 {
                     if (GoogleWorkspaceHttp.JsonBool(item, "deleted")) continue;
                     if (Json.Str(item, "status") == "completed") continue;
+                    string tid = Json.Str(item, "id");
                     string title = Json.Str(item, "title");
-                    if (string.IsNullOrEmpty(title)) continue;
+                    if (string.IsNullOrEmpty(tid) || string.IsNullOrEmpty(title)) continue;
                     DateTime? due = ParseDueLocal(Json.Str(item, "due"));
-                    if (!due.HasValue) continue;
                     result.Add(new KuliaTask
                     {
                         Source = "gtasks",
-                        Id = Json.Str(item, "id"),
+                        Id = "gtasks:" + tid,
+                        ListId = kv.Key,
+                        Course = kv.Value,
                         Title = title,
-                        DeadlineUtc = due.Value.Date.AddHours(23).AddMinutes(59).ToUniversalTime(),
-                        ReadOnly = true
+                        DeadlineUtc = due.HasValue ? due.Value.Date.AddHours(23).AddMinutes(59).ToUniversalTime() : DateTime.MinValue,
+                        DateOnly = due.HasValue,
+                        NoDue = !due.HasValue,
+                        ReadOnly = false,
+                        Url = ""
                     });
                 }
             }
             return result;
+        }
+
+        public static string CompleteTask(string listId, string taskId)
+        {
+            if (string.IsNullOrEmpty(listId) || string.IsNullOrEmpty(taskId))
+                return Lang.T("Tugas tidak dikenal");
+            string error;
+            GoogleCalVault vault = GoogleCalendarSource.EnsureVaultToken(out error);
+            if (vault == null) return error ?? Lang.T("Belum terhubung");
+            string url = TasksBase + Uri.EscapeDataString(listId) + "/tasks/" + Uri.EscapeDataString(taskId);
+            string body = Json.Encode(new Dictionary<string, object> { { "status", "completed" } });
+            FetchResult r = GoogleWorkspaceHttp.SendWithRefresh(ref vault, "PATCH", url, body, "application/json; charset=utf-8", out error);
+            if (error != null) return error;
+            if (r.Ok || r.Status == 404 || r.Status == 410) return null;
+            if (r.Status == 401) return Lang.F("Token {0} ditolak", "Google Tasks");
+            if (r.Status == 0) return Lang.F("{0} tidak terjangkau", "Google Tasks");
+            return Lang.F("Gagal tersimpan di {0}", "Google Tasks");
         }
     }
 }

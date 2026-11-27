@@ -141,6 +141,17 @@ namespace Deskmate
 
         static string NotifKey(NotifItem n) { return n.AppId + "\n" + n.Title + "\n" + n.Body; }
 
+        void OpenNotifList()
+        {
+            if (toast != null && toast.View == View.Notif)
+            {
+                toast = null;
+                if (toastTimer != null) toastTimer.Stop();
+            }
+            if (notifScroll != null) notifScroll.Snap(0);
+            Show(PageMessages);
+        }
+
         void OpenNotifApp(NotifItem item)
         {
             // Phone items: nothing to launch here

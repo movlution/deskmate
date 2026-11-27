@@ -109,13 +109,16 @@ namespace Deskmate
                 return;
             }
             var nowLocal = DateTime.Now;
+            float keep = p.Alpha, dy;
             // Hero: the class that matters next
             var next = NextClass();
-            var hero = new RectangleF(16, PanelTop + 4, w - 32, HeroH - 8);
+            p.Alpha = keep * RowIn(0, now, out dy);
+            var hero = new RectangleF(16, PanelTop + 4 + dy, w - 32, HeroH - 8);
             p.FillRound(hero, Ink.RadiusModule, p.T.Fill);
             if (next != null)
             {
                 bool live = nowLocal >= next.Start;
+                if (live) p.FillRound(new RectangleF(hero.X + 2, hero.Y + 14, 3, hero.Height - 28), 1.5f, p.T.Accent);
                 string when = live ? Lang.T("Sedang berlangsung · sampai ") + Fmt.Hm(next.End)
                                    : Lang.T("Berikutnya · ") + (next.Start.Date == nowLocal.Date ? Fmt.Left(next.Start - nowLocal) + Lang.T(" lagi") : DayName(next.Start.Date).ToLower());
                 // Two or three lines, centred block
@@ -128,8 +131,10 @@ namespace Deskmate
                 if (next.Url.Length > 0)
                 {
                     var join = new RectangleF(hero.Right - 92, hc + 9, 76, 22);
+                    float jsq = Squish("joinNext", join, 0.93f);
                     p.FillRound(join, 11, Hover("joinNext") ? p.T.Text : p.T.Accent);
                     p.TextCenter(next.Source == "kulia" ? Lang.T("Buka kelas") : Lang.T("Buka tautan"), Ink.Semi(10.5f), Hover("joinNext") ? p.T.Bg : p.T.OnAccent, join.X + join.Width / 2, join.Y + 11);
+                    Unsquish(join, jsq);
                     string url = next.Url;
                     AddHit(join, "joinNext", delegate { OpenUrl(url); });
                 }
@@ -150,11 +155,12 @@ namespace Deskmate
             }
 
             // Day chips
+            p.Alpha = keep * RowIn(1, now, out dy);
             var chosen = ChosenDay();
             var days = ScheduleDays();
             float addReserve = GoogleCalendarConnected ? p.Measure(Lang.T("+ Acara"), Ink.Semi(11.5f)) + 28 : 0;
             var labels = ChipLabels(days, nowLocal.Date, w - 32 - addReserve);
-            float cx = 16, cy = PanelTop + HeroH + ChipsH / 2 - 2;
+            float cx = 16, cy = PanelTop + HeroH + ChipsH / 2 - 2 + dy;
             for (int di = 0; di < days.Count; di++)
             {
                 var day = days[di];
@@ -164,15 +170,18 @@ namespace Deskmate
                 var chip = new RectangleF(cx, cy - 13, cw, 26);
                 string id = "day" + day.ToString("yyyyMMdd");
                 bool on = day == chosen;
+                float csq = Squish(id, chip, 0.94f);
                 if (on) p.FillRound(chip, 13, p.T.Accent);
                 else if (Hover(id)) p.FillRound(chip, 13, p.T.FillHover);
                 else p.StrokeRound(chip, 13, p.T.Line, 1f);
                 p.TextCenter(label, Ink.Semi(11.5f), on ? p.T.OnAccent : p.T.Sub, chip.X + cw / 2, cy);
+                Unsquish(chip, csq);
                 var pick = day;
                 AddHit(chip, id, delegate { scheduleDay = pick; scheduleScroll.Snap(0); Kick(); });
                 cx += cw + 6;
             }
             DrawAddGoogleEventPill(w - 16, cy);
+            p.Alpha = keep;
 
             float foot = EventFoot();
             if (foot > 0) p.Text(eventNote, Ink.Small(11f), p.T.Sub, 26, h - 16, w - 52, StringAlignment.Near);
@@ -185,14 +194,22 @@ namespace Deskmate
             int index = 0;
             foreach (var c in DayClasses())
             {
-                float rc = y + ClassRowH / 2;
+                float rdy, ra = RowIn(index + 2, now, out rdy);
+                float rc = y + ClassRowH / 2 + rdy;
                 index++;
                 if (y + ClassRowH > area.Top && y < area.Bottom)
                 {
+                    p.Alpha = keep * ra;
+                    bool live = !c.Cancelled && !c.AllDay && nowLocal >= c.Start && nowLocal < c.End;
                     bool isGoogle = c.Source == "google" && !string.IsNullOrEmpty(c.Id);
+                    var row = new RectangleF(14, y + 2 + rdy, w - 28, ClassRowH - 4);
+                    if (live)
+                    {
+                        p.FillRound(row, 12, Ink.A(p.T.Accent, 0.08f));
+                        p.FillRound(new RectangleF(row.X + 2, row.Y + 6, 3, row.Height - 12), 1.5f, p.T.Accent);
+                    }
                     if (c.Url.Length > 0 || isGoogle)
                     {
-                        var row = new RectangleF(14, y + 2, w - 28, ClassRowH - 4);
                         string rowId = "class" + c.Start.Ticks + "_" + index, url = c.Url;
                         var slot = c;
                         if (url.Length > 0 && Hover(rowId)) p.FillRound(row, 12, p.T.Fill);
@@ -203,7 +220,6 @@ namespace Deskmate
                             AddHit(row, rowId, act, null, menuAct);
                         }
                     }
-                    bool live = !c.Cancelled && !c.AllDay && nowLocal >= c.Start && nowLocal < c.End;
                     var ink = c.Cancelled || nowLocal >= c.End ? p.T.Faint : p.T.Text;
                     if (c.AllDay) p.Text(Lang.T("seharian"), Ink.Small(11f), p.T.Sub, 26, rc, 52, StringAlignment.Near);
                     else p.Text(Fmt.Hm(c.Start), Ink.Semi(12.5f), live ? p.T.Accent : ink, 26, rc, 52, StringAlignment.Near);
@@ -226,6 +242,7 @@ namespace Deskmate
                 }
                 y += ClassRowH;
             }
+            p.Alpha = keep;
             g.Restore(st);
         }
 

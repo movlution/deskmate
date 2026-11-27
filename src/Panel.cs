@@ -293,7 +293,35 @@ namespace Deskmate
             return Lang.T("ditutup · ") + Fmt.Ago(s.LastUtc);
         }
 
-        // Kulia
+        // Work › Tasks
+
+        const float TaskBarH = 34;
+        // 0: all, 1: today/overdue, 2: with due date
+        int taskFilter;
+
+        List<KuliaTask> FilteredTasks()
+        {
+            if (tasks == null || tasks.Count == 0) return new List<KuliaTask>();
+            if (taskFilter == 0) return tasks;
+            var today = DateTime.Now.Date;
+            var list = new List<KuliaTask>();
+            for (int i = 0; i < tasks.Count; i++)
+            {
+                var t = tasks[i];
+                bool hasDue = !t.NoDue && t.DeadlineUtc != DateTime.MinValue;
+                if (taskFilter == 2 && hasDue) list.Add(t);
+                else if (taskFilter == 1 && hasDue && t.DeadlineUtc.ToLocalTime().Date <= today) list.Add(t);
+            }
+            return list;
+        }
+
+        void FocusTaskFromWork(KuliaTask task)
+        {
+            if (task == null) return;
+            SetFocusTask(task.Title);
+            if (!TimerOn) StartFocus(25);
+            SetSegment(PageClass, 1, false);
+        }
 
         void DrawTasksPage(float w, float h, DateTime now)
         {
@@ -320,73 +348,178 @@ namespace Deskmate
             }
             if (state == DataState.Empty)
             {
-                EmptyState(new RectangleF(0, PanelTop, w, h - PanelTop), Ink.IcoCalendar, Lang.T("Tidak ada tugas aktif"), taskNote ?? (OnlyKuliaTasks ? Lang.T("Diperbarui tiap 10 menit") : Lang.T("Diperbarui tiap 15 menit")));
+                EmptyState(new RectangleF(0, PanelTop, w, h - PanelTop), Ink.IcoCalendar, Lang.T("Tidak ada tugas aktif"), taskNote ?? (OnlyKuliaTasks ? Lang.T("Diperbarui tiap 10 menit") : Lang.T("Diperbarui tiap 15 menit")), Lang.T("+ Tugas"), "addTaskEmpty", delegate { OpenWork(0); }, PillKind.Secondary);
                 return;
             }
+
+            // Compact productivity toolbar: count + today cue, filter chip, + Task
+            float barCy = PanelTop + TaskBarH / 2;
+            var todayDate = DateTime.Now.Date;
+            int dueToday = 0;
+            for (int i = 0; i < tasks.Count; i++)
+            {
+                var tt = tasks[i];
+                if (!tt.NoDue && tt.DeadlineUtc != DateTime.MinValue && tt.DeadlineUtc.ToLocalTime().Date <= todayDate) dueToday++;
+            }
+            string countText = tasks.Count == 1 ? Lang.T("1 tugas") : Lang.F("{0} tugas", tasks.Count);
+            float countW = p.Measure(countText, Ink.Semi(11.5f));
+            p.Text(countText, Ink.Semi(11.5f), p.T.Sub, 22, barCy, countW + 8, StringAlignment.Near);
+            if (dueToday > 0)
+            {
+                string tdText = "· " + dueToday + " " + Lang.T("hari ini");
+                p.Text(tdText, Ink.Semi(11.5f), p.T.Accent, 22 + countW + 6, barCy, 130, StringAlignment.Near);
+            }
+
+            string addLbl = Lang.T("+ Tugas");
+            float addW = Math.Max(68, p.Measure(addLbl, Ink.Semi(11.5f)) + 20);
+            var addR = new RectangleF(w - 16 - addW, barCy - 12, addW, 24);
+            AddHit(addR, "workAddTask", delegate { OpenWork(0); });
+            float addSq = Squish("workAddTask", addR, 0.94f);
+            p.FillRound(addR, 12, Pressed("workAddTask") ? p.T.FillPressed : Hover("workAddTask") ? p.T.FillHover : p.T.Fill);
+            p.StrokeRound(addR, 12, p.T.Line, 1f);
+            p.TextCenter(addLbl, Ink.Semi(11.5f), Hover("workAddTask") ? p.T.Text : p.T.Sub, addR.X + addW / 2, barCy);
+            Unsquish(addR, addSq);
+
+            string fltLbl = taskFilter == 0 ? Lang.T("Semua") : taskFilter == 1 ? Lang.T("Hari ini") : Lang.T("Tenggat");
+            float fltW = Math.Max(64, p.Measure(fltLbl, Ink.Semi(11.5f)) + 22);
+            var fltR = new RectangleF(addR.X - 6 - fltW, barCy - 12, fltW, 24);
+            AddHit(fltR, "workTaskFilter", delegate { taskFilter = (taskFilter + 1) % 3; taskScroll.Snap(0); Kick(); });
+            float fltSq = Squish("workTaskFilter", fltR, 0.94f);
+            bool fltOn = taskFilter != 0;
+            p.FillRound(fltR, 12, fltOn ? Ink.A(p.T.Accent, Hover("workTaskFilter") ? 0.24f : 0.16f) : Pressed("workTaskFilter") ? p.T.FillPressed : Hover("workTaskFilter") ? p.T.FillHover : p.T.Fill);
+            p.StrokeRound(fltR, 12, fltOn ? Ink.A(p.T.Accent, 0.45f) : p.T.Line, 1f);
+            p.TextCenter(fltLbl, Ink.Semi(11.5f), fltOn ? p.T.Accent : Hover("workTaskFilter") ? p.T.Text : p.T.Sub, fltR.X + fltW / 2, barCy);
+            Unsquish(fltR, fltSq);
+
+            var shown = FilteredTasks();
+            if (shown.Count == 0)
+            {
+                EmptyState(new RectangleF(0, PanelTop + TaskBarH, w, h - PanelTop - TaskBarH), Ink.IcoCalendar, Lang.T("Tidak ada tugas untuk filter ini"), "", Lang.T("Tampilkan semua"), "resetTaskFilter", delegate { taskFilter = 0; taskScroll.Snap(0); Kick(); }, PillKind.Secondary);
+                return;
+            }
+
             // Partial failure: one quiet line below
             float foot = TaskFoot();
             if (foot > 0) p.Text(taskNote, Ink.Caption, p.T.Sub, 26, h - 18, w - 52, StringAlignment.Near);
 
             const float rowH = 54;
-            var area = new RectangleF(10, PanelTop + 2, w - 20, h - PanelTop - 12 - foot);
+            var area = new RectangleF(10, PanelTop + TaskBarH + 2, w - 20, h - PanelTop - TaskBarH - 12 - foot);
             var st = g.Save();
             g.IntersectClip(area);
             var nowUtc = DateTime.UtcNow;
+            string curFocus = FocusTaskTitle;
             float keep = p.Alpha;
-            for (int i = 0; i < tasks.Count; i++)
+            for (int i = 0; i < shown.Count; i++)
             {
-                var t = tasks[i];
+                var t = shown[i];
                 float dy, a = RowIn(i, nowUtc, out dy);
                 float y = area.Y + i * rowH - taskScroll.Value + CollapseAt("task", i) + dy;
                 if (y + rowH < area.Top || y > area.Bottom) continue;
                 p.Alpha = keep * a;
                 var row = new RectangleF(14, y + 2, w - 28, rowH - 4);
-                string rowId = "task" + t.Id, doneId = "taskDone" + t.Id;
-                bool hover = Hover(rowId) || Hover(doneId);
+                string rowId = "task" + t.Id, doneId = "taskDone" + t.Id, focusId = "taskFocus" + t.Id, checkId = "taskChk" + t.Id;
+                bool isFocused = curFocus.Length > 0 && string.Equals(curFocus, t.Title, StringComparison.OrdinalIgnoreCase);
+                bool hover = Hover(rowId) || Hover(doneId) || Hover(focusId) || Hover(checkId);
                 if (hover) p.FillRound(row, Ink.RadiusControl, p.T.Fill);
+                else if (isFocused) p.FillRound(row, Ink.RadiusControl, Ink.A(p.T.Accent, 0.08f));
+                if (isFocused) p.FillRound(new RectangleF(row.X + 2, row.Y + 11, 3, row.Height - 22), 1.5f, p.T.Accent);
+
                 float cy = row.Y + row.Height / 2;
-                var local = t.DeadlineUtc.ToLocalTime();
-                p.TextCenter(local.Day.ToString(), Ink.Title2, p.T.Text, 44, cy - 8);
-                p.TextCenter(local.ToString("MMM", Fmt.Id), Ink.Caption, p.T.Sub, 44, cy + 10);
-                float tx = 74, right = row.Right - 12;
-                var left = t.DeadlineUtc - nowUtc;
-                string when = Relative(t, nowUtc);
-                bool urgent = left.TotalHours < 24;
-                var wf = Ink.Caption;
-                float ww = p.Measure(when, wf) + (urgent ? 18 : 0);
-                var btn = new RectangleF(right - 116, cy - 15, 116, 30);
-                // Read-only sources keep the date
-                if (hover && !t.ReadOnly)
+                bool hasDue = !t.NoDue && t.DeadlineUtc != DateTime.MinValue;
+                bool overdue = hasDue && (t.DeadlineUtc - nowUtc).TotalMinutes < 0;
+                bool urgent = hasDue && (t.DeadlineUtc - nowUtc).TotalHours < 24;
+                if (hasDue)
                 {
-                    if (Hover(doneId)) p.FillRound(btn, Ink.RadiusControl, p.T.FillHover);
-                    p.StrokeRound(btn, Ink.RadiusControl, p.T.Sub, 1.2f);
-                    p.TextCenter(Lang.T("Tandai selesai"), Ink.Callout, p.T.Text, btn.X + btn.Width / 2, cy);
-                    ww = 116;
+                    var local = t.DeadlineUtc.ToLocalTime();
+                    Color dayColor = overdue ? p.T.Negative : local.Date == todayDate ? p.T.Accent : p.T.Text;
+                    p.TextCenter(local.Day.ToString(), Ink.Title2, dayColor, 44, cy - 8);
+                    p.TextCenter(local.ToString("MMM", Fmt.Id), Ink.Caption, overdue ? p.T.Negative : p.T.Sub, 44, cy + 10);
+                }
+                else
+                {
+                    var chkR = new RectangleF(33, cy - 11, 22, 22);
+                    bool chkHot = Hover(checkId);
+                    float chkSq = Squish(checkId, chkR, 0.9f);
+                    if (chkHot && !t.ReadOnly)
+                    {
+                        p.FillRound(chkR, 11, Ink.A(p.T.Accent, 0.18f));
+                        p.StrokeRound(chkR, 11, p.T.Accent, 1.5f);
+                        p.Icon('\uE73E', 10.5f, p.T.Accent, 44, cy);
+                    }
+                    else
+                    {
+                        p.StrokeRound(chkR, 11, isFocused ? p.T.Accent : p.T.Line, 1.4f);
+                        if (isFocused) p.Circle(44, cy, 3.5f, p.T.Accent);
+                    }
+                    Unsquish(chkR, chkSq);
+                }
+
+                float tx = 74, right = row.Right - 12;
+                string when = hasDue ? Relative(t, nowUtc) : "";
+                var wf = Ink.Caption;
+                float ww = when.Length > 0 ? p.Measure(when, wf) + (urgent ? 18 : 0) : 0;
+                var doneBtn = new RectangleF(right - 84, cy - 14, 84, 28);
+                var focusBtn = new RectangleF((t.ReadOnly ? right : doneBtn.X - 6) - 30, cy - 14, 30, 28);
+
+                if (hover)
+                {
+                    // Quick-focus button: starts Pomodoro on this task
+                    float fsq = Squish(focusId, focusBtn, 0.92f);
+                    bool fHot = Hover(focusId);
+                    p.FillRound(focusBtn, 9, fHot ? p.T.Accent : p.T.FillHover);
+                    p.Icon('\uE768', 10.5f, fHot ? p.T.OnAccent : isFocused ? p.T.Accent : p.T.Text, focusBtn.X + focusBtn.Width / 2 + 1, cy);
+                    Unsquish(focusBtn, fsq);
+
+                    if (!t.ReadOnly)
+                    {
+                        float dsq = Squish(doneId, doneBtn, 0.94f);
+                        bool dHot = Hover(doneId);
+                        p.FillRound(doneBtn, 9, dHot ? p.T.Positive : p.T.FillHover);
+                        if (!dHot) p.StrokeRound(doneBtn, 9, p.T.Line, 1f);
+                        p.TextCenter(Lang.T("Selesai"), Ink.Semi(11.5f), dHot ? p.T.Bg : p.T.Text, doneBtn.X + doneBtn.Width / 2, cy);
+                        Unsquish(doneBtn, dsq);
+                        ww = 84 + 6 + 30;
+                    }
+                    else ww = 30;
+                }
+                else if (overdue)
+                {
+                    var pill = new RectangleF(right - ww, cy - 11, ww, 22);
+                    p.FillRound(pill, 11, Ink.A(p.T.Negative, 0.22f));
+                    p.TextCenter(when, wf, p.T.Negative, pill.X + pill.Width / 2, cy);
                 }
                 else if (urgent)
                 {
-                    // Inverted label: due within a day
                     var pill = new RectangleF(right - ww, cy - 11, ww, 22);
-                    p.FillRound(pill, 11, p.T.Text);
-                    p.TextCenter(when, wf, p.T.Bg, pill.X + pill.Width / 2, cy);
+                    p.FillRound(pill, 11, p.T.Accent);
+                    p.TextCenter(when, wf, p.T.OnAccent, pill.X + pill.Width / 2, cy);
                 }
-                else p.TextRight(when, wf, p.T.Sub, right, cy);
+                else if (when.Length > 0) p.TextRight(when, wf, p.T.Sub, right, cy);
+
                 string course = t.Course + (t.Kind == "ujian" ? Lang.T(" · ujian") : "") + (t.Status == "proses" ? Lang.T(" · dikerjakan") : "");
                 string from = SourceHub.TaskLabel(t.Source);
                 if (from.Length > 0 && from != t.Course) course = course.Length > 0 ? from + " · " + course : from;
-                p.Text(course, Ink.Caption, p.T.Sub, tx, cy - 10, right - ww - tx - 12, StringAlignment.Near);
+                p.Text(course, Ink.Caption, isFocused ? p.T.Accent : p.T.Sub, tx, cy - 10, right - ww - tx - 12, StringAlignment.Near);
                 p.Text(t.Title, Ink.Headline, p.T.Text, tx, cy + 9, right - ww - tx - 12, StringAlignment.Near);
+
                 string url = t.Url;
-                AddHit(row, rowId, delegate { OpenUrl(url); });
+                bool isGtasks = t.Source == "gtasks";
                 var task = t;
                 int idx = i;
                 var taskRow = row;
-                if (!t.ReadOnly) AddHit(btn, doneId, delegate
+                AddHit(row, rowId, delegate { if (isGtasks) OpenWork(0); else OpenUrl(url); });
+                AddHit(focusBtn, focusId, delegate { FocusTaskFromWork(task); });
+                if (!t.ReadOnly)
                 {
-                    Vanish(new[] { CanvasRect(taskRow) }, false);
-                    Collapse("task", idx, rowH);
-                    MarkDone(task);
-                });
+                    Action completeAct = delegate
+                    {
+                        Vanish(new[] { CanvasRect(taskRow) }, false);
+                        Collapse("task", idx, rowH);
+                        MarkDone(task);
+                    };
+                    AddHit(doneBtn, doneId, completeAct);
+                    if (!hasDue) AddHit(new RectangleF(28, cy - 16, 32, 32), checkId, completeAct);
+                }
             }
             p.Alpha = keep;
             g.Restore(st);
