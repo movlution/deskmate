@@ -1,8 +1,8 @@
-# Tepi Android dan sambungan HP
+# Sambungan HP Android
 
 [← Kembali ke README](../README.md)
 
-Tepi Android adalah dynamic island di sekitar kamera depan, untuk HP yang tidak punya island bawaan: lagu dan lirik, pesan dengan balas cepat, panggilan, unduhan, navigasi Maps, timer, waktu sholat, Agenda dari Kulia, Todoist, Notion, atau iCal, dan Mode bank. Kode sumber dan APK-nya ada di [odlaver/tepi-android](https://github.com/odlaver/tepi-android).
+Deskmate mendukung sambungan lokal dengan aplikasi pendamping Android lewat Wi-Fi untuk meneruskan notifikasi, OTP, berkas, dan permintaan izin agen.
 
 Setelah tersambung ke Deskmate di laptop:
 
@@ -14,10 +14,9 @@ Setelah tersambung ke Deskmate di laptop:
 
 ## Menyambungkan
 
-1. Di HP: pasang APK Tepi Android dari [tepi-android/releases](https://github.com/odlaver/tepi-android/releases).
-2. Di laptop: **Pengaturan > HP**, nyalakan **Hubungkan HP**, lalu klik **Buat kode**.
-3. Di HP: Deskmate > **Integrasi** > **Laptop** > **Pindai QR**, arahkan kamera ke kode QR di laptop, lalu ketuk **Sambungkan**. Bisa juga dipindai dari aplikasi kamera HP. Tanpa kamera, ketik alamat dan kode 12 karakter yang muncul di laptop.
-4. Windows Firewall akan bertanya sekali; izinkan untuk jaringan privat.
+1. Di laptop: **Pengaturan > HP**, nyalakan **Hubungkan HP**, lalu klik **Buat kode**.
+2. Di HP: buka aplikasi pendamping › **Integrasi** › **Laptop** › **Pindai QR**, arahkan kamera ke kode QR di laptop, lalu ketuk **Sambungkan**. Bisa juga dipindai dari aplikasi kamera HP. Tanpa kamera, ketik alamat dan kode 12 karakter yang muncul di laptop.
+3. Windows Firewall akan bertanya sekali; izinkan untuk jaringan privat.
 
 Kode berlaku 5 menit dan hangus setelah lima kali salah. Tab HP muncul sendiri setelah sambungan dinyalakan. Selama kode QR tampil, jendela Pengaturan tidak ikut terekam saat screen share.
 

@@ -450,8 +450,8 @@ namespace Deskmate
             error = null;
             var tools = BuildSuruhTools(hasExternalTasks);
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm dddd", CultureInfo.InvariantCulture);
-            // Who made Deskmate; the model vendor did not
-            string maker = "Deskmate was made by Reval (R. Revaldo Vabiansyah), an Indonesian developer. If asked who made or created you, answer that Reval made you. " +
+            // Who maintains Deskmate; the model vendor did not make it
+            string maker = "Deskmate is developed and maintained by movlution. If asked who made or created you, answer that Deskmate is developed and maintained by movlution. " +
                            "Never say you were made by OpenAI, Anthropic, Google, Meta, or another AI company. If asked which AI model answers, say it is " + Ai.Label(Ai.Text) + ", chosen in Deskmate's settings. ";
             string system = customSystem ?? (
                 "You are Deskmate, an intelligent assistant living in the user's Windows dynamic island with full control over all Deskmate features and connected services (Tasks & Google Tasks, Notes & Google Drive Notes, Calendar & Google Calendar, Todoist, Notion, Kulia, Reminders, Wellness, Prayer times, Timers/Focus, Media/Audio, Control Center/System, Shelf, Clipboard, Notifications, Utilities, Settings, and Ingatan activity memory). " +

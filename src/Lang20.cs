@@ -38,10 +38,6 @@ namespace Deskmate
             en.Add("Data", "Data");
             en.Add("Dihitung di laptop ini, metode Kemenag", "Computed on this laptop, Kemenag method");
             en.Add("Dynamic island untuk Windows · MIT", "Dynamic island for Windows · MIT");
-            en.Add("Dibuat oleh {0}", "Made by {0}");
-            en.Add("Traktir Deskmate kopi", "Buy Deskmate a coffee");
-            en.Add("QRIS, dari bank atau e-wallet mana pun", "QRIS, from any bank or e-wallet");
-            en.Add("Traktir", "Buy a coffee");
             en.Add("Dzuhur", "Dhuhr");
             en.Add("Fokus 25", "Focus 25");
             en.Add("Folder data", "Data folder");
@@ -238,7 +234,6 @@ namespace Deskmate
             en.Add("Gagal menyimpan ke Google Tasks", "Failed to save to Google Tasks");
             en.Add("Gagal menyimpan catatan ke Google Drive", "Failed to save note to Google Drive");
             en.Add("Gagal menyimpan catatan", "Failed to save note");
-            en.Add("Pembuat paket", "Pack builder");
             en.Add("Gambar, sapaan, dan suara, di situs Deskmate", "Images, greetings, and sounds, on the Deskmate site");
             en.Add("Kontras dengan latar {0}:1", "Contrast with background {0}:1");
             en.Add("Kontras {0}:1, teks sulit dibaca", "Contrast {0}:1, text is hard to read");
@@ -752,13 +747,13 @@ namespace Deskmate
             en.Add("Tahan notifikasi saat fokus", "Hold notifications while focusing");
             en.Add("Dirangkum saat fokus selesai; pengirim prioritas tetap muncul", "Summed up when focus ends; priority senders still show");
             en.Add("Kirim saran", "Send feedback");
-            en.Add("Ide fitur atau masalah, langsung ke pembuat Deskmate", "Ideas or problems, straight to Deskmate's maker");
+            en.Add("Laporkan masalah atau ajukan ide fitur di GitHub Issues", "Report issues or suggest features on GitHub Issues");
             en.Add("Saran fitur", "Feature idea");
             en.Add("Ada masalah", "Something's wrong");
             en.Add("Kontak", "Contact");
-            en.Add("Kontak untuk dibalas (opsional): email atau Instagram", "Contact for a reply (optional): email or Instagram");
+            en.Add("Kontak untuk dibalas (opsional): email atau GitHub", "Contact for a reply (optional): email or GitHub");
             en.Add("Sertakan versi Deskmate dan Windows", "Include Deskmate and Windows versions");
-            en.Add("Dikirim ke Google Form pembuat Deskmate. Tanpa nama, tanpa isi layar.", "Sent to Deskmate's maker through Google Forms. No name, nothing from your screen.");
+            en.Add("Dikirim lewat formulir saran Deskmate. Tanpa nama, tanpa isi layar.", "Sent through Deskmate's feedback form. No name, nothing from your screen.");
             en.Add("Mengirim…", "Sending…");
             en.Add("Terkirim. Terima kasih sudah meluangkan waktu.", "Sent. Thanks for taking the time.");
             en.Add("Gagal terkirim, cek internet", "Couldn't send, check the internet");

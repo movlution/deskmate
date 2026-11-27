@@ -216,7 +216,6 @@ namespace Deskmate
                             string dir = System.IO.Path.Combine(Settings.Dir, "themes");
                             try { System.IO.Directory.CreateDirectory(dir); Process.Start("explorer.exe", "\"" + dir + "\""); } catch (Exception) { }
                         })));
-                        add(Row(Lang.T("Pembuat paket"), Lang.T("Gambar, sapaan, dan suara, dari pembuat paket upstream"), Button(Lang.T("Buka"), false, delegate { OpenUrl("https://odlaver.github.io/tepi/pack/"); })));
                         break;
                     case "island":
                         cap(Lang.T("Posisi"));
@@ -760,17 +759,12 @@ namespace Deskmate
                         add(Row(Lang.T("Panduan awal"), Lang.T("Pilih bahasa, dock, dan fitur seperti saat pertama dipasang"), Button(Lang.T("Buka"), false, delegate { Close(); island.StartSetup(); })));
                         add(Row(Lang.T("Tur Deskmate"), Lang.T("Kenalan lagi dengan fitur utama Deskmate"), Button(Lang.T("Mulai tur"), false, delegate { Close(); island.StartTour(); })));
                         add(Row(Lang.T("Layanan luar"), Lang.T("Lirik, Kulia, GitHub, cuaca, integrasi, dan layanan AI; semua bisa dimatikan"), null));
-                        // QRIS dialog lives on the site
-                        // Hidden until the form is wired
-                        if (Feedback.Ready) add(Row(Lang.T("Kirim saran"), Lang.T("Ide fitur atau masalah, langsung ke pembuat Deskmate"), Button(Lang.T("Tulis…"), false, delegate { using (var f = new FeedbackWindow()) f.ShowDialog(this); })));
-                        // Links as listed on the Deskmate site
+                        add(Row(Lang.T("Kirim saran"), Lang.T("Laporkan masalah atau ajukan ide fitur di GitHub Issues"), Button(Lang.T("Buka"), false, delegate { OpenUrl("https://github.com/movlution/deskmate/issues"); })));
                         cap(Lang.T("Pembuat"));
-                        var maker = Row("R. Revaldo Vabiansyah", Lang.T("Membuat dan merawat Deskmate"), null);
+                        var maker = Row("movlution", Lang.T("Membuat dan merawat Deskmate"), null);
                         maker.Glyph = '';
                         add(maker);
-                        add(Row("GitHub", "@odlaver · " + Lang.T("kode Deskmate dan proyek lainnya"), Button(Lang.T("Buka profil"), false, delegate { OpenUrl("https://github.com/odlaver"); })));
-                        add(Row("Instagram", "@odlavr", Button(Lang.T("Buka profil"), false, delegate { OpenUrl("https://www.instagram.com/odlavr"); })));
-                        add(Row("LinkedIn", "revalaja", Button(Lang.T("Buka profil"), false, delegate { OpenUrl("https://www.linkedin.com/in/revalaja"); })));
+                        add(Row("GitHub", "@movlution · " + Lang.T("kode Deskmate dan proyek lainnya"), Button(Lang.T("Buka profil"), false, delegate { OpenUrl("https://github.com/movlution"); })));
                         break;
                 }
                 flush();

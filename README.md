@@ -19,7 +19,7 @@ Installer memasang Deskmate untuk akun Anda saja di `%LOCALAPPDATA%\Programs\Des
 ## Panduan
 
 - [Fitur dan cara pakai](docs/fitur.md) · [Pengaturan](docs/pengaturan.md) · [Integrasi](docs/integrasi.md)
-- [Sambungkan Tepi Android](docs/hp.md) · [Privasi dan keamanan](docs/privasi-keamanan.md)
+- [Sambungkan HP](docs/hp.md) · [Privasi dan keamanan](docs/privasi-keamanan.md)
 
 ## Build sendiri
 
@@ -237,4 +237,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run_feature_checks.p
 
 Suite tier 1–4 dijalankan dengan `.\tests\run_e2e.ps1 -Tier 1` sampai `-Tier 4` (atau tanpa `-Tier` untuk semua). Beberapa suite membuka jendela dan berinteraksi dengan desktop, jadi jalankan di sesi desktop. Tier 3 berisi 26 interaksi pairwise dan Tier 4 berisi 13 skenario (S01–S13). `run_feature_checks.ps1` menjalankan regression check pasif untuk gambar catatan tugas dan emoji notifikasi di proses STA terisolasi.
 
-Lisensi [MIT](LICENSE). Dibuat oleh [R. Revaldo Vabiansyah](https://github.com/odlaver).
+Lisensi [MIT](LICENSE). Dibuat oleh [R. Revaldo Vabiansyah](https://github.com/odlaver), dikelola oleh [movlution](https://github.com/movlution).
