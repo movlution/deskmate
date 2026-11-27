@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -14,27 +13,102 @@ namespace Deskmate
     // One-click update: download, verify SHA-256, swap, restart
     partial class Island
     {
-        const string AssetPrefix = "https://github.com/movlution/deskmate/releases/download/";
+        const string ReleaseRoot = "https://github.com/movlution/deskmate/releases/";
+        const string LatestApi = "https://api.github.com/repos/movlution/deskmate/releases/latest";
+        const string ExeAsset = "Deskmate.exe";
         const long AssetMax = 20 * 1024 * 1024;
         string newAsset, newDigest;
         bool updating;
 
-        // From the release JSON; null unless it is ours and hashed
-        static void ReadAsset(object release, out string url, out string digest, out DateTime uploaded)
+        internal sealed class UpdateRelease
         {
-            url = digest = null;
-            uploaded = DateTime.MinValue;
-            var assets = Json.Arr(release, "assets");
-            if (assets == null) return;
-            foreach (var a in assets)
+            public Version Version;
+            public string Url, Asset, Digest;
+            public DateTime Uploaded;
+        }
+
+        static bool TryReleaseVersion(string tag, out Version version)
+        {
+            string number = tag.StartsWith("v", StringComparison.Ordinal) ? tag.Substring(1) : tag;
+            return Version.TryParse(number, out version) && number == version.ToString();
+        }
+
+        static bool IsSha256(string hash)
+        {
+            return hash.Length == 64 && hash.All(Uri.IsHexDigit);
+        }
+
+        internal static UpdateRelease FindUpdateRelease(Version installed, Func<string, bool, WebResult> get)
+        {
+            string tag = "";
+            Version latest = null;
+            object metadata = null;
+            var api = get(LatestApi, false);
+            if (api.Ok)
             {
-                if (Json.Str(a, "name") != "Deskmate.exe") continue;
-                string u = Json.Str(a, "browser_download_url"), d = Json.Str(a, "digest");
-                if (!u.StartsWith(AssetPrefix, StringComparison.Ordinal) || !d.StartsWith("sha256:", StringComparison.Ordinal) || d.Length != 71) return;
-                url = u;
-                digest = d.Substring(7).ToLowerInvariant();
-                DateTime.TryParse(Json.Str(a, "updated_at"), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out uploaded);
+                try { metadata = Json.Parse(api.Body); }
+                catch (ArgumentException) { }
+                catch (InvalidOperationException) { }
+                tag = Json.Str(metadata, "tag_name");
+                if (!TryReleaseVersion(tag, out latest) || Json.Str(metadata, "html_url") != ReleaseRoot + "tag/" + tag)
+                {
+                    Log.Write("update: invalid release metadata from GitHub API");
+                    metadata = null;
+                }
             }
+            else Log.Write("update: GitHub API status " + api.Status);
+
+            if (metadata == null)
+            {
+                // Read GitHub's redirect without loading the release page or following untrusted URLs.
+                string prefix = ReleaseRoot + "tag/";
+                var page = get(ReleaseRoot + "latest", false);
+                if (page.Status >= 300 && page.Status < 400 && page.Location != null &&
+                    page.Location.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    tag = page.Location.Substring(prefix.Length);
+                    if (!TryReleaseVersion(tag, out latest)) latest = null;
+                }
+                else latest = null;
+                if (latest == null)
+                {
+                    Log.Write("update: latest release redirect unavailable (status " + page.Status + ")");
+                    return null;
+                }
+            }
+
+            var release = new UpdateRelease { Version = latest, Url = ReleaseRoot + "tag/" + tag };
+            string download = ReleaseRoot + "download/" + tag + "/";
+            var assets = Json.Arr(metadata, "assets");
+            if (assets != null)
+            {
+                foreach (var asset in assets)
+                {
+                    if (Json.Str(asset, "name") != ExeAsset || Json.Str(asset, "browser_download_url") != download + ExeAsset) continue;
+                    string digest = Json.Str(asset, "digest");
+                    if (!digest.StartsWith("sha256:", StringComparison.Ordinal) || !IsSha256(digest.Substring(7))) continue;
+                    release.Asset = download + ExeAsset;
+                    release.Digest = digest.Substring(7).ToLowerInvariant();
+                    release.Uploaded = Json.Time(asset, "updated_at");
+                    return release;
+                }
+            }
+            // A redirect identifies newer versions. Same-version rebuilds need the API asset timestamp.
+            if (latest <= installed) return release;
+            var sums = get(download + "SHA256SUMS.txt", true);
+            if (sums.Ok)
+            {
+                foreach (string line in sums.Body.Split('\n'))
+                {
+                    var columns = line.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (columns.Length != 2 || (columns[1] != ExeAsset && columns[1] != "*" + ExeAsset) || !IsSha256(columns[0])) continue;
+                    release.Asset = download + ExeAsset;
+                    release.Digest = columns[0].ToLowerInvariant();
+                    return release;
+                }
+            }
+            Log.Write("update: no verified Deskmate.exe checksum (manifest status " + sums.Status + ")");
+            return release;
         }
 
         static string ownDigest;

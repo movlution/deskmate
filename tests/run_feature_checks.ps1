@@ -17,7 +17,8 @@ $checks = @(
     @{ Name = "Pet link multiplayer"; Source = Join-Path $PSScriptRoot "pet_link_check.cs"; Type = "PetLinkCheck" },
     @{ Name = "Ingatan memory"; Source = Join-Path $PSScriptRoot "ingat_check.cs"; Type = "IngatCheck" },
     @{ Name = "Load guard"; Source = Join-Path $PSScriptRoot "guard_check.cs"; Type = "GuardCheck" },
-    @{ Name = "Dock window motion"; Source = Join-Path $PSScriptRoot "dock_window_motion_check.cs"; Type = "DockWindowMotionCheck" }
+    @{ Name = "Dock window motion"; Source = Join-Path $PSScriptRoot "dock_window_motion_check.cs"; Type = "DockWindowMotionCheck" },
+    @{ Name = "Update release resolution"; Source = Join-Path $PSScriptRoot "update_release_check.cs"; Type = "UpdateReleaseCheck" }
 )
 
 $temporary = New-Object System.Collections.Generic.List[string]

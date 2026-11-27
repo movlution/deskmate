@@ -521,6 +521,7 @@ namespace Deskmate
     {
         public int Status;
         public string Body = "";
+        public string Location;
         public bool Ok { get { return Status >= 200 && Status < 300; } }
     }
 
@@ -534,11 +535,12 @@ namespace Deskmate
         }
 
         // Status 0: no response at all
-        public static WebResult Send(string method, string url, Dictionary<string, string> headers, string body, int timeoutMs)
+        public static WebResult Send(string method, string url, Dictionary<string, string> headers, string body, int timeoutMs, bool followRedirects = true)
         {
             var result = new WebResult();
             var req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = method;
+            req.AllowAutoRedirect = followRedirects;
             req.Timeout = timeoutMs;
             req.ReadWriteTimeout = timeoutMs;
             req.UserAgent = "Deskmate/" + Island.AppVersion + " (+https://github.com/movlution/deskmate)";
@@ -560,6 +562,7 @@ namespace Deskmate
                 using (var resp = (HttpWebResponse)req.GetResponse())
                 {
                     result.Status = (int)resp.StatusCode;
+                    result.Location = resp.Headers[HttpResponseHeader.Location];
                     using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8)) result.Body = sr.ReadToEnd();
                 }
             }

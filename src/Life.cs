@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Windows.Forms;
 using Windows.UI.Notifications.Management;
@@ -85,7 +84,7 @@ namespace Deskmate
         }
 
         // Daily release check; never downloads anything
-        public const string AppVersion = "2.21.0";
+        public const string AppVersion = "2.21.1";
         string newVersion, newUrl;
         bool newRebuild, checking, checkFailed;
         DateTime checkedUtc;
@@ -107,42 +106,35 @@ namespace Deskmate
             checking = true;
             ThreadPool.QueueUserWorkItem(delegate
             {
-                string tag = null, url = null, asset = null, digest = null;
+                UpdateRelease release = null;
                 bool ok = false, rebuild = false;
                 try
                 {
-                    var r = Web.Send("GET", "https://api.github.com/repos/movlution/deskmate/releases/latest", null, null, 10000);
-                    if (r.Ok)
+                    var mine = new Version(AppVersion);
+                    release = FindUpdateRelease(mine, (url, followRedirects) => Web.Send("GET", url, null, null, 10000, followRedirects));
+                    ok = release != null;
+                    if (release != null)
                     {
-                        var o = Json.Parse(r.Body);
-                        ok = true;
-                        tag = Json.Str(o, "tag_name").TrimStart('v');
-                        url = Json.Str(o, "html_url");
-                        DateTime uploaded;
-                        ReadAsset(o, out asset, out digest, out uploaded);
-                        Version latest, mine;
-                        if (!Version.TryParse(tag, out latest) || !Version.TryParse(AppVersion, out mine) || latest < mine || !url.StartsWith("https://github.com/movlution/deskmate/")) tag = null;
-                        else if (latest == mine)
-                        {
-                            rebuild = true;
-                            // Local build newer than asset: keep
-                            if (digest == null || digest == OwnDigest() || uploaded <= System.IO.File.GetLastWriteTimeUtc(Application.ExecutablePath)) tag = null;
-                        }
+                        rebuild = release.Version == mine;
+                        if (release.Version < mine || (rebuild &&
+                            (release.Digest == null || release.Uploaded <= System.IO.File.GetLastWriteTimeUtc(Application.ExecutablePath) ||
+                             release.Digest == OwnDigest()))) release = null;
                     }
                 }
-                catch (Exception ex) { Log.Write("update: " + ex.Message); }
+                catch (Exception ex) { release = null; ok = false; Log.Write("update: " + ex.Message); }
                 Post(() =>
                 {
                     checking = false;
                     checkFailed = !ok;
                     if (ok) checkedUtc = DateTime.UtcNow;
-                    if (tag != null)
+                    if (release != null)
                     {
-                        bool first = newVersion != tag || newDigest != digest;
+                        string tag = release.Version.ToString();
+                        bool first = newVersion != tag || newDigest != release.Digest;
                         newVersion = tag;
-                        newUrl = url;
-                        newAsset = asset;
-                        newDigest = digest;
+                        newUrl = release.Url;
+                        newAsset = release.Asset;
+                        newDigest = release.Digest;
                         newRebuild = rebuild;
                         if (first && !manual) ShowInfo(Ink.IcoRefresh, rebuild ? Lang.T("Pembaruan Deskmate tersedia") : Lang.F("Deskmate {0} tersedia", tag), Lang.T("tray › Perbarui"), true);
                     }
