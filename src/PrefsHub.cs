@@ -29,6 +29,20 @@ namespace Deskmate
                 public readonly Spring Hover = new Spring(0, 1, 1, 0.004f);
                 public readonly Spring Press = new Spring(0, 1, 1, 0.004f);
                 public int EntranceRow;
+                public Color TileColor;
+                public int StatusWidth;
+                public Bitmap RestCache;
+                public int CacheW, CacheH;
+
+                public void ClearCache()
+                {
+                    if (RestCache != null)
+                    {
+                        RestCache.Dispose();
+                        RestCache = null;
+                    }
+                    CacheW = CacheH = 0;
+                }
             }
 
             readonly List<Card> cards = new List<Card>();
@@ -39,6 +53,7 @@ namespace Deskmate
             struct DeckHeader
             {
                 public string Title;
+                public string UpperTitle;
                 public float Y;
             }
 
@@ -46,24 +61,70 @@ namespace Deskmate
             int pressIndex = -1;
             int focusIndex = 0;
             int maxEntranceRow;
+            int cacheThemeKey;
+            Bitmap cachedAppIcon;
+            int cachedAppIconPx;
             Point lastMousePt = new Point(int.MinValue, int.MinValue);
             float scroll, scrollTarget, contentHeight;
-            int lastTick;
             bool entranceActive;
-            int entranceStart;
-            readonly Timer anim = new Timer { Interval = 15 };
+            double entranceStart;
+            readonly KitPulse pulse;
 
             // Content column bounds (in control coordinates)
             float padX, colW;
 
+            public bool HasCards { get { return cards.Count > 0; } }
+
             public SettingsHub()
             {
                 TabStop = true;
-                anim.Tick += delegate { StepAnim(); };
+                pulse = new KitPulse(StepAnim);
+            }
+
+            int CurrentThemeKey()
+            {
+                unchecked
+                {
+                    int h = KitInk.Window.ToArgb();
+                    h = h * 397 ^ KitInk.Group.ToArgb();
+                    h = h * 397 ^ KitInk.Accent.ToArgb();
+                    h = h * 397 ^ KitInk.Line.ToArgb();
+                    h = h * 397 ^ KitInk.Text.ToArgb();
+                    h = h * 397 ^ (Ink.Light ? 1 : 0);
+                    h = h * 397 ^ (int)Math.Round(Ui * 100f);
+                    return h;
+                }
+            }
+
+            public void InvalidateCaches()
+            {
+                for (int i = 0; i < cards.Count; i++) cards[i].ClearCache();
+                if (cachedAppIcon != null) { cachedAppIcon.Dispose(); cachedAppIcon = null; cachedAppIconPx = 0; }
+                cacheThemeKey = 0;
+            }
+
+            void RefreshCardMetrics(Card c)
+            {
+                Color tile = string.IsNullOrEmpty(c.TileKey) ? KitInk.Accent : Ink.Label(c.TileKey, true);
+                if (tile.IsEmpty) tile = Ink.Label("slate", true);
+                c.TileColor = tile;
+                c.StatusWidth = string.IsNullOrEmpty(c.Status)
+                    ? 0
+                    : TextRenderer.MeasureText(c.Status, Ink.Semi(10.5f * Ui)).Width;
+            }
+
+            void EnsureThemeCacheValid()
+            {
+                int key = CurrentThemeKey();
+                if (key == cacheThemeKey) return;
+                InvalidateCaches();
+                cacheThemeKey = key;
+                for (int i = 0; i < cards.Count; i++) RefreshCardMetrics(cards[i]);
             }
 
             public void Bind(List<Card> items, string[] decks, string focusId)
             {
+                InvalidateCaches();
                 cards.Clear();
                 if (items != null) cards.AddRange(items);
                 deckTitles = decks ?? new string[0];
@@ -71,6 +132,8 @@ namespace Deskmate
                 pressIndex = -1;
                 int idx = IndexOf(focusId);
                 focusIndex = idx >= 0 ? idx : 0;
+                cacheThemeKey = CurrentThemeKey();
+                for (int i = 0; i < cards.Count; i++) RefreshCardMetrics(cards[i]);
                 LayoutCards();
                 Invalidate();
             }
@@ -78,9 +141,19 @@ namespace Deskmate
             public void UpdateStatuses(Func<string, string> statusOf)
             {
                 if (statusOf == null) return;
+                bool anyChanged = false;
                 for (int i = 0; i < cards.Count; i++)
-                    cards[i].Status = statusOf(cards[i].Id) ?? "";
-                Invalidate();
+                {
+                    string next = statusOf(cards[i].Id) ?? "";
+                    if (cards[i].Status != next)
+                    {
+                        cards[i].Status = next;
+                        RefreshCardMetrics(cards[i]);
+                        cards[i].ClearCache();
+                        anyChanged = true;
+                    }
+                }
+                if (anyChanged) Invalidate();
             }
 
             public void PlayEntrance(string highlightId)
@@ -94,7 +167,7 @@ namespace Deskmate
                     cards[i].Hover.Snap(0);
                     cards[i].Press.Snap(0);
                 }
-                LayoutCards();
+                if (cards.Count > 0 && contentHeight <= 0) LayoutCards();
                 if (idx >= 0) RevealCard(idx, false);
                 if (Anim.Reduced || !IsHandleCreated || !Visible)
                 {
@@ -103,7 +176,7 @@ namespace Deskmate
                     return;
                 }
                 entranceActive = true;
-                entranceStart = Environment.TickCount;
+                entranceStart = KitAnim.Now;
                 KickAnim();
             }
 
@@ -122,12 +195,7 @@ namespace Deskmate
                     SnapAll();
                     return;
                 }
-                if (!anim.Enabled)
-                {
-                    lastTick = Environment.TickCount;
-                    anim.Start();
-                }
-                Invalidate();
+                pulse.Start();
             }
 
             int ActiveCardIndex()
@@ -140,17 +208,19 @@ namespace Deskmate
             void SyncCardSprings()
             {
                 int active = ActiveCardIndex();
+                bool any = false;
                 for (int i = 0; i < cards.Count; i++)
                 {
                     float want = i == active ? 1f : 0f;
                     if (Math.Abs(cards[i].Hover.Target - want) > 0.001f)
                     {
-                        if (want > 0.5f) Springs.Tune(cards[i].Hover, 0.16f, 0.78f);
-                        else Springs.Tune(cards[i].Hover, 0.20f, 0.88f);
+                        if (want > 0.5f) Springs.Tune(cards[i].Hover, 0.14f, 0.88f);
+                        else Springs.Tune(cards[i].Hover, 0.18f, 0.94f);
                         cards[i].Hover.Target = want;
+                        any = true;
                     }
                 }
-                KickAnim();
+                if (any) KickAnim();
             }
 
             void SnapAll()
@@ -163,62 +233,86 @@ namespace Deskmate
                     cards[i].Hover.Snap(i == active ? 1f : 0f);
                     cards[i].Press.Snap(i == pressIndex ? 1f : 0f);
                 }
-                anim.Stop();
+                pulse.Stop();
                 Invalidate();
             }
 
-            void StepAnim()
+            Rectangle DirtyCardBounds(Card c)
+            {
+                float s = Ui;
+                var r = ScreenRectOf(c);
+                float pad = 14f * s;
+                return Rectangle.Ceiling(RectangleF.Inflate(r, pad, pad));
+            }
+
+            bool StepAnim(float dt)
             {
                 if (IsDisposed || !Visible || Anim.Reduced)
                 {
                     SnapAll();
-                    return;
+                    return false;
                 }
-                int now = Environment.TickCount;
-                float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
-                lastTick = now;
                 bool busy = false;
+                bool fullDirty = false;
+                Rectangle dirty = Rectangle.Empty;
 
-                // Smooth wheel inertia
+                // Smooth wheel inertia (frame-rate independent exponential decay)
                 if (Math.Abs(scrollTarget - scroll) > 0.35f)
                 {
-                    float rate = Math.Min(1f, dt / Math.Max(0.03f, Anim.Response(0.075f)));
-                    scroll += (scrollTarget - scroll) * rate;
+                    scroll += (scrollTarget - scroll) * KitAnim.Decay(dt, 0.056f);
+                    if (Math.Abs(scrollTarget - scroll) <= 0.35f) scroll = scrollTarget;
+                    else busy = true;
+                    fullDirty = true;
                     if (KitInk.ByMouse && lastMousePt.X != int.MinValue && ClientRectangle.Contains(lastMousePt))
                     {
                         int hit = HitCard(lastMousePt);
                         if (hit != hoverIndex) { hoverIndex = hit; Cursor = hoverIndex >= 0 ? Cursors.Hand : Cursors.Default; SyncCardSprings(); }
                     }
-                    busy = true;
                 }
-                else scroll = scrollTarget;
+                else if (scroll != scrollTarget)
+                {
+                    scroll = scrollTarget;
+                    fullDirty = true;
+                }
 
-                // Per-card hover & press springs
+                // Per-card hover & press springs (dirty-rect tracked)
                 for (int i = 0; i < cards.Count; i++)
                 {
                     var c = cards[i];
-                    if (!c.Hover.Settled) { c.Hover.Step(dt); busy = true; }
-                    else c.Hover.Snap(c.Hover.Target);
-                    if (!c.Press.Settled) { c.Press.Step(dt); busy = true; }
-                    else c.Press.Snap(c.Press.Target);
+                    bool moved = false;
+                    if (!c.Hover.Settled) { c.Hover.Step(dt); moved = true; busy = true; }
+                    else if (c.Hover.Value != c.Hover.Target) { c.Hover.Snap(c.Hover.Target); moved = true; }
+                    if (!c.Press.Settled) { c.Press.Step(dt); moved = true; busy = true; }
+                    else if (c.Press.Value != c.Press.Target) { c.Press.Snap(c.Press.Target); moved = true; }
+                    if (moved && !fullDirty)
+                    {
+                        var cr = DirtyCardBounds(c);
+                        dirty = dirty.IsEmpty ? cr : Rectangle.Union(dirty, cr);
+                    }
                 }
 
-                // Staggered entrance cascade
+                // Staggered entrance cascade (lightweight cached blits)
                 if (entranceActive)
                 {
-                    float elapsed = unchecked((uint)(now - entranceStart)) / 1000f;
-                    float totalDur = Anim.Response(0.24f) + maxEntranceRow * 0.022f;
+                    float elapsed = (float)(KitAnim.Now - entranceStart);
+                    float totalDur = Anim.Response(0.18f) + maxEntranceRow * 0.015f;
+                    fullDirty = true;
                     if (elapsed >= totalDur) entranceActive = false;
                     else busy = true;
                 }
 
-                if (!busy) anim.Stop();
-                Invalidate();
+                if (fullDirty) Invalidate();
+                else if (!dirty.IsEmpty) Invalidate(dirty);
+                return busy;
             }
 
             protected override void Dispose(bool disposing)
             {
-                if (disposing) anim.Dispose();
+                if (disposing)
+                {
+                    pulse.Dispose();
+                    InvalidateCaches();
+                }
                 base.Dispose(disposing);
             }
 
@@ -298,7 +392,7 @@ namespace Deskmate
                         string title = deck >= 0 && deck < deckTitles.Length ? deckTitles[deck] : "";
                         if (!string.IsNullOrEmpty(title))
                         {
-                            deckHeaders.Add(new DeckHeader { Title = title, Y = y });
+                            deckHeaders.Add(new DeckHeader { Title = title, UpperTitle = title.ToUpperInvariant(), Y = y });
                             y += 24f * s;
                         }
                     }
@@ -420,13 +514,13 @@ namespace Deskmate
                 if (idx == pressIndex) return;
                 if (pressIndex >= 0 && pressIndex < cards.Count)
                 {
-                    Springs.Tune(cards[pressIndex].Press, 0.14f, 0.82f);
+                    Springs.Tune(cards[pressIndex].Press, 0.14f, 0.88f);
                     cards[pressIndex].Press.Target = 0f;
                 }
                 pressIndex = idx;
                 if (pressIndex >= 0 && pressIndex < cards.Count)
                 {
-                    Springs.Tune(cards[pressIndex].Press, 0.10f, 0.90f);
+                    Springs.Tune(cards[pressIndex].Press, 0.09f, 0.92f);
                     cards[pressIndex].Press.Target = 1f;
                 }
                 KickAnim();
@@ -579,21 +673,57 @@ namespace Deskmate
                 e.Handled = true;
             }
 
+            Bitmap AppIconBitmap(int px)
+            {
+                px = Math.Max(16, px);
+                if (cachedAppIcon != null && cachedAppIconPx == px) return cachedAppIcon;
+                if (cachedAppIcon != null) cachedAppIcon.Dispose();
+                cachedAppIcon = new Bitmap(px, px, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                using (var ig = Graphics.FromImage(cachedAppIcon))
+                {
+                    ig.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    ig.DrawIcon(KitWindow.AppIcon, new Rectangle(0, 0, px, px));
+                }
+                cachedAppIconPx = px;
+                return cachedAppIcon;
+            }
+
+            Bitmap EnsureRestCache(Card c, float s)
+            {
+                int cw = Math.Max(4, (int)Math.Ceiling(c.Rect.Width) + 2);
+                int ch = Math.Max(4, (int)Math.Ceiling(c.Rect.Height) + 2);
+                if (c.RestCache != null && c.CacheW == cw && c.CacheH == ch) return c.RestCache;
+                c.ClearCache();
+                var bmp = new Bitmap(cw, ch, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                using (var bg = Graphics.FromImage(bmp))
+                {
+                    KitInk.Smooth(bg);
+                    bg.Clear(KitInk.Window);
+                    DrawCardBody(bg, c, new RectangleF(1f, 1f, c.Rect.Width, c.Rect.Height), 0f, false, s);
+                }
+                c.RestCache = bmp;
+                c.CacheW = cw;
+                c.CacheH = ch;
+                return bmp;
+            }
+
             protected override void OnPaint(PaintEventArgs e)
             {
                 var g = e.Graphics;
+                EnsureThemeCacheValid();
                 KitInk.Smooth(g);
-                g.Clear(KitInk.Window);
+                var clip = e.ClipRectangle;
+                g.FillRectangle(KitInk.BrushOf(KitInk.Window), clip);
                 float s = Ui;
+                double now = entranceActive ? KitAnim.Now : 0;
 
-                // Deck headers
+                // Deck headers (clip-culled)
                 Font deckFont = Ink.Semi(11f * s);
                 for (int i = 0; i < deckHeaders.Count; i++)
                 {
                     float hy = deckHeaders[i].Y - scroll;
-                    if (hy + 24 * s < 0 || hy > Height) continue;
-                    string label = deckHeaders[i].Title.ToUpperInvariant();
-                    KitInk.Draw(g, label, deckFont, KitInk.Faint, new RectangleF(padX + 2 * s, hy, colW, 18 * s), ContentAlignment.MiddleLeft);
+                    if (hy + 22 * s < clip.Top || hy > clip.Bottom) continue;
+                    KitInk.Draw(g, deckHeaders[i].UpperTitle ?? deckHeaders[i].Title, deckFont, KitInk.Faint, new RectangleF(padX + 2 * s, hy, colW, 18 * s), ContentAlignment.MiddleLeft);
                 }
 
                 // Draw non-hovered cards first, then hovered/focused card on top so elevation shadow never clips under neighbors
@@ -604,13 +734,13 @@ namespace Deskmate
                     {
                         bool isTop = i == topCard;
                         if ((pass == 0 && isTop) || (pass == 1 && !isTop)) continue;
-                        DrawCard(g, i, s);
+                        DrawCard(g, i, s, clip, now);
                     }
                 }
 
                 // Subtle custom scrollbar thumb on right edge when scrollable
                 float maxS = MaxScroll();
-                if (maxS > 1f)
+                if (maxS > 1f && clip.Right >= Width - (int)Math.Ceiling(10 * s))
                 {
                     float trackH = Height - 16 * s;
                     float thumbH = Math.Max(32 * s, trackH * (Height / contentHeight));
@@ -620,46 +750,65 @@ namespace Deskmate
                 }
             }
 
-            void DrawCard(Graphics g, int idx, float s)
+            void DrawCard(Graphics g, int idx, float s, Rectangle clip, double now)
             {
                 var c = cards[idx];
                 var r = ScreenRectOf(c);
 
-                // Staggered spring entrance offset
-                float entranceScale = 1f;
+                // Staggered lightweight entrance glide (pure translation + soft window-color fade veil, zero text shimmer)
+                float entranceEased = 1f;
                 if (entranceActive && !Anim.Reduced)
                 {
-                    float elapsed = unchecked((uint)(Environment.TickCount - entranceStart)) / 1000f;
-                    float delay = c.EntranceRow * 0.022f;
-                    float t = Ease.Clamp01((elapsed - delay) / Math.Max(0.08f, Anim.Response(0.22f)));
-                    float eased = Ease.OutCubic(t);
-                    r.Y += (1f - eased) * 16f * s;
-                    entranceScale = 0.965f + 0.035f * eased;
+                    float elapsed = (float)(now - entranceStart);
+                    float delay = c.EntranceRow * 0.015f;
+                    float t = Ease.Clamp01((elapsed - delay) / Math.Max(0.06f, Anim.Response(0.18f)));
+                    entranceEased = Ease.OutQuart(t);
+                    r.Y += (1f - entranceEased) * 10f * s;
                 }
 
-                if (r.Bottom < -24 * s || r.Top > Height + 24 * s) return;
+                if (r.Bottom + 16 * s < clip.Top || r.Top - 16 * s > clip.Bottom ||
+                    r.Right + 16 * s < clip.Left || r.Left - 16 * s > clip.Right) return;
 
-                float h = Math.Max(0f, Math.Min(1.25f, c.Hover.Value));
-                float p = Math.Max(0f, Math.Min(1.25f, c.Press.Value));
+                float h = Math.Max(0f, Math.Min(1.15f, c.Hover.Value));
+                float p = Math.Max(0f, Math.Min(1.15f, c.Press.Value));
                 bool kbFocus = Focused && !KitInk.ByMouse && idx == focusIndex;
-                float active = h;
 
-                // Tactile console scale & lift: subtle grow on hover/focus, crisp compress on press
-                float scale = entranceScale * (1f + 0.022f * active - 0.028f * p);
-                float liftY = -2.2f * s * active + 1.5f * s * p;
+                // Fast path: blit cached resting bitmap (< 0.03ms per card, zero GDI TextRenderer roundtrips!)
+                if (h <= 0.002f && p <= 0.002f && !kbFocus)
+                {
+                    var bmp = EnsureRestCache(c, s);
+                    int dx = (int)Math.Round(r.X) - 1;
+                    int dy = (int)Math.Round(r.Y) - 1;
+                    g.DrawImageUnscaled(bmp, dx, dy);
+                    if (entranceEased < 0.995f)
+                    {
+                        int veilA = (int)Math.Round((1f - entranceEased) * 195f);
+                        if (veilA > 2)
+                            g.FillRectangle(KitInk.BrushOf(Color.FromArgb(veilA, KitInk.Window)), dx, dy, bmp.Width, bmp.Height);
+                    }
+                    return;
+                }
+
+                // Interactive active card path (only 1-2 cards at a time, clip-culled to dirty rect)
+                float scale = 1f + 0.012f * h - 0.018f * p;
+                float liftY = -1.8f * s * h + 1.2f * s * p;
                 float nw = r.Width * scale, nh = r.Height * scale;
                 var drawR = new RectangleF(
                     r.X + (r.Width - nw) / 2f,
                     r.Y + (r.Height - nh) / 2f + liftY,
                     nw, nh);
 
+                DrawCardBody(g, c, drawR, h, kbFocus, s);
+            }
+
+            void DrawCardBody(Graphics g, Card c, RectangleF drawR, float active, bool kbFocus, float s)
+            {
                 float radius = (c.Featured ? 14f : 12f) * s;
-                Color tile = string.IsNullOrEmpty(c.TileKey) ? KitInk.Accent : Ink.Label(c.TileKey, true);
-                if (tile.IsEmpty) tile = Ink.Label("slate", true);
+                Color tile = c.TileColor.IsEmpty ? KitInk.Accent : c.TileColor;
 
                 // Contact elevation shadow when lifted
                 if (active > 0.06f)
-                    KitInk.Lift(g, drawR, radius, s * (0.7f + 0.7f * active));
+                    KitInk.Lift(g, drawR, radius, s * (0.6f + 0.6f * active));
 
                 // Card surface with subtle category tint wash on hover/focus (never gaudy neon)
                 float tintAmt = (c.Featured ? 0.045f : 0.02f) + (Ink.Light ? 0.055f : 0.095f) * active;
@@ -689,7 +838,8 @@ namespace Deskmate
                 var iconRect = new RectangleF(iconX, iconY, iconSize, iconSize);
                 if (c.Glyph == KitRow.MarkGlyph)
                 {
-                    g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(iconRect));
+                    var icoBmp = AppIconBitmap((int)Math.Round(iconSize));
+                    g.DrawImageUnscaled(icoBmp, (int)Math.Round(iconRect.X), (int)Math.Round(iconRect.Y));
                 }
                 else
                 {
@@ -700,20 +850,18 @@ namespace Deskmate
                 // Chevron, status pill, and palette dots aligned on one crisp horizontal axis
                 float pillH = 20f * s;
                 float pillY = iconY + (iconSize - pillH) / 2f;
-                float chevShift = 4f * s * active;
+                float chevShift = 3.5f * s * active;
                 var chevRect = new RectangleF(drawR.Right - 28f * s + chevShift, pillY, 18f * s, pillH);
                 Color chevColor = active > 0.05f ? Ink.Mix(KitInk.Faint, tile, active) : KitInk.Faint;
                 KitInk.Draw(g, "\uE76C", Ink.Icons(10.5f * s), chevColor, chevRect, ContentAlignment.MiddleCenter);
 
-                // Live status pill (top-right, left of chevron)
+                // Live status pill (top-right, left of chevron) — width cached, zero MeasureText in OnPaint
                 float statusLeft = drawR.Right - 30f * s;
                 if (!string.IsNullOrEmpty(c.Status))
                 {
                     Font sf = Ink.Semi(10.5f * s);
-                    int sw = TextRenderer.MeasureText(c.Status, sf).Width;
-                    float pillW = Math.Min(drawR.Width * 0.48f, sw + 14f * s);
+                    float pillW = Math.Min(drawR.Width * 0.48f, c.StatusWidth + 14f * s);
                     float pillX = drawR.Right - 30f * s - pillW;
-                    // Don't collide with icon
                     if (pillX > iconRect.Right + 8f * s)
                     {
                         var pillR = new RectangleF(pillX, pillY, pillW, pillH);
@@ -740,19 +888,16 @@ namespace Deskmate
                 }
 
                 // Title & subtitle
+                float tx = iconX;
+                float tw = drawR.Width - (tx - drawR.X) - pad;
+                float titleY = iconRect.Bottom + 8f * s;
                 if (c.Featured)
                 {
-                    float tx = iconX;
-                    float tw = drawR.Width - (tx - drawR.X) - pad;
-                    float titleY = iconRect.Bottom + 8f * s;
                     KitInk.Draw(g, c.Title, Ink.Semi(15f * s), KitInk.Text, new RectangleF(tx, titleY, tw, 22f * s), ContentAlignment.MiddleLeft);
                     KitInk.Draw(g, c.Subtitle, Ink.Text(11.5f * s), KitInk.Sub, new RectangleF(tx, titleY + 21f * s, tw, 18f * s), ContentAlignment.MiddleLeft);
                 }
                 else
                 {
-                    float tx = iconX;
-                    float tw = drawR.Width - (tx - drawR.X) - pad;
-                    float titleY = iconRect.Bottom + 8f * s;
                     KitInk.Draw(g, c.Title, Ink.Semi(13.5f * s), KitInk.Text, new RectangleF(tx, titleY, tw, 20f * s), ContentAlignment.MiddleLeft);
                     KitInk.Draw(g, c.Subtitle, Ink.Text(11f * s), KitInk.Sub, new RectangleF(tx, titleY + 19f * s, tw, 16f * s), ContentAlignment.MiddleLeft);
                 }

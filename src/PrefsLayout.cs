@@ -172,39 +172,40 @@ namespace Deskmate
                 List<KitRow> peers;
                 readonly Dictionary<KitRow, float> peerPos = new Dictionary<KitRow, float>();
                 readonly Dictionary<KitRow, int> peerTarget = new Dictionary<KitRow, int>();
-                readonly Timer settleAnim = new Timer { Interval = 15 };
-                int grabY, startTop, baseTop, slot, target, lastTick;
+                readonly KitPulse settlePulse;
+                int grabY, startTop, baseTop, slot, target;
                 bool dragging;
 
                 public TabGrip()
                 {
                     Cursor = Cursors.SizeNS;
-                    settleAnim.Tick += delegate
-                    {
-                        if (!dragging || row == null || row.Parent == null) { settleAnim.Stop(); return; }
-                        int now = Environment.TickCount;
-                        float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
-                        lastTick = now;
-                        float rate = Math.Min(1f, dt / Math.Max(0.025f, Anim.Response(0.06f)));
-                        bool moving = false;
-                        foreach (var kv in new List<KeyValuePair<KitRow, int>>(peerTarget))
-                        {
-                            var p = kv.Key;
-                            float cur = peerPos.ContainsKey(p) ? peerPos[p] : p.Top;
-                            float want = kv.Value;
-                            cur = Anim.Reduced ? want : cur + (want - cur) * rate;
-                            if (Math.Abs(want - cur) < 0.6f) cur = want;
-                            else moving = true;
-                            peerPos[p] = cur;
-                            int rounded = (int)Math.Round(cur);
-                            if (p.Top != rounded) p.Top = rounded;
-                        }
-                        if (!moving) settleAnim.Stop();
-                        row.Parent.Invalidate();
-                    };
+                    settlePulse = new KitPulse(StepSettle);
                 }
 
-                protected override void Dispose(bool disposing) { if (disposing) settleAnim.Dispose(); base.Dispose(disposing); }
+                bool StepSettle(float dt)
+                {
+                    if (!dragging || IsDisposed || row == null || row.Parent == null) return false;
+                    float rate = KitAnim.Decay(dt, 0.052f);
+                    bool moving = false;
+                    for (int i = 0; i < peers.Count; i++)
+                    {
+                        var p = peers[i];
+                        if (p == row) continue;
+                        int want;
+                        if (!peerTarget.TryGetValue(p, out want)) continue;
+                        float cur = peerPos.ContainsKey(p) ? peerPos[p] : p.Top;
+                        cur = Anim.Reduced ? want : cur + (want - cur) * rate;
+                        if (Math.Abs(want - cur) < 0.5f) cur = want;
+                        else moving = true;
+                        peerPos[p] = cur;
+                        int rounded = (int)Math.Round(cur);
+                        if (p.Top != rounded) p.Top = rounded;
+                    }
+                    row.Parent.Invalidate();
+                    return moving;
+                }
+
+                protected override void Dispose(bool disposing) { if (disposing) settlePulse.Dispose(); base.Dispose(disposing); }
 
                 protected override bool IsInputKey(Keys k) { return k == Keys.Up || k == Keys.Down || base.IsInputKey(k); }
 
@@ -272,11 +273,7 @@ namespace Deskmate
                         else if (Math.Abs(p.Top - want) > 0) needAnim = true;
                         k++;
                     }
-                    if (needAnim && !settleAnim.Enabled)
-                    {
-                        lastTick = Environment.TickCount;
-                        settleAnim.Start();
-                    }
+                    if (needAnim) settlePulse.Start();
                     row.Parent.Invalidate();
                 }
 
@@ -297,7 +294,7 @@ namespace Deskmate
                     if (!dragging) return;
                     dragging = false;
                     Capture = false;
-                    settleAnim.Stop();
+                    settlePulse.Stop();
                     foreach (var kv in peerTarget) kv.Key.Top = kv.Value;
                     Lift(false);
                     row.Top = baseTop + target * row.Height;
@@ -395,7 +392,7 @@ namespace Deskmate
                 {
                     searchTimer.Dispose();
                     preview.Dispose();
-                    entranceTimer.Dispose();
+                    FinishPageEntrance();
                     settings.FlushSave();
                 }
                 base.Dispose(disposing);

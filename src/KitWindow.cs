@@ -13,6 +13,8 @@ namespace Deskmate
     {
         public float Ui = 1f;
         Timer fadeTimer;
+        KitPulse fadePulse;
+        double fadeStart;
 
         [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
 
@@ -137,6 +139,11 @@ namespace Deskmate
 
         void StopFade()
         {
+            if (fadePulse != null)
+            {
+                fadePulse.Dispose();
+                fadePulse = null;
+            }
             if (fadeTimer != null)
             {
                 fadeTimer.Stop();
@@ -150,16 +157,17 @@ namespace Deskmate
             base.OnShown(e);
             if (Opacity >= 1) return;
             StopFade();
-            var start = DateTime.UtcNow;
-            fadeTimer = new Timer { Interval = 15 };
-            fadeTimer.Tick += delegate
+            fadeStart = KitAnim.Now;
+            fadePulse = new KitPulse(dt =>
             {
-                if (IsDisposed || Disposing || !IsHandleCreated) { StopFade(); return; }
-                double k = Math.Min(1, (DateTime.UtcNow - start).TotalMilliseconds / 160);
-                Opacity = 1 - (1 - k) * (1 - k);
-                if (k >= 1) StopFade();
-            };
-            fadeTimer.Start();
+                if (IsDisposed || Disposing || !IsHandleCreated) { StopFade(); return false; }
+                float dur = Math.Max(0.04f, Anim.Response(0.125f));
+                float k = Ease.Clamp01((float)((KitAnim.Now - fadeStart) / dur));
+                Opacity = Ease.OutCubic(k);
+                if (k >= 1f) { Opacity = 1; StopFade(); return false; }
+                return true;
+            });
+            fadePulse.Start();
         }
 
         protected override bool ProcessDialogKey(Keys key)

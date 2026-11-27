@@ -8,6 +8,9 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.21.2
+            AddOnce(en, "Pengaturan lebih mulus", "Smoother Settings");
+            AddOnce(en, "Jendela Pengaturan dan kontrolnya kini beranimasi lebih halus, mengikuti pengaturan gerak, dan menggambar ulang lebih cepat berkat cache tampilan.", "The Settings window and its controls now animate more smoothly, respect your motion setting, and redraw faster thanks to view caching.");
             // What's new 2.21.1
             AddOnce(en, "Pemeriksaan pembaruan lebih andal", "More reliable update checks");
             AddOnce(en, "Jika API GitHub tidak merespons, Deskmate memeriksa rilis terbaru lewat halaman resmi GitHub. Pemasangan tetap memverifikasi SHA-256.", "If the GitHub API is unavailable, Deskmate checks the official GitHub releases page. Installation still verifies SHA-256.");

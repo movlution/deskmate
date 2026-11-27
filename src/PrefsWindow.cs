@@ -64,17 +64,108 @@ namespace Deskmate
             string[] activeParts = new string[0];
             readonly Stack<string> navBack = new Stack<string>();
             readonly Stack<string> navForward = new Stack<string>();
-            readonly Timer entranceTimer = new Timer { Interval = 15 };
-            readonly List<Control> entranceControls = new List<Control>();
-            readonly List<int> entranceTargets = new List<int>();
-            int entranceStart, entranceOffset;
+            readonly PageTransitionOverlay pageTransition = new PageTransitionOverlay();
+            int nextEntranceDir = 1;
 
-            // Double-buffered scroll host with smooth wheel inertia (snaps under Reduced Motion)
+            // Lightweight single-bitmap viewport transition overlay: zero HWND moves, VSync-paced fade + subtle glide
+            sealed class PageTransitionOverlay : Control
+            {
+                Bitmap snap;
+                int slideDir = 1;
+                float offsetPx;
+                double startT;
+                readonly KitPulse pulse;
+
+                public PageTransitionOverlay()
+                {
+                    SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+                    TabStop = false;
+                    Visible = false;
+                    pulse = new KitPulse(Step);
+                }
+
+                // Pass clicks/scroll through to real controls underneath if user interacts mid-transition
+                protected override void WndProc(ref Message m)
+                {
+                    if (m.Msg == 0x0084) { m.Result = (IntPtr)(-1); return; } // WM_NCHITTEST -> HTTRANSPARENT
+                    base.WndProc(ref m);
+                }
+
+                public void Play(Bitmap snapshot, Rectangle bounds, int dir, float offset)
+                {
+                    Stop();
+                    if (snapshot == null || bounds.Width < 10 || bounds.Height < 10)
+                    {
+                        if (snapshot != null) snapshot.Dispose();
+                        return;
+                    }
+                    snap = snapshot;
+                    slideDir = dir >= 0 ? 1 : -1;
+                    offsetPx = offset;
+                    startT = KitAnim.Now;
+                    Bounds = bounds;
+                    Visible = true;
+                    BringToFront();
+                    Invalidate();
+                    pulse.Start();
+                }
+
+                public void Stop()
+                {
+                    pulse.Stop();
+                    if (Visible) Visible = false;
+                    if (snap != null) { snap.Dispose(); snap = null; }
+                }
+
+                bool Step(float dt)
+                {
+                    if (IsDisposed || snap == null || Anim.Reduced)
+                    {
+                        Stop();
+                        return false;
+                    }
+                    float dur = Math.Max(0.04f, Anim.Response(0.145f));
+                    float t = (float)((KitAnim.Now - startT) / dur);
+                    if (t >= 1f)
+                    {
+                        Stop();
+                        return false;
+                    }
+                    Invalidate();
+                    return true;
+                }
+
+                protected override void OnPaint(PaintEventArgs e)
+                {
+                    var g = e.Graphics;
+                    g.Clear(KitInk.Window);
+                    if (snap == null) return;
+                    float dur = Math.Max(0.04f, Anim.Response(0.145f));
+                    float t = Ease.Clamp01((float)((KitAnim.Now - startT) / dur));
+                    float eased = Ease.OutQuart(t);
+                    int dx = (int)Math.Round(slideDir * offsetPx * (1f - eased));
+                    g.DrawImageUnscaled(snap, dx, 0);
+                    int veilA = (int)Math.Round((1f - eased) * 145f);
+                    if (veilA > 2)
+                        g.FillRectangle(KitInk.BrushOf(Color.FromArgb(veilA, KitInk.Window)), ClientRectangle);
+                }
+
+                protected override void Dispose(bool disposing)
+                {
+                    if (disposing)
+                    {
+                        Stop();
+                        pulse.Dispose();
+                    }
+                    base.Dispose(disposing);
+                }
+            }
+
+            // Double-buffered scroll host with VSync-paced smooth wheel inertia (snaps under Reduced Motion)
             sealed class KitScrollPanel : Panel
             {
-                readonly Timer wheelTimer = new Timer { Interval = 15 };
+                readonly KitPulse wheelPulse;
                 float targetY, currentY;
-                int lastTick;
                 bool programmaticScroll;
                 public bool IsProgrammaticScrolling { get { return programmaticScroll; } }
                 public event Action UserScrolled;
@@ -84,31 +175,35 @@ namespace Deskmate
                 {
                     AutoScroll = true;
                     SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
-                    wheelTimer.Tick += delegate
-                    {
-                        if (IsDisposed || !Visible || Anim.Reduced)
-                        {
-                            StopScroll();
-                            return;
-                        }
-                        int now = Environment.TickCount;
-                        float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
-                        lastTick = now;
-                        float rate = Math.Min(1f, dt / Math.Max(0.03f, Anim.Response(0.075f)));
-                        currentY += (targetY - currentY) * rate;
-                        if (Math.Abs(targetY - currentY) < 0.6f)
-                        {
-                            currentY = targetY;
-                            wheelTimer.Stop();
-                            programmaticScroll = false;
-                        }
-                        AutoScrollPosition = new Point(-AutoScrollPosition.X, (int)Math.Round(currentY));
-                        var ch = ScrollPositionChanged;
-                        if (ch != null) ch();
-                    };
+                    wheelPulse = new KitPulse(StepScroll);
                 }
 
-                public void StopScroll() { wheelTimer.Stop(); programmaticScroll = false; }
+                bool StepScroll(float dt)
+                {
+                    if (IsDisposed || !Visible || Anim.Reduced)
+                    {
+                        programmaticScroll = false;
+                        return false;
+                    }
+                    currentY += (targetY - currentY) * KitAnim.Decay(dt, 0.056f);
+                    bool more = true;
+                    if (Math.Abs(targetY - currentY) < 0.45f)
+                    {
+                        currentY = targetY;
+                        programmaticScroll = false;
+                        more = false;
+                    }
+                    int nextY = (int)Math.Round(currentY);
+                    if (nextY != -AutoScrollPosition.Y)
+                    {
+                        AutoScrollPosition = new Point(-AutoScrollPosition.X, nextY);
+                        var ch = ScrollPositionChanged;
+                        if (ch != null) ch();
+                    }
+                    return more;
+                }
+
+                public void StopScroll() { wheelPulse.Stop(); programmaticScroll = false; }
 
                 public void SmoothScrollTo(int y)
                 {
@@ -124,8 +219,7 @@ namespace Deskmate
                     currentY = -AutoScrollPosition.Y;
                     targetY = y;
                     if (Math.Abs(targetY - currentY) < 1f) { programmaticScroll = false; return; }
-                    lastTick = Environment.TickCount;
-                    if (!wheelTimer.Enabled) wheelTimer.Start();
+                    wheelPulse.Start();
                 }
 
                 protected override void OnMouseWheel(MouseEventArgs e)
@@ -142,15 +236,14 @@ namespace Deskmate
                     }
                     int maxY = Math.Max(0, VerticalScroll.Maximum - VerticalScroll.LargeChange + 1);
                     if (maxY <= 0) { base.OnMouseWheel(e); return; }
-                    if (!wheelTimer.Enabled)
+                    if (!wheelPulse.Running)
                     {
                         currentY = -AutoScrollPosition.Y;
                         targetY = currentY;
-                        lastTick = Environment.TickCount;
                     }
                     float step = Math.Max(42f, SystemInformation.MouseWheelScrollLines * 24f);
                     targetY = Math.Max(0f, Math.Min(maxY, targetY - (e.Delta / 120f) * step));
-                    if (!wheelTimer.Enabled) wheelTimer.Start();
+                    wheelPulse.Start();
                     var he = e as HandledMouseEventArgs;
                     if (he != null) he.Handled = true;
                 }
@@ -167,7 +260,7 @@ namespace Deskmate
 
                 protected override void Dispose(bool disposing)
                 {
-                    if (disposing) wheelTimer.Dispose();
+                    if (disposing) wheelPulse.Dispose();
                     base.Dispose(disposing);
                 }
             }
@@ -321,8 +414,7 @@ namespace Deskmate
                 StartPosition = FormStartPosition.Manual;
                 Icon = island.tray != null ? island.tray.Icon : null;
                 preview.Tick += delegate { preview.Stop(); island.PreviewLayout(false); };
-                FormClosed += delegate { preview.Stop(); entranceTimer.Stop(); content.StopScroll(); settings.FlushSave(); island.PreviewLayout(false); };
-                entranceTimer.Tick += delegate { StepPageEntrance(); };
+                FormClosed += delegate { preview.Stop(); FinishPageEntrance(); content.StopScroll(); settings.FlushSave(); island.PreviewLayout(false); };
                 content.UserScrolled += delegate { partJumpActive = false; FinishPageEntrance(); };
                 content.ScrollPositionChanged += delegate { SyncPartNavFromScroll(); };
                 search.BorderStyle = BorderStyle.None;
@@ -358,9 +450,10 @@ namespace Deskmate
                 Controls.Add(search);
                 Controls.Add(hub);
                 Controls.Add(content);
+                Controls.Add(pageTransition);
             }
 
-            void EnterSection(string id, string part, bool animate)
+            void EnterSection(string id, string part, bool animate, int dir = 1)
             {
                 string next = NormalizeSection(id);
                 if (!inHub && section != "search" && section != next)
@@ -378,6 +471,7 @@ namespace Deskmate
                 hub.Visible = false;
                 content.Visible = true;
                 animateNextFill = animate;
+                nextEntranceDir = dir;
                 Invalidate(TopBarRect());
                 if (IsHandleCreated) Fill();
             }
@@ -395,7 +489,8 @@ namespace Deskmate
                 building = false;
                 content.Visible = false;
                 hub.Visible = true;
-                BindHub(section);
+                if (!hub.HasCards) BindHub(section);
+                else hub.UpdateStatuses(HubStatus);
                 if (animate && IsHandleCreated && Visible) hub.PlayEntrance(section);
                 PlaceSearchBox();
                 Invalidate(TopBarRect());
@@ -1121,7 +1216,17 @@ namespace Deskmate
                         jumped = true;
                     }
                     focusPart = null;
-                    if (doEntrance && !jumped && Visible && !Anim.Reduced) StartPageEntrance();
+                    bool wantEntrance = doEntrance && !jumped && Visible && !Anim.Reduced;
+                    if (freeze)
+                    {
+                        redrawFrozen = false;
+                        SendMessage(content.Handle, WmSetRedraw, (IntPtr)1, null);
+                        if (wantEntrance) StartPageEntrance(null, nextEntranceDir);
+                        RedrawWindow(content.Handle, IntPtr.Zero, IntPtr.Zero,
+                            wantEntrance ? (RdwErase | RdwFrame | RdwInvalidate | RdwAllChildren) : (RdwErase | RdwFrame | RdwInvalidate | RdwAllChildren | RdwUpdateNow));
+                        freeze = false;
+                    }
+                    else if (wantEntrance) StartPageEntrance(null, nextEntranceDir);
                 }
                 finally
                 {
@@ -1135,59 +1240,48 @@ namespace Deskmate
                 }
             }
 
-            // Game-platform forward slide-in: sub-menu glides smoothly in from the right
-            void StartPageEntrance(Control afterControl = null)
+            // Lightweight single-bitmap viewport slide+fade: controls stay at final positions with zero HWND thrash
+            void StartPageEntrance(Control afterControl = null, int slideDir = 1)
             {
-                entranceControls.Clear();
-                entranceTargets.Clear();
-                int availRight = Math.Max(0, content.ClientSize.Width - (left + rowW) - 4);
-                entranceOffset = Math.Min(availRight, Math.Max(14, (int)Math.Round(24 * Ui)));
-                if (entranceOffset < 4) return;
-                bool past = afterControl == null;
-                foreach (Control c in content.Controls)
+                FinishPageEntrance();
+                if (IsDisposed || !Visible || !content.Visible || Anim.Reduced) return;
+                int clipTop = afterControl != null ? Math.Max(0, afterControl.Bottom) : 0;
+                int vw = content.ClientSize.Width;
+                int vh = content.ClientSize.Height - clipTop;
+                if (vw < 24 || vh < 24) return;
+                Bitmap snap = null;
+                try
                 {
-                    if (!past) { if (c == afterControl) past = true; continue; }
-                    if (c.Top > content.Height + 32) continue;
-                    entranceControls.Add(c);
-                    entranceTargets.Add(c.Left);
-                    c.Left += entranceOffset;
+                    snap = new Bitmap(vw, vh, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                    using (var sg = Graphics.FromImage(snap))
+                    {
+                        sg.Clear(KitInk.Window);
+                        foreach (Control c in content.Controls)
+                        {
+                            if (!c.Visible || c.Width <= 0 || c.Height <= 0) continue;
+                            if (c.Bottom <= clipTop || c.Top >= content.ClientSize.Height) continue;
+                            if (!c.IsHandleCreated) { var h = c.Handle; }
+                            using (var cb = new Bitmap(c.Width, c.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb))
+                            {
+                                c.DrawToBitmap(cb, new Rectangle(0, 0, c.Width, c.Height));
+                                sg.DrawImageUnscaled(cb, c.Left, c.Top - clipTop);
+                            }
+                        }
+                    }
+                    float offset = Math.Max(10f, 14f * Ui);
+                    var bounds = new Rectangle(content.Left, content.Top + clipTop, vw, vh);
+                    pageTransition.Play(snap, bounds, slideDir, offset);
+                    snap = null;
                 }
-                if (entranceControls.Count == 0) return;
-                entranceStart = Environment.TickCount;
-                entranceTimer.Start();
-            }
-
-            void StepPageEntrance()
-            {
-                if (IsDisposed || entranceControls.Count == 0 || Anim.Reduced)
+                catch (Exception)
                 {
-                    FinishPageEntrance();
-                    return;
+                    if (snap != null) snap.Dispose();
                 }
-                float duration = 1000f * Anim.Response(0.17f);
-                float t = Ease.Clamp01(unchecked((uint)(Environment.TickCount - entranceStart)) / Math.Max(40f, duration));
-                int dx = (int)Math.Round(entranceOffset * (1f - Ease.OutCubic(t)));
-                content.SuspendLayout();
-                for (int i = 0; i < entranceControls.Count; i++)
-                {
-                    var c = entranceControls[i];
-                    if (!c.IsDisposed) c.Left = entranceTargets[i] + dx;
-                }
-                content.ResumeLayout();
-                if (t >= 1f || dx <= 0) FinishPageEntrance();
             }
 
             void FinishPageEntrance()
             {
-                if (entranceTimer.Enabled) entranceTimer.Stop();
-                if (entranceControls.Count == 0) return;
-                for (int i = 0; i < entranceControls.Count; i++)
-                {
-                    var c = entranceControls[i];
-                    if (!c.IsDisposed && c.Left != entranceTargets[i]) c.Left = entranceTargets[i];
-                }
-                entranceControls.Clear();
-                entranceTargets.Clear();
+                pageTransition.Stop();
             }
 
             // Display changes only rebuild the visible display page; other pages keep their controls.
@@ -1290,7 +1384,7 @@ namespace Deskmate
                     {
                         string prev = navBack.Pop();
                         if (!inHub && section != "search") navForward.Push(section);
-                        NavigateHistory(prev);
+                        NavigateHistory(prev, -1);
                         return true;
                     }
                     if (!inHub)
@@ -1303,7 +1397,7 @@ namespace Deskmate
                 {
                     string next = navForward.Pop();
                     if (!inHub && section != "search") navBack.Push(section);
-                    NavigateHistory(next);
+                    NavigateHistory(next, 1);
                     return true;
                 }
                 if (keys == Keys.Escape)
@@ -1324,7 +1418,7 @@ namespace Deskmate
                 return base.ProcessCmdKey(ref msg, keys);
             }
 
-            void NavigateHistory(string target)
+            void NavigateHistory(string target, int dir = 1)
             {
                 inHub = false;
                 section = NormalizeSection(target);
@@ -1337,6 +1431,7 @@ namespace Deskmate
                 content.Visible = true;
                 Invalidate(TopBarRect());
                 animateNextFill = true;
+                nextEntranceDir = dir;
                 Fill();
             }
 
@@ -1370,7 +1465,7 @@ namespace Deskmate
                 AddSubMenuFooter(section);
             }
 
-            void SwitchTabbedContent(string partId)
+            void SwitchTabbedContent(string partId, int slideDir = 1)
             {
                 if (!IsHandleCreated || IsDisposed || partNav == null || partNav.IsDisposed) return;
                 FinishPageEntrance();
@@ -1391,7 +1486,17 @@ namespace Deskmate
                     var spacer = new Panel { Location = new Point(0, (int)y), Size = new Size(1, (int)(Ink.Sp16 * Ui)), BackColor = KitInk.Window };
                     content.Controls.Add(spacer);
                     content.ResumeLayout();
-                    if (Visible && !Anim.Reduced) StartPageEntrance(partNav);
+                    bool wantEntrance = Visible && !Anim.Reduced;
+                    if (freeze)
+                    {
+                        redrawFrozen = false;
+                        SendMessage(content.Handle, WmSetRedraw, (IntPtr)1, null);
+                        if (wantEntrance) StartPageEntrance(partNav, slideDir);
+                        RedrawWindow(content.Handle, IntPtr.Zero, IntPtr.Zero,
+                            wantEntrance ? (RdwErase | RdwFrame | RdwInvalidate | RdwAllChildren) : (RdwErase | RdwFrame | RdwInvalidate | RdwAllChildren | RdwUpdateNow));
+                        freeze = false;
+                    }
+                    else if (wantEntrance) StartPageEntrance(partNav, slideDir);
                 }
                 finally
                 {
@@ -1428,15 +1533,18 @@ namespace Deskmate
                     }
                 }
                 int h = (int)(38 * Ui);
+                int lastIdx = initialSelected;
                 var nav = new PartTabStrip { Labels = labels, Glyphs = glyphs, Tiles = tiles, Selected = initialSelected };
                 nav.SetBounds(left, (int)(y - Ink.Sp8 * Ui), rowW, h);
                 nav.Changed += idx =>
                 {
                     if (building || syncingPartNav || idx < 0 || idx >= parts.Length) return;
+                    int dir = idx >= lastIdx ? 1 : -1;
+                    lastIdx = idx;
                     if (IsTabbedPage(section))
                     {
                         activeSubTab[section] = parts[idx];
-                        SwitchTabbedContent(parts[idx]);
+                        SwitchTabbedContent(parts[idx], dir);
                         return;
                     }
                     int targetY;
@@ -1605,7 +1713,7 @@ namespace Deskmate
                     prevSec[4].Length > 0 ? Ink.Label(prevSec[4], true) : Color.Empty,
                     nextId, Lang.T(nextSec[1]), nextSec[2].Length > 0 ? nextSec[2][0] : '\uE713',
                     nextSec[4].Length > 0 ? Ink.Label(nextSec[4], true) : Color.Empty);
-                footer.Picked += id => EnterSection(id, null, true);
+                footer.Picked += id => EnterSection(id, null, true, id == prevId ? -1 : 1);
                 footer.GoHub += delegate { ShowHub(true); };
                 footer.SetBounds(left, (int)(y + 4 * Ui), rowW, (int)(66 * Ui));
                 content.Controls.Add(footer);

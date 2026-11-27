@@ -17,27 +17,28 @@ namespace Deskmate
                 readonly Spring py = new Spring(0, 1, 1, 0.25f);
                 readonly Spring pw = new Spring(0, 1, 1, 0.25f);
                 readonly Spring ph = new Spring(0, 1, 1, 0.25f);
-                int lastTick;
-                readonly Timer anim = new Timer { Interval = 15 };
+                readonly KitPulse pulse;
                 // Reading order for arrow keys
                 static readonly int[] Order = { PlaceTopLeft, PlaceTop, PlaceTopRight, PlaceLeft, PlaceRight };
 
                 public PlacePicker()
                 {
-                    anim.Tick += delegate
+                    pulse = new KitPulse(StepAnim);
+                }
+
+                bool StepAnim(float dt)
+                {
+                    if (IsDisposed || !Visible || Anim.Reduced)
                     {
-                        int now = Environment.TickCount;
-                        float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
-                        lastTick = now;
-                        if (Anim.Reduced) { SnapPill(selected); anim.Stop(); Invalidate(); return; }
-                        px.Step(dt); py.Step(dt); pw.Step(dt); ph.Step(dt);
-                        if (px.Settled && py.Settled && pw.Settled && ph.Settled)
-                        {
-                            SnapPill(selected);
-                            anim.Stop();
-                        }
+                        SnapPill(selected);
                         Invalidate();
-                    };
+                        return false;
+                    }
+                    px.Step(dt); py.Step(dt); pw.Step(dt); ph.Step(dt);
+                    bool more = !(px.Settled && py.Settled && pw.Settled && ph.Settled);
+                    if (!more) SnapPill(selected);
+                    Invalidate();
+                    return more;
                 }
 
                 void SnapPill(int place)
@@ -47,12 +48,12 @@ namespace Deskmate
                     pillFor = place;
                 }
 
-                protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
+                protected override void Dispose(bool disposing) { if (disposing) pulse.Dispose(); base.Dispose(disposing); }
 
                 public int Selected
                 {
                     get { return selected; }
-                    set { if (value == selected) return; selected = value; pillFor = -1; anim.Stop(); Invalidate(); AccessibilityNotifyClients(AccessibleEvents.Selection, value); }
+                    set { if (value == selected) return; selected = value; pillFor = -1; pulse.Stop(); Invalidate(); AccessibilityNotifyClients(AccessibleEvents.Selection, value); }
                 }
 
                 RectangleF Screen { get { float s = Ui; return new RectangleF(8 * s, 6 * s, Width - 16 * s, Height - 12 * s); } }
@@ -95,14 +96,13 @@ namespace Deskmate
                     {
                         if (pillFor != prev) SnapPill(prev);
                         var dst = Spot(i);
-                        Springs.Tune(px, 0.26f, 0.80f);
-                        Springs.Tune(py, 0.26f, 0.80f);
-                        Springs.Tune(pw, 0.26f, 0.84f);
-                        Springs.Tune(ph, 0.26f, 0.84f);
+                        Springs.Tune(px, 0.20f, 0.86f);
+                        Springs.Tune(py, 0.20f, 0.86f);
+                        Springs.Tune(pw, 0.20f, 0.88f);
+                        Springs.Tune(ph, 0.20f, 0.88f);
                         px.Target = dst.X; py.Target = dst.Y; pw.Target = dst.Width; ph.Target = dst.Height;
                         pillFor = i;
-                        lastTick = Environment.TickCount;
-                        anim.Start();
+                        pulse.Start();
                     }
                     else pillFor = -1;
                     Invalidate();
@@ -150,7 +150,7 @@ namespace Deskmate
                     foreach (int i in Order)
                     {
                         var r = Spot(i);
-                        if (i == selected && anim.Enabled)
+                        if (i == selected && pulse.Running)
                         {
                             // Quiet resting slot under the gliding island
                             Fill(g, r, Math.Min(r.Width, r.Height) / 2, KitInk.Faint);
@@ -160,7 +160,7 @@ namespace Deskmate
                         // Unchosen spots stay quiet ink
                         Fill(g, r, Math.Min(r.Width, r.Height) / 2, i == hover ? KitInk.Sub : KitInk.Faint);
                     }
-                    var active = anim.Enabled ? new RectangleF(px.Value, py.Value, Math.Max(4 * s, pw.Value), Math.Max(4 * s, ph.Value)) : Spot(selected);
+                    var active = pulse.Running ? new RectangleF(px.Value, py.Value, Math.Max(4 * s, pw.Value), Math.Max(4 * s, ph.Value)) : Spot(selected);
                     Fill(g, active, Math.Min(active.Width, active.Height) / 2, KitInk.Accent);
                     // Two dots: the island's eyes
                     var dot = KitInk.BrushOf(KitInk.OnAccent);

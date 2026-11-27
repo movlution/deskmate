@@ -183,9 +183,32 @@ namespace Deskmate
                 int selected, hot = -1;
                 float glide = -1;
                 readonly Spring glideSpring = new Spring(0, 1, 1, 0.002f);
-                int lastTick;
-                Timer anim;
+                KitPulse pulse;
+                int[] labelWidths;
+                float labelWidthUi;
                 public event Action<int> Changed;
+
+                bool StepAnim(float dt)
+                {
+                    if (IsDisposed || !Visible || Anim.Reduced)
+                    {
+                        glide = selected;
+                        glideSpring.Snap(selected);
+                        Invalidate();
+                        return false;
+                    }
+                    glideSpring.Target = selected;
+                    glideSpring.Step(dt);
+                    glide = glideSpring.Value;
+                    bool more = !glideSpring.Settled;
+                    if (!more)
+                    {
+                        glide = selected;
+                        glideSpring.Snap(selected);
+                    }
+                    Invalidate();
+                    return more;
+                }
 
                 public int Selected
                 {
@@ -199,48 +222,18 @@ namespace Deskmate
                         {
                             glide = selected;
                             glideSpring.Snap(selected);
-                            if (anim != null) anim.Stop();
+                            if (pulse != null) pulse.Stop();
                         }
                         else
                         {
                             glideSpring.Value = glide;
-                            Springs.Tune(glideSpring, 0.22f, 0.82f);
+                            Springs.Tune(glideSpring, 0.18f, 0.88f);
                             glideSpring.Target = selected;
-                            EnsureAnim();
-                            if (!anim.Enabled) { lastTick = Environment.TickCount; anim.Start(); }
+                            if (pulse == null) pulse = new KitPulse(StepAnim);
+                            pulse.Start();
                         }
                         Invalidate();
                     }
-                }
-
-                void EnsureAnim()
-                {
-                    if (anim != null) return;
-                    anim = new Timer { Interval = 15 };
-                    anim.Tick += delegate
-                    {
-                        int now = Environment.TickCount;
-                        float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
-                        lastTick = now;
-                        if (Anim.Reduced)
-                        {
-                            glide = selected;
-                            glideSpring.Snap(selected);
-                            anim.Stop();
-                            Invalidate();
-                            return;
-                        }
-                        glideSpring.Target = selected;
-                        glideSpring.Step(dt);
-                        glide = glideSpring.Value;
-                        if (glideSpring.Settled)
-                        {
-                            glide = selected;
-                            glideSpring.Snap(selected);
-                            anim.Stop();
-                        }
-                        Invalidate();
-                    };
                 }
 
                 void Pick(int i)
@@ -365,6 +358,13 @@ namespace Deskmate
 
                     Font fActive = Ink.Semi(12.5f * s);
                     Font fIdle = Ink.Text(12.5f * s);
+                    if (labelWidths == null || labelWidths.Length != Labels.Length || Math.Abs(labelWidthUi - s) > 0.01f)
+                    {
+                        labelWidths = new int[Labels.Length];
+                        for (int i = 0; i < Labels.Length; i++)
+                            labelWidths[i] = TextRenderer.MeasureText(Labels[i], fActive).Width;
+                        labelWidthUi = s;
+                    }
                     for (int i = 0; i < Labels.Length; i++)
                     {
                         var r = new RectangleF(pad + i * segW, pad, segW, Height - pad * 2f);
@@ -376,7 +376,7 @@ namespace Deskmate
                         Color segTile = i < Tiles.Length && !Tiles[i].IsEmpty ? Tiles[i] : KitInk.Accent;
                         char glyph = i < Glyphs.Length ? Glyphs[i] : '\0';
                         Font f = isSel ? fActive : fIdle;
-                        int tw = TextRenderer.MeasureText(Labels[i], f).Width;
+                        int tw = labelWidths[i];
                         float iconW = glyph != '\0' ? 18f * s : 0f;
                         float gap = glyph != '\0' ? 5f * s : 0f;
                         float totalW = Math.Min(r.Width - 12f * s, iconW + gap + tw);
@@ -398,7 +398,7 @@ namespace Deskmate
 
                 protected override void Dispose(bool disposing)
                 {
-                    if (disposing && anim != null) anim.Dispose();
+                    if (disposing && pulse != null) pulse.Dispose();
                     base.Dispose(disposing);
                 }
             }

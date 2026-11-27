@@ -22,42 +22,39 @@ namespace Deskmate
             readonly Spring pillY = new Spring(0, 1, 1, 0.25f);
             readonly Spring pillH = new Spring(0, 1, 1, 0.25f);
             float scrollTarget, hoverAlpha;
-            int lastTick;
-            readonly Timer anim = new Timer { Interval = 15 };
+            readonly KitPulse pulse;
 
             public SideList()
             {
-                anim.Tick += delegate
+                pulse = new KitPulse(StepAnim);
+            }
+
+            bool StepAnim(float dt)
+            {
+                if (IsDisposed || !Visible || Anim.Reduced)
                 {
-                    int now = Environment.TickCount;
-                    float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
-                    lastTick = now;
-                    if (Anim.Reduced)
-                    {
-                        pillY.Snap(pillY.Target);
-                        pillH.Snap(pillH.Target);
-                        scroll = scrollTarget;
-                        hoverAlpha = hover >= 0 ? 1f : 0f;
-                        anim.Stop();
-                        Invalidate();
-                        return;
-                    }
-                    pillY.Step(dt);
-                    pillH.Step(dt);
-                    float sRate = Math.Min(1f, dt / Math.Max(0.03f, Anim.Response(0.08f)));
-                    scroll += (scrollTarget - scroll) * sRate;
-                    if (Math.Abs(scrollTarget - scroll) < 0.35f) scroll = scrollTarget;
-                    float hWant = hover >= 0 ? 1f : 0f;
-                    hoverAlpha += (hWant - hoverAlpha) * Math.Min(1f, dt / Math.Max(0.03f, Anim.Response(0.08f)));
-                    if (Math.Abs(hWant - hoverAlpha) < 0.01f) hoverAlpha = hWant;
-                    if (pillY.Settled && pillH.Settled && scroll == scrollTarget && hoverAlpha == hWant)
-                    {
-                        pillY.Snap(pillY.Target);
-                        pillH.Snap(pillH.Target);
-                        anim.Stop();
-                    }
+                    pillY.Snap(pillY.Target);
+                    pillH.Snap(pillH.Target);
+                    scroll = scrollTarget;
+                    hoverAlpha = hover >= 0 ? 1f : 0f;
                     Invalidate();
-                };
+                    return false;
+                }
+                pillY.Step(dt);
+                pillH.Step(dt);
+                scroll += (scrollTarget - scroll) * KitAnim.Decay(dt, 0.058f);
+                if (Math.Abs(scrollTarget - scroll) < 0.35f) scroll = scrollTarget;
+                float hWant = hover >= 0 ? 1f : 0f;
+                hoverAlpha += (hWant - hoverAlpha) * KitAnim.Decay(dt, 0.065f);
+                if (Math.Abs(hWant - hoverAlpha) < 0.008f) hoverAlpha = hWant;
+                bool more = !(pillY.Settled && pillH.Settled && scroll == scrollTarget && hoverAlpha == hWant);
+                if (!more)
+                {
+                    pillY.Snap(pillY.Target);
+                    pillH.Snap(pillH.Target);
+                }
+                Invalidate();
+                return more;
             }
 
             void KickAnim()
@@ -68,19 +65,15 @@ namespace Deskmate
                     pillH.Snap(pillH.Target);
                     scroll = scrollTarget;
                     hoverAlpha = hover >= 0 ? 1f : 0f;
-                    anim.Stop();
+                    pulse.Stop();
                     Invalidate();
                     return;
                 }
-                if (!anim.Enabled)
-                {
-                    lastTick = Environment.TickCount;
-                    anim.Start();
-                }
+                pulse.Start();
                 Invalidate();
             }
 
-            protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
+            protected override void Dispose(bool disposing) { if (disposing) pulse.Dispose(); base.Dispose(disposing); }
 
             float RowH { get { return 30 * Ui; } }
 
@@ -174,8 +167,8 @@ namespace Deskmate
                         pillH.Snap(prevR.Height);
                     }
                     var nextR = LayoutCell(i);
-                    Springs.Tune(pillY, 0.24f, 0.84f);
-                    Springs.Tune(pillH, 0.24f, 0.88f);
+                    Springs.Tune(pillY, 0.19f, 0.88f);
+                    Springs.Tune(pillH, 0.19f, 0.90f);
                     pillY.Target = nextR.Y;
                     pillH.Target = nextR.Height;
                     pillFor = nextId;
@@ -249,7 +242,7 @@ namespace Deskmate
                     var hc = Cell(hIdx);
                     if (hc.Bottom >= 0 && hc.Top <= Height)
                     {
-                        float ha = anim.Enabled ? hoverAlpha : (hover >= 0 ? 1f : 0f);
+                        float ha = pulse.Running ? hoverAlpha : (hover >= 0 ? 1f : 0f);
                         Fill(g, hc, radius, Ink.Mix(KitInk.Side, hoverFill, ha));
                     }
                 }
