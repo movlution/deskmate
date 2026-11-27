@@ -292,7 +292,7 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
         }
     }
 
-    It "5. 'tabs' opens the merged Island page with its part title, Tab rows and Kartu Ringkasan, while 'dock' does not duplicate Kartu Ringkasan" {
+    It "5. 'tabs' opens the merged Island page on the 'Tab dan kartu' tab, while 'dock' does not duplicate Kartu Ringkasan" {
         $isle = $null; $prefs = $null
         try {
             $isle = New-TestIsland
@@ -300,13 +300,15 @@ Describe "Tier 1 Feature Suite: Feature 30 - Overhauled Settings & Notch Synchro
             Show-OffscreenPrefs $prefs
             $prefs.Go("tabs")
             Assert-Equal "island" ($prefsType.GetField("section", $flags).GetValue($prefs)) "Go('tabs') must land on the Island page"
+            $nav = $prefsType.GetField("partNav", $flags).GetValue($prefs)
+            Assert-NotNull $nav "Merged Island page must expose PartTabStrip"
+            Assert-Equal 1 $nav.Selected "Go('tabs') must activate the 'Tab dan kartu' tab"
             $tabTexts = Get-ContentTexts $prefs
-            Assert-True ($tabTexts -contains "Tab dan kartu") "Merged Island page must title its tab part"
-            Assert-True ($tabTexts -contains "Posisi") "Merged Island page must keep the island part"
             Assert-True ($tabTexts -contains "Tab yang tampil") "'tabs' must include 'Tab yang tampil'"
             Assert-True ($tabTexts -contains "Kartu Ringkasan") "'tabs' must include 'Kartu Ringkasan'"
             Assert-True ($tabTexts -contains "Urutan kartu") "'tabs' must include 'Urutan kartu'"
             Assert-True ($tabTexts -contains "Kartu yang tampil") "'tabs' must include 'Kartu yang tampil'"
+            Assert-False ($tabTexts -contains "Posisi") "Tabbed 'tabs' view must not mix in 'Posisi'"
 
             $prefs.Go("dock")
             $dockTexts = Get-ContentTexts $prefs

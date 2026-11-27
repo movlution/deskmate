@@ -14,9 +14,59 @@ namespace Deskmate
         {
             public int SelectedIndex;
             public event Action<int> Picked;
-            int hover = -1;
+            int hover = -1, drawnIndex = -1;
+            readonly float[] lift = new float[3];
+            readonly Spring badgePop = new Spring(1, 1, 1, 0.004f);
+            int lastTick;
+            readonly Timer anim = new Timer { Interval = 15 };
 
             static readonly string[] Labels = { "Sistem", "Terang", "Gelap" };
+
+            public ThemeCardPicker()
+            {
+                anim.Tick += delegate
+                {
+                    int now = Environment.TickCount;
+                    float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
+                    lastTick = now;
+                    if (Anim.Reduced)
+                    {
+                        for (int i = 0; i < lift.Length; i++) lift[i] = i == hover && Enabled ? 1f : 0f;
+                        badgePop.Snap(1f);
+                        anim.Stop();
+                        Invalidate();
+                        return;
+                    }
+                    badgePop.Step(dt);
+                    float rate = Math.Min(1f, dt / Math.Max(0.03f, Anim.Response(0.09f)));
+                    bool moving = !badgePop.Settled;
+                    for (int i = 0; i < lift.Length; i++)
+                    {
+                        float want = i == hover && Enabled ? 1f : 0f;
+                        lift[i] += (want - lift[i]) * rate;
+                        if (Math.Abs(want - lift[i]) < 0.01f) lift[i] = want;
+                        else moving = true;
+                    }
+                    if (!moving) { badgePop.Snap(1f); anim.Stop(); }
+                    Invalidate();
+                };
+            }
+
+            void KickAnim()
+            {
+                if (!IsHandleCreated || !Visible || Anim.Reduced)
+                {
+                    for (int i = 0; i < lift.Length; i++) lift[i] = i == hover && Enabled ? 1f : 0f;
+                    badgePop.Snap(1f);
+                    anim.Stop();
+                    Invalidate();
+                    return;
+                }
+                if (!anim.Enabled) { lastTick = Environment.TickCount; anim.Start(); }
+                Invalidate();
+            }
+
+            protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
 
             // Previews paint the real default tones, so the cards always match the windows they choose
             static readonly Tone NightTone = Tone.Dark(), PaperTone = Tone.Paper();
@@ -50,7 +100,16 @@ namespace Deskmate
                 i = Math.Max(0, Math.Min(Labels.Length - 1, i));
                 bool changed = SelectedIndex != i;
                 SelectedIndex = i;
-                Invalidate();
+                drawnIndex = i;
+                if (changed && IsHandleCreated && Visible && !Anim.Reduced)
+                {
+                    Springs.Tune(badgePop, 0.24f, 0.68f);
+                    badgePop.Value = 0.45f;
+                    badgePop.Velocity = 3.2f;
+                    badgePop.Target = 1f;
+                    KickAnim();
+                }
+                else Invalidate();
                 if (changed)
                 {
                     AccessibilityNotifyClients(AccessibleEvents.Selection, i);
@@ -101,10 +160,10 @@ namespace Deskmate
                 base.OnMouseMove(e);
                 int h = -1;
                 for (int i = 0; i < Labels.Length; i++) if (HitRect(i).Contains(e.Location)) h = i;
-                if (h != hover) { hover = h; Cursor = h >= 0 ? Cursors.Hand : Cursors.Default; Invalidate(); }
+                if (h != hover) { hover = h; Cursor = h >= 0 ? Cursors.Hand : Cursors.Default; KickAnim(); }
             }
 
-            protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hover = -1; Cursor = Cursors.Default; Invalidate(); }
+            protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hover = -1; Cursor = Cursors.Default; KickAnim(); }
 
             protected override void OnMouseUp(MouseEventArgs e)
             {
@@ -157,9 +216,12 @@ namespace Deskmate
                 var labelFont = Ink.Text(10.8f * s);
                 var selectedFont = Ink.Semi(10.8f * s);
 
+                if (drawnIndex != SelectedIndex) { drawnIndex = SelectedIndex; badgePop.Snap(1f); }
                 for (int i = 0; i < Labels.Length; i++)
                 {
                     var tile = TileRect(i);
+                    float dy = anim.Enabled ? -1.5f * s * lift[i] : 0f;
+                    if (dy != 0f) tile.Offset(0, dy);
                     bool sel = i == SelectedIndex;
                     DrawThumb(g, tile, i, radius, s);
 
@@ -184,10 +246,12 @@ namespace Deskmate
             // A selected tile gets one small accent seal, not a double outline.
             void DrawCheck(Graphics g, RectangleF tile, float s)
             {
-                float d = 14 * s;
-                var badge = new RectangleF(tile.Right - d - 5 * s, tile.Top + 5 * s, d, d);
+                float scale = anim.Enabled && !Anim.Reduced ? Math.Max(0.2f, badgePop.Value) : 1f;
+                float baseD = 14 * s, d = baseD * scale;
+                float cx = tile.Right - baseD / 2f - 5 * s, cy = tile.Top + baseD / 2f + 5 * s;
+                var badge = new RectangleF(cx - d / 2f, cy - d / 2f, d, d);
                 g.FillEllipse(KitInk.BrushOf(KitInk.Accent), badge);
-                var pen = KitInk.PenOf(KitInk.OnAccent, 1.8f * s);
+                var pen = KitInk.PenOf(KitInk.OnAccent, 1.8f * s * Math.Min(1f, scale));
                 float x = badge.X + badge.Width * 0.29f, y = badge.Y + badge.Height * 0.52f;
                 g.DrawLine(pen, x, y, x + badge.Width * 0.16f, y + badge.Height * 0.17f);
                 g.DrawLine(pen, x + badge.Width * 0.16f, y + badge.Height * 0.17f, x + badge.Width * 0.44f, y - badge.Height * 0.20f);
@@ -254,10 +318,29 @@ namespace Deskmate
             public int SelectedIndex;
             public string[] Notes = new string[0];
             public event Action<int> Picked;
-            int hover = -1;
+            int hover = -1, drawnIndex = -1;
+            readonly Spring selSpring = new Spring(0, 1, 1, 0.002f);
+            int lastTick;
+            readonly Timer anim = new Timer { Interval = 15 };
 
             static readonly GlassKind[] Kinds = { GlassKind.Clear, GlassKind.Liquid, GlassKind.Frost, GlassKind.Calm, GlassKind.Solid };
             static readonly string[] Labels = { "Bening", "Liquid", "Frost", "Kalem", "Solid" };
+
+            public MaterialPicker()
+            {
+                anim.Tick += delegate
+                {
+                    int now = Environment.TickCount;
+                    float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
+                    lastTick = now;
+                    if (Anim.Reduced) { selSpring.Snap(SelectedIndex); anim.Stop(); Invalidate(); return; }
+                    selSpring.Step(dt);
+                    if (selSpring.Settled) { selSpring.Snap(SelectedIndex); anim.Stop(); }
+                    Invalidate();
+                };
+            }
+
+            protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
 
             float Gap { get { return 5f * Ui; } }
 
@@ -271,7 +354,18 @@ namespace Deskmate
             {
                 i = Math.Max(0, Math.Min(Kinds.Length - 1, i));
                 bool changed = SelectedIndex != i;
+                int prev = SelectedIndex;
                 SelectedIndex = i;
+                drawnIndex = i;
+                if (changed && IsHandleCreated && Visible && !Anim.Reduced)
+                {
+                    Springs.Tune(selSpring, 0.24f, 0.82f);
+                    if (!anim.Enabled) selSpring.Snap(prev);
+                    selSpring.Target = i;
+                    lastTick = Environment.TickCount;
+                    anim.Start();
+                }
+                else selSpring.Snap(i);
                 Invalidate();
                 if (changed)
                 {
@@ -384,13 +478,18 @@ namespace Deskmate
                 var labelFont = Ink.Text(10.5f * s);
                 var selectedFont = Ink.Semi(10.5f * s);
 
+                if (drawnIndex != SelectedIndex) { drawnIndex = SelectedIndex; selSpring.Snap(SelectedIndex); }
+                float cellW = (Width - Gap * (Kinds.Length - 1)) / Kinds.Length;
+                float glideIdx = anim.Enabled ? Math.Max(-0.08f, Math.Min(Kinds.Length - 0.92f, selSpring.Value)) : SelectedIndex;
+                var activeCard = new RectangleF(glideIdx * (cellW + Gap) + 0.75f * s, 1.75f * s, cellW - 1.5f * s, Height - 3.5f * s);
+                KitInk.FillRound(g, activeCard, radius, Ink.Mix(under, KitInk.Accent, Ink.Light ? 0.10f : 0.14f));
+
                 for (int i = 0; i < Kinds.Length; i++)
                 {
                     var cell = CellRect(i);
                     var card = new RectangleF(cell.X + 0.75f * s, cell.Y + 1.75f * s, cell.Width - 1.5f * s, cell.Height - 3.5f * s);
                     bool sel = i == SelectedIndex;
-                    if (sel) KitInk.FillRound(g, card, radius, Ink.Mix(under, KitInk.Accent, Ink.Light ? 0.10f : 0.14f));
-                    else if (i == hover && Enabled) KitInk.FillRound(g, card, radius, KitInk.Hover);
+                    if (!sel && i == hover && Enabled) KitInk.FillRound(g, card, radius, KitInk.Hover);
 
                     var sample = new RectangleF(cell.X + 6 * s, cell.Y + 6 * s, cell.Width - 12 * s, 30 * s);
                     DrawSample(g, sample, Kinds[i], s);
@@ -398,13 +497,13 @@ namespace Deskmate
                     var label = new RectangleF(cell.X, sample.Bottom + 2 * s, cell.Width, 15 * s);
                     KitInk.Draw(g, Lang.T(Labels[i]), sel ? selectedFont : labelFont, sel || i == hover ? KitInk.Text : KitInk.Sub, label, ContentAlignment.MiddleCenter);
 
-                    if (sel) KitInk.StrokeRound(g, card, radius, KitInk.Accent, 1.5f * s);
                     if (sel && Focused && ShowFocusCues && !KitInk.ByMouse)
                     {
                         var ring = KitControl.Inside(RectangleF.Inflate(card, 2f * s, 2f * s), Width, Height);
                         KitInk.FocusRing(g, ring, radius + 2f * s, under, s);
                     }
                 }
+                KitInk.StrokeRound(g, activeCard, radius, KitInk.Accent, 1.5f * s);
             }
 
             void DrawSample(Graphics g, RectangleF r, GlassKind kind, float s)

@@ -33,5 +33,12 @@ namespace Deskmate
             if (error != null) return SourceResult.Fail(error, error, false);
             return new SourceResult { Tasks = tasks };
         }
+
+        public override string Close(object snap, KuliaTask t)
+        {
+            string id = t != null && t.Id != null && t.Id.StartsWith("gtasks:", StringComparison.Ordinal) ? t.Id.Substring(7) : (t != null ? t.Id : "");
+            string listId = t != null && !string.IsNullOrEmpty(t.ListId) ? t.ListId : "@default";
+            return GoogleTasksClient.CompleteTask(listId, id);
+        }
     }
 }

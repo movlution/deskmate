@@ -25,10 +25,10 @@ namespace Deskmate
         // "screen": the whole bottom of the screen, hopping onto a floating dock; "dock": the dock's top edge only
         bool PetScreenArea { get { return settings.Get("pet.area", "dock") == "screen"; } }
 
-        void SetPetChoice(string key, object value)
+        void SetPetChoice(string key, object value, bool deferSave = false)
         {
             settings.Set(key, value);
-            settings.Save();
+            if (deferSave) settings.SaveDeferred(); else settings.Save();
             ApplyPet();
         }
 

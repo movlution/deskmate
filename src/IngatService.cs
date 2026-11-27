@@ -150,15 +150,17 @@ namespace Deskmate
                 if (wait > 0) nudge.WaitOne(wait);
                 if (stopping) break;
                 if (ParentGone()) { Log.Write("ingat: Deskmate sudah tutup"); break; }
+                bool force;
+                lock (freshGate) force = freshWanted;
+                // Prioritize live forced queries ahead of periodic settings disk reload
+                if (force) RunCapture(true);
                 if ((DateTime.UtcNow - settingsCheck).TotalSeconds >= 8)
                 {
                     settingsCheck = DateTime.UtcNow;
                     settings.Load();
                     if (!settings.GetBool("ingat", false)) break;
                 }
-                bool force;
-                lock (freshGate) force = freshWanted;
-                RunCapture(force);
+                if (!force) RunCapture(false);
             }
             stopping = true;
             lock (freshGate) Monitor.PulseAll(freshGate);
@@ -550,13 +552,25 @@ namespace Deskmate
 
             string key = exe + "|" + (project.Length > 0 ? project : conversation.Length > 0 ? "c:" + IngatChat.Norm(conversation) : host.Length > 0 ? host : "");
 
-            // What the user is writing: the focused field's own text, never keystrokes
+            // What the user is writing: reuse the focused element from ReadSnapshot when available,
+            // and skip hands-off UIA focus polling when idle with no active draft
             string draft = null, field = "";
             if (settings.GetBool("ingat.typed", true))
             {
-                bool secretField;
-                draft = IngatChat.Draft(hwnd, out secretField, out field);
-                if (secretField) draft = null;
+                if (snap != null && snap.HasDraftCheck)
+                {
+                    if (!snap.Secret)
+                    {
+                        draft = snap.Draft;
+                        field = snap.DraftField;
+                    }
+                }
+                else if (idle < 6 || Composing || lastDraft.Length > 0 || interactDirty || newWindow || force)
+                {
+                    bool secretField;
+                    draft = IngatChat.Draft(hwnd, out secretField, out field);
+                    if (secretField) draft = null;
+                }
                 if (draft != null) draft = IngatPrivacy.Redact(draft);
             }
 
@@ -566,9 +580,8 @@ namespace Deskmate
                 if (!join)
                 {
                     CloseCurrent(lastSeenUtc > DateTime.MinValue && current != null ? lastSeenUtc : now);
-                    long id = Store.Open(now, app, exe, project, cleanTitle, url, kind);
-                    if (channel.Length > 0) Store.SetChannel(id, channel);
-                    current = Store.Get(id);
+                    long id = Store.Open(now, app, exe, project, cleanTitle, url, kind, channel);
+                    current = Store.GetLite(id);
                     currentKey = key;
                 }
                 // Most looks see nothing new: same episode, title and URL, no text read. Only the end time moves then;
@@ -577,15 +590,23 @@ namespace Deskmate
                 if (unchanged) Store.TouchEnd(current.Id, now);
                 else
                 {
-                    Store.Touch(current.Id, now, cleanTitle, url, text, snap != null && !snap.Secret ? snap : null);
-                    if (text.Length > 0 || titleChanged || newWindow) Store.AddEvent(now, current.Id, source, app, cleanTitle, url, text);
+                    bool addEv = text.Length > 0 || titleChanged || newWindow;
+                    current = Store.RecordCapture(current.Id, now, cleanTitle, url, text, snap != null && !snap.Secret ? snap : null, addEv, source, app) ?? current;
                 }
                 bool drafted = TrackDraft(now, hwnd, field, draft, app, channel, conversation, cleanTitle, url);
-                if (!unchanged || drafted) current = Store.Get(current.Id) ?? current;
+                if (drafted) current = Store.GetLite(current.Id) ?? current;
                 current.EndUtc = now;
                 if (snap != null)
                 {
-                    latestSnap = snap.Secret ? null : snap;
+                    if (snap.Secret) latestSnap = null;
+                    else if (!newWindow && !titleChanged && snap.MainLines.Count == 0 && snap.Focus.Length == 0 && latestSnap != null && latestSnap.MainLines.Count > 0)
+                    {
+                        // Transient empty UIA read on the same window/title: keep prior rich screen content and retry next look
+                        latestSnap.CapturedUtc = now;
+                        if (url.Length > 0) latestSnap.Url = url;
+                        stampStale = true;
+                    }
+                    else latestSnap = snap;
                 }
                 else if (latestSnap != null && !newWindow)
                 {
@@ -689,13 +710,9 @@ namespace Deskmate
         // What the open chat shows right now, for the writing brief
         public string ChatScreen()
         {
-            lock (gate)
-            {
-                if (current == null) return "";
-                var ev = Store.EventsOf(current.Id, 400);
-                for (int i = ev.Count - 1; i >= 0; i--) if (ev[i][1] == "chat" || ev[i][1] == "uia" || ev[i][1] == "ocr") return ev[i][3];
-                return "";
-            }
+            long id;
+            lock (gate) { if (current == null) return ""; id = current.Id; }
+            return Store.LastScreenEvent(id);
         }
 
         // Forget a stretch: the live episode and screen go too when they fall inside it, or capture would keep
@@ -759,9 +776,7 @@ namespace Deskmate
             lock (gate)
             {
                 if (current == null) return;
-                Store.AddEvent(DateTime.UtcNow, current.Id, source, current.App, current.Title, current.Url, text);
-                Store.Touch(current.Id, DateTime.UtcNow, "", "", text);
-                current = Store.Get(current.Id) ?? current;
+                current = Store.RecordCapture(current.Id, DateTime.UtcNow, "", "", text, null, true, source, current.App) ?? current;
             }
         }
 
@@ -806,19 +821,7 @@ namespace Deskmate
             var c = composing;
             if (c != null) d["composing"] = c;
             // Streak: same project (or app) with no break over 10 minutes
-            var recent = Store.TimelineLite(DateTime.UtcNow.AddHours(-6), DateTime.UtcNow, 400);
-            double minutes = 0;
-            DateTime edge = DateTime.UtcNow;
-            for (int i = recent.Count - 1; i >= 0; i--)
-            {
-                var e = recent[i];
-                bool same = ep.Project.Length > 0 ? e.Project == ep.Project : e.Exe == ep.Exe;
-                if (!same) { if ((e.EndUtc - e.StartUtc).TotalMinutes > 10) break; continue; }
-                if ((edge - e.EndUtc).TotalMinutes > 10) break;
-                minutes += (e.EndUtc - e.StartUtc).TotalMinutes;
-                edge = e.StartUtc;
-            }
-            d["streakMinutes"] = (int)Math.Round(minutes);
+            d["streakMinutes"] = Store.StreakMinutes(ep.Project, ep.Exe, DateTime.UtcNow);
             return d;
         }
 
@@ -827,7 +830,7 @@ namespace Deskmate
         {
             EnsureFresh(800);
             var d = Now();
-            var recent = Store.Recent(Math.Max(1, Math.Min(20, recentLimit)));
+            var recent = Store.RecentLite(Math.Max(1, Math.Min(20, recentLimit)));
             var recJson = new object[recent.Count];
             for (int i = 0; i < recent.Count; i++) recJson[i] = recent[i].ToJson(false);
             d["recent"] = recJson;
@@ -893,11 +896,17 @@ namespace Deskmate
 
         // Helpers
 
+        readonly Dictionary<string, KeyValuePair<string, HashSet<string>>> listCache = new Dictionary<string, KeyValuePair<string, HashSet<string>>>(StringComparer.Ordinal);
+
         HashSet<string> List(string key)
         {
+            string raw = settings.Get(key, "");
+            KeyValuePair<string, HashSet<string>> cached;
+            if (listCache.TryGetValue(key, out cached) && cached.Key == raw) return cached.Value;
             var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var s in settings.Get(key, "").Split(',', ';', '\n'))
+            foreach (var s in raw.Split(',', ';', '\n'))
                 if (s.Trim().Length > 0) set.Add(s.Trim());
+            listCache[key] = new KeyValuePair<string, HashSet<string>>(raw, set);
             return set;
         }
 

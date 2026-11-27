@@ -56,7 +56,7 @@ namespace Deskmate
                 if (p.Cli != null)
                 {
                     KitRow cli = null;
-                    string exe = AiCli.Exe(p);
+                    string exe = indexing ? null : AiCli.Exe(p);
                     cli = Row(Lang.F("Program {0}", p.Cli),
                         exe != null ? Lang.T("Memakai akun yang sudah login di CLI ini, tanpa key") : Lang.T("Belum ditemukan; pasang lalu login sekali di terminal"),
                         Pair(TestButton(p, () => cli), Button(Lang.T("Cari lagi"), false, delegate { AiCli.Forget(p); Rebuild(); })));

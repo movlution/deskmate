@@ -64,7 +64,7 @@ namespace Deskmate
                     Done = () => { if (!expanded) return false; if (startPage < 0) startPage = page; return page != startPage; },
                 },
                 new TourStep { Title = Lang.T("Agent coding"), Body = Lang.T("Claude Code, Codex, Antigravity, dan Copilot CLI tampil di tab Agen beserta rencana kerjanya. Saat agent minta izin, pilih Izinkan atau Tolak langsung di island. Sambungkan lewat klik kanan › Hubungkan agen.") },
-                new TourStep { Title = Lang.T("Tugas dan pesan"), Body = Lang.T("Tugas dan jadwal dari Kulia, Notion, Todoist, atau kalender iCal masuk ke tab Kuliah, dengan pengingat sebelum tenggat. Pesan WhatsApp, Telegram, Discord, dan lainnya dikelompokkan per pengirim. Sambungkan di Pengaturan › Tugas & Kalender.") },
+                new TourStep { Title = Lang.T("Tugas dan pesan"), Body = Lang.T("Tugas dan jadwal dari Kulia, Notion, Todoist, atau kalender iCal masuk ke tab Kerja, dengan pengingat sebelum tenggat. Pesan WhatsApp, Telegram, Discord, dan lainnya dikelompokkan per pengirim. Sambungkan di Pengaturan › Tugas & Kalender.") },
                 new TourStep { Title = Lang.T("Rak dan ubah format"), Body = Lang.T("Seret berkas ke island, lalu lepas di Taruh di rak untuk menyimpannya sementara, atau di Ubah format untuk mengonversinya, misalnya gambar ke PDF. Screenshot juga muncul di island dan bisa langsung diseret.") },
                 new TourStep { Title = Lang.T("Dikte dan rapat"), Body = voice },
                 new TourStep { Title = Lang.T("Suruh Deskmate"), Body = ask },

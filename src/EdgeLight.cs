@@ -187,8 +187,8 @@ namespace Deskmate
         public void ApplyReserve()
         {
             if (!IsHandleCreated) return;
-            // Only a top island takes a strip
-            int want = settings.GetBool("reserve.top", false) && !hiddenByUser && !OnSide ? (int)Math.Ceiling((Gap + 38 + 6) * scale) : 0;
+            // Only a top island takes a strip, and never while a fullscreen app is active
+            int want = settings.GetBool("reserve.top", false) && !hiddenByUser && !OnSide && !fullscreen ? (int)Math.Ceiling((Gap + 38 + 6) * scale) : 0;
             if (want == reservedPx && want == 0) return;
             var abd = new Native.APPBARDATA { cbSize = System.Runtime.InteropServices.Marshal.SizeOf(typeof(Native.APPBARDATA)), hWnd = Handle, uEdge = 1 };
             // In multi-display mode keep the work-area strip on the preferred screen, not the moving panel.
@@ -209,8 +209,8 @@ namespace Deskmate
         void TaskFinished(KuliaTask task)
         {
             RecordTaskDoneXp(35);
-            bool today = task.DeadlineUtc.ToLocalTime().Date == DateTime.Today;
-            bool left = tasks != null && tasks.Exists(t => t != task && t.DeadlineUtc.ToLocalTime().Date == DateTime.Today);
+            bool today = !task.NoDue && task.DeadlineUtc != DateTime.MinValue && task.DeadlineUtc.ToLocalTime().Date == DateTime.Today;
+            bool left = tasks != null && tasks.Exists(t => t != task && !t.NoDue && t.DeadlineUtc != DateTime.MinValue && t.DeadlineUtc.ToLocalTime().Date == DateTime.Today);
             if (!today || left) { ShowInfo('\0', Lang.T("Ditandai selesai"), task.Title, true); return; }
             var t2 = ShowToast(View.Info, 4, 3, false, true);
             if (t2 != null)

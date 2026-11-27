@@ -429,7 +429,7 @@ namespace Deskmate
                 label += " · " + focusTaskTitle;
             p.Text(label, Ink.Semi(12.5f), p.T.Text, 38, cy, w - 38 - 70, StringAlignment.Near);
             LiveTimer(Ink.Semi(13f), timerPaused ? p.T.Faint : p.T.Sub, w - 18, cy, StringAlignment.Far, 60);
-            AddHit(new RectangleF(0, 0, w, h), "timerPill", delegate { Expand(PageControl); });
+            AddHit(new RectangleF(0, 0, w, h), "timerPill", delegate { ExpandPomodoro(); });
         }
     }
 }

@@ -50,7 +50,7 @@ namespace Deskmate
             {
                 int at = Array.IndexOf(island.tabs, page);
                 string name = Lang.T(PageNames[page]);
-                var sw = new KitSwitch { Checked = at >= 0, Size = new Size((int)(46 * Ui), (int)(26 * Ui)) };
+                var sw = new KitSwitch { Checked = at >= 0, Size = new Size((int)(38 * Ui), (int)(22 * Ui)) };
                 sw.CheckedChanged += delegate
                 {
                     if (building) return;
@@ -100,7 +100,7 @@ namespace Deskmate
             {
                 int at = Array.IndexOf(island.homeCards, card);
                 string name = Lang.T(HomeNames[(int)card]), key = "h" + (int)card;
-                var sw = new KitSwitch { Checked = at >= 0, Size = new Size((int)(46 * Ui), (int)(26 * Ui)) };
+                var sw = new KitSwitch { Checked = at >= 0, Size = new Size((int)(38 * Ui), (int)(22 * Ui)) };
                 sw.CheckedChanged += delegate
                 {
                     if (building) return;
@@ -164,16 +164,47 @@ namespace Deskmate
                 }));
             }
 
-            // Six-dot handle: drag, or arrow keys
+            // Six-dot handle: drag, or arrow keys; sibling rows smoothly glide into place
             class TabGrip : KitControl
             {
                 public Action<int> Dropped, Nudge;
                 KitRow row;
                 List<KitRow> peers;
-                int grabY, startTop, baseTop, slot, target;
+                readonly Dictionary<KitRow, float> peerPos = new Dictionary<KitRow, float>();
+                readonly Dictionary<KitRow, int> peerTarget = new Dictionary<KitRow, int>();
+                readonly Timer settleAnim = new Timer { Interval = 15 };
+                int grabY, startTop, baseTop, slot, target, lastTick;
                 bool dragging;
 
-                public TabGrip() { Cursor = Cursors.SizeNS; }
+                public TabGrip()
+                {
+                    Cursor = Cursors.SizeNS;
+                    settleAnim.Tick += delegate
+                    {
+                        if (!dragging || row == null || row.Parent == null) { settleAnim.Stop(); return; }
+                        int now = Environment.TickCount;
+                        float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
+                        lastTick = now;
+                        float rate = Math.Min(1f, dt / Math.Max(0.025f, Anim.Response(0.06f)));
+                        bool moving = false;
+                        foreach (var kv in new List<KeyValuePair<KitRow, int>>(peerTarget))
+                        {
+                            var p = kv.Key;
+                            float cur = peerPos.ContainsKey(p) ? peerPos[p] : p.Top;
+                            float want = kv.Value;
+                            cur = Anim.Reduced ? want : cur + (want - cur) * rate;
+                            if (Math.Abs(want - cur) < 0.6f) cur = want;
+                            else moving = true;
+                            peerPos[p] = cur;
+                            int rounded = (int)Math.Round(cur);
+                            if (p.Top != rounded) p.Top = rounded;
+                        }
+                        if (!moving) settleAnim.Stop();
+                        row.Parent.Invalidate();
+                    };
+                }
+
+                protected override void Dispose(bool disposing) { if (disposing) settleAnim.Dispose(); base.Dispose(disposing); }
 
                 protected override bool IsInputKey(Keys k) { return k == Keys.Up || k == Keys.Down || base.IsInputKey(k); }
 
@@ -207,6 +238,9 @@ namespace Deskmate
                         if (r != null && Shown(r)) peers.Add(r);
                     }
                     peers.Sort((a, b) => a.Top.CompareTo(b.Top));
+                    peerPos.Clear();
+                    peerTarget.Clear();
+                    foreach (var p in peers) { peerPos[p] = p.Top; peerTarget[p] = p.Top; }
                     slot = target = peers.IndexOf(row);
                     baseTop = peers[0].Top;
                     startTop = row.Top;
@@ -225,14 +259,23 @@ namespace Deskmate
                     int top = Math.Max(baseTop, Math.Min(max, startTop + GroupY(e) - grabY));
                     row.Top = top;
                     target = Math.Max(0, Math.Min(peers.Count - 1, (top - baseTop + h / 2) / h));
-                    // Others close ranks around the gap
+                    // Others smoothly close ranks around the gap
                     int k = 0;
+                    bool needAnim = false;
                     foreach (var p in peers)
                     {
                         if (p == row) continue;
                         if (k == target) k++;
-                        p.Top = baseTop + k * h;
+                        int want = baseTop + k * h;
+                        peerTarget[p] = want;
+                        if (Anim.Reduced) { p.Top = want; peerPos[p] = want; }
+                        else if (Math.Abs(p.Top - want) > 0) needAnim = true;
                         k++;
+                    }
+                    if (needAnim && !settleAnim.Enabled)
+                    {
+                        lastTick = Environment.TickCount;
+                        settleAnim.Start();
                     }
                     row.Parent.Invalidate();
                 }
@@ -254,6 +297,8 @@ namespace Deskmate
                     if (!dragging) return;
                     dragging = false;
                     Capture = false;
+                    settleAnim.Stop();
+                    foreach (var kv in peerTarget) kv.Key.Top = kv.Value;
                     Lift(false);
                     row.Top = baseTop + target * row.Height;
                     if (target != slot && Dropped != null) Dropped(target);
@@ -281,19 +326,58 @@ namespace Deskmate
                 }
             }
 
+            static bool? cachedAutoStart;
+
             Control StartupSwitch()
             {
-                var s = new KitSwitch { Size = new Size((int)(46 * Ui), (int)(26 * Ui)) };
-                try { s.Checked = AutoStart.Enabled; } catch (Exception) { }
+                var s = new KitSwitch { Size = new Size((int)(38 * Ui), (int)(22 * Ui)) };
+                if (indexing) return s;
                 bool syncing = false;
+                if (cachedAutoStart.HasValue) s.Checked = cachedAutoStart.Value;
+                if (!Settings.TestMode)
+                {
+                    // Query schtasks off the UI thread so opening Umum or searching never stalls
+                    System.Threading.ThreadPool.QueueUserWorkItem(delegate
+                    {
+                        bool actual;
+                        try { actual = AutoStart.Enabled; } catch (Exception) { return; }
+                        cachedAutoStart = actual;
+                        if (IsDisposed || s.IsDisposed) return;
+                        try
+                        {
+                            BeginInvoke(new Action(delegate
+                            {
+                                if (IsDisposed || s.IsDisposed || s.Checked == actual) return;
+                                syncing = true; s.Checked = actual; syncing = false;
+                            }));
+                        }
+                        catch (Exception) { }
+                    });
+                }
                 s.CheckedChanged += delegate
                 {
                     if (building || syncing || Settings.TestMode) return;
-                    try { AutoStart.Enabled = s.Checked; } catch (Exception ex) { Log.Write("autostart: " + ex.Message); }
-                    // Reflect the real state so a failed change never leaves the switch lying.
-                    bool actual;
-                    try { actual = AutoStart.Enabled; } catch (Exception) { return; }
-                    if (actual != s.Checked) { syncing = true; s.Checked = actual; syncing = false; }
+                    bool want = s.Checked;
+                    s.Enabled = false;
+                    System.Threading.ThreadPool.QueueUserWorkItem(delegate
+                    {
+                        try { AutoStart.Enabled = want; } catch (Exception ex) { Log.Write("autostart: " + ex.Message); }
+                        bool actual = want;
+                        try { actual = AutoStart.Enabled; } catch (Exception) { }
+                        cachedAutoStart = actual;
+                        if (IsDisposed || s.IsDisposed) return;
+                        try
+                        {
+                            BeginInvoke(new Action(delegate
+                            {
+                                if (IsDisposed || s.IsDisposed) return;
+                                // Reflect the real state so a failed change never leaves the switch lying.
+                                if (actual != s.Checked) { syncing = true; s.Checked = actual; syncing = false; }
+                                s.Enabled = true;
+                            }));
+                        }
+                        catch (Exception) { }
+                    });
                 };
                 return s;
             }
@@ -305,7 +389,17 @@ namespace Deskmate
                 return b;
             }
 
-            protected override void Dispose(bool disposing) { if (disposing) { searchTimer.Dispose(); preview.Dispose(); } base.Dispose(disposing); }
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    searchTimer.Dispose();
+                    preview.Dispose();
+                    entranceTimer.Dispose();
+                    settings.FlushSave();
+                }
+                base.Dispose(disposing);
+            }
         }
     }
 }

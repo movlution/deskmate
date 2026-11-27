@@ -166,10 +166,10 @@ namespace Deskmate
             Kick();
         }
 
-        void SetLayout(string key, object value)
+        void SetLayout(string key, object value, bool deferSave = false)
         {
             settings.Set(key, value);
-            settings.Save();
+            if (deferSave) settings.SaveDeferred(); else settings.Save();
             LoadLayout();
             ResetFrost();
             Kick();
@@ -189,10 +189,10 @@ namespace Deskmate
         }
 
         // Corner inset or side height from settings
-        void SetPlaceValue(string key, int v)
+        void SetPlaceValue(string key, int v, bool deferSave = false)
         {
             settings.Set(key, v);
-            settings.Save();
+            if (deferSave) settings.SaveDeferred(); else settings.Save();
             LoadPlace();
             if (GlassOn) NeedFrost(sh.Target);
             Kick();

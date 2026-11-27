@@ -88,6 +88,15 @@ namespace Deskmate
             en.Add("Kesehatan", "Wellbeing");
             en.Add("Kontrol", "Controls");
             en.Add("Kota", "City");
+            en.Add("Kerja", "Work");
+            en.Add("Pomodoro", "Pomodoro");
+            en.Add("{0} sesi · {1} mnt hari ini", "{0} sessions · {1} min today");
+            en.Add("Istirahat {0} mnt", "{0}m break");
+            en.Add("Semua", "All");
+            en.Add("+ Tugas", "+ Task");
+            en.Add("Minggu ini", "This week");
+            en.Add("Tampilkan semua", "Show all");
+            en.Add("Tidak ada tugas untuk filter ini", "No tasks match this filter");
             en.Add("Kuliah", "Classes");
             en.Add("Kurangi gerak", "Reduce motion");
             en.Add("Gerak", "Motion");
@@ -794,7 +803,7 @@ namespace Deskmate
             en.Add("Agent coding", "Coding agents");
             en.Add("Claude Code, Codex, Antigravity, dan Copilot CLI tampil di tab Agen beserta rencana kerjanya. Saat agent minta izin, pilih Izinkan atau Tolak langsung di island. Sambungkan lewat klik kanan › Hubungkan agen.", "Claude Code, Codex, Antigravity, and Copilot CLI show up in the Agents tab with their plans. When an agent asks for permission, pick Allow or Deny right on the island. Connect them from right-click › Connect agents.");
             en.Add("Tugas dan pesan", "Tasks and messages");
-            en.Add("Tugas dan jadwal dari Kulia, Notion, Todoist, atau kalender iCal masuk ke tab Kuliah, dengan pengingat sebelum tenggat. Pesan WhatsApp, Telegram, Discord, dan lainnya dikelompokkan per pengirim. Sambungkan di Pengaturan › Tugas & Kalender.", "Tasks and schedules from Kulia, Notion, Todoist, or an iCal calendar land in the Classes tab, with a reminder before each deadline. WhatsApp, Telegram, Discord, and other messages are grouped by sender. Connect them in Settings › Tasks & Calendar.");
+            en.Add("Tugas dan jadwal dari Kulia, Notion, Todoist, atau kalender iCal masuk ke tab Kerja, dengan pengingat sebelum tenggat. Pesan WhatsApp, Telegram, Discord, dan lainnya dikelompokkan per pengirim. Sambungkan di Pengaturan › Tugas & Kalender.", "Tasks and schedules from Kulia, Notion, Todoist, or an iCal calendar land in the Work tab, with a reminder before each deadline. WhatsApp, Telegram, Discord, and other messages are grouped by sender. Connect them in Settings › Tasks & Calendar.");
             en.Add("Rak dan ubah format", "Shelf and convert");
             en.Add("Seret berkas ke island, lalu lepas di Taruh di rak untuk menyimpannya sementara, atau di Ubah format untuk mengonversinya, misalnya gambar ke PDF. Screenshot juga muncul di island dan bisa langsung diseret.", "Drag a file onto the island, then drop it on Put on shelf to keep it for a while, or on Convert to change its format, say an image to PDF. Screenshots show up on the island too, ready to drag.");
             en.Add("Dikte dan rapat", "Dictation and calls");
@@ -977,6 +986,34 @@ namespace Deskmate
             en.Add("{0} belum login; jalankan \"{1}\" sekali di terminal", "{0} is not signed in; run \"{1}\" once in a terminal");
             en.Add("Memakai akun yang sudah login di CLI ini, tanpa key", "Uses the account signed in to this CLI, no key");
             en.Add("Belum ditemukan; pasang lalu login sekali di terminal", "Not found; install it and sign in once in a terminal");
+            en.Add("Menu Utama", "Main Menu");
+            en.Add("Utama & Tampilan", "Core & Appearance");
+            en.Add("Produktivitas & Harian", "Productivity & Daily");
+            en.Add("AI, Agen & Sistem", "AI, Agents & System");
+            en.Add("Bermain, Kontrol & Info", "Play, Controls & Info");
+            en.Add("24 jam", "24h");
+            en.Add("12 jam", "12h");
+            en.Add("Penuh", "Full");
+            en.Add("Ganti Taskbar", "Taskbar");
+            en.Add("Dikte Aktif", "Dictation On");
+            en.Add("Lirik & Rak", "Lyrics & Shelf");
+            en.Add("Rak Berkas", "File Shelf");
+            en.Add("HUD & HP", "HUD & Phone");
+            en.Add("Menampilkan pengaturan yang cocok di semua kategori", "Showing matching settings across all categories");
+            en.Add("0 hasil", "0 results");
+            en.Add("Coba kata kunci lain seperti tema, dock, sholat, atau dikte", "Try another keyword like theme, dock, prayer, or dictation");
+            en.Add("Berikutnya", "Next");
+            en.Add("Sebelumnya", "Previous");
+            en.Add("Posisi, bentuk, ukuran, layar, perilaku, dan saat diam", "Position, shape, size, display, behavior, and idle state");
+            en.Add("Gaya tab, urutan tab panel, dan kartu Ringkasan", "Tab style, panel tab order, and Overview cards");
+            en.Add("Combo ketikan, efek suara, Fever Mode, XP, dan Sprint 30 detik", "Typing combos, sound effects, Fever Mode, XP, and 30-second Sprint");
+            en.Add("Hewan pendamping di dock, pet buatan sendiri, dan teman online", "Dock companion pet, custom pets, and online friends");
+            en.Add("Daftar tugas lokal, catatan, fokus, dan prioritas harian", "Local tasks, notes, focus timer, and daily priorities");
+            en.Add("Kulia, Notion, Todoist, iCal, dan Google Calendar", "Kulia, Notion, Todoist, iCal, and Google Calendar");
+            en.Add("Penyedia teks, mesin suara, kunci API, dan model offline", "Text providers, speech engine, API keys, and offline models");
+            en.Add("Tombol dikte, kamus, snippet, dan rekaman rapat", "Dictation key, dictionary, snippets, and meeting recordings");
+            en.Add("HUD keyboard, baterai, flashdisk, unduhan, dan penjaga beban", "Keyboard HUD, battery, USB drives, downloads, and load guard");
+            en.Add("Hubungkan HP lewat Wi-Fi, kode QR, notifikasi, dan OTP", "Connect phone over Wi-Fi, QR code, notifications, and OTP");
         }
     }
 }

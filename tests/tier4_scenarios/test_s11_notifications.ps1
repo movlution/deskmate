@@ -1,4 +1,4 @@
-# test_s11_notifications.ps1
+﻿# test_s11_notifications.ps1
 # Tier 4 scenario S11: long notification copy and CLI dispatch.
 
 $commonDir = Join-Path (Split-Path -Parent $PSScriptRoot) "common"
@@ -84,6 +84,82 @@ Describe "Tier 4 Scenario: S11 Notification Pipeline" {
             Assert-True ($titleInk -gt 20) "The clipped title must still render visible text (pixels=$titleInk)"
             Assert-True ($bodyInk -gt 20) "The body must render on its own line (pixels=$bodyInk)"
             Assert-True ($gapInk -le 2) "No title or header ink may spill into the 12px sibling gap (pixels=$gapInk)"
+        }
+        finally {
+            $g.Dispose()
+            $bmp.Dispose()
+            $painter.Dispose()
+        }
+    }
+
+    It "opens the messages list panel instead of launching the app when clicking a notch notification toast" {
+        $islandType = Get-DeskmateType "Island"
+        $painterType = Get-DeskmateType "Painter"
+        $notifType = Get-DeskmateType "NotifItem"
+        $toastType = Get-DeskmateType "Toast"
+        $viewType = Get-DeskmateType "View"
+        $settingsType = Get-DeskmateType "Settings"
+        $springType = Get-DeskmateType "Spring"
+        $island = [System.Runtime.Serialization.FormatterServices]::GetUninitializedObject($islandType)
+        $settings = [Activator]::CreateInstance($settingsType)
+        $painter = [Activator]::CreateInstance($painterType, $true)
+        $w = 404; $h = 66
+        $bmp = New-Object System.Drawing.Bitmap $w, $h
+        $g = [System.Drawing.Graphics]::FromImage($bmp)
+        try {
+            $islandType.GetField("settings", $flags).SetValue($island, $settings)
+            $painterType.GetField("G", $flags).SetValue($painter, $g)
+            $painterType.GetField("T", $flags).SetValue($painter, (Get-DeskmateStaticField "Ink" "Base"))
+            $painterType.GetField("Alpha", $flags).SetValue($painter, [single]1)
+            $painterType.GetField("HalfPx", $flags).SetValue($painter, [single]0.5)
+            $islandType.GetField("p", $flags).SetValue($island, $painter)
+            $islandType.GetField("hitsOn", $flags).SetValue($island, $true)
+            $islandType.GetField("pointerInside", $flags).SetValue($island, $true)
+            foreach ($listField in @("hits", "hitPool", "approvals", "notifs")) {
+                $f = $islandType.GetField($listField, $flags)
+                if ($f -ne $null) { $f.SetValue($island, [Activator]::CreateInstance($f.FieldType)) }
+            }
+            $islandType.GetField("emblemFiles", $flags).SetValue($island, [string[]]@())
+            $islandType.GetField("cornerFiles", $flags).SetValue($island, [string[]]@())
+            $islandType.GetField("bubble", $flags).SetValue($island, [Activator]::CreateInstance($springType, @([single]0, [single]300, [single]34, [single]0.01)))
+            $islandType.GetField("homeScroll", $flags).SetValue($island, [Activator]::CreateInstance($springType, @([single]0, [single]300, [single]34, [single]0.2)))
+            $islandType.GetField("notifScroll", $flags).SetValue($island, [Activator]::CreateInstance($springType, @([single]120, [single]300, [single]34, [single]0.2)))
+            $islandType.GetField("toastTimer", $flags).SetValue($island, (New-Object System.Windows.Forms.Timer))
+
+            $item = [Activator]::CreateInstance($notifType)
+            $item.Id = [uint32]42
+            $item.AppId = "phone:com.whatsapp"
+            $item.AppName = "WhatsApp"
+            $item.Title = "Budi"
+            $item.Body = "Halo, jadi rapat?"
+            $item.Held = $true
+            $notifsList = $islandType.GetField("notifs", $flags).GetValue($island)
+            $notifsList.Add($item) | Out-Null
+
+            $toast = [Activator]::CreateInstance($toastType, $true)
+            $toast.View = [Enum]::Parse($viewType, "Notif")
+            $toast.Interactive = $true
+            $toast.Data = $item
+            $islandType.GetField("toast", $flags).SetValue($island, $toast)
+            $islandType.GetField("unread", $flags).SetValue($island, 1)
+
+            $islandType.GetMethod("DrawNotif", $flags).Invoke($island, @([single]$w, [single]$h))
+
+            $hits = $islandType.GetField("hits", $flags).GetValue($island)
+            $hit = $null
+            foreach ($entry in $hits) {
+                if ($entry.Id -eq "notifOpen") { $hit = $entry; break }
+            }
+            Assert-NotNull $hit "DrawNotif must register the notifOpen hit target"
+
+            $hit.Act.Invoke()
+
+            $pageMessages = [int]$islandType.GetField("PageMessages", $flags).GetValue($null)
+            Assert-True ([bool]$islandType.GetField("expanded", $flags).GetValue($island)) "Clicking a notch notification toast must expand the panel"
+            Assert-Equal $pageMessages ([int]$islandType.GetField("page", $flags).GetValue($island)) "Clicking a notch notification toast must open PageMessages"
+            Assert-Null ($islandType.GetField("toast", $flags).GetValue($island)) "Clicking a notch notification toast must dismiss the active toast"
+            Assert-Equal 0 ([int]$islandType.GetField("unread", $flags).GetValue($island)) "Opening the messages list must clear the unread counter"
+            Assert-Equal 1 $notifsList.Count "Opening the messages list must keep the held notification in the list instead of removing/launching it"
         }
         finally {
             $g.Dispose()

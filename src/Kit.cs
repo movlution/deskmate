@@ -97,6 +97,8 @@ namespace Deskmate
         {
             for (var p = c.Parent; p != null; p = p.Parent)
             {
+                var row = p as KitRow;
+                if (row != null) return row.SurfaceColor();
                 if (p is KitGroup) return Group;
                 if (p.BackColor.A == 255) return p.BackColor;
             }
@@ -237,42 +239,125 @@ namespace Deskmate
     // iOS switch over CheckBox for readers
     class KitSwitch : CheckBox
     {
-        bool hovered;
-        protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); hovered = true; Invalidate(); }
-        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hovered = false; Invalidate(); }
-        protected override void OnMouseDown(MouseEventArgs e) { KitInk.ByMouse = true; base.OnMouseDown(e); }
+        bool hovered, pressed;
+        float knob, hoverT, pressT;
+        readonly Spring knobSpring = new Spring(0, 1, 1, 0.002f);
+        int lastTick;
+        Timer anim;
+
+        bool AnimRunning { get { return anim != null && anim.Enabled; } }
+        void StopAnim() { if (anim != null) anim.Stop(); }
+
+        void EnsureAnim()
+        {
+            if (anim != null) return;
+            anim = new Timer { Interval = 15 };
+            anim.Tick += OnAnimTick;
+        }
+
+        void OnAnimTick(object sender, EventArgs e)
+        {
+            int now = Environment.TickCount;
+            float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
+            lastTick = now;
+            if (Anim.Reduced)
+            {
+                knob = Checked ? 1f : 0f;
+                knobSpring.Snap(knob);
+                hoverT = hovered ? 1f : 0f;
+                pressT = pressed ? 1f : 0f;
+                StopAnim();
+                Invalidate();
+                return;
+            }
+            knobSpring.Target = Checked ? 1f : 0f;
+            knobSpring.Step(dt);
+            knob = knobSpring.Value;
+            float hWant = hovered ? 1f : 0f;
+            float pWant = pressed ? 1f : 0f;
+            float rate = Math.Min(1f, dt / Math.Max(0.04f, Anim.Response(0.085f)));
+            hoverT += (hWant - hoverT) * rate;
+            pressT += (pWant - pressT) * rate;
+            if (Math.Abs(hWant - hoverT) < 0.01f) hoverT = hWant;
+            if (Math.Abs(pWant - pressT) < 0.01f) pressT = pWant;
+            if (knobSpring.Settled && hoverT == hWant && pressT == pWant)
+            {
+                knob = knobSpring.Target;
+                knobSpring.Snap(knob);
+                StopAnim();
+            }
+            Invalidate();
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); hovered = true; StartAnim(); }
+        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hovered = false; pressed = false; StartAnim(); }
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            KitInk.ByMouse = true;
+            if (e.Button == MouseButtons.Left && Enabled) { pressed = true; StartAnim(); }
+            base.OnMouseDown(e);
+        }
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            if (pressed) { pressed = false; StartAnim(); }
+            base.OnMouseUp(e);
+        }
         protected override void OnKeyUp(KeyEventArgs e) { if (KitInk.ByMouse) { KitInk.ByMouse = false; Invalidate(); } base.OnKeyUp(e); }
 
-        float knob;
-        KitGlide travel;
-        readonly Timer anim = new Timer { Interval = 15 };
+        void StartAnim()
+        {
+            if (!IsHandleCreated || !Visible || Anim.Reduced)
+            {
+                knob = Checked ? 1f : 0f;
+                knobSpring.Snap(knob);
+                hoverT = hovered ? 1f : 0f;
+                pressT = pressed ? 1f : 0f;
+                StopAnim();
+                Invalidate();
+                return;
+            }
+            Springs.Tune(knobSpring, 0.22f, 0.80f);
+            knobSpring.Target = Checked ? 1f : 0f;
+            EnsureAnim();
+            if (!anim.Enabled)
+            {
+                lastTick = Environment.TickCount;
+                anim.Start();
+            }
+            Invalidate();
+        }
 
         public KitSwitch()
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
             BackColor = Color.Transparent;
             Text = "";
-            anim.Tick += delegate
-            {
-                float want = Checked ? 1 : 0;
-                knob = travel.Sample(want, 0.15f);
-                if (knob == want) anim.Stop();
-                Invalidate();
-            };
             CheckedChanged += delegate
             {
-                float target = Checked ? 1 : 0;
-                if (!IsHandleCreated || !Visible || Anim.Reduced || knob == target)
+                float target = Checked ? 1f : 0f;
+                if (!IsHandleCreated || !Visible || Anim.Reduced)
                 {
                     knob = target;
-                    anim.Stop();
+                    knobSpring.Snap(target);
+                    StopAnim();
+                    Invalidate();
                 }
-                else { travel.Begin(knob); anim.Start(); }
-                Invalidate();
+                else
+                {
+                    knobSpring.Value = knob;
+                    StartAnim();
+                }
             };
         }
 
-        protected override void OnCreateControl() { base.OnCreateControl(); knob = Checked ? 1 : 0; }
+        protected override void OnCreateControl()
+        {
+            base.OnCreateControl();
+            knob = Checked ? 1f : 0f;
+            knobSpring.Snap(knob);
+            hoverT = hovered ? 1f : 0f;
+            pressT = pressed ? 1f : 0f;
+        }
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -280,21 +365,40 @@ namespace Deskmate
             KitInk.Smooth(g);
             var under = KitInk.Under(this);
             g.Clear(under);
+            // Keep reflection-set states (tests) synchronized when no animation is running
+            float ht = AnimRunning ? hoverT : (hovered ? 1f : 0f);
+            float pt = AnimRunning ? pressT : (pressed ? 1f : 0f);
+            float k = Ease.Clamp01(knob);
             float s = Height / 24f;
             var track = new RectangleF(1, (Height - 22 * s) / 2, 40 * s, 22 * s);
             bool live = Enabled;
             // Off: quiet tinted track; on: accent. Disabled keeps a trace of the state.
-            Color trackBg = live ? Ink.Mix(KitInk.Line, KitInk.Accent, knob) : Ink.Mix(KitInk.Line, KitInk.Accent, 0.3f * knob);
-            if (hovered && live) trackBg = knob > 0.5f ? KitInk.Deepen(trackBg, KitInk.OnAccent, 0.08f) : Ink.Mix(trackBg, KitInk.Text, 0.07f);
+            Color trackBg = live ? Ink.Mix(KitInk.Line, KitInk.Accent, k) : Ink.Mix(KitInk.Line, KitInk.Accent, 0.3f * k);
+            if (ht > 0.001f && live)
+            {
+                Color hoverBg = k > 0.5f ? KitInk.Deepen(trackBg, KitInk.OnAccent, 0.08f) : Ink.Mix(trackBg, KitInk.Text, 0.07f);
+                trackBg = Ink.Mix(trackBg, hoverBg, ht);
+            }
             KitInk.FillRound(g, track, track.Height / 2, trackBg);
 
-            float r = (hovered && live ? 8.5f : 8f) * s;
-            float cx = track.X + 11 * s + knob * 18 * s, cy = track.Y + 11 * s;
-            var dot = new RectangleF(cx - r, cy - r, r * 2, r * 2);
-            // A small stretch in transit, round again at both stops.
-            if (live && !Anim.Reduced) dot.Inflate(6f * s * knob * (1f - knob), 0);
-            Color knobColor = live ? Ink.Mix(hovered ? Ink.Mix(KitInk.Sub, KitInk.Text, 0.35f) : KitInk.Sub, KitInk.OnAccent, knob) : KitInk.Disabled;
-            if (live) KitInk.Lift(g, dot, r, s * 0.6f);
+            float r = (8f + 0.55f * ht * (live ? 1f : 0f)) * s;
+            // Allow subtle spring overshoot on position, clamped inside the track pill
+            float travel = Math.Max(-0.08f, Math.Min(1.08f, knob));
+            float cx = track.X + 11 * s + travel * 18 * s, cy = track.Y + 11 * s;
+            // Tactile stretch in transit + press-down elongation toward the opposite side
+            float transitStretch = live && !Anim.Reduced ? 5.5f * s * k * (1f - k) : 0f;
+            float pressStretch = live && !Anim.Reduced ? 3.2f * s * pt : 0f;
+            float stretch = transitStretch + pressStretch;
+            float leftGrow = Checked ? stretch : 0f;
+            float rightGrow = Checked ? 0f : stretch;
+            if (transitStretch > 0.01f) { leftGrow = Math.Max(leftGrow, transitStretch * 0.5f); rightGrow = Math.Max(rightGrow, transitStretch * 0.5f); }
+            float minX = track.X + 2.5f * s, maxX = track.Right - 2.5f * s;
+            float x0 = Math.Max(minX, cx - r - leftGrow);
+            float x1 = Math.Min(maxX, cx + r + rightGrow);
+            var dot = RectangleF.FromLTRB(x0, cy - r, Math.Max(x0 + r * 2, x1), cy + r);
+            Color restKnob = Ink.Mix(KitInk.Sub, Ink.Mix(KitInk.Sub, KitInk.Text, 0.35f), ht);
+            Color knobColor = live ? Ink.Mix(restKnob, KitInk.OnAccent, k) : KitInk.Disabled;
+            if (live) KitInk.Lift(g, dot, r, s * (0.6f + 0.15f * ht));
             KitInk.FillRound(g, dot, r, knobColor);
 
             if (Focused && ShowFocusCues && !KitInk.ByMouse)
@@ -304,26 +408,47 @@ namespace Deskmate
             }
         }
 
-        protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing && anim != null) anim.Dispose(); base.Dispose(disposing); }
     }
 
-    // Soft segmented choices; the thumb glides, arrows move between
+    // Soft segmented choices; the thumb glides with spring physics, arrows move between
     class KitSegmented : KitControl
     {
         public string[] Items = new string[0];
-        int selected, hot = -1;
+        int selected, hot = -1, pressedAt = -1;
         // Thumb position in segments, gliding toward the pick; -1 until first paint
         float glide = -1;
-        KitGlide travel;
-        readonly Timer anim = new Timer { Interval = 15 };
+        readonly Spring glideSpring = new Spring(0, 1, 1, 0.002f);
+        int lastTick;
+        Timer anim;
         public event Action<int> Changed;
 
-        public KitSegmented()
+        void EnsureAnim()
         {
+            if (anim != null) return;
+            anim = new Timer { Interval = 15 };
             anim.Tick += delegate
             {
-                glide = travel.Sample(selected, 0.18f);
-                if (glide == selected) anim.Stop();
+                int now = Environment.TickCount;
+                float dt = Math.Max(0.004f, Math.Min(0.05f, unchecked((uint)(now - lastTick)) / 1000f));
+                lastTick = now;
+                if (Anim.Reduced)
+                {
+                    glide = selected;
+                    glideSpring.Snap(selected);
+                    anim.Stop();
+                    Invalidate();
+                    return;
+                }
+                glideSpring.Target = selected;
+                glideSpring.Step(dt);
+                glide = glideSpring.Value;
+                if (glideSpring.Settled)
+                {
+                    glide = selected;
+                    glideSpring.Snap(selected);
+                    anim.Stop();
+                }
                 Invalidate();
             };
         }
@@ -336,8 +461,23 @@ namespace Deskmate
                 if (value == selected) return;
                 selected = value;
                 if (IsHandleCreated && Visible && glide >= 0 && glide != selected && !Anim.Reduced)
-                { travel.Begin(glide); anim.Start(); }
-                else { glide = selected; anim.Stop(); }
+                {
+                    Springs.Tune(glideSpring, 0.24f, 0.84f);
+                    glideSpring.Value = glide;
+                    glideSpring.Target = selected;
+                    EnsureAnim();
+                    if (!anim.Enabled)
+                    {
+                        lastTick = Environment.TickCount;
+                        anim.Start();
+                    }
+                }
+                else
+                {
+                    glide = selected;
+                    glideSpring.Snap(selected);
+                    if (anim != null) anim.Stop();
+                }
                 Invalidate();
                 AccessibilityNotifyClients(AccessibleEvents.Selection, selected);
             }
@@ -362,7 +502,17 @@ namespace Deskmate
             if (at != hot) { hot = at; Invalidate(); }
         }
 
-        protected override void OnMouseLeave(EventArgs e) { hot = -1; base.OnMouseLeave(e); }
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (Enabled && e.Button == MouseButtons.Left)
+            {
+                pressedAt = HitCell(e.Location);
+                Invalidate();
+            }
+        }
+
+        protected override void OnMouseLeave(EventArgs e) { hot = -1; pressedAt = -1; base.OnMouseLeave(e); }
 
         void Pick(int i)
         {
@@ -375,10 +525,12 @@ namespace Deskmate
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
-            if (!Enabled || e.Button != MouseButtons.Left) return;
+            pressedAt = -1;
+            if (!Enabled || e.Button != MouseButtons.Left) { Invalidate(); return; }
             Focus();
             int at = HitCell(e.Location);
             if (at >= 0) Pick(at);
+            else Invalidate();
         }
 
         protected override bool IsInputKey(Keys key) { return key == Keys.Left || key == Keys.Right || key == Keys.Home || key == Keys.End || base.IsInputKey(key); }
@@ -405,13 +557,15 @@ namespace Deskmate
             float s = Ui, radius = Math.Min(Ink.RadiusControl * s, (Height - 1) * 0.35f), inset = 3 * s;
             var box = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
             Fill(g, box, radius, KitInk.Line);
-            if (glide < 0) glide = selected;
+            if (glide < 0) { glide = selected; glideSpring.Snap(selected); }
             if (selected >= 0 && selected < Items.Length)
             {
                 float w = (Width - 1f) / Items.Length;
-                var thumb = new RectangleF(glide * w + inset, inset, w - 2 * inset, Height - 1 - 2 * inset);
-                if (Enabled) KitInk.Lift(g, thumb, radius - inset, s);
-                Fill(g, thumb, radius - inset, Enabled ? KitInk.Raised : KitInk.Group);
+                float clampedGlide = Math.Max(-0.04f, Math.Min(Items.Length - 0.96f, glide));
+                float pressShrink = (Enabled && pressedAt == selected && !Anim.Reduced) ? 0.75f * s : 0f;
+                var thumb = new RectangleF(clampedGlide * w + inset + pressShrink, inset + pressShrink * 0.5f, w - 2 * (inset + pressShrink), Height - 1 - 2 * (inset + pressShrink * 0.5f));
+                if (Enabled) KitInk.Lift(g, thumb, Math.Max(2f, radius - inset), s);
+                Fill(g, thumb, Math.Max(2f, radius - inset), Enabled ? KitInk.Raised : KitInk.Group);
             }
             Font f = Ink.Text(12.5f * s), fs = Ink.Semi(12.5f * s);
             for (int i = 0; i < Items.Length; i++)
@@ -419,7 +573,7 @@ namespace Deskmate
             Ring(g, box, radius);
         }
 
-        protected override void Dispose(bool disposing) { if (disposing) anim.Dispose(); base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing && anim != null) anim.Dispose(); base.Dispose(disposing); }
 
         protected override AccessibleObject CreateAccessibilityInstance() { return new Access(this); }
 

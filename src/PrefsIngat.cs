@@ -15,22 +15,28 @@ namespace Deskmate
             void IngatRows(Action<string> cap, Action<string> note, Action<KitRow> add)
             {
                 cap(Lang.T("Ingatan"));
+                KitRow statusRow = null;
                 var on = Switch("ingat", false, v =>
                 {
                     island.SetFlag("ingat", v);
                     searchIndex.Remove("ingat");
-                    Relayout();
+                    if (statusRow != null && !statusRow.IsDisposed)
+                    {
+                        statusRow.Detail = v ? Lang.T("Memeriksa…") : Lang.T("Mati; tidak ada yang direkam");
+                        statusRow.Invalidate();
+                        if (v) IngatStatus(statusRow);
+                    }
                 });
                 var onRow = Row(Lang.T("Ingatan aktif"), Lang.T("Mencatat aplikasi, jendela, dan teks di layar ke memori di laptop ini, lalu bisa ditanya"), on);
                 onRow.Glyph = (char)0xE81C;
                 add(onRow);
 
                 bool active = settings.GetBool("ingat", false);
-                var statusRow = Row(Lang.T("Status"), active ? Lang.T("Memeriksa…") : Lang.T("Mati; tidak ada yang direkam"),
+                statusRow = Row(Lang.T("Status"), active ? Lang.T("Memeriksa…") : Lang.T("Mati; tidak ada yang direkam"),
                     Button(Lang.T("Jeda 1 jam"), false, delegate { IngatPost("/pause", new Dictionary<string, object> { { "minutes", 60 } }); }));
                 statusRow.Glyph = (char)0xE9D9;
                 add(statusRow);
-                if (active) IngatStatus(statusRow);
+                if (active && !indexing) IngatStatus(statusRow);
 
                 note(Lang.T("Tanya lewat chat Suruh, tombol Ingat di pet, atau MCP. Ketikan tidak pernah direkam."));
 
@@ -56,16 +62,16 @@ namespace Deskmate
                     var prov = id == "same" ? Ai.Text : Ai.Find(id);
                     // Cloud means screen text leaves the laptop: say it once, plainly
                     if (prov != null && !prov.NoKey && id != "off" &&
-                        MessageBox.Show(this, Lang.F("Ringkasan dan jawaban Ingatan akan dikirim ke {0}. Teks layar yang sudah disaring (kata sandi, token, email, nomor HP dibuang) ikut terkirim. Lanjutkan?", Ai.Label(prov)),
-                            "Deskmate", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                        !KitAsk.Confirm(this, Lang.F("Ringkasan dan jawaban Ingatan akan dikirim ke {0}. Teks layar yang sudah disaring (kata sandi, token, email, nomor HP dibuang) ikut terkirim. Lanjutkan?", Ai.Label(prov)),
+                            Lang.T("Lanjutkan"), Lang.T("Batal"), "Deskmate"))
                     {
-                        Relayout();
+                        RefreshContent();
                         return;
                     }
                     settings.Set("ingat.ai", id);
                     settings.Save();
                     searchIndex.Remove("ingat");
-                    Relayout();
+                    RefreshContent();
                 });
                 var curProv = cur == "same" ? Ai.Text : Ai.Find(cur);
                 string aiDetail = cur == "off" ? Lang.T("Tanpa ringkasan; pencarian kata kunci tetap jalan")
@@ -84,17 +90,17 @@ namespace Deskmate
                 add(ListRow(Lang.T("Aplikasi dikecualikan"), Lang.T("Nama proses, dipisah koma; pengelola kata sandi dan perbankan sudah dikecualikan"), "ingat.block.apps", "spotify, steam"));
                 add(ListRow(Lang.T("Situs dikecualikan"), Lang.T("Domain, dipisah koma; jendela InPrivate dan Incognito selalu dilewati"), "ingat.block.sites", "bank.co.id, mail.google.com"));
                 add(Row(Lang.T("Simpan detail mentah"), Lang.T("Teks per kejadian; ringkasan episode bertahan lebih lama"),
-                    Slider(3, 60, 1, settings.GetInt("ingat.keep.events", 14), v => Lang.F("{0} hari", v), v => { settings.Set("ingat.keep.events", v); settings.Save(); })));
+                    Slider(3, 60, 1, settings.GetInt("ingat.keep.events", 14), v => Lang.F("{0} hari", v), v => { settings.Set("ingat.keep.events", v); settings.SaveDeferred(); })));
                 add(Row(Lang.T("Simpan episode"), Lang.T("Ringkasan harian dan fakta jangka panjang tidak ikut terhapus"),
-                    Slider(30, 365, 15, settings.GetInt("ingat.keep.days", 180), v => Lang.F("{0} hari", v), v => { settings.Set("ingat.keep.days", v); settings.Save(); })));
+                    Slider(30, 365, 15, settings.GetInt("ingat.keep.days", 180), v => Lang.F("{0} hari", v), v => { settings.Set("ingat.keep.days", v); settings.SaveDeferred(); })));
                 add(Row(Lang.T("Lupakan 1 jam terakhir"), null, Button(Lang.T("Lupakan"), false, delegate
                 {
                     IngatPost("/forget", new Dictionary<string, object> { { "from", DateTime.UtcNow.AddHours(-1).ToString("o", CultureInfo.InvariantCulture) }, { "to", DateTime.UtcNow.AddMinutes(1).ToString("o", CultureInfo.InvariantCulture) } });
                 })));
                 add(Row(Lang.T("Hapus semua Ingatan"), Lang.T("Episode, ringkasan, fakta, dan rapat yang sudah diindeks"), Button(Lang.T("Hapus semua"), false, delegate
                 {
-                    if (MessageBox.Show(this, Lang.T("Hapus seluruh isi Ingatan? Ini tidak bisa dibatalkan. Berkas transkrip rapat tetap ada di folder rapat."), "Deskmate",
-                        MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+                    if (!KitAsk.Confirm(this, Lang.T("Hapus seluruh isi Ingatan? Ini tidak bisa dibatalkan. Berkas transkrip rapat tetap ada di folder rapat."),
+                        Lang.T("Hapus semua"), Lang.T("Batal"), "Deskmate")) return;
                     IngatPost("/forget", new Dictionary<string, object> { { "all", true } });
                 })));
 

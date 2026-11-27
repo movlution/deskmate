@@ -111,6 +111,8 @@ namespace Deskmate
             {
                 var m = Regex.Match(t, @"[A-Za-z]:\\(?:[^\\]+\\)*([^\\]+)\\?$");
                 if (m.Success) return m.Groups[1].Value;
+                var u = Regex.Match(t, @"(?:~|/[A-Za-z0-9_.\-]+)(?:/[^/\s]+)*/([^/\s]+?)/?$");
+                if (u.Success) return u.Groups[1].Value;
             }
             return "";
         }

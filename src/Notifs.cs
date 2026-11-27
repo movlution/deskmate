@@ -334,7 +334,19 @@ namespace Deskmate
             }
             catch (Exception ex) { Log.Write("notif toast logo: " + ex.Message); logo = null; }
             // A missing file is retried next read; only a decoded icon is cached
-            if (logo != null) lock (logos) logos[key] = logo;
+            if (logo != null)
+            {
+                lock (logos)
+                {
+                    if (logos.Count >= 64)
+                    {
+                        var stale = new List<string>();
+                        foreach (var k in logos.Keys) if (k.StartsWith("file:", StringComparison.Ordinal)) stale.Add(k);
+                        foreach (var k in stale) logos.Remove(k);
+                    }
+                    logos[key] = logo;
+                }
+            }
             return logo;
         }
 
@@ -426,9 +438,8 @@ namespace Deskmate
                 // entry for that, so show the browser, as Action Center does
                 string browser = SiteBrowser(appId);
                 if (browser != null) item = ShellApp.AppsFolderOf(browser);
-                logo = ShellApp.Icon(item, 48);
-                if (logo == null) logo = ShellApp.Icon(appId, 48);
-                if (logo != null) logo = Ink.Grayscale(logo, 48, true);
+                using (var raw = ShellApp.Icon(item, 48) ?? ShellApp.Icon(appId, 48))
+                    if (raw != null) logo = Ink.Grayscale(raw, 48, true);
             }
             catch (Exception ex) { Log.Write("notif logo: " + ex.Message); logo = null; }
             lock (logos) logos[appId] = logo;

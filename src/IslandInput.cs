@@ -379,7 +379,7 @@ namespace Deskmate
                     (releasedOnPress || bubbleRect.Contains(pt)))
                 {
                     if (bubbleClick == View.Task) ShowTasks();
-                    else if (bubbleClick == View.Timer) Expand(PageControl);
+                    else if (bubbleClick == View.Timer) ExpandPomodoro();
                     else Expand(bubbleClick == View.Agent ? PageAgents : ToastPage(false));
                 }
                 return;

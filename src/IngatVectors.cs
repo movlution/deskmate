@@ -37,17 +37,22 @@ namespace Deskmate
                 }
                 db.Exec("UPDATE episodes SET embedded=1 WHERE id=?", id);
             });
+            bool wantUpdate;
+            lock (vecGate) wantUpdate = vecCache.ContainsKey(model);
+            if (!wantUpdate) return;
+            var span = db.Query("SELECT start, end FROM episodes WHERE id=?", id);
+            if (span.Count == 0) return;
+            long start = IngatDb.Num(span[0][0]), end = IngatDb.Num(span[0][1]);
+            var list = new QChunk[Math.Min(MaxChunks, vecs.Count)];
+            for (int n = 0; n < list.Length; n++) list[n] = Quantize(vecs[n]);
+            var qep = new QEpisode { Start = start, End = end, Chunks = list };
             lock (vecGate)
             {
-                Dictionary<long, QChunk[]> rows;
+                Dictionary<long, QEpisode> rows;
                 if (!vecCache.TryGetValue(model, out rows)) return;
-                var span = db.Query("SELECT start, end FROM episodes WHERE id=?", id);
-                if (span.Count == 0) return;
-                QChunk[] old;
-                if (rows.TryGetValue(id, out old)) vecBytes -= Bytes(old);
-                var list = new QChunk[Math.Min(MaxChunks, vecs.Count)];
-                for (int n = 0; n < list.Length; n++) list[n] = Quantize(vecs[n], IngatDb.Num(span[0][0]), IngatDb.Num(span[0][1]));
-                rows[id] = list;
+                QEpisode old;
+                if (rows.TryGetValue(id, out old)) vecBytes -= Bytes(old.Chunks);
+                rows[id] = qep;
                 vecBytes += Bytes(list);
                 if (vecBytes > VecCacheBytes) { vecCache.Remove(model); vecBytes = 0; vecTooBig.Add(model); }
             }
@@ -57,7 +62,7 @@ namespace Deskmate
         {
             lock (vecGate)
             {
-                Dictionary<long, QChunk[]> rows;
+                Dictionary<long, QEpisode> rows;
                 if (vecCache.TryGetValue(model, out rows)) return rows.Count > 0;
             }
             return db.Long("SELECT EXISTS(SELECT 1 FROM chunks WHERE model=?)", model) > 0;
@@ -91,13 +96,20 @@ namespace Deskmate
                 {
                     cached = true;
                     foreach (var kv in rows)
-                        foreach (var c in kv.Value)
+                    {
+                        var ep = kv.Value;
+                        if (ep.End < from || ep.Start > to) continue;
+                        var chunks = ep.Chunks;
+                        double top = double.NegativeInfinity;
+                        for (int i = 0; i < chunks.Length; i++)
                         {
-                            if (c.End < from || c.Start > to || c.Q.Length != query.Length) continue;
+                            var c = chunks[i];
+                            if (c.Q.Length != query.Length) continue;
                             double s = DotQ(query, c);
-                            double cur;
-                            if (!best.TryGetValue(kv.Key, out cur) || s > cur) best[kv.Key] = s;
+                            if (s > top) top = s;
                         }
+                        if (top > double.NegativeInfinity) best[kv.Key] = top;
+                    }
                 }
             }
             if (!cached)
@@ -158,27 +170,28 @@ namespace Deskmate
 
         // Cache: int8 per dimension plus one scale; past the cap it steps aside and reads go to SQLite
         const long VecCacheBytes = 64L * 1024 * 1024;
-        sealed class QChunk { public long Start, End; public sbyte[] Q; public float Scale; }
+        sealed class QChunk { public sbyte[] Q; public float Scale; }
+        sealed class QEpisode { public long Start, End; public QChunk[] Chunks; }
         readonly object vecGate = new object();
-        readonly Dictionary<string, Dictionary<long, QChunk[]>> vecCache = new Dictionary<string, Dictionary<long, QChunk[]>>();
+        readonly Dictionary<string, Dictionary<long, QEpisode>> vecCache = new Dictionary<string, Dictionary<long, QEpisode>>();
         readonly HashSet<string> vecTooBig = new HashSet<string>();
         long vecBytes;
 
         static long Bytes(QChunk[] list)
         {
-            long n = 0;
-            foreach (var c in list) n += c.Q.Length + 40;
+            long n = 32;
+            foreach (var c in list) n += c.Q.Length + 24;
             return n;
         }
 
         public static sbyte[] QuantizeForCheck(float[] v, out float scale)
         {
-            var c = Quantize(v, 0, 0);
+            var c = Quantize(v);
             scale = c.Scale;
             return c.Q;
         }
 
-        static QChunk Quantize(float[] v, long start, long end)
+        static QChunk Quantize(float[] v)
         {
             float max = 0;
             foreach (var x in v) { float a = Math.Abs(x); if (a > max) max = a; }
@@ -189,29 +202,39 @@ namespace Deskmate
                 int k = (int)Math.Round(v[i] / scale);
                 q[i] = (sbyte)(k > 127 ? 127 : k < -127 ? -127 : k);
             }
-            return new QChunk { Start = start, End = end, Q = q, Scale = scale };
+            return new QChunk { Q = q, Scale = scale };
         }
 
-        Dictionary<long, QChunk[]> VecRows(string model)
+        Dictionary<long, QEpisode> VecRows(string model)
         {
-            Dictionary<long, QChunk[]> rows;
+            Dictionary<long, QEpisode> rows;
             if (vecCache.TryGetValue(model, out rows)) return rows;
             if (vecTooBig.Contains(model)) return null;
             var grouped = new Dictionary<long, List<QChunk>>();
+            var spans = new Dictionary<long, long[]>();
             long bytes = vecBytes;
             foreach (var r in db.Query("SELECT v.episode, v.vec, e.start, e.end FROM chunks v JOIN episodes e ON e.id=v.episode WHERE v.model=? ORDER BY v.episode, v.n", model))
             {
                 var v = Floats(r[1] as byte[]);
                 if (v == null) continue;
-                bytes += v.Length + 40;
+                bytes += v.Length + 24;
                 if (bytes > VecCacheBytes) { vecTooBig.Add(model); return null; }
                 long id = IngatDb.Num(r[0]);
                 List<QChunk> list;
-                if (!grouped.TryGetValue(id, out list)) grouped[id] = list = new List<QChunk>();
-                list.Add(Quantize(v, IngatDb.Num(r[2]), IngatDb.Num(r[3])));
+                if (!grouped.TryGetValue(id, out list))
+                {
+                    grouped[id] = list = new List<QChunk>();
+                    spans[id] = new[] { IngatDb.Num(r[2]), IngatDb.Num(r[3]) };
+                    bytes += 32;
+                }
+                list.Add(Quantize(v));
             }
-            rows = new Dictionary<long, QChunk[]>();
-            foreach (var kv in grouped) rows[kv.Key] = kv.Value.ToArray();
+            rows = new Dictionary<long, QEpisode>(grouped.Count);
+            foreach (var kv in grouped)
+            {
+                var sp = spans[kv.Key];
+                rows[kv.Key] = new QEpisode { Start = sp[0], End = sp[1], Chunks = kv.Value.ToArray() };
+            }
             vecCache[model] = rows;
             vecBytes = bytes;
             return rows;
@@ -228,16 +251,19 @@ namespace Deskmate
         // An episode's span changed: keep its time filter right
         void VecMoved(long id)
         {
+            bool any;
+            lock (vecGate) any = vecCache.Count > 0;
+            if (!any) return;
+            var span = db.Query("SELECT start, end FROM episodes WHERE id=?", id);
             lock (vecGate)
             {
-                if (vecCache.Count == 0) return;
-                var span = db.Query("SELECT start, end FROM episodes WHERE id=?", id);
                 foreach (var rows in vecCache.Values)
                 {
-                    QChunk[] list;
-                    if (!rows.TryGetValue(id, out list)) continue;
-                    if (span.Count == 0) { rows.Remove(id); vecBytes -= Bytes(list); continue; }
-                    foreach (var c in list) { c.Start = IngatDb.Num(span[0][0]); c.End = IngatDb.Num(span[0][1]); }
+                    QEpisode ep;
+                    if (!rows.TryGetValue(id, out ep)) continue;
+                    if (span.Count == 0) { rows.Remove(id); vecBytes -= Bytes(ep.Chunks); continue; }
+                    ep.Start = IngatDb.Num(span[0][0]);
+                    ep.End = IngatDb.Num(span[0][1]);
                 }
             }
         }

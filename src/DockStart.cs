@@ -187,7 +187,7 @@ namespace Deskmate
                         }
                         var warm = new List<string>();
                         if (!string.IsNullOrEmpty(pinsRaw)) foreach (var e in BuildPins(pinsRaw, list)) warm.Add(e.Target);
-                        for (int i = 0; i < list.Count && i < 36; i++) warm.Add(list[i].Target);
+                        for (int i = 0; i < list.Count && i < 18; i++) warm.Add(list[i].Target);
                         int n = 0;
                         foreach (var target in warm)
                         {
@@ -195,7 +195,12 @@ namespace Deskmate
                             lock (iconGate) have = iconCache.ContainsKey(target);
                             if (have) continue;
                             var bmp = ShellApp.Icon(target, px);
-                            if (bmp != null) lock (iconGate) if (!iconCache.ContainsKey(target)) { iconCache[target] = bmp; n++; }
+                            if (bmp != null)
+                            {
+                                bool stored = false;
+                                lock (iconGate) if (!iconCache.ContainsKey(target)) { iconCache[target] = bmp; n++; stored = true; }
+                                if (!stored) bmp.Dispose();
+                            }
                         }
                         if (cachedRecent == null)
                         {
@@ -207,7 +212,12 @@ namespace Deskmate
                                 lock (iconGate) have = iconCache.ContainsKey(e.Target);
                                 if (have) continue;
                                 var bmp = ShellApp.Icon(e.Target, px);
-                                if (bmp != null) lock (iconGate) if (!iconCache.ContainsKey(e.Target)) { iconCache[e.Target] = bmp; n++; }
+                                if (bmp != null)
+                                {
+                                    bool stored = false;
+                                    lock (iconGate) if (!iconCache.ContainsKey(e.Target)) { iconCache[e.Target] = bmp; n++; stored = true; }
+                                    if (!stored) bmp.Dispose();
+                                }
                             }
                         }
                         if (StartFps) Log.Write("start prewarm " + list.Count + " apps, " + n + " icons in " + sw.ElapsedMilliseconds + "ms");

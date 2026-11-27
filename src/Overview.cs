@@ -442,7 +442,7 @@ namespace Deskmate
             var next = NextClass();
             var task = tasks != null && tasks.Count > 0 ? tasks[0] : null;
             var now = DateTime.Now;
-            bool classFirst = next != null && (task == null || ((next.Start - now).TotalHours < 12 && next.Start.ToUniversalTime() < task.DeadlineUtc));
+            bool classFirst = next != null && (task == null || task.NoDue || ((next.Start - now).TotalHours < 12 && next.Start.ToUniversalTime() < task.DeadlineUtc));
             if (classFirst)
             {
                 CardBase(r, "homeClass", HomeCard.Class, delegate { ShowSchedule(); });
@@ -457,7 +457,15 @@ namespace Deskmate
                 return;
             }
             CardBase(r, "homeTask", HomeCard.Class, delegate { ShowTasks(); });
-            CardCaption(r, '', task.Kind == "ujian" ? Lang.T("Ujian terdekat") : Lang.T("Tenggat terdekat"));
+            if (task.NoDue || task.DeadlineUtc == DateTime.MinValue)
+            {
+                CardCaption(r, '\uE821', Lang.T("Tugas"));
+                p.Text(task.Title, Ink.Display(16f), p.T.Text, r.X + 16, r.Y + 50, r.Width - 30, StringAlignment.Near);
+                string sub = task.Course.Length > 0 ? task.Course : SourceHub.TaskLabel(task.Source);
+                p.Text(sub, Ink.Small(11.5f), p.T.Sub, r.X + 16, r.Y + 72, r.Width - 30, StringAlignment.Near);
+                return;
+            }
+            CardCaption(r, '\uE821', task.Kind == "ujian" ? Lang.T("Ujian terdekat") : Lang.T("Tenggat terdekat"));
             bool urgent = (task.DeadlineUtc - DateTime.UtcNow).TotalHours < 24;
             p.Text(Relative(task, DateTime.UtcNow), Ink.Display(20f), urgent ? p.T.Accent : p.T.Text, r.X + 16, r.Y + 50, r.Width - 30, StringAlignment.Near);
             p.Text(task.Title, Ink.Small(11.5f), p.T.Sub, r.X + 16, r.Y + 72, r.Width - 30, StringAlignment.Near);
@@ -492,7 +500,7 @@ namespace Deskmate
 
         void DrawTimerCard(RectangleF r, DateTime now)
         {
-            CardBase(r, "homeTimer", HomeCard.Timer, delegate { SetPage(PageControl, false); });
+            CardBase(r, "homeTimer", HomeCard.Timer, delegate { SetSegment(PageClass, 1, true); SetPage(PageClass, false); });
             string timerCap = !string.IsNullOrEmpty(FocusTaskTitle) && (timerKind == TimerKind.Focus || timerKind == TimerKind.Break)
                 ? TimerLabel() + " · " + FocusTaskTitle
                 : TimerLabel();

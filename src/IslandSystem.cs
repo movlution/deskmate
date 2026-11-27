@@ -149,6 +149,7 @@ namespace Deskmate
             if (fs == fullscreen) return;
             fullscreen = fs;
             if (fs) expanded = false;
+            ApplyReserve();
             Kick();
         }
 

@@ -101,6 +101,9 @@ namespace Deskmate
 
         readonly Dictionary<string, string> values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         public readonly string FilePath = Path.Combine(Dir, "settings.ini");
+        readonly object saveLock = new object();
+        System.Threading.Timer deferredSave;
+        bool savePending;
 
         // No settings file yet: a first run
         public readonly bool Fresh;
@@ -145,6 +148,41 @@ namespace Deskmate
         }
 
         public void Save()
+        {
+            lock (saveLock)
+            {
+                savePending = false;
+                if (deferredSave != null) deferredSave.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+            }
+            WriteNow();
+        }
+
+        // Coalesces rapid continuous edits (e.g. slider drags) into one atomic disk write
+        public void SaveDeferred(int delayMs = 180)
+        {
+            lock (saveLock)
+            {
+                savePending = true;
+                if (deferredSave == null)
+                    deferredSave = new System.Threading.Timer(delegate { FlushSave(); }, null, delayMs, System.Threading.Timeout.Infinite);
+                else
+                    deferredSave.Change(delayMs, System.Threading.Timeout.Infinite);
+            }
+        }
+
+        public void FlushSave()
+        {
+            bool run;
+            lock (saveLock)
+            {
+                run = savePending;
+                savePending = false;
+                if (deferredSave != null) deferredSave.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+            }
+            if (run) WriteNow();
+        }
+
+        void WriteNow()
         {
             try
             {

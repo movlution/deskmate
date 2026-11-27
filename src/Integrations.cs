@@ -81,15 +81,13 @@ namespace Deskmate
                 try { BeginInvoke(a); } catch (InvalidOperationException) { }
             }
 
-            // Keeps the scroll position
+            // Keeps the scroll position without clearing searchIndex or rebuilding the sidebar
             void Rebuild()
             {
                 Later(delegate
                 {
                     if (IsDisposed) return;
-                    var at = content.AutoScrollPosition;
-                    Relayout();
-                    content.AutoScrollPosition = new Point(-at.X, -at.Y);
+                    RefreshContent();
                 });
             }
 
