@@ -38,6 +38,7 @@ namespace Deskmate
             }
             if (!a.Online && b.Online && tasksError != null) RefreshTasks(false);
             if (!a.Online && b.Online && sources != null) sources.Retry();
+            if (!a.Online && b.Online && WeatherOn && (weather == null || weatherFails > 0)) RetryWeather();
             Kick();
         }
 

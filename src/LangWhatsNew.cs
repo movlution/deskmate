@@ -8,6 +8,15 @@ namespace Deskmate
     {
         static void AddWhatsNew(Dictionary<string, string> en)
         {
+            // What's new 2.22.0
+            AddOnce(en, "Ikon Dock khas Deskmate", "Deskmate Dock icons");
+            AddOnce(en, "Tombol Start, Semua jendela, Tugas, Suruh, dan Rak di Dock kini memakai ikon bergambar sendiri yang serasi dengan gaya Deskmate.", "The Start, All windows, Tasks, Ask Deskmate and Shelf buttons in the Dock now use their own illustrated icons that match the Deskmate style.");
+            AddOnce(en, "Tombol Suruh di Dock", "Ask Deskmate in the Dock");
+            AddOnce(en, "Satu tombol di Dock untuk membuka obrolan Suruh Deskmate. Atur di Pengaturan › Dock.", "One Dock button opens the Ask Deskmate chat. Set it in Settings › Dock.");
+            AddOnce(en, "Konversi lebih lengkap", "More complete Convert");
+            AddOnce(en, "Gabungkan banyak gambar jadi satu PDF atau satu PDF per berkas, susun gambar dan GIF, serta gabungkan audio jadi satu MP3.", "Merge many images into one PDF or one PDF per file, stitch images and GIFs, and join audio into one MP3.");
+            AddOnce(en, "Pengaturan bergambar", "Illustrated Settings");
+            AddOnce(en, "Setiap kategori Pengaturan kini punya ilustrasi sendiri, dan kuota agen, cuaca, serta hook agen lebih andal.", "Every Settings category now has its own illustration, and agent quota, weather and agent hooks are more reliable.");
             // What's new 2.21.3
             AddOnce(en, "Kirim saran lewat GitHub", "Send feedback on GitHub");
             AddOnce(en, "Kirim saran di Pengaturan › Tentang kini membuka GitHub Issues untuk laporan masalah dan ide fitur, dan panduan sambungan HP diperbarui.", "Send feedback in Settings › About now opens GitHub Issues for bug reports and feature ideas, and the phone connection guide has been updated.");

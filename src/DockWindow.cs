@@ -51,7 +51,7 @@ namespace Deskmate
             string drawnSig = "";
             int tickN;
             // Dock slides in on open and for auto-hide
-            readonly Spring reveal = new Spring(0, 1, 1, 0.001f), hover = new Spring(0, 1, 1, 0.002f), workDot = new Spring(0, 1, 1, 0.003f);
+            readonly Spring reveal = new Spring(0, 1, 1, 0.001f), hover = new Spring(0, 1, 1, 0.002f), workDot = new Spring(0, 1, 1, 0.003f), suruhDot = new Spring(0, 1, 1, 0.003f);
             // One shape, one motion: the whole bar rises and leaves on the same
             // calm, critically damped spring. Pointer effects wait for arrival.
             const float RevealK = 520f, RevealDamping = 1f;
@@ -110,6 +110,7 @@ namespace Deskmate
                 Tune(reveal, RevealK, RevealDamping);
                 Tune(hover, 260, 0.9f);
                 Tune(workDot, 340, 0.78f);
+                Tune(suruhDot, 340, 0.78f);
                 tick.Tick += delegate { Tick(); };
                 dwell.Tick += delegate { dwell.Stop(); Dwell(); };
                 hideLater.Tick += delegate { hideLater.Stop(); AutoHide(); };
@@ -465,6 +466,8 @@ namespace Deskmate
                 Rectangle r = Rectangle.Empty;
                 if (Visible && h != IntPtr.Zero && h == isle.WorkHwnd && S.GetBool("dockbar.work", true))
                     r = MotionIcon(workSlotApp);
+                else if (Visible && h != IntPtr.Zero && h == isle.SuruhHwnd && S.GetBool("dockbar.suruh", true))
+                    r = MotionIcon(suruhSlotApp);
                 else
                 {
                     var app = apps.Find(a => a.Wins.Exists(w => w.H == h));
@@ -494,6 +497,7 @@ namespace Deskmate
                 var keep = new Dictionary<string, DockApp>();
                 foreach (var a in apps) if (!a.Leaving) keep[a.Key] = a;
                 IntPtr skipWork = S.GetBool("dockbar.work", true) ? isle.WorkHwnd : IntPtr.Zero;
+                IntPtr skipSuruh = S.GetBool("dockbar.suruh", true) ? isle.SuruhHwnd : IntPtr.Zero;
                 HashSet<string> runningBefore = null;
                 HashSet<IntPtr> windowsBefore = null;
                 if (petIconBaseline && !first && PetIconReady)
@@ -507,7 +511,7 @@ namespace Deskmate
                         foreach (var w in a.Wins) windowsBefore.Add(w.H);
                     }
                 }
-                var next = watch.Arrange(isle.DockPins(), keep, skipWork);
+                var next = watch.Arrange(isle.DockPins(), keep, skipWork, skipSuruh);
                 var result = new List<DockApp>(next);
                 var inNext = new HashSet<DockApp>(next);
                 for (int i = 0; i < apps.Count; i++)
@@ -566,12 +570,26 @@ namespace Deskmate
                 Render();
             }
 
+            public void SyncSuruh()
+            {
+                if (closing || !IsHandleCreated) return;
+                IntPtr h = isle.SuruhHwnd;
+                if (h != IntPtr.Zero) watch.Track(h);
+                UpdateVisibility();
+                if (!isle.SuruhOpen && card != null && card.Kind == DockCard.WindowsKind && card.App != null && card.App.Key == "sys:suruh") CloseCard();
+                Refresh(false);
+                suruhDot.Target = SuruhDotTarget();
+                Animate();
+                Render();
+            }
+
             // What the centre shows: apps, their windows, focus, badges, calls for attention
             string LookSig()
             {
                 var sb = new StringBuilder();
                 IntPtr fg = GetForegroundWindow();
                 sb.Append(S.GetBool("dockbar.work", true) && isle.WorkOpen ? (fg == isle.WorkHwnd ? 'W' : 'w') : '-').Append('|');
+                sb.Append(S.GetBool("dockbar.suruh", true) && isle.SuruhOpen ? (fg == isle.SuruhHwnd ? 'S' : 's') : '-').Append(isle.suruhBusy ? '*' : '.').Append('|');
                 foreach (var a in apps)
                     sb.Append(a.Key).Append(a.Pinned ? 'p' : 'r').Append(a.Wins.Count).Append(a.Attention ? '!' : '.').Append(a.Badge).Append(a.Leaving ? 'x' : 'o').Append(a.Wins.Exists(w => w.H == fg) ? 'f' : '-').Append('|');
                 return sb.ToString();
@@ -589,8 +607,8 @@ namespace Deskmate
             bool Moving()
             {
                 var now = DateTime.UtcNow;
-                if (!reveal.Settled || !hover.Settled || !workDot.Settled || !shelfShow.Settled || shelfShow.Target != (ShelfWanted ? 1 : 0) || WidgetsMoving() || DockFlyersMoving(now)) return true;
-                if (AppAnimMoving(workSlotApp, now)) return true;
+                if (!reveal.Settled || !hover.Settled || !workDot.Settled || !suruhDot.Settled || !shelfShow.Settled || shelfShow.Target != (ShelfWanted ? 1 : 0) || WidgetsMoving() || DockFlyersMoving(now)) return true;
+                if (AppAnimMoving(workSlotApp, now) || AppAnimMoving(suruhSlotApp, now)) return true;
                 foreach (var s in sysGrow.Values) if (!s.Settled) return true;
                 foreach (var s in sysPress.Values) if (!s.Settled) return true;
                 if (!Anim.Reduced && startPulseUtc > DateTime.MinValue && (now - startPulseUtc).TotalSeconds < 0.40) return true;
@@ -603,6 +621,7 @@ namespace Deskmate
             {
                 IntPtr fg = GetForegroundWindow();
                 if (S.GetBool("dockbar.work", true) && isle.WorkOpen && fg == isle.WorkHwnd) return "sys:work";
+                if (S.GetBool("dockbar.suruh", true) && isle.SuruhOpen && fg == isle.SuruhHwnd) return "sys:suruh";
                 var app = apps.Find(a => a.Wins.Exists(w => w.H == fg));
                 return app != null ? app.Key : "";
             }
@@ -699,10 +718,14 @@ namespace Deskmate
             void UpdateVisibility()
             {
                 var work = isle.WorkOpen ? isle.WorkHwnd : IntPtr.Zero;
+                var suruh = isle.SuruhOpen ? isle.SuruhHwnd : IntPtr.Zero;
                 var foreground = GetForegroundWindow();
-                bool workspaceActive = work != IntPtr.Zero && foreground != IntPtr.Zero
+                bool workspaceActive = (work != IntPtr.Zero && foreground != IntPtr.Zero
                     && (foreground == work || GetAncestor(foreground, 3) == work)
-                    && Native.MonitorFromWindow(work, 2) == monitorHandle;
+                    && Native.MonitorFromWindow(work, 2) == monitorHandle)
+                    || (suruh != IntPtr.Zero && foreground != IntPtr.Zero
+                    && (foreground == suruh || GetAncestor(foreground, 3) == suruh)
+                    && Native.MonitorFromWindow(suruh, 2) == monitorHandle);
                 bool hold = workspaceActive || (isle.dockSwitchMonitor != IntPtr.Zero && isle.dockSwitchMonitor == monitorHandle);
                 bool wasHeld = focusReveal;
                 bool wasShown = shown;
@@ -767,18 +790,24 @@ namespace Deskmate
                 if (Signature() != drawnSig) Render();
             }
 
+            public void SyncWeather()
+            {
+                if (closing || !IsHandleCreated) return;
+                if (shown && Signature() != drawnSig) Render();
+            }
+
             // Whatever a still frame shows, as text
             string Signature()
             {
                 var sb = new StringBuilder();
-                sb.Append(Fmt.Clock(DateTime.Now)).Append('|').Append(hoverId).Append('|').Append(pressId).Append('|').Append(FocusKey()).Append('|').Append(isle.WorkOpen).Append('|').Append(TrayExpanded).Append('|').Append(isle.dockHeld.Count);
+                sb.Append(Fmt.Clock(DateTime.Now)).Append('|').Append(hoverId).Append('|').Append(pressId).Append('|').Append(FocusKey()).Append('|').Append(isle.WorkOpen).Append('|').Append(isle.SuruhOpen).Append('|').Append(isle.suruhBusy).Append('|').Append(TrayExpanded).Append('|').Append(isle.dockHeld.Count);
                 foreach (var a in apps) sb.Append(a.Key.Length).Append(a.Wins.Count).Append(a.Badge).Append(a.Attention ? '!' : '.');
                 var mi = isle.mediaInfo;
                 if (mi.Present) sb.Append(mi.Title).Append(mi.Playing);
                 if (isle.TimerOn) sb.Append(isle.TimerClock());
                 sb.Append(isle.battery).Append(isle.onAc).Append(cpuPct).Append(ramPct).Append(isle.BusyCount()).Append(isle.quotaVersion);
                 sb.Append(isle.vol).Append(isle.muted).Append(isle.unread).Append(Ink.Epoch).Append(Lang.English);
-                if (isle.weather != null) sb.Append(isle.weather.Temp);
+                if (isle.weather != null) sb.Append(isle.weather.Temp).Append(':').Append(isle.weather.Code);
                 return sb.ToString();
             }
 

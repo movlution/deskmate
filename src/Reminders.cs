@@ -606,9 +606,8 @@ namespace Deskmate
             settings.Save();
             prayToday = null;
             Kick();
-            // New coordinates: refresh within the minute instead of waiting 30
-            weatherAskedUtc = DateTime.MinValue;
-            TickWeather();
+            // New coordinates: refresh immediately instead of waiting for the 30-minute window
+            RefreshWeather(true);
         }
 
 

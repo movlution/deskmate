@@ -60,6 +60,7 @@ namespace Deskmate
             }
 
             readonly DockApp workSlotApp = new DockApp { Key = "sys:work", Pinned = true };
+            readonly DockApp suruhSlotApp = new DockApp { Key = "sys:suruh", Pinned = true };
 
             DockApp AppById(string id)
             {
@@ -72,12 +73,21 @@ namespace Deskmate
             {
                 if (id == "sys:work")
                 {
-                    if (!S.GetBool("dockbar.work", true) || !isle.WorkOpen || isle.WorkHwnd == IntPtr.Zero) return null;
+                    if (S == null || !S.GetBool("dockbar.work", true) || !isle.WorkOpen || isle.WorkHwnd == IntPtr.Zero) return null;
                     workSlotApp.Name = Lang.T("Tugas dan catatan");
                     workSlotApp.Wins.Clear();
                     var w = watch.Find(isle.WorkHwnd) ?? new DockWin { H = isle.WorkHwnd, Title = workSlotApp.Name };
                     workSlotApp.Wins.Add(w);
                     return workSlotApp;
+                }
+                if (id == "sys:suruh")
+                {
+                    if (S == null || !S.GetBool("dockbar.suruh", true) || !isle.SuruhOpen || isle.SuruhHwnd == IntPtr.Zero) return null;
+                    suruhSlotApp.Name = Lang.T("Suruh Deskmate");
+                    suruhSlotApp.Wins.Clear();
+                    var w = watch.Find(isle.SuruhHwnd) ?? new DockWin { H = isle.SuruhHwnd, Title = suruhSlotApp.Name };
+                    suruhSlotApp.Wins.Add(w);
+                    return suruhSlotApp;
                 }
                 return AppById(id);
             }
@@ -287,6 +297,34 @@ namespace Deskmate
                 {
                     m.Items.Add(new ToolStripSeparator());
                     m.Items.Add(new ToolStripMenuItem(Lang.T("Tutup jendela"), null, delegate { CloseWindow(isle.WorkHwnd); }) { Tag = new MenuItemMeta { Glyph = '\uE8BB' } });
+                }
+                ShowMenu(m);
+            }
+
+            void OpenSuruhFromDock()
+            {
+                CloseCard();
+                if (isle.SuruhOpen && isle.SuruhHwnd != IntPtr.Zero && GetForegroundWindow() == isle.SuruhHwnd && !ShellApp.IsMinimized(isle.SuruhHwnd))
+                {
+                    MinimizeWindow(isle.SuruhHwnd);
+                    return;
+                }
+                isle.OpenSuruh();
+            }
+
+            void SuruhMenu()
+            {
+                var m = new ContextMenuStrip();
+                m.Items.Add(new ToolStripMenuItem(Lang.T("Suruh Deskmate")) { Enabled = false, Tag = new MenuItemMeta { Header = true } });
+                m.Items.Add(new ToolStripSeparator());
+                m.Items.Add(new ToolStripMenuItem(Lang.T("Buka obrolan"), null, delegate { isle.OpenSuruh(); }) { Tag = new MenuItemMeta { Glyph = '\uE8F2' } });
+                m.Items.Add(new ToolStripMenuItem(Lang.T("Obrolan baru"), null, delegate { isle.StartFreshSuruh(); }) { Enabled = !isle.suruhBusy, Tag = new MenuItemMeta { Glyph = '\uE710' } });
+                m.Items.Add(new ToolStripMenuItem(Lang.T("Pengaturan AI"), null, delegate { isle.OpenPrefs("ai"); }) { Tag = new MenuItemMeta { Glyph = '\uE713' } });
+                m.Items.Add(new ToolStripMenuItem(Lang.T("Lepas dari Dock"), null, delegate { isle.SetFlag("dockbar.suruh", false); if (isle.prefs != null && !isle.prefs.IsDisposed) isle.prefs.Relayout(); }) { Tag = new MenuItemMeta { Glyph = '\uE77A' } });
+                if (isle.SuruhOpen && isle.SuruhHwnd != IntPtr.Zero)
+                {
+                    m.Items.Add(new ToolStripSeparator());
+                    m.Items.Add(new ToolStripMenuItem(Lang.T("Tutup jendela"), null, delegate { CloseWindow(isle.SuruhHwnd); }) { Tag = new MenuItemMeta { Glyph = '\uE8BB' } });
                 }
                 ShowMenu(m);
             }

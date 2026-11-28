@@ -33,10 +33,33 @@ namespace Deskmate
         public bool Ready { get { foreach (var n in Needs) if (Converter.Tool(n) == null) return false; return true; } }
     }
 
+    // Choices that shape every output; defaults match the old behaviour
+    class ConvOpts
+    {
+        // 0 best, 1 balanced, 2 small
+        public int Quality = 1;
+        // Images: 0 original, 1 75%, 2 50%, 3 25%
+        public int Scale;
+        // Images to PDF: 0 A4, 1 Letter, 2 page fits the image
+        public int Page;
+        // Video: 0 original, 1 1080p, 2 720p, 3 480p
+        public int Res;
+        // Empty: beside the source
+        public string OutDir = "";
+
+        static readonly float[] scales = { 1f, 0.75f, 0.5f, 0.25f };
+        static readonly int[] sides = { 0, 1080, 720, 480 };
+        public float ScaleK { get { return scales[Math.Max(0, Math.Min(3, Scale))]; } }
+        public int ShortSide { get { return sides[Math.Max(0, Math.Min(3, Res))]; } }
+        // Pick by quality: best, balanced, small
+        public T By<T>(T best, T balanced, T small) { return Quality == 0 ? best : Quality >= 2 ? small : balanced; }
+    }
+
     class ConvJob
     {
         public List<string> Files;
         public ConvTarget Target;
+        public ConvOpts Opts = new ConvOpts();
         public volatile bool Cancelled, Finished;
         public volatile int Index;
         // Compress: files already as small as they get, and the bytes saved
@@ -56,7 +79,7 @@ namespace Deskmate
             {
                 int n = Math.Max(1, Files.Count);
                 // One output from many inputs: Part is the whole job
-                bool single = Target != null && (Target.Id == "zip" || Target.Id == "pdf1");
+                bool single = Target != null && Converter.Combines(Target.Id);
                 if (single) return Math.Max(0f, Math.Min(1f, Part >= 0 ? Part : (float)Index / n));
                 return Math.Min(1f, (Index + Math.Max(0f, Part)) / n);
             }
@@ -119,25 +142,28 @@ namespace Deskmate
                     l.Add(T("ocr", Lang.T("Teks (OCR)"), "ocr")); l.Add(T("min", Lang.T("Kompres")));
                     break;
                 case ConvKind.Video:
-                    l.Add(T("mp4", "MP4", "ffmpeg")); l.Add(T("webm", "WEBM", "ffmpeg")); l.Add(T("gif", "GIF", "ffmpeg")); l.Add(T("mp3", "MP3", "ffmpeg"));
+                    l.Add(T("mp4", "MP4", "ffmpeg")); l.Add(T("webm", "WEBM", "ffmpeg")); l.Add(T("mov", "MOV", "ffmpeg")); l.Add(T("mkv", "MKV", "ffmpeg"));
+                    l.Add(T("gif", "GIF", "ffmpeg")); l.Add(T("mp3", "MP3", "ffmpeg")); l.Add(T("m4a", "M4A", "ffmpeg")); l.Add(T("wav", "WAV", "ffmpeg"));
                     l.Add(T("min", Lang.T("Kompres"), "ffmpeg"));
                     break;
                 case ConvKind.Audio:
-                    l.Add(T("mp3", "MP3", "ffmpeg")); l.Add(T("m4a", "M4A", "ffmpeg")); l.Add(T("wav", "WAV", "ffmpeg")); l.Add(T("flac", "FLAC", "ffmpeg")); l.Add(T("ogg", "OGG", "ffmpeg"));
+                    l.Add(T("mp3", "MP3", "ffmpeg")); l.Add(T("m4a", "M4A", "ffmpeg")); l.Add(T("wav", "WAV", "ffmpeg")); l.Add(T("flac", "FLAC", "ffmpeg"));
+                    l.Add(T("ogg", "OGG", "ffmpeg")); l.Add(T("opus", "OPUS", "ffmpeg"));
                     l.Add(T("min", Lang.T("Kompres"), "ffmpeg"));
                     break;
                 case ConvKind.Doc:
-                    l.Add(T("pdf", "PDF", "soffice")); l.Add(T("docx", "DOCX", "soffice")); l.Add(T("odt", "ODT", "soffice")); l.Add(T("rtf", "RTF", "soffice")); l.Add(T("txt", "TXT", "soffice"));
+                    l.Add(T("pdf", "PDF", "soffice")); l.Add(T("docx", "DOCX", "soffice")); l.Add(T("odt", "ODT", "soffice")); l.Add(T("rtf", "RTF", "soffice"));
+                    l.Add(T("txt", "TXT", "soffice")); l.Add(T("html", "HTML", "soffice")); l.Add(T("png", "PNG", "soffice")); l.Add(T("jpg", "JPG", "soffice"));
                     break;
                 case ConvKind.Slides:
                     l.Add(T("pdf", "PDF", "soffice")); l.Add(T("pptx", "PPTX", "soffice")); l.Add(T("odp", "ODP", "soffice")); l.Add(T("png", "PNG", "soffice")); l.Add(T("jpg", "JPG", "soffice"));
                     break;
                 case ConvKind.Sheet:
-                    l.Add(T("pdf", "PDF", "soffice")); l.Add(T("xlsx", "XLSX", "soffice")); l.Add(T("ods", "ODS", "soffice")); l.Add(T("csv", "CSV", "soffice"));
+                    l.Add(T("pdf", "PDF", "soffice")); l.Add(T("xlsx", "XLSX", "soffice")); l.Add(T("ods", "ODS", "soffice")); l.Add(T("csv", "CSV", "soffice")); l.Add(T("html", "HTML", "soffice"));
                     break;
                 case ConvKind.Pdf:
                     l.Add(T("docx", "DOCX", "pdfword")); l.Add(T("txt", "TXT", "pdfword")); l.Add(T("png", "PNG")); l.Add(T("jpg", "JPG"));
-                    l.Add(T("ocr", Lang.T("Teks (OCR)"), "ocr")); l.Add(T("min", Lang.T("Kompres")));
+                    l.Add(T("ocr", Lang.T("Teks (OCR)"), "ocr")); l.Add(T("min", Lang.T("Kompres"))); l.Add(T("split", Lang.T("Pisah halaman")));
                     break;
                 case ConvKind.Markdown:
                     l.Add(T("docx", "DOCX", "pandoc")); l.Add(T("html", "HTML", "pandoc")); l.Add(T("pdf", "PDF", "pandoc", "soffice"));
@@ -152,15 +178,41 @@ namespace Deskmate
             return l;
         }
 
+        // Many inputs, one output
+        public static bool Combines(string id)
+        {
+            switch (id)
+            {
+                case "zip": case "pdf1": case "gifanim": case "stitch": case "audiocat": return true;
+                default: return false;
+            }
+        }
+
+        // Tools a file needs on its way into a merged PDF
+        static string[] PdfNeeds(ConvKind k)
+        {
+            switch (k)
+            {
+                case ConvKind.Doc: case ConvKind.Slides: case ConvKind.Sheet: case ConvKind.Html: return new[] { "soffice" };
+                case ConvKind.Markdown: return new[] { "pandoc", "soffice" };
+                default: return new string[0];
+            }
+        }
+
         // Formats every dropped file can become
         public static List<ConvTarget> Targets(IList<string> files)
         {
             List<ConvTarget> common = null;
-            bool paged = files.Count > 0, still = false;
+            bool paged = files.Count > 0, still = false, images = files.Count > 0, audio = files.Count > 0;
+            var pdfNeeds = new List<string>();
             foreach (var f in files)
             {
                 var k = KindOf(f);
-                if (k != ConvKind.Image && k != ConvKind.Pdf) paged = false;
+                if (k != ConvKind.Image) images = false;
+                if (k != ConvKind.Audio) audio = false;
+                // Pictures, PDFs, and anything LibreOffice prints can share one PDF
+                if (k != ConvKind.Image && k != ConvKind.Pdf && PdfNeeds(k).Length == 0) paged = false;
+                foreach (var n in PdfNeeds(k)) if (!pdfNeeds.Contains(n)) pdfNeeds.Add(n);
                 // Animations and icons lose frames when squeezed
                 string ext = Norm(Path.GetExtension(f));
                 if (ext == "gif" || ext == "ico") still = true;
@@ -172,11 +224,26 @@ namespace Deskmate
             // Hidden when all files already match
             common.RemoveAll(t => AllAre(files, t.Id));
             if (still) common.RemoveAll(t => t.Id == "min");
-            if (paged && files.Count > 1) common.Add(T("pdf1", Lang.T("Gabung PDF")));
+            bool many = files.Count > 1;
+            // Many files: say plainly that each one gets its own PDF
+            if (many) foreach (var t in common) if (t.Id == "pdf") t.Label = Lang.T("PDF per berkas");
+            if (paged && many) common.Add(T("pdf1", Lang.T("Gabung jadi satu PDF"), pdfNeeds.ToArray()));
+            if (images && many)
+            {
+                common.Add(T("stitch", Lang.T("Gabung gambar")));
+                common.Add(T("gifanim", Lang.T("GIF animasi"), "ffmpeg"));
+            }
+            if (audio && many) common.Add(T("audiocat", Lang.T("Gabung audio"), "ffmpeg"));
             bool oneZip = files.Count == 1 && KindOf(files[0]) == ConvKind.Zip;
             if (!oneZip) common.Add(T("zip", "ZIP"));
             return common;
         }
+
+        // Explorer's order: page2 before page10
+        [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
+        static extern int StrCmpLogicalW(string a, string b);
+
+        public static int CompareNatural(string a, string b) { return StrCmpLogicalW(a ?? "", b ?? ""); }
 
         static bool AllAre(IList<string> files, string id)
         {
@@ -309,18 +376,26 @@ namespace Deskmate
             try
             {
                 string id = job.Target.Id;
-                if (id == "zip" || id == "pdf1")
+                if (Combines(id))
                 {
-                    string first = job.Files[0];
-                    string dir = Path.GetDirectoryName(first.TrimEnd('\\'));
-                    string name = job.Files.Count == 1 ? Path.GetFileNameWithoutExtension(first.TrimEnd('\\')) : new DirectoryInfo(dir).Name;
+                    string first = job.Files[0].TrimEnd('\\');
+                    string dir = OutDir(job, first);
+                    string name = job.Files.Count == 1 ? Path.GetFileNameWithoutExtension(first) : new DirectoryInfo(Path.GetDirectoryName(first)).Name;
                     if (string.IsNullOrEmpty(name)) name = "Deskmate";
-                    string outPath = UniqueFile(dir, name, id == "zip" ? ".zip" : ".pdf");
+                    string outPath = UniqueFile(dir, name, CombinedExt(job));
                     Guard(job, outPath, delegate
                     {
-                        if (id == "zip") Zip(job, outPath);
-                        else if (job.Files.TrueForAll(f => KindOf(f) == ConvKind.Image)) ImagesToPdf(job, job.Files, outPath, true);
-                        else MergePdfs(job, outPath);
+                        switch (id)
+                        {
+                            case "zip": Zip(job, outPath); break;
+                            case "stitch": Stitch(job, outPath); break;
+                            case "gifanim": AnimatedGif(job, outPath); break;
+                            case "audiocat": JoinAudio(job, outPath); break;
+                            default:
+                                if (job.Files.TrueForAll(f => KindOf(f) == ConvKind.Image)) ImagesToPdf(job, job.Files, outPath, true);
+                                else MergePdfs(job, outPath);
+                                break;
+                        }
                     });
                 }
                 else
@@ -375,16 +450,42 @@ namespace Deskmate
             lock (job.Outputs) job.Outputs.Add(outPath);
         }
 
+        static string CombinedExt(ConvJob job)
+        {
+            switch (job.Target.Id)
+            {
+                case "zip": return ".zip";
+                case "gifanim": return ".gif";
+                case "audiocat": return ".mp3";
+                // Lossless unless every piece was a JPEG already
+                case "stitch": return job.Files.TrueForAll(f => Norm(Path.GetExtension(f)) == "jpg") ? ".jpg" : ".png";
+                default: return ".pdf";
+            }
+        }
+
+        // The chosen folder, else beside the source
+        static string OutDir(ConvJob job, string src)
+        {
+            string d = job.Opts.OutDir;
+            if (!string.IsNullOrEmpty(d))
+            {
+                if (!Directory.Exists(d)) throw new DirectoryNotFoundException(Lang.T("Folder hasil tidak ada"));
+                return d;
+            }
+            return Path.GetDirectoryName(src.TrimEnd('\\'));
+        }
+
         static void One(ConvJob job, string src, string id)
         {
             var kind = KindOf(src);
-            string dir = Path.GetDirectoryName(src.TrimEnd('\\'));
+            string dir = OutDir(job, src);
             string name = Path.GetFileNameWithoutExtension(src.TrimEnd('\\'));
             if (kind == ConvKind.Zip && id == "unzip") { Unzip(job, src, dir, name); return; }
             if (id == "min") { Compress(job, src, kind, dir, name); return; }
             if (id == "ocr") { OcrText(job, src, kind, dir, name); return; }
+            if (id == "split") { SplitPdf(job, src, dir, name); return; }
             if (kind == ConvKind.Pdf && (id == "png" || id == "jpg")) { PdfToImages(job, src, dir, name, id); return; }
-            if (kind == ConvKind.Slides && (id == "png" || id == "jpg")) { SlidesToImages(job, src, dir, name, id); return; }
+            if ((kind == ConvKind.Slides || kind == ConvKind.Doc) && (id == "png" || id == "jpg")) { OfficeToImages(job, src, dir, name, id); return; }
             // Already that format: nothing to do
             if (Norm(Path.GetExtension(src)) == id) return;
             string outPath = UniqueFile(dir, name, "." + id);
@@ -397,11 +498,11 @@ namespace Deskmate
                         break;
                     case ConvKind.Image:
                         if (id == "pdf") ImagesToPdf(job, new List<string> { src }, outPath, false);
-                        else ImageTo(src, outPath, id);
+                        else ImageTo(job, src, outPath, id);
                         break;
                     case ConvKind.Video:
                     case ConvKind.Audio:
-                        Ffmpeg(job, src, outPath, FfmpegArgs(id));
+                        Media(job, src, outPath, id);
                         break;
                     case ConvKind.Markdown:
                     case ConvKind.Html:

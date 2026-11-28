@@ -27,6 +27,7 @@ namespace Deskmate
             AddWork(d);
             AddQuota(d);
             AddSetup(d);
+            AddConvert(d);
             return d;
         }
 

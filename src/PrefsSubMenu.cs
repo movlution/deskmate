@@ -34,6 +34,7 @@ namespace Deskmate
             class PageHeader : KitControl
             {
                 public char Glyph;
+                public string Id = "";
                 public string Title = "", Note = "", Status = "";
                 public Color Tile;
                 public bool ShowPaletteDots;
@@ -54,6 +55,7 @@ namespace Deskmate
                     Color bg = Ink.Mix(KitInk.Group, tile, Ink.Light ? 0.06f : 0.105f);
                     Color edge = Ink.Mix(KitInk.Line, tile, Ink.Light ? 0.36f : 0.44f);
                     KitInk.FillRound(g, card, radius, bg);
+                    SettingsArt.DrawScene(g, Id, card, radius);
                     KitInk.StrokeRound(g, card, radius, edge, 1.2f * s);
 
                     // Left vertical accent bar (matching Hub Featured Hero cards)
@@ -71,8 +73,11 @@ namespace Deskmate
                     else
                     {
                         KitInk.Lift(g, iconRect, 12f * s, s * 0.75f);
-                        KitInk.FillRound(g, iconRect, 12f * s, tile);
-                        KitInk.Draw(g, Ink.Str(Glyph), Ink.Icons(22f * s), Ink.On(tile), iconRect, ContentAlignment.MiddleCenter);
+                        if (!SettingsArt.DrawTile(g, Id, iconRect))
+                        {
+                            KitInk.FillRound(g, iconRect, 12f * s, tile);
+                            KitInk.Draw(g, Ink.Str(Glyph), Ink.Icons(22f * s), Ink.On(tile), iconRect, ContentAlignment.MiddleCenter);
+                        }
                     }
 
                     // Live status pill (top-right) + optional 3-dot palette preview
@@ -115,7 +120,7 @@ namespace Deskmate
                     // Display title + readable subtitle
                     float tx = iconRect.Right + 15f * s;
                     float titleW = Math.Max(60f * s, rightLimit - tx);
-                    float noteW = Math.Max(60f * s, Width - tx - 16f * s);
+                    float noteW = Math.Max(60f * s, Width - tx - Math.Max(16f * s, SettingsArt.SceneReserve(Id, card.Height)));
                     KitInk.Draw(g, Title, Ink.Semi(17.5f * s), KitInk.Text, new RectangleF(tx, 16f * s, titleW, 25f * s), ContentAlignment.MiddleLeft);
                     KitInk.Draw(g, Note, Ink.Text(12f * s), KitInk.Sub, new RectangleF(tx, 43f * s, noteW, 20f * s), ContentAlignment.MiddleLeft);
                 }
@@ -567,9 +572,9 @@ namespace Deskmate
                     RectangleF l, m, r;
                     SlotRects(out l, out m, out r);
 
-                    DrawSideCard(g, l, false, prevTitle, prevGlyph, prevTile, hoverSlot == 0, pressSlot == 0, s);
+                    DrawSideCard(g, l, false, prevId, prevTitle, prevGlyph, prevTile, hoverSlot == 0, pressSlot == 0, s);
                     DrawHubButton(g, m, hoverSlot == 1, pressSlot == 1, s);
-                    DrawSideCard(g, r, true, nextTitle, nextGlyph, nextTile, hoverSlot == 2, pressSlot == 2, s);
+                    DrawSideCard(g, r, true, nextId, nextTitle, nextGlyph, nextTile, hoverSlot == 2, pressSlot == 2, s);
                     Ring(g, SlotRect(focusSlot), 11f * s);
                 }
 
@@ -592,7 +597,7 @@ namespace Deskmate
                     KitInk.Draw(g, label, f, KitInk.Text, new RectangleF(sx + iconW + gap, r.Y, Math.Max(20f * s, r.Right - (sx + iconW + gap) - 6f * s), r.Height), ContentAlignment.MiddleLeft);
                 }
 
-                void DrawSideCard(Graphics g, RectangleF r, bool isNext, string title, char glyph, Color tile, bool hover, bool press, float s)
+                void DrawSideCard(Graphics g, RectangleF r, bool isNext, string id, string title, char glyph, Color tile, bool hover, bool press, float s)
                 {
                     Color accent = tile.IsEmpty ? KitInk.Accent : tile;
                     float rad = 11f * s;
@@ -612,7 +617,7 @@ namespace Deskmate
                         // ← [badge] Sebelumnya / Title
                         KitInk.Draw(g, "\uE72B", Ink.Icons(11.5f * s), hover ? accent : KitInk.Faint, new RectangleF(r.X + 8f * s, r.Y, 18f * s, r.Height), ContentAlignment.MiddleCenter);
                         var br = new RectangleF(r.X + 30f * s, by, badge, badge);
-                        DrawBadge(g, br, glyph, tile, s);
+                        DrawBadge(g, br, id, glyph, tile, s);
                         float tx = br.Right + 10f * s;
                         float tw = Math.Max(20f * s, r.Right - tx - 10f * s);
                         KitInk.Draw(g, hint, Ink.Text(10f * s), KitInk.Faint, new RectangleF(tx, r.Y + 7f * s, tw, 14f * s), ContentAlignment.MiddleLeft);
@@ -623,7 +628,7 @@ namespace Deskmate
                         // Berikutnya / Title [badge] →
                         KitInk.Draw(g, "\uE72A", Ink.Icons(11.5f * s), hover ? accent : KitInk.Faint, new RectangleF(r.Right - 26f * s, r.Y, 18f * s, r.Height), ContentAlignment.MiddleCenter);
                         var br = new RectangleF(r.Right - 30f * s - badge, by, badge, badge);
-                        DrawBadge(g, br, glyph, tile, s);
+                        DrawBadge(g, br, id, glyph, tile, s);
                         float tx = r.X + 12f * s;
                         float tw = Math.Max(20f * s, br.Left - tx - 10f * s);
                         KitInk.Draw(g, hint, Ink.Text(10f * s), KitInk.Faint, new RectangleF(tx, r.Y + 7f * s, tw, 14f * s), ContentAlignment.MiddleRight);
@@ -631,11 +636,11 @@ namespace Deskmate
                     }
                 }
 
-                static void DrawBadge(Graphics g, RectangleF br, char glyph, Color tile, float s)
+                static void DrawBadge(Graphics g, RectangleF br, string id, char glyph, Color tile, float s)
                 {
                     if (glyph == KitRow.MarkGlyph || tile.IsEmpty)
                         g.DrawIcon(KitWindow.AppIcon, Rectangle.Round(br));
-                    else
+                    else if (!SettingsArt.DrawTile(g, id, br))
                     {
                         KitInk.FillRound(g, br, 8f * s, tile);
                         KitInk.Draw(g, Ink.Str(glyph), Ink.Icons(13.5f * s), Ink.On(tile), br, ContentAlignment.MiddleCenter);

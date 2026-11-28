@@ -280,6 +280,12 @@ namespace Deskmate
             }) { IsBackground = true, Name = "live quota" }.Start();
         }
 
+        // Keep rows populated by --statusline or session logs when credential files are absent
+        internal static bool ShouldDropOnLiveGone(QuotaInfo q)
+        {
+            return q != null && (q.FromLive || !QuotaShown(q));
+        }
+
         void OnLiveQuota(List<LiveQuotaResult> list)
         {
             if (IsDisposed || Disposing) return;
@@ -289,11 +295,16 @@ namespace Deskmate
                 if (!settings.GetBool(r.Agent.Length > 0 ? StatusSetup.AgentsKey : "agent.quota", true)) continue;
                 string profile = r.Agent.Length > 0 ? r.Profile : StatusLine.SafeName(CleanText(r.Profile, 24));
                 if (r.Agent.Length == 0 && r.Profile.Length == 0) profile = "";
-                // Signed out: the row goes
-                if (r.Gone) { quotas.RemoveAll(q => q.Agent == r.Agent && (r.Profile == "*" || q.Profile == profile)); continue; }
-                if (r.Usage != null) OnUsage(new HookEvent { Agent = "usage", Name = "Usage", Data = r.Usage });
+                // Signed out: only drop live-sourced or empty rows so statusline/log data survives
+                if (r.Gone)
+                {
+                    quotas.RemoveAll(q => q.Agent == r.Agent && (r.Profile == "*" || q.Profile == profile) && ShouldDropOnLiveGone(q));
+                    continue;
+                }
+                if (r.Usage != null) OnUsage(new HookEvent { Agent = "usage", Name = "Usage", Data = r.Usage }, true);
                 var row = QuotaRow(r.Agent, profile);
                 row.Note = CleanText(r.Note, 40);
+                if (r.Usage == null && !QuotaShown(row)) row.FromLive = true;
                 if (row.AtUtc == DateTime.MinValue) row.AtUtc = DateTime.UtcNow;
             }
             quotaVersion++;

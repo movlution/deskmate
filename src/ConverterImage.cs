@@ -84,14 +84,25 @@ namespace Deskmate
             }
         }
 
-        static void ImageTo(string src, string outPath, string id)
+        // Decoded at the chosen size; icons keep every pixel for their own sizes
+        static Bitmap DecodeSized(string src, ConvOpts o)
         {
-            if (id == "webp") { ImageViaFfmpeg(src, outPath); return; }
-            using (var bmp = Decode(src))
+            var bmp = Decode(src);
+            float k = o.ScaleK;
+            if (k >= 1f) return bmp;
+            try { return Scaled(bmp, Math.Max(1, (int)Math.Round(bmp.Width * k)), Math.Max(1, (int)Math.Round(bmp.Height * k))); }
+            finally { bmp.Dispose(); }
+        }
+
+        static void ImageTo(ConvJob job, string src, string outPath, string id)
+        {
+            var o = job.Opts;
+            if (id == "webp") { ImageViaFfmpeg(job, src, outPath); return; }
+            using (var bmp = id == "ico" ? Decode(src) : DecodeSized(src, o))
             {
                 switch (id)
                 {
-                    case "jpg": File.WriteAllBytes(outPath, Jpeg(bmp, 92)); break;
+                    case "jpg": File.WriteAllBytes(outPath, Jpeg(bmp, o.By(97L, 92L, 78L))); break;
                     case "png": bmp.Save(outPath, ImageFormat.Png); break;
                     case "bmp": using (var flat = Flatten(bmp)) flat.Save(outPath, ImageFormat.Bmp); break;
                     case "tiff": bmp.Save(outPath, ImageFormat.Tiff); break;
@@ -103,13 +114,96 @@ namespace Deskmate
         }
 
         // WIC has no WebP encoder
-        static void ImageViaFfmpeg(string src, string outPath)
+        static void ImageViaFfmpeg(ConvJob job, string src, string outPath)
         {
             string tmp = Path.Combine(Path.GetTempPath(), "deskmate-" + Guid.NewGuid().ToString("N") + ".png");
             try
             {
-                using (var bmp = Decode(src)) bmp.Save(tmp, ImageFormat.Png);
-                Ffmpeg(null, tmp, outPath, "-c:v libwebp -quality 90");
+                using (var bmp = DecodeSized(src, job.Opts)) bmp.Save(tmp, ImageFormat.Png);
+                Ffmpeg(null, tmp, outPath, "-c:v libwebp -quality " + job.Opts.By(96, 90, 72));
+            }
+            finally { TryDelete(tmp); }
+        }
+
+        // Pictures stacked top to bottom, centred on the widest
+        static void Stitch(ConvJob job, string outPath)
+        {
+            var parts = new List<Bitmap>();
+            try
+            {
+                for (int i = 0; i < job.Files.Count && !job.Cancelled; i++)
+                {
+                    job.Index = i;
+                    job.Ping();
+                    parts.Add(DecodeSized(job.Files[i], job.Opts));
+                }
+                if (job.Cancelled) return;
+                int w = 0;
+                long h = 0;
+                foreach (var b in parts) { w = Math.Max(w, b.Width); h += b.Height; }
+                if (h > 60000 || (long)w * h > 150000000L) throw new InvalidOperationException(Lang.T("Gambar terlalu besar untuk digabung"));
+                bool jpg = Path.GetExtension(outPath).Equals(".jpg", StringComparison.OrdinalIgnoreCase);
+                using (var sheet = new Bitmap(w, (int)h, PixelFormat.Format32bppArgb))
+                {
+                    using (var g = Graphics.FromImage(sheet))
+                    {
+                        g.Clear(jpg ? Color.White : Color.Transparent);
+                        int y = 0;
+                        foreach (var b in parts)
+                        {
+                            g.DrawImage(b, new Rectangle((w - b.Width) / 2, y, b.Width, b.Height));
+                            y += b.Height;
+                        }
+                    }
+                    if (jpg) File.WriteAllBytes(outPath, Jpeg(sheet, job.Opts.By(97L, 92L, 78L)));
+                    else sheet.Save(outPath, ImageFormat.Png);
+                }
+            }
+            finally { foreach (var b in parts) b.Dispose(); }
+        }
+
+        // Frames share the first picture's size; ffmpeg picks the palette
+        static void AnimatedGif(ConvJob job, string outPath)
+        {
+            string tmp = Path.Combine(Path.GetTempPath(), "deskmate-gif-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tmp);
+            try
+            {
+                Size frame = Size.Empty;
+                for (int i = 0; i < job.Files.Count && !job.Cancelled; i++)
+                {
+                    job.Index = i;
+                    job.Part = 0.5f * i / job.Files.Count;
+                    job.Ping();
+                    using (var bmp = DecodeSized(job.Files[i], job.Opts))
+                    {
+                        if (frame.IsEmpty)
+                        {
+                            // GIFs stay modest: long side by quality
+                            int cap = job.Opts.By(1280, 800, 480);
+                            double k = Math.Min(1.0, (double)cap / Math.Max(bmp.Width, bmp.Height));
+                            frame = new Size(Math.Max(2, (int)(bmp.Width * k) / 2 * 2), Math.Max(2, (int)(bmp.Height * k) / 2 * 2));
+                        }
+                        using (var f = new Bitmap(frame.Width, frame.Height, PixelFormat.Format24bppRgb))
+                        {
+                            using (var g = Graphics.FromImage(f))
+                            {
+                                g.Clear(Color.White);
+                                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                                double k = Math.Min((double)frame.Width / bmp.Width, (double)frame.Height / bmp.Height);
+                                float dw = (float)(bmp.Width * k), dh = (float)(bmp.Height * k);
+                                g.DrawImage(bmp, new RectangleF((frame.Width - dw) / 2, (frame.Height - dh) / 2, dw, dh));
+                            }
+                            f.Save(Path.Combine(tmp, "f" + i.ToString("D4", CultureInfo.InvariantCulture) + ".png"), ImageFormat.Png);
+                        }
+                    }
+                }
+                if (job.Cancelled) return;
+                job.Part = -1;
+                job.Ping();
+                FfmpegIn(job, "-framerate 2 -i " + Q(Path.Combine(tmp, "f%04d.png")), outPath,
+                    "-vf \"split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a\" -loop 0");
             }
             finally { TryDelete(tmp); }
         }
@@ -151,19 +245,29 @@ namespace Deskmate
             }
         }
 
-        // PDF: one A4 page per image, JPEG inside
+        // PDF: one page per image (A4, Letter, or the image's own size), JPEG inside
         static void ImagesToPdf(ConvJob job, List<string> files, string outPath, bool track)
         {
-            const float PageW = 595.28f, PageH = 841.89f, Margin = 28f;
+            var o = job.Opts;
+            bool fit = o.Page == 2;
+            float PageW = o.Page == 1 ? 612f : 595.28f, PageH = o.Page == 1 ? 792f : 841.89f, Margin = fit ? 0f : 28f;
             var pages = new List<byte[]>();
+            // Pixels kept, and the size they are laid out at: scaling saves bytes, not page space
             var dims = new List<Size>();
+            var shown = new List<Size>();
             for (int i = 0; i < files.Count && !job.Cancelled; i++)
             {
                 if (track) { job.Index = i; job.Ping(); }
-                using (var bmp = Decode(files[i]))
+                using (var full = Decode(files[i]))
                 {
-                    pages.Add(Jpeg(bmp, 88));
-                    dims.Add(bmp.Size);
+                    shown.Add(full.Size);
+                    float sk = o.ScaleK;
+                    using (var bmp = sk < 1f ? Scaled(full, Math.Max(1, (int)Math.Round(full.Width * sk)), Math.Max(1, (int)Math.Round(full.Height * sk))) : null)
+                    {
+                        var use = bmp ?? full;
+                        pages.Add(Jpeg(use, o.By(95L, 88L, 72L)));
+                        dims.Add(use.Size);
+                    }
                 }
             }
             if (job.Cancelled) return;
@@ -181,9 +285,11 @@ namespace Deskmate
                 for (int i = 0; i < n; i++)
                 {
                     int pg = 3 + i * 3, ct = pg + 1, im = pg + 2;
-                    var d = dims[i];
+                    var d = shown[i];
                     bool wide = d.Width > d.Height;
                     float pw = wide ? PageH : PageW, ph = wide ? PageW : PageH;
+                    // Own size: the page is the picture at 96 dpi
+                    if (fit) { pw = Math.Max(1f, d.Width * 0.75f); ph = Math.Max(1f, d.Height * 0.75f); }
                     // 96 dpi at most, never blown up
                     float k = Math.Min(0.75f, Math.Min((pw - 2 * Margin) / d.Width, (ph - 2 * Margin) / d.Height));
                     float dw = d.Width * k, dh = d.Height * k;
@@ -193,14 +299,14 @@ namespace Deskmate
                     offsets.Add(fs.Position);
                     put(ct + " 0 obj\n<< /Length " + draw.Length + " >>\nstream\n" + draw + "\nendstream\nendobj\n");
                     offsets.Add(fs.Position);
-                    put(im + " 0 obj\n<< /Type /XObject /Subtype /Image /Width " + d.Width + " /Height " + d.Height + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + pages[i].Length + " >>\nstream\n");
+                    put(im + " 0 obj\n<< /Type /XObject /Subtype /Image /Width " + dims[i].Width + " /Height " + dims[i].Height + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + pages[i].Length + " >>\nstream\n");
                     fs.Write(pages[i], 0, pages[i].Length);
                     put("\nendstream\nendobj\n");
                 }
                 long xref = fs.Position;
                 var sb = new StringBuilder();
                 sb.Append("xref\n0 ").Append(objs + 1).Append("\n0000000000 65535 f \n");
-                foreach (var o in offsets) sb.Append(o.ToString("D10")).Append(" 00000 n \n");
+                foreach (var off in offsets) sb.Append(off.ToString("D10")).Append(" 00000 n \n");
                 sb.Append("trailer\n<< /Size ").Append(objs + 1).Append(" /Root 1 0 R >>\nstartxref\n").Append(xref).Append("\n%%EOF\n");
                 put(sb.ToString());
             }
@@ -269,8 +375,8 @@ namespace Deskmate
                     using (var page = doc.GetPage(i))
                     using (var ms = new InMemoryRandomAccessStream())
                     {
-                        // 192 dpi: sharp text, sane size
-                        var opt = new PdfPageRenderOptions { DestinationWidth = (uint)Math.Max(1, page.Size.Width * 2) };
+                        // 288, 192, or 96 dpi by quality
+                        var opt = new PdfPageRenderOptions { DestinationWidth = (uint)Math.Max(1, page.Size.Width * job.Opts.By(3.0, 2.0, 1.0)) };
                         if (id == "jpg") opt.BitmapEncoderId = BitmapEncoder.JpegEncoderId;
                         W(page.RenderToStreamAsync(ms, opt));
                         File.WriteAllBytes(outPath, ReadAll(ms));

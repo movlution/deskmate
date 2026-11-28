@@ -26,18 +26,69 @@ namespace Deskmate
         class WeatherDay { public DateTime Date; public int Max, Min, Code, Pop; }
 
         WeatherNow weather;
-        DateTime weatherAskedUtc = DateTime.MinValue;
+        DateTime weatherNextUtc = DateTime.MinValue;
+        int weatherFails, weatherGen;
         bool weatherBusy, rainWarned;
 
         bool WeatherOn { get { return settings.GetBool("weather", false) && PrayCity() != null; } }
 
+        // Short backoff when no weather is shown yet (e.g. boot before Wi-Fi), gentler when refreshing cached data
+        internal static TimeSpan WeatherRetryDelay(int fails, bool hasData)
+        {
+            if (fails <= 0) return TimeSpan.FromMinutes(30);
+            if (!hasData)
+            {
+                int[] secs = { 15, 30, 60, 120, 300 };
+                return TimeSpan.FromSeconds(secs[Math.Min(fails - 1, secs.Length - 1)]);
+            }
+            int[] mins = { 2, 5, 10 };
+            return TimeSpan.FromMinutes(mins[Math.Min(fails - 1, mins.Length - 1)]);
+        }
+
+        internal void RetryWeather()
+        {
+            if (!WeatherOn || weatherBusy) return;
+            weatherFails = 0;
+            weatherNextUtc = DateTime.MinValue;
+            TickWeather();
+        }
+
+        internal void RefreshWeather(bool clearCurrent = false)
+        {
+            weatherGen++;
+            weatherFails = 0;
+            weatherNextUtc = DateTime.MinValue;
+            if (clearCurrent)
+            {
+                weather = null;
+                rainWarned = false;
+                SyncDockWeather();
+            }
+            TickWeather();
+        }
+
+        void SyncDockWeather()
+        {
+            foreach (var dock in dockWins.Values) dock.SyncWeather();
+        }
+
         void TickWeather()
         {
-            if (!WeatherOn) { weather = null; return; }
-            if (dormant || weatherBusy || (DateTime.UtcNow - weatherAskedUtc).TotalMinutes < 30) return;
-            weatherAskedUtc = DateTime.UtcNow;
-            weatherBusy = true;
+            if (!WeatherOn)
+            {
+                bool had = weather != null;
+                weather = null;
+                weatherFails = 0;
+                weatherNextUtc = DateTime.MinValue;
+                rainWarned = false;
+                if (had) SyncDockWeather();
+                return;
+            }
+            if (dormant || weatherBusy || DateTime.UtcNow < weatherNextUtc) return;
             var c = PrayCity();
+            if (c == null) return;
+            weatherBusy = true;
+            int gen = weatherGen;
             string url = string.Format(CultureInfo.InvariantCulture,
                 "https://api.open-meteo.com/v1/forecast?latitude={0:0.####}&longitude={1:0.####}&current=temperature_2m,weather_code,apparent_temperature&minutely_15=precipitation&forecast_minutely_15=8" +
                 "&hourly=temperature_2m,weather_code,precipitation_probability&forecast_hours=12&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=5&timezone=auto",
@@ -52,7 +103,12 @@ namespace Deskmate
                     else Log.Write("weather: " + r.Status);
                 }
                 catch (Exception ex) { Log.Write("weather: " + ex.GetType().Name); }
-                Post(() => { weatherBusy = false; OnWeather(w); });
+                Post(() =>
+                {
+                    weatherBusy = false;
+                    if (gen != weatherGen) { TickWeather(); return; }
+                    OnWeather(w);
+                });
             });
         }
 
@@ -124,7 +180,14 @@ namespace Deskmate
 
         void OnWeather(WeatherNow w)
         {
-            if (w == null) return;
+            if (w == null)
+            {
+                weatherFails++;
+                weatherNextUtc = DateTime.UtcNow + WeatherRetryDelay(weatherFails, weather != null);
+                return;
+            }
+            weatherFails = 0;
+            weatherNextUtc = DateTime.UtcNow + WeatherRetryDelay(0, true);
             weather = w;
             // One heads-up per wet spell
             if (w.Raining || w.RainIn < 0) { if (w.RainIn < 0 && !w.Raining) rainWarned = false; }
@@ -136,9 +199,11 @@ namespace Deskmate
                 {
                     t.Glyph = '';
                     t.Title = w.RainIn < 15 ? Lang.T("Sebentar lagi hujan") : Lang.F("Hujan sekitar {0} menit lagi", (w.RainIn + 7) / 15 * 15);
-                    t.Detail = (string)PrayCity()[0];
+                    var city = PrayCity();
+                    t.Detail = city != null ? (string)city[0] : "";
                 }
             }
+            SyncDockWeather();
             if (expanded && page == PageHome) Kick();
         }
 

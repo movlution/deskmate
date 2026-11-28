@@ -42,20 +42,111 @@ namespace Deskmate
             return sb.ToString();
         }
 
-        static string FfmpegArgs(string id)
+        // Shorter side capped for 1080p, 720p, 480p; even sizes for H.264
+        static string ScaleFilter(ConvOpts o)
         {
+            int side = o.ShortSide;
+            if (side <= 0) return "";
+            string n = side.ToString(CultureInfo.InvariantCulture);
+            return " -vf \"scale='if(gt(iw,ih),-2,trunc(min(" + n + ",iw)/2)*2)':'if(gt(iw,ih),trunc(min(" + n + ",ih)/2)*2,-2)'\"";
+        }
+
+        static string FfmpegArgs(string id, ConvOpts o)
+        {
+            string h264 = "-c:v libx264 -preset veryfast -crf " + o.By(18, 23, 28) + ScaleFilter(o) + " -pix_fmt yuv420p -c:a aac -b:a " + o.By("192k", "160k", "128k");
             switch (id)
             {
-                case "mp4": return "-c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 160k -movflags +faststart";
-                case "webm": return "-c:v libvpx-vp9 -crf 33 -b:v 0 -row-mt 1 -deadline good -cpu-used 4 -c:a libopus -b:a 128k";
-                case "gif": return "-an -vf \"fps=12,scale='min(480,iw)':-2:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse\" -loop 0";
-                case "mp3": return "-vn -c:a libmp3lame -q:a 2";
-                case "m4a": return "-vn -c:a aac -b:a 192k";
+                case "mp4": case "mov": return h264 + " -movflags +faststart";
+                case "mkv": return h264;
+                case "webm": return "-c:v libvpx-vp9 -crf " + o.By(28, 33, 38) + " -b:v 0 -row-mt 1 -deadline good -cpu-used 4" + ScaleFilter(o) + " -c:a libopus -b:a " + o.By("160k", "128k", "96k");
+                case "gif":
+                    string fps = o.By("15", "12", "10"), wide = o.By("640", "480", "320");
+                    return "-an -vf \"fps=" + fps + ",scale='min(" + wide + ",iw)':-2:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse\" -loop 0";
+                case "mp3": return "-vn -c:a libmp3lame -q:a " + o.By(0, 2, 5);
+                case "m4a": return "-vn -c:a aac -b:a " + o.By("256k", "192k", "128k");
                 case "wav": return "-vn -c:a pcm_s16le";
                 case "flac": return "-vn -c:a flac";
-                case "ogg": return "-vn -c:a libvorbis -q:a 5";
+                case "ogg": return "-vn -c:a libvorbis -q:a " + o.By(7, 5, 3);
+                case "opus": return "-vn -c:a libopus -b:a " + o.By("192k", "128k", "96k");
                 default: throw new NotSupportedException(id);
             }
+        }
+
+        // Video and audio: same streams in a new box when they fit, else encoded
+        static void Media(ConvJob job, string src, string outPath, string id)
+        {
+            var o = job.Opts;
+            if ((id == "mp4" || id == "mov" || id == "mkv") && o.Res == 0 && o.Quality < 2)
+            {
+                string v, a;
+                Probe(src, out v, out a);
+                if (CanRemux(id, v, a))
+                {
+                    // Instant and lossless; a picky file falls through to a real encode
+                    try { Ffmpeg(job, src, outPath, "-map 0:v:0 -map 0:a:0? -c copy" + (id == "mkv" ? "" : " -movflags +faststart" + (v == "hevc" ? " -tag:v hvc1" : ""))); return; }
+                    catch (Exception ex)
+                    {
+                        if (job.Cancelled) return;
+                        Log.Write("convert remux: " + ex.Message);
+                        TryDelete(outPath);
+                    }
+                }
+            }
+            Ffmpeg(job, src, outPath, FfmpegArgs(id, o));
+        }
+
+        static bool CanRemux(string id, string v, string a)
+        {
+            if (v == null) return false;
+            if (id == "mkv") return v != "mjpeg" && v != "png";
+            bool video = v == "h264" || v == "hevc" || v == "mpeg4" || (id == "mp4" && v == "av1");
+            bool audio = a == null || a == "aac" || a == "mp3" || a == "alac" || a == "ac3" || a == "eac3";
+            return video && audio;
+        }
+
+        // First video and audio codec, as ffmpeg names them
+        static void Probe(string src, out string video, out string audio)
+        {
+            video = audio = null;
+            string exe = Converter.Tool("ffmpeg");
+            if (exe == null) return;
+            try
+            {
+                using (var p = Launch(exe, "-hide_banner -nostdin -i " + Q(src), false))
+                {
+                    string err = p.StandardError.ReadToEnd();
+                    if (!p.WaitForExit(20000)) { Kill(p); return; }
+                    foreach (var line in err.Split('\n'))
+                    {
+                        if (line.IndexOf("Stream #", StringComparison.Ordinal) < 0 || line.IndexOf("attached pic", StringComparison.Ordinal) >= 0) continue;
+                        foreach (var kind in new[] { "Video: ", "Audio: " })
+                        {
+                            int at = line.IndexOf(kind, StringComparison.Ordinal);
+                            if (at < 0) continue;
+                            string rest = line.Substring(at + kind.Length);
+                            int end = rest.IndexOfAny(new[] { ' ', ',', '(' });
+                            string codec = (end < 0 ? rest : rest.Substring(0, end)).Trim();
+                            if (kind[0] == 'V' && video == null) video = codec;
+                            if (kind[0] == 'A' && audio == null) audio = codec;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) { Log.Write("convert probe: " + ex.Message); }
+        }
+
+        // Back to back, one MP3; ffmpeg evens out rates and channels
+        static void JoinAudio(ConvJob job, string outPath)
+        {
+            var ins = new StringBuilder();
+            var graph = new StringBuilder();
+            for (int i = 0; i < job.Files.Count; i++)
+            {
+                ins.Append(i == 0 ? "" : " ").Append("-i ").Append(Q(job.Files[i]));
+                graph.Append('[').Append(i).Append(":a:0]");
+            }
+            graph.Append("concat=n=").Append(job.Files.Count).Append(":v=0:a=1[out]");
+            FfmpegIn(job, ins.ToString(), outPath, "-filter_complex " + Q(graph.ToString()) + " -map [out] -c:a libmp3lame -q:a " + job.Opts.By(0, 2, 5));
         }
 
         static Process Launch(string exe, string args, bool readOut)
@@ -87,24 +178,29 @@ namespace Deskmate
             catch (Exception ex) { Log.Write("convert kill: " + ex.Message); }
         }
 
-        static void Ffmpeg(ConvJob job, string src, string outPath, string args)
+        static void Ffmpeg(ConvJob job, string src, string outPath, string args) { FfmpegIn(job, "-i " + Q(src), outPath, args); }
+
+        // Inputs come ready, "-i a -i b"; their lengths add up for progress
+        static void FfmpegIn(ConvJob job, string inputs, string outPath, string args)
         {
             string exe = Converter.Tool("ffmpeg");
             if (exe == null) throw new FileNotFoundException(Lang.T("ffmpeg tidak ditemukan"));
-            string line = "-hide_banner -nostdin -y -i " + Q(src) + " " + args + " -progress pipe:1 -nostats " + Q(outPath);
+            string line = "-hide_banner -nostdin -y " + inputs + " " + args + " -progress pipe:1 -nostats " + Q(outPath);
             using (var p = Launch(exe, line, true))
             {
                 if (job != null) job.Proc = p;
                 double total = 0;
+                bool outputs = false;
                 var tail = new Queue<string>();
                 var err = new Thread(delegate ()
                 {
                     string l;
                     while ((l = p.StandardError.ReadLine()) != null)
                     {
+                        if (l.StartsWith("Output #", StringComparison.Ordinal)) outputs = true;
                         int at = l.IndexOf("Duration: ");
                         TimeSpan ts;
-                        if (at >= 0 && total == 0 && TimeSpan.TryParse(l.Substring(at + 10, Math.Min(11, l.Length - at - 10)), CultureInfo.InvariantCulture, out ts)) total = ts.TotalSeconds;
+                        if (at >= 0 && !outputs && TimeSpan.TryParse(l.Substring(at + 10, Math.Min(11, l.Length - at - 10)), CultureInfo.InvariantCulture, out ts)) total += ts.TotalSeconds;
                         lock (tail) { tail.Enqueue(l); if (tail.Count > 4) tail.Dequeue(); }
                     }
                 }) { IsBackground = true };
@@ -192,8 +288,8 @@ namespace Deskmate
 
         static string TempPath(string ext) { return Path.Combine(Path.GetTempPath(), "deskmate-" + Guid.NewGuid().ToString("N") + ext); }
 
-        // Slides: through PDF, then a picture per slide
-        static void SlidesToImages(ConvJob job, string src, string dir, string name, string id)
+        // Slides and documents: through PDF, then a picture per page
+        static void OfficeToImages(ConvJob job, string src, string dir, string name, string id)
         {
             string tmp = TempPath(".pdf");
             try
@@ -204,7 +300,24 @@ namespace Deskmate
             finally { TryDelete(tmp); }
         }
 
-        // Images become pages first, then one PDF
+        // Every page its own PDF, in a folder named after the file
+        static void SplitPdf(ConvJob job, string src, string dir, string name)
+        {
+            if (KindOf(src) != ConvKind.Pdf) throw new NotSupportedException(Path.GetExtension(src));
+            string outDir = UniqueDir(dir, name);
+            Directory.CreateDirectory(outDir);
+            try
+            {
+                var made = PdfLite.Split(src, i => Path.Combine(outDir, name + "-" + (i + 1) + ".pdf"), k => { if (job.Cancelled) throw new OperationCanceledException(); job.Part = k; job.Ping(); });
+                // Windows must read the first one back as a single page
+                if (made.Count == 0 || PdfPages(made[0], true) != 1) throw new InvalidDataException(Lang.T("Hasilnya tidak lolos pemeriksaan"));
+            }
+            catch (Exception) { TryDelete(outDir); throw; }
+            if (job.Cancelled) { TryDelete(outDir); return; }
+            lock (job.Outputs) job.Outputs.Add(outDir);
+        }
+
+        // Images and documents become pages first, then one PDF
         static void MergePdfs(ConvJob job, string outPath)
         {
             var parts = new List<string>();
@@ -217,11 +330,15 @@ namespace Deskmate
                     job.Index = i;
                     job.Ping();
                     string part = job.Files[i];
-                    if (KindOf(part) == ConvKind.Image)
+                    var kind = KindOf(part);
+                    if (kind != ConvKind.Pdf)
                     {
                         part = TempPath(".pdf");
                         temps.Add(part);
-                        ImagesToPdf(job, new List<string> { job.Files[i] }, part, false);
+                        if (kind == ConvKind.Image) ImagesToPdf(job, new List<string> { job.Files[i] }, part, false);
+                        else if (kind == ConvKind.Markdown) MarkdownToPdf(job, job.Files[i], part);
+                        else Office(job, job.Files[i], part, "pdf");
+                        if (job.Cancelled) return;
                     }
                     parts.Add(part);
                     pages += PdfPages(part, false);

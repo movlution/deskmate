@@ -39,6 +39,7 @@ namespace Deskmate
             DockApp AppForWindow(IntPtr hwnd)
             {
                 if (hwnd != IntPtr.Zero && hwnd == isle.WorkHwnd) return PreviewAppById("sys:work");
+                if (hwnd != IntPtr.Zero && hwnd == isle.SuruhHwnd) return PreviewAppById("sys:suruh");
                 return apps.Find(a => !a.Leaving && a.Wins.Exists(w => w.H == hwnd));
             }
 

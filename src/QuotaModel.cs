@@ -23,6 +23,7 @@ namespace Deskmate
         public string Profile = "", Model = "", Tail = "", Agent = "", Who = "";
         // Signed in, no readable window: "Terhubung · Pro"
         public string Note = "";
+        public bool FromLive;
         public DateTime AtUtc;
         public readonly QuotaWindow[] W = { new QuotaWindow(), new QuotaWindow(), new QuotaWindow() };
     }

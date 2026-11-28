@@ -25,6 +25,7 @@ namespace Deskmate
             protected override void Opening(Rectangle mon, int barTop)
             {
                 var w = Now;
+                if (isle.WeatherOn && w == null) isle.RetryWeather();
                 if (!isle.WeatherOn) H = 170;
                 else if (w == null) H = 130;
                 else H = 196 + (w.Hours.Count > 0 ? HourH + 12 : 0) + Math.Min(5, w.Days.Count) * DayH + 16 + Foot;

@@ -126,6 +126,12 @@ namespace Deskmate
                 work.Enabled = on;
                 depControls.Add(work);
                 add(Row(Lang.T("Tombol tugas dan catatan"), Lang.T("Satu tombol untuk mengakses Tugas dan catatan"), work));
+                var suruh = Switch("dockbar.suruh", true, null);
+                suruh.Enabled = on;
+                depControls.Add(suruh);
+                var suruhRow = Row(Lang.T("Tombol Suruh Deskmate"), Lang.T("Satu tombol untuk membuka obrolan Suruh Deskmate"), suruh);
+                suruhRow.Glyph = (char)0xE8F2;
+                add(suruhRow);
                 var dockShelf = Switch("dockbar.shelf", true, null);
                 dockShelf.Enabled = on;
                 depControls.Add(dockShelf);

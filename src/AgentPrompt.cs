@@ -25,7 +25,7 @@ namespace Deskmate
         [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
         [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
 
-        const int PromptMax = 4000;
+        const int PromptMax = 4000, PromptChunkChars = 64;
 
         bool SharesWindow(AgentSession s)
         {
@@ -34,13 +34,31 @@ namespace Deskmate
             return false;
         }
 
-        // One line, no hidden or control chars
-        static string CleanPrompt(string text)
+        // One line, no hidden or control chars; collapses \r\n cleanly to a single space
+        internal static string CleanPrompt(string text)
         {
             var clean = new StringBuilder((text ?? "").Length);
-            foreach (char ch in Fmt.StripHidden(text)) clean.Append(char.IsControl(ch) ? ' ' : ch);
+            bool lastSpace = false;
+            foreach (char ch in Fmt.StripHidden(text))
+            {
+                if (char.IsControl(ch))
+                {
+                    if (!lastSpace) { clean.Append(' '); lastSpace = true; }
+                    continue;
+                }
+                clean.Append(ch);
+                lastSpace = ch == ' ';
+            }
             string s = clean.ToString().Trim();
             return s.Length > PromptMax ? s.Substring(0, PromptMax) : s;
+        }
+
+        // Next chunk length without splitting a UTF-16 surrogate pair
+        internal static int NextPromptChunk(string text, int offset, int maxChars)
+        {
+            int len = Math.Min(maxChars, text.Length - offset);
+            if (len > 1 && offset + len < text.Length && char.IsHighSurrogate(text[offset + len - 1])) len--;
+            return len;
         }
 
         static string AgentKind(AgentSession s)
@@ -74,7 +92,11 @@ namespace Deskmate
                 text = CleanPrompt(f.Prompt);
             }
             if (text.Length == 0) return;
-            if (!TerminalFinder.Focus(s.Window)) { ShowInfo(Ink.IcoTerminal, Lang.T("Terminal tidak bisa dibuka"), s.Project, true); return; }
+            if (!TerminalFinder.Focus(s.Window))
+            {
+                s.Window = TerminalFinder.ForPid(s.Pid);
+                if (!TerminalFinder.Focus(s.Window)) { ShowInfo(Ink.IcoTerminal, Lang.T("Terminal tidak bisa dibuka"), s.Project, true); return; }
+            }
             IntPtr want = GetAncestor(s.Window, 3);
             string project = s.Project;
             // Waiting happens off the UI thread
@@ -101,17 +123,33 @@ namespace Deskmate
             // Focus can move during the wait
             if (GetAncestor(GetForegroundWindow(), 3) != want) return Lang.T("Terminal kehilangan fokus");
 
-            var inputs = new INPUT[text.Length * 2 + 2];
-            for (int i = 0; i < text.Length; i++)
+            int structSize = Marshal.SizeOf(typeof(INPUT));
+            for (int pos = 0; pos < text.Length; )
             {
-                inputs[i * 2] = Key(0, text[i], 4);
-                inputs[i * 2 + 1] = Key(0, text[i], 4 | 2);
+                if (GetAncestor(GetForegroundWindow(), 3) != want) return Lang.T("Terminal kehilangan fokus");
+                int take = NextPromptChunk(text, pos, PromptChunkChars);
+                var chunk = new INPUT[take * 2];
+                for (int i = 0; i < take; i++)
+                {
+                    chunk[i * 2] = Key(0, text[pos + i], 4);
+                    chunk[i * 2 + 1] = Key(0, text[pos + i], 4 | 2);
+                }
+                uint sent = SendInput((uint)chunk.Length, chunk, structSize);
+                if (sent != chunk.Length)
+                {
+                    Log.Write("send prompt chunk: " + sent + "/" + chunk.Length + " err " + Marshal.GetLastWin32Error());
+                    return Lang.T("Gagal mengetik ke terminal");
+                }
+                pos += take;
+                if (pos < text.Length) Thread.Sleep(8);
             }
-            inputs[text.Length * 2] = Key(0x0D, '\0', 0);
-            inputs[text.Length * 2 + 1] = Key(0x0D, '\0', 2);
-            uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
-            if (sent == inputs.Length) return null;
-            Log.Write("send prompt: " + sent + "/" + inputs.Length + " err " + Marshal.GetLastWin32Error());
+            // Brief settle so TUI input buffers absorb the text before Enter submits
+            Thread.Sleep(35);
+            if (GetAncestor(GetForegroundWindow(), 3) != want) return Lang.T("Terminal kehilangan fokus");
+            var enter = new[] { Key(0x0D, '\0', 0), Key(0x0D, '\0', 2) };
+            uint sentEnter = SendInput((uint)enter.Length, enter, structSize);
+            if (sentEnter == enter.Length) return null;
+            Log.Write("send prompt enter: " + sentEnter + "/2 err " + Marshal.GetLastWin32Error());
             return Lang.T("Gagal mengetik ke terminal");
         }
 

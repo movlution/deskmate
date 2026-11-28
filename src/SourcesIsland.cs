@@ -185,7 +185,11 @@ namespace Deskmate
 
         void OnNetworkAvailability(object sender, System.Net.NetworkInformation.NetworkAvailabilityEventArgs e)
         {
-            if (e.IsAvailable) Post(delegate { ScheduleGoogleWorkSync(); });
+            if (e.IsAvailable) Post(delegate
+            {
+                ScheduleGoogleWorkSync();
+                if (WeatherOn && (weather == null || weatherFails > 0)) RetryWeather();
+            });
         }
 
         void MergeSyncedLists(List<TaskListInfo> synced, Dictionary<string, TaskListInfo> orig)

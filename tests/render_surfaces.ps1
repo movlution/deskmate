@@ -705,6 +705,32 @@ function Render-GuardToast([bool]$ram) {
 }
 $surfaces['island-guard-cpu'] = { Render-GuardToast $false }
 $surfaces['island-guard-ram'] = { Render-GuardToast $true }
+# Convert box over placeholder files; options folded or open
+function Render-ConvertBox([string[]]$names, [bool]$open) {
+    $isle = Get-Island
+    $dir = Join-Path $env:TEMP ("deskmate-convert-render-" + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $dir | Out-Null
+    $files = New-Object 'Collections.Generic.List[string]'
+    foreach ($n in $names) {
+        $p = Join-Path $dir $n
+        if ($n -like '*.png') { $b = New-Object Drawing.Bitmap(64, 48); $b.Save($p); $b.Dispose() } else { [IO.File]::WriteAllBytes($p, [byte[]]@(0)) }
+        $files.Add($p)
+    }
+    (Get-Member2 $isle 'settings').Set('convert.options', $open)
+    try {
+        [void](Invoke-Member2 $isle 'OpenConvert' @(, $files.ToArray()))
+        Render-IslandView 'Convert'
+    }
+    finally {
+        [void](Invoke-Member2 $isle 'CloseConvert')
+        Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+$surfaces['island-convert-images'] = { Render-ConvertBox @('page1.png', 'page2.png', 'page10.png') $false }
+$surfaces['island-convert-images-options'] = { Render-ConvertBox @('page1.png', 'page2.png') $true }
+$surfaces['island-convert-pdf'] = { Render-ConvertBox @('report.pdf') $true }
+$surfaces['island-convert-video'] = { Render-ConvertBox @('clip.mov') $true }
+$surfaces['island-convert-mixed'] = { Render-ConvertBox @('cover.png', 'notes.docx', 'scan.pdf') $false }
 $pageNames = (Get-DeskmateType 'Island').GetField('PageNames', $F).GetValue($null)
 for ($i = 0; $i -lt $pageNames.Length; $i++) {
     $surfaces["island-panel-$i-$($pageNames[$i].ToLower())"] = [scriptblock]::Create("Render-IslandView 'Panel' $i")

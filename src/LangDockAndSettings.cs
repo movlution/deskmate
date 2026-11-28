@@ -28,6 +28,10 @@ namespace Deskmate
             en.Add("Buka jendela baru", "New window");
             en.Add("Sematkan di Dock", "Pin to Dock");
             en.Add("Lepas dari Dock", "Unpin from Dock");
+            en.Add("Tombol Suruh Deskmate", "Ask Deskmate button");
+            en.Add("Satu tombol untuk membuka obrolan Suruh Deskmate", "One button to open the Ask Deskmate chat");
+            en.Add("Buka obrolan", "Open chat");
+            en.Add("Pengaturan AI", "AI settings");
             en.Add("Ditahan di Dock", "Held in the Dock");
             en.Add("Buka Rak", "Open Shelf");
             en.Add("Lepas untuk menahan di Dock", "Drop to hold in the Dock");

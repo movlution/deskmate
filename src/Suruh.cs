@@ -135,6 +135,7 @@ namespace Deskmate
             dictState = DictState.Working;
             Kick();
             ChatChanged(null);
+            SyncSuruhDock();
             var turns = ChatTurns(me);
             bool tasks = sources != null && (sources.Find("todoist") != null || sources.Find("notion") != null);
             ThreadPool.QueueUserWorkItem(delegate
@@ -152,6 +153,7 @@ namespace Deskmate
                     suruhBusy = false;
                     dictState = DictState.Off;
                     Kick();
+                    SyncSuruhDock();
                     if (result == null) SuruhDone(me, new ChatMsg { Text = error ?? Lang.F("{0} tidak menjawab", Ai.Label(Ai.Text)), Fix = "retry" });
                     else SuruhDone(me, result);
                 });

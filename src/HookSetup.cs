@@ -68,7 +68,7 @@ namespace Deskmate
             {
                 string file = Path.Combine(dir, "settings.json");
                 var root = Load(file);
-                if (root == null || !HasOurs(root, port)) continue;
+                if (root == null || !HasAnyOurs(root, port)) continue;
                 Backup(file);
                 var hooks = Hooks(root, false);
                 foreach (var ev in Events)
@@ -80,6 +80,22 @@ namespace Deskmate
                 }
                 if (hooks.Count == 0) root.Remove("hooks");
                 Save(file, root);
+            }
+        }
+
+        // Upgrade old 130s permission timeouts and purge leftover hooks from old ports
+        public static void Refresh(int port, string token)
+        {
+            if (string.IsNullOrEmpty(token)) return;
+            foreach (var dir in Profiles())
+            {
+                var root = Load(Path.Combine(dir, "settings.json"));
+                if (root == null || !HasOurs(root, port)) continue;
+                if (NeedsRefresh(root, port))
+                {
+                    Install(port, token);
+                    return;
+                }
             }
         }
 
@@ -99,13 +115,93 @@ namespace Deskmate
                 { "type", "http" },
                 { "url", Url(port) },
                 { "headers", new Dictionary<string, object> { { "X-Deskmate-Token", token } } },
-                { "timeout", ev == "PermissionRequest" ? 130 : 5 },
+                { "timeout", ev == "PermissionRequest" ? AgentHub.HookReplyTimeoutSeconds : 5 },
             };
+        }
+
+        static bool IsLoopbackHookUrl(string url)
+        {
+            const string prefix = "http://127.0.0.1:";
+            const string suffix = "/hook";
+            if (string.IsNullOrEmpty(url) || !url.StartsWith(prefix, StringComparison.Ordinal) || !url.EndsWith(suffix, StringComparison.Ordinal))
+                return false;
+            int len = url.Length - prefix.Length - suffix.Length;
+            if (len < 1 || len > 5) return false;
+            int p = 0;
+            for (int i = 0; i < len; i++)
+            {
+                char c = url[prefix.Length + i];
+                if (c < '0' || c > '9') return false;
+                p = p * 10 + (c - '0');
+            }
+            return p >= 1 && p <= 65535;
+        }
+
+        static bool ContainsLoopbackHookUrl(string cmd)
+        {
+            const string prefix = " http://127.0.0.1:";
+            int i = 0;
+            while ((i = cmd.IndexOf(prefix, i, StringComparison.Ordinal)) >= 0)
+            {
+                int start = i + 1;
+                int end = cmd.IndexOf("/hook", start, StringComparison.Ordinal);
+                if (end > start)
+                {
+                    int after = end + 5;
+                    if ((after == cmd.Length || cmd[after] == ';' || cmd[after] == ' ' || cmd[after] == '"' || cmd[after] == '\'') &&
+                        IsLoopbackHookUrl(cmd.Substring(start, after - start)))
+                        return true;
+                }
+                i = start;
+            }
+            return false;
         }
 
         static bool IsOurs(object handler, int port)
         {
             return Json.Str(handler, "url") == Url(port) || Json.Str(handler, "command").Contains(" " + Url(port));
+        }
+
+        static bool IsAnyOurs(object handler, int port)
+        {
+            if (IsOurs(handler, port)) return true;
+            string url = Json.Str(handler, "url");
+            if (IsLoopbackHookUrl(url) && Get(Get(handler, "headers"), "X-Deskmate-Token") != null) return true;
+            string cmd = Json.Str(handler, "command");
+            if (cmd.IndexOf("X-Deskmate-Token:", StringComparison.Ordinal) >= 0 && ContainsLoopbackHookUrl(cmd)) return true;
+            return false;
+        }
+
+        static bool HasAnyOurs(Dictionary<string, object> root, int port)
+        {
+            var hooks = Hooks(root, false);
+            foreach (var ev in Events)
+            {
+                object groups;
+                if (!hooks.TryGetValue(ev, out groups)) continue;
+                foreach (var gr in AsList(groups))
+                    foreach (var h in AsList(Get(gr, "hooks")))
+                        if (IsAnyOurs(h, port)) return true;
+            }
+            return false;
+        }
+
+        static bool NeedsRefresh(Dictionary<string, object> root, int port)
+        {
+            var hooks = Hooks(root, false);
+            foreach (var ev in Events)
+            {
+                object groups;
+                if (!hooks.TryGetValue(ev, out groups)) continue;
+                foreach (var gr in AsList(groups))
+                    foreach (var h in AsList(Get(gr, "hooks")))
+                    {
+                        if (IsAnyOurs(h, port) && !IsOurs(h, port)) return true;
+                        if (ev == "PermissionRequest" && IsOurs(h, port) && Json.Num(h, "timeout", 0) < AgentHub.HookReplyTimeoutSeconds)
+                            return true;
+                    }
+            }
+            return false;
         }
 
         static bool HasOurs(Dictionary<string, object> root, int port)
@@ -124,7 +220,7 @@ namespace Deskmate
             return true;
         }
 
-        // Event groups minus Deskmate's own
+        // Event groups minus Deskmate's own (including stale ports)
         static List<object> Strip(Dictionary<string, object> hooks, string ev, int port)
         {
             var kept = new List<object>();
@@ -134,7 +230,7 @@ namespace Deskmate
             {
                 bool ours = false;
                 foreach (var h in AsList(Get(gr, "hooks")))
-                    if (IsOurs(h, port)) ours = true;
+                    if (IsAnyOurs(h, port)) ours = true;
                 if (!ours) kept.Add(gr);
             }
             return kept;

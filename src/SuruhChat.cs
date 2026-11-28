@@ -48,6 +48,10 @@ namespace Deskmate
 
         static string ChatPath { get { return Path.Combine(Settings.Dir, "obrolan.json"); } }
 
+        internal IntPtr SuruhHwnd { get { return chatWin != null && !chatWin.IsDisposed && chatWin.IsHandleCreated ? chatWin.Handle : IntPtr.Zero; } }
+        internal bool SuruhOpen { get { return chatWin != null && !chatWin.IsDisposed && chatWin.Visible; } }
+        internal void SyncSuruhDock() { foreach (var dock in dockWins.Values) if (!dock.IsDisposed && dock.IsHandleCreated) dock.SyncSuruh(); }
+
         void OpenSuruh()
         {
             expanded = false;
@@ -56,16 +60,25 @@ namespace Deskmate
             if (chatWin == null || chatWin.IsDisposed)
             {
                 chatWin = new ChatWindow(this);
-                chatWin.FormClosed += delegate { chatWin = null; chatCleared = null; };
+                chatWin.FormClosed += delegate { chatWin = null; chatCleared = null; SyncSuruhDock(); };
                 chatWin.Show();
             }
-            else if (chatWin.WindowState == FormWindowState.Minimized) chatWin.WindowState = FormWindowState.Normal;
-            // Above the app in front, then focused
-            chatWin.TopMost = true;
-            chatWin.TopMost = false;
-            chatWin.Activate();
-            Native.SetForegroundWindow(chatWin.Handle);
+            else
+            {
+                if (chatWin.WindowState == FormWindowState.Minimized) chatWin.WindowState = FormWindowState.Normal;
+                if (!chatWin.Visible) chatWin.Show();
+            }
+            ShellApp.Activate(chatWin.Handle);
             chatWin.FocusInput();
+            SyncSuruhDock();
+        }
+
+        void StartFreshSuruh()
+        {
+            if (suruhBusy) return;
+            LoadChat();
+            if (chat != null && chat.Count > 0) ClearChat();
+            OpenSuruh();
         }
 
         // Read once, on first use

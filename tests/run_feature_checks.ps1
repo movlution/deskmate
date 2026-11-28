@@ -18,7 +18,10 @@ $checks = @(
     @{ Name = "Ingatan memory"; Source = Join-Path $PSScriptRoot "ingat_check.cs"; Type = "IngatCheck" },
     @{ Name = "Load guard"; Source = Join-Path $PSScriptRoot "guard_check.cs"; Type = "GuardCheck" },
     @{ Name = "Dock window motion"; Source = Join-Path $PSScriptRoot "dock_window_motion_check.cs"; Type = "DockWindowMotionCheck" },
-    @{ Name = "Update release resolution"; Source = Join-Path $PSScriptRoot "update_release_check.cs"; Type = "UpdateReleaseCheck" }
+    @{ Name = "Update release resolution"; Source = Join-Path $PSScriptRoot "update_release_check.cs"; Type = "UpdateReleaseCheck" },
+    @{ Name = "Convert options"; Source = Join-Path $PSScriptRoot "convert_check.cs"; Type = "ConvertCheck" },
+    @{ Name = "Weather retry backoff"; Source = Join-Path $PSScriptRoot "weather_retry_check.cs"; Type = "WeatherRetryCheck" },
+    @{ Name = "Coding agent hooks & security"; Source = Join-Path $PSScriptRoot "agent_hooks_check.cs"; Type = "AgentHooksCheck" }
 )
 
 $temporary = New-Object System.Collections.Generic.List[string]
