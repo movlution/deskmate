@@ -639,7 +639,7 @@ namespace Deskmate
                         int port = island.hub != null ? island.hub.Port : settings.GetInt("agent.port", 47821);
                         add(Row(Lang.F("Port {0}", port), port == 47821 ? Lang.T("Port bawaan lama; port acak lebih sulit ditebak") : Lang.T("Hanya bisa dijangkau dari laptop ini"),
                             Button(Lang.T("Ganti port acak"), false, delegate { island.MoveToRandomPort(); RefreshContent(); })));
-                        add(Row(Lang.T("Menahan izin"), Lang.T("Lewat batas ini, izin dijawab di terminal"), Slider(30, 300, 10, settings.GetInt("agent.wait", 110), v => v + Lang.T(" dtk"), v => { settings.Set("agent.wait", v); settings.SaveDeferred(); })));
+                        add(Row(Lang.T("Menahan izin"), Lang.T("Lewat batas ini, izin dijawab di terminal"), Slider(AgentHub.MinWaitSeconds, AgentHub.MaxWaitSeconds, 10, AgentHub.ClampWait(settings.GetInt("agent.wait", AgentHub.DefaultWaitSeconds)), v => v + Lang.T(" dtk"), v => { island.SetPermissionWait(v); })));
                         break;
                     case "dikte":
                         DictateRows(add, cap);

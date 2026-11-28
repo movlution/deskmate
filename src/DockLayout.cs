@@ -186,6 +186,7 @@ namespace Deskmate
             Rectangle IconScreenRect(DockApp app)
             {
                 if (app != null && app.Key == "sys:work") return SlotScreenRect("work");
+                if (app != null && app.Key == "sys:suruh") return SlotScreenRect("suruh");
                 foreach (var s in slots) if (s.App == app) return ToScreen(s.Icon);
                 return Rectangle.Empty;
             }
@@ -221,21 +222,21 @@ namespace Deskmate
                 return sysPress.TryGetValue(id, out s) ? Ease.Clamp01(s.Value) : 0f;
             }
 
-            // Centre content: Start when replacing, then the apps
+            // Centre content: Start when replacing, then Deskmate buttons and the apps
             void CenterSlots()
             {
                 slots.Clear();
+                bool showWork = S != null && S.GetBool("dockbar.work", true);
+                bool showSuruh = S != null && S.GetBool("dockbar.suruh", true);
                 if (Replacing)
                 {
                     slots.Add(new Slot { Id = "start" });
                     if (S.GetBool("dockbar.taskview", false)) slots.Add(new Slot { Id = "taskview" });
-                    if (apps.Count > 0) slots.Add(new Slot { Id = "sep", Sep = true });
+                    if (showWork || showSuruh || apps.Count > 0) slots.Add(new Slot { Id = "sep", Sep = true });
                 }
-                if (S.GetBool("dockbar.work", true))
-                {
-                    slots.Add(new Slot { Id = "work" });
-                    if (!Replacing && apps.Count > 0) slots.Add(new Slot { Id = "worksep", Sep = true });
-                }
+                if (showWork) slots.Add(new Slot { Id = "work" });
+                if (showSuruh) slots.Add(new Slot { Id = "suruh" });
+                if (!Replacing && (showWork || showSuruh) && apps.Count > 0) slots.Add(new Slot { Id = "worksep", Sep = true });
                 foreach (var a in apps) slots.Add(new Slot { Id = "app:" + a.Key, App = a, Show = Ease.Clamp01(a.Show.Value) });
                 ShelfSlots();
                 // The dragged app leaves a gap that follows the pointer
@@ -244,8 +245,9 @@ namespace Deskmate
 
             float SlotW(Slot s) { return s.Sep ? 13 * fit : iconSize; }
 
-            // Where every piece of the dock sits this frame: one capsule, centred,
-            // widgets | Start and apps | tray and clock
+            // Where every piece of the dock sits this frame:
+            // floating = one capsule, centred (widgets | Start and apps | tray and clock)
+            // full     = taskbar layout across the monitor (widgets left, Start and apps centred, tray and clock right)
             void Compose()
             {
                 float dipW = cw / scale, dipH = ch / scale;
@@ -257,9 +259,13 @@ namespace Deskmate
                 fit = 1;
                 iconSize = IconRest;
                 float restW = RestWidth(), wl = LeftWidth(), wr = RightWidth();
+                bool full = Full;
+                const float fullPadR = 4;
                 // Too wide for the screen: icons shrink first, then widgets drop from the end
-                float room = dipW - Side * 2 - EdgeIn * 2;
-                float sides = wl + wr + SegGap * 2;
+                float room = full ? dipW - Side - (wr > 0 ? fullPadR : Side) : dipW - Side * 2 - EdgeIn * 2;
+                float sides = full
+                    ? (wl > 0 ? wl + SegGap : 0) + (wr > 0 ? wr + SegGap : 0)
+                    : wl + wr + SegGap * 2;
                 if (sides + restW > room && restW > 1)
                 {
                     fit = Math.Max(0.6f, (room - sides) / restW);
@@ -270,7 +276,9 @@ namespace Deskmate
                 {
                     widgetCap = LeftWidgets().Count - 1;
                     wl = LeftWidth();
-                    sides = wl + wr + SegGap * 2;
+                    sides = full
+                        ? (wl > 0 ? wl + SegGap : 0) + (wr > 0 ? wr + SegGap : 0)
+                        : wl + wr + SegGap * 2;
                 }
                 // Fit by final widths, layout by springs
                 AimWidgets();
@@ -279,7 +287,20 @@ namespace Deskmate
                 float gapL = hasL && (hasC || hasR) ? SegGap * leftPresence : 0, gapR = hasR && hasC ? SegGap : 0;
                 float leftBlock = hasL ? wl + gapL : 0, rightBlock = hasR ? wr + gapR : 0;
                 float gap = GapX * fit;
-                float originRest = dipW / 2 - (leftBlock + restW + rightBlock) / 2 + leftBlock;
+                float originRest;
+                if (full)
+                {
+                    float leftBound = hasL ? Side + wl + gapL : Side;
+                    float rightBound = hasR ? dipW - fullPadR - wr - gapR : dipW - Side;
+                    float ideal = (dipW - restW) / 2;
+                    originRest = rightBound - leftBound < restW
+                        ? (leftBound + rightBound - restW) / 2
+                        : Math.Max(leftBound, Math.Min(rightBound - restW, ideal));
+                }
+                else
+                {
+                    originRest = dipW / 2 - (leftBlock + restW + rightBlock) / 2 + leftBlock;
+                }
                 // Magnification targets from rest positions: no feedback loop
                 // Icons swell in place: slots, spacing and capsule never move, so a fast sweep cannot shake the row
                 float mag = 1 + (Mag - 1) * InPlaceK, sigma = (iconSize + GapX * fit) * 0.7f;
@@ -310,15 +331,30 @@ namespace Deskmate
                     s.Hit = new RectangleF(x - gap / 2, Math.Min(s.Icon.Y, barTop), w + gap, barBottom - Math.Min(s.Icon.Y, barTop));
                     x += (w + gap) * s.Show;
                 }
-                // Widgets and the tray ride on either side of the apps
-                float left = originGrown - leftBlock, right = originGrown + grownW + rightBlock;
-                leftPill = hasL ? new RectangleF(left, barTop, wl, BarH) : RectangleF.Empty;
-                rightPill = hasR ? new RectangleF(right - wr, barTop, wr, BarH) : RectangleF.Empty;
-                sepA = hasL && gapL > 0 ? left + wl + gapL / 2 : float.NaN;
-                sepB = hasR && gapR > 0 ? right - wr - gapR / 2 : float.NaN;
-                padL = hasL ? WidgetIn : PadTop;
-                padR = hasR ? EdgeIn : PadTop;
-                centerPill = right > left ? new RectangleF(left - padL, barTop, right - left + padL + padR, BarH) : RectangleF.Empty;
+                if (full)
+                {
+                    // Full-width taskbar: widgets on the left, apps centred, tray and clock on the right
+                    padL = Side;
+                    padR = hasR ? fullPadR : Side;
+                    leftPill = hasL ? new RectangleF(padL, barTop, wl, BarH) : RectangleF.Empty;
+                    rightPill = hasR ? new RectangleF(dipW - padR - wr, barTop, wr, BarH) : RectangleF.Empty;
+                    sepA = float.NaN;
+                    sepB = float.NaN;
+                    centerPill = new RectangleF(0, barTop, dipW, BarH);
+                }
+                else
+                {
+                    // Widgets and the tray ride on either side of the apps
+                    float left = originGrown - leftBlock, right = originGrown + grownW + rightBlock;
+                    leftPill = hasL ? new RectangleF(left, barTop, wl, BarH) : RectangleF.Empty;
+                    rightPill = hasR ? new RectangleF(right - wr, barTop, wr, BarH) : RectangleF.Empty;
+                    sepA = hasL && gapL > 0 ? left + wl + gapL / 2 : float.NaN;
+                    sepB = hasR && gapR > 0 ? right - wr - gapR / 2 : float.NaN;
+                    padL = hasL ? WidgetIn : PadTop;
+                    padR = hasR ? EdgeIn : PadTop;
+                    centerPill = right > left ? new RectangleF(left - padL, barTop, right - left + padL + padR, BarH) : RectangleF.Empty;
+                }
+                if (tray != null) tray.SetArea(TrayArea());
             }
 
             float RestWidth()
@@ -415,7 +451,10 @@ namespace Deskmate
                 hover.Step(dt);
                 workDot.Target = WorkDotTarget();
                 workDot.Step(dt);
-                moving |= !reveal.Settled || !hover.Settled || !workDot.Settled || AppAnimMoving(workSlotApp, DateTime.UtcNow);
+                suruhDot.Target = SuruhDotTarget();
+                suruhDot.Step(dt);
+                moving |= !reveal.Settled || !hover.Settled || !workDot.Settled || !suruhDot.Settled
+                    || AppAnimMoving(workSlotApp, DateTime.UtcNow) || AppAnimMoving(suruhSlotApp, DateTime.UtcNow);
                 foreach (var s in sysGrow.Values) { s.Step(dt); moving |= !s.Settled; }
                 foreach (var kv in sysPress)
                 {
@@ -472,8 +511,14 @@ namespace Deskmate
 
             float WorkDotTarget()
             {
-                if (!S.GetBool("dockbar.work", true) || !isle.WorkOpen) return 0;
+                if (S == null || !S.GetBool("dockbar.work", true) || !isle.WorkOpen) return 0;
                 return GetForegroundWindow() == isle.WorkHwnd ? 2 : 1;
+            }
+
+            float SuruhDotTarget()
+            {
+                if (S == null || !S.GetBool("dockbar.suruh", true) || !isle.SuruhOpen) return 0;
+                return GetForegroundWindow() == isle.SuruhHwnd ? 2 : 1;
             }
 
             float DotTarget(DockApp a)

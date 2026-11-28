@@ -14,7 +14,7 @@ namespace Deskmate
         // Toast marker: DrawInfo draws a ring
         const char IcoGauge = '';
         const float AgentQuotaPitch = 70, QuotaGlanceRowH = 32;
-        const int QuotaRows = 5;
+        const int QuotaRows = 5, QuotaGlanceRows = 2;
         static readonly string[] QuotaKeys = { "five_hour", "seven_day", "spend_limit" };
         static readonly DateTime Epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         readonly List<QuotaInfo> quotas = new List<QuotaInfo>();
@@ -42,7 +42,7 @@ namespace Deskmate
             }
         }
 
-        void OnUsage(HookEvent ev)
+        void OnUsage(HookEvent ev, bool fromLive = false)
         {
             string agent = Json.Str(ev.Data, "agent");
             if (agent != "" && agent != "codex" && agent != "antigravity" && agent != "copilot") return;
@@ -53,6 +53,7 @@ namespace Deskmate
             var q = QuotaRow(agent, profile);
             var now = DateTime.UtcNow;
             q.Note = "";
+            q.FromLive = fromLive;
             q.Model = CleanText(Json.Str(ev.Data, "model"), 40);
             q.AtUtc = now;
             double lo = (now.AddDays(-8) - Epoch).TotalSeconds, hi = (now.AddDays(40) - Epoch).TotalSeconds;
@@ -178,7 +179,7 @@ namespace Deskmate
         {
             int n = 0;
             foreach (var q in quotas) if (notable ? QuotaShown(q) && QuotaPeak(q) >= 70 : QuotaListed(q)) n++;
-            return Math.Min(notable ? 4 : QuotaRows, n);
+            return Math.Min(notable ? QuotaGlanceRows : QuotaRows, n);
         }
 
         // Agen page height, 0 = none
@@ -259,7 +260,7 @@ namespace Deskmate
             QuotaColumns(true);
             foreach (var q in quotas)
             {
-                if (!QuotaShown(q) || QuotaPeak(q) < 70 || shown >= 2) continue;
+                if (!QuotaShown(q) || QuotaPeak(q) < 70 || shown >= QuotaGlanceRows) continue;
                 var r = new RectangleF(x, y + shown * QuotaGlanceRowH, full, QuotaGlanceRowH - 2);
                 string id = shown == 0 ? "homeQuota" : "homeQuota2";
                 AddHit(r, id, actQuotaOpen, null, HomeMenuAct(HomeCard.Quota));

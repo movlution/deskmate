@@ -354,7 +354,7 @@ namespace Deskmate
                 { "general", "bahasa jam startup windows update data ekspor impor reset" },
                 { "look", "tema sistem gelap terang otomatis aksen warna wallpaper paket material kaca" },
                 { "island", "notch dynamic island letak posisi ukuran mata jam diam tab kartu ringkasan home urutan" },
-                { "dock", "dock taskbar widget aplikasi" },
+                { "dock", "dock taskbar widget aplikasi suruh ask deskmate obrolan" },
                 { "messages", "pesan notifikasi chat banner vip senyap dnd" },
                 { "work", "tugas fokus prioritas catatan timer kulia notion todoist ical google kalender jadwal integrasi" },
                 { "remind", "cuaca hujan kota sholat adzan minum mata peregangan pengingat" },
@@ -1931,6 +1931,7 @@ namespace Deskmate
                         row.Detail = PlaceDetail(known);
                         row.Invalidate();
                         island.prayToday = null;
+                        island.RefreshWeather(true);
                         island.Kick();
                         RefreshHeroStatus();
                         return;
@@ -1964,6 +1965,7 @@ namespace Deskmate
                                 row.Detail = PlaceDetail(hit);
                                 row.Invalidate();
                                 island.prayToday = null;
+                                island.RefreshWeather(true);
                                 island.Kick();
                                 // Weather and the ring follow the new coordinates
                                 RefreshContent();

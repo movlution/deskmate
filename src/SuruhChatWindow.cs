@@ -65,6 +65,7 @@ namespace Deskmate
             protected override void OnHandleCreated(EventArgs e)
             {
                 base.OnHandleCreated(e);
+                ShellApp.SetWindowAppId(Handle, "Deskmate.Suruh");
                 MinimumSize = new Size((int)(340 * Ui), (int)(400 * Ui));
                 bool seen = false;
                 foreach (var sc in Screen.AllScreens) if (sc.WorkingArea.IntersectsWith(island.chatBounds)) seen = true;
@@ -85,6 +86,7 @@ namespace Deskmate
                 Fit();
                 list.ToEnd();
                 FocusInput();
+                island.SyncSuruhDock();
             }
 
             // Settings may have changed meanwhile
@@ -94,9 +96,22 @@ namespace Deskmate
                 if (!IsHandleCreated) return;
                 list.Relayout();
                 Invalidate(new Rectangle(0, 0, ClientSize.Width, (int)(HeadDip * Ui)));
+                island.SyncSuruhDock();
             }
 
-            protected override void OnResize(EventArgs e) { base.OnResize(e); if (IsHandleCreated) Place(); }
+            protected override void OnDeactivate(EventArgs e)
+            {
+                base.OnDeactivate(e);
+                if (IsHandleCreated) island.SyncSuruhDock();
+            }
+
+            protected override void OnVisibleChanged(EventArgs e)
+            {
+                base.OnVisibleChanged(e);
+                if (IsHandleCreated) island.SyncSuruhDock();
+            }
+
+            protected override void OnResize(EventArgs e) { base.OnResize(e); if (IsHandleCreated) { Place(); island.SyncSuruhDock(); } }
 
             protected override void OnFormClosed(FormClosedEventArgs e) { pulse.Stop(); base.OnFormClosed(e); }
 

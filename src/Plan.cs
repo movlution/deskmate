@@ -34,6 +34,7 @@ namespace Deskmate
             if (tool == "TodoWrite") { items = Json.Arr(input, "todos"); textKey = "content"; activeKey = "activeForm"; }
             else if (tool == "update_plan") { items = Json.Arr(input, "plan"); textKey = "step"; }
             else if (tool == "write_todos") { items = Json.Arr(input, "todos"); textKey = "description"; }
+            else if (tool == "update_steps") { items = Json.Arr(input, "steps"); textKey = "title"; }
             else return null;
             var list = new List<PlanStep>();
             foreach (var o in items)
@@ -94,6 +95,29 @@ namespace Deskmate
             else return null;
             foreach (var d in lines) d.Text = Fmt.Visible(d.Text.Replace("\t", "    "));
             return lines;
+        }
+
+        // File paths touched by Codex apply_patch
+        public static List<string> PatchFiles(Dictionary<string, object> input)
+        {
+            var files = new List<string>();
+            if (input == null) return files;
+            string patch = Json.Str(input, "input");
+            if (patch.Length == 0) patch = Json.Str(input, "patch");
+            if (patch.Length == 0) return files;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string[] prefixes = { "*** Update File: ", "*** Add File: ", "*** Delete File: ", "*** Move to: " };
+            foreach (var raw in Split(patch))
+            {
+                foreach (var pref in prefixes)
+                {
+                    if (!raw.StartsWith(pref, StringComparison.Ordinal)) continue;
+                    string path = raw.Substring(pref.Length).Trim();
+                    if (path.Length > 0 && seen.Add(path)) files.Add(path);
+                    break;
+                }
+            }
+            return files;
         }
 
         static DiffLine Head(string text) { return new DiffLine { Kind = 3, Text = text }; }

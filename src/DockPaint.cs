@@ -291,6 +291,7 @@ namespace Deskmate
                     case "start": act = delegate { ToggleSheet("start"); }; menu = QuickMenu; break;
                     case "taskview": act = delegate { ShellVerb("WindowSwitcher"); }; break;
                     case "work": act = delegate { isle.OpenWork(); }; menu = WorkMenu; break;
+                    case "suruh": act = OpenSuruhFromDock; menu = SuruhMenu; break;
                     case "shelf": act = OpenHeld; menu = ShelfMenu; break;
                 }
                 Hit(s.Hit, id, act, menu);
@@ -314,8 +315,22 @@ namespace Deskmate
                     }
                 }
                 float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2, u = r.Width / 42f;
-                bool active = (s.Id == "work" && isle.WorkOpen && GetForegroundWindow() == isle.WorkHwnd) || startOpen;
+                IntPtr fg = GetForegroundWindow();
+                bool active = (s.Id == "work" && isle.WorkOpen && fg == isle.WorkHwnd)
+                    || (s.Id == "suruh" && isle.SuruhOpen && fg == isle.SuruhHwnd)
+                    || startOpen;
                 Color ink = hot || active ? p.T.Text : Ink.Mix(p.T.Sub, p.T.Text, 0.55f);
+                // Deskmate's own illustrated tiles; glyphs stay as the fallback
+                bool art = !(s.Id == "shelf" && Held.Count > 0) && DockArt.Has(s.Id);
+                if (art)
+                {
+                    if (s.Id == "work") DrawWindowStack(workSlotApp, Glyph(r), DateTime.UtcNow, s.Show);
+                    if (s.Id == "suruh") DrawWindowStack(suruhSlotApp, Glyph(r), DateTime.UtcNow, s.Show);
+                    DrawArtTile(s.Id, Glyph(r));
+                    if (s.Id == "work") Indicator(workDot.Value, false, s.Icon);
+                    if (s.Id == "suruh") Indicator(suruhDot.Value, isle.suruhBusy, s.Icon);
+                    return;
+                }
                 switch (s.Id)
                 {
                     case "start":
@@ -329,8 +344,25 @@ namespace Deskmate
                         p.Icon('\uE73A', 21 * u, ink, cx, cy);
                         Indicator(workDot.Value, false, s.Icon);
                         break;
+                    case "suruh":
+                        DrawWindowStack(suruhSlotApp, Glyph(r), DateTime.UtcNow, s.Show);
+                        p.Icon('\uE8F2', 20 * u, ink, cx, cy);
+                        Indicator(suruhDot.Value, isle.suruhBusy, s.Icon);
+                        break;
                     case "shelf": DrawShelfGlyph(s, r, ink, hot); break;
                 }
+            }
+
+            void DrawArtTile(string id, RectangleF r)
+            {
+                var bmp = DockArt.Get(id, Math.Max(8, (int)Math.Round(r.Width * scale)));
+                if (bmp == null) return;
+                // At rest: an exact pixel copy, crisp at any scale
+                if (Math.Abs(r.Width - iconSize * GlyphK) < 0.02f) { DrawExact(bmp, r); return; }
+                var keep = g.InterpolationMode;
+                g.InterpolationMode = InterpolationMode.Bilinear;
+                g.DrawImage(bmp, r);
+                g.InterpolationMode = keep;
             }
 
             void DrawApp(Slot s)

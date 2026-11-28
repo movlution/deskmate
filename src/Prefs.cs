@@ -139,6 +139,7 @@ namespace Deskmate
             else if (key == "shelf" || key == "convert") InitShelfDrop();
             else if (key == "wall.sync") WallToggle(on);
             else if (key == "ingat" || key == "ingat.clip") ApplyIngat();
+            else if (key == "weather") RefreshWeather(!on);
             else if (key.StartsWith("dockbar.", StringComparison.Ordinal)) ApplyDock();
             Kick();
         }
@@ -198,15 +199,26 @@ namespace Deskmate
             Kick();
         }
 
-        // Random port; Claude's hook URL follows
+        // Random port; Claude's hook URL follows without leaving stale hooks behind
         void MoveToRandomPort()
         {
             bool claude = HooksInstalled();
+            int oldPort = hub != null ? hub.Port : settings.GetInt("agent.port", 47821);
             int port = AgentHub.FreePort();
+            if (port == oldPort) port = AgentHub.FreePort();
             if (hub != null) hub.Stop();
             settings.Set("agent.port", port);
             settings.Save();
             StartHub();
+            if (hub != null && hub.Error != null)
+            {
+                string err = hub.Error;
+                settings.Set("agent.port", oldPort);
+                settings.Save();
+                StartHub();
+                ShowInfo(Ink.IcoTerminal, Lang.T("Server hook mati"), err, true);
+                return;
+            }
             if (claude)
             {
                 string err = HookSetup.Install(port, settings.Get("agent.token", ""));

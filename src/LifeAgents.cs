@@ -26,7 +26,42 @@ namespace Deskmate
                 settings.Save();
             }
             StartHub();
+            if (hub != null && hub.Error == null)
+            {
+                try { HookSetup.Refresh(hub.Port, settings.Get("agent.token", "")); }
+                catch (Exception ex) { Log.Write("hook refresh: " + ex.Message); }
+            }
             if (settings.GetBool("phone", false)) StartPhone();
+        }
+
+        internal const int PhoneDetailMax = 1500;
+
+        // Phone only shows up to PhoneDetailMax chars; never allow unseen commands or diffs remotely
+        internal static bool PhoneTruncated(Approval a)
+        {
+            if (a == null) return true;
+            if (a.Truncated) return true;
+            if ((a.Detail ?? "").Length > PhoneDetailMax) return true;
+            if (a.Diff != null && a.Diff.Count > ApproveScrollMax) return true;
+            return false;
+        }
+
+        internal static bool CanPhoneDecide(Approval a, string decision)
+        {
+            if (a == null) return false;
+            if (decision == "allow" && PhoneTruncated(a)) return false;
+            return decision == "allow" || decision == "deny";
+        }
+
+        internal static Dictionary<string, object> PhoneApprovalItem(Approval a)
+        {
+            string raw = a.Detail ?? "";
+            bool truncated = PhoneTruncated(a);
+            string detail = raw.Length > PhoneDetailMax ? raw.Substring(0, PhoneDetailMax) + "…" : raw;
+            return new Dictionary<string, object> {
+                { "id", a.Id }, { "agent", a.Agent }, { "project", a.Project }, { "tool", a.Tool }, { "key", Fmt.OneLine(a.Key, 300) },
+                { "note", a.Note }, { "detail", detail },
+                { "flags", new List<object>(a.Flags) }, { "truncated", truncated }, { "risk", a.Risk ?? "" } };
         }
 
         PhoneLink phone;
@@ -40,7 +75,7 @@ namespace Deskmate
             {
                 var a = approvals.Find(x => x.Id == id);
                 // Truncated requests are never allowed remotely
-                if (a != null && !(d == "allow" && a.Truncated)) Decide(a, d);
+                if (CanPhoneDecide(a, d)) Decide(a, d);
             });
             phone.Paired += () => Post(() => { ShowInfo(IcoPhone, Lang.T("HP tersambung"), phone.Device, true); PublishPhone(); });
             WirePhone();
@@ -68,11 +103,7 @@ namespace Deskmate
         {
             if (phone == null) return;
             var list = new List<object>();
-            foreach (var a in approvals)
-                list.Add(new Dictionary<string, object> {
-                    { "id", a.Id }, { "agent", a.Agent }, { "project", a.Project }, { "tool", a.Tool }, { "key", Fmt.OneLine(a.Key, 300) },
-                    { "note", a.Note }, { "detail", a.Detail.Length > 1500 ? a.Detail.Substring(0, 1500) + "…" : a.Detail },
-                    { "flags", new List<object>(a.Flags) }, { "truncated", a.Truncated }, { "risk", a.Risk ?? "" } });
+            foreach (var a in approvals) list.Add(PhoneApprovalItem(a));
             var ss = new List<object>();
             foreach (var s in sessions.Values)
                 if (s.State != AgentState.Ended)
@@ -82,10 +113,20 @@ namespace Deskmate
 
         void StartHub()
         {
-            hub = new AgentHub(settings.GetInt("agent.port", 47821), settings.Get("agent.token", ""), settings.GetInt("agent.wait", 110));
+            hub = new AgentHub(settings.GetInt("agent.port", 47821), settings.Get("agent.token", ""), AgentHub.ClampWait(settings.GetInt("agent.wait", AgentHub.DefaultWaitSeconds)));
             hub.Received += ev => Post(() => OnHook(ev));
             hub.Expired += a => Post(() => DropApproval(a));
             hub.Start();
+        }
+
+        internal void SetPermissionWait(int seconds)
+        {
+            int wait = AgentHub.ClampWait(seconds);
+            settings.Set("agent.wait", wait);
+            settings.SaveDeferred();
+            if (hub != null) hub.WaitSeconds = wait;
+            try { AgentSetup.EnsureReplyTimeout("codex", wait); }
+            catch (Exception ex) { Log.Write("codex wait sync: " + ex.Message); }
         }
 
         bool hooksOn;

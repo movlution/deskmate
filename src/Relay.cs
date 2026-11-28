@@ -38,7 +38,7 @@ namespace Deskmate
             if (body != null && body.Length > 0 && Running())
             {
                 if (ev != null) body = WithEvent(body, ev);
-                answer = Post("/hook/" + Uri.EscapeDataString(agent), body, reply ? 125000 : 2000);
+                answer = Post("/hook/" + Uri.EscapeDataString(agent), body, reply ? ReplyTimeoutMs() : 2000);
             }
             if (!reply) answer = "";
             // Antigravity reads {} as deny; silence keeps its own rules
@@ -54,6 +54,13 @@ namespace Deskmate
                 catch (Exception) { }
             }
             return 0; // never block the agent
+        }
+
+        // Covers agent.wait plus margin, staying below the agent hook timeout
+        internal static int ReplyTimeoutMs(Settings s = null)
+        {
+            int wait = AgentHub.ClampWait((s ?? new Settings()).GetInt("agent.wait", AgentHub.DefaultWaitSeconds));
+            return (wait + 15) * 1000;
         }
 
         // Refused localhost connects stall ~1 s

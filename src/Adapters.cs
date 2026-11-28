@@ -85,12 +85,7 @@ namespace Deskmate
                 case "PostToolUse":
                     var call = Json.Obj(d, "toolCall");
                     var args = Json.Obj(call, "args") ?? new Dictionary<string, object>();
-                    string name = Json.Str(call, "name");
-                    if (name == "run_command")
-                    {
-                        name = "Bash";
-                        args["command"] = Json.Str(args, "CommandLine");
-                    }
+                    string name = AntigravityTool(Json.Str(call, "name"), args);
                     d["tool_name"] = name;
                     d["tool_input"] = args;
                     break;
@@ -101,6 +96,53 @@ namespace Deskmate
             }
             d["hook_event_name"] = ev.Name;
             return true;
+        }
+
+        static string AntigravityTool(string name, Dictionary<string, object> args)
+        {
+            switch (name)
+            {
+                case "run_command":
+                    if (!args.ContainsKey("command") && args.ContainsKey("CommandLine")) args["command"] = args["CommandLine"];
+                    return "Bash";
+                case "read_file":
+                case "view_file":
+                    CopyFirst(args, "file_path", "Path", "AbsolutePath", "path");
+                    return "Read";
+                case "write_file":
+                case "write_to_file":
+                    CopyFirst(args, "file_path", "Path", "TargetFile", "path");
+                    CopyFirst(args, "content", "Content", "CodeContent");
+                    return "Write";
+                case "edit_file":
+                case "replace_file_content":
+                case "multi_replace_file_content":
+                    CopyFirst(args, "file_path", "Path", "TargetFile", "path");
+                    return "Edit";
+                case "grep_search":
+                    CopyFirst(args, "pattern", "Query", "query");
+                    return "Grep";
+                case "find_by_name":
+                    CopyFirst(args, "pattern", "Pattern");
+                    return "Glob";
+                case "search_web":
+                    CopyFirst(args, "query", "Query");
+                    return "WebSearch";
+                case "read_url_content":
+                    CopyFirst(args, "url", "Url");
+                    return "WebFetch";
+            }
+            return name;
+        }
+
+        static void CopyFirst(Dictionary<string, object> args, string dest, params string[] keys)
+        {
+            if (args.ContainsKey(dest)) return;
+            foreach (var k in keys)
+            {
+                object v;
+                if (args.TryGetValue(k, out v) && v != null) { args[dest] = v; return; }
+            }
         }
 
         static string LocalPath(string p)

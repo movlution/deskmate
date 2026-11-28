@@ -84,9 +84,18 @@ namespace Deskmate
         public event Action<HookEvent> Received;
         public event Action<Approval> Expired;
 
+        public const int MinWaitSeconds = 30, MaxWaitSeconds = 300, DefaultWaitSeconds = 110;
+        // Agent hook timeout stays above the maximum hold slider + relay margin
+        public const int HookReplyTimeoutSeconds = MaxWaitSeconds + 20;
+
+        public static int ClampWait(int seconds)
+        {
+            return Math.Max(MinWaitSeconds, Math.Min(MaxWaitSeconds, seconds));
+        }
+
         readonly int port;
         readonly string token;
-        readonly int waitSeconds;
+        volatile int waitSeconds;
         TcpListener listener;
         public string Error;
 
@@ -94,10 +103,11 @@ namespace Deskmate
         {
             this.port = port;
             this.token = token;
-            this.waitSeconds = waitSeconds;
+            this.waitSeconds = ClampWait(waitSeconds);
         }
 
         public int Port { get { return port; } }
+        public int WaitSeconds { get { return waitSeconds; } set { waitSeconds = ClampWait(value); } }
 
         // Free port; pending approvals go to terminal
         public void Stop()
@@ -378,7 +388,11 @@ namespace Deskmate
                 case "Read":
                 case "Write":
                 case "Edit":
-                case "NotebookEdit": return LastPart(Json.Str(input, "file_path"));
+                case "NotebookEdit": return LastPart(Json.Str(input, "file_path").Length > 0 ? Json.Str(input, "file_path") : Json.Str(input, "notebook_path"));
+                case "apply_patch":
+                    var pf = DiffBuilder.PatchFiles(input);
+                    if (pf.Count == 0) return "";
+                    return pf.Count == 1 ? LastPart(pf[0]) : LastPart(pf[0]) + " (+" + (pf.Count - 1) + ")";
                 case "Grep": return Json.Str(input, "pattern");
                 case "Glob": return Json.Str(input, "pattern");
                 case "WebFetch":
@@ -413,6 +427,7 @@ namespace Deskmate
                 case "Read": return Lang.T("Baca");
                 case "Write": return Lang.T("Tulis");
                 case "Edit": return "Edit";
+                case "apply_patch": return "Patch";
                 case "Grep": return Lang.T("Cari");
                 case "Glob": return Lang.T("Cari berkas");
                 case "WebFetch": return Lang.T("Buka web");

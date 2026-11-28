@@ -35,7 +35,7 @@ Tiap baris kuota di tab **Agen** diawali nama AI-nya: Claude, Codex, Antigravity
 
 ### Claude Code
 
-Deskmate membaca kuota Claude Code dari status line resminya, tanpa menyentuh token login. Saat Claude Code dihubungkan, Deskmate memasang `"<Deskmate.exe>" --statusline` sebagai status line di setiap profil. Kalau sudah ada status line lain, status line itu tetap jalan dan keluarannya tetap ditampilkan. Saat dilepas, nilai lamanya dikembalikan persis.
+Deskmate membaca kuota Claude Code dari status line resminya, dan saat **Kuota agent** menyala juga menanyakan endpoint kuota akun yang sudah masuk secara berkala (token dibaca lokal saja, tidak pernah dicatat ke log atau dikirim ke pihak lain selain API resminya). Saat Claude Code dihubungkan, Deskmate memasang `"<Deskmate.exe>" --statusline` sebagai status line di setiap profil. Kalau sudah ada status line lain, status line itu tetap jalan dan keluarannya tetap ditampilkan. Saat dilepas, nilai lamanya dikembalikan persis.
 
 - Tab **Agen** menampilkan pemakaian jendela 5 jam dan 7 hari beserta jam resetnya. Ringkasan ikut menampilkannya saat pemakaian 70% ke atas.
 - Peringatan muncul sekali per jendela di 80% dan 95%. Yang 95% tetap muncul walau Senyap atau Mini.

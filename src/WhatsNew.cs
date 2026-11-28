@@ -20,6 +20,17 @@ namespace Deskmate
         {
             new Note
             {
+                Version = "2.22.0",
+                Items = new[]
+                {
+                    new[] { "Ikon Dock khas Deskmate", "Tombol Start, Semua jendela, Tugas, Suruh, dan Rak di Dock kini memakai ikon bergambar sendiri yang serasi dengan gaya Deskmate.", "" },
+                    new[] { "Tombol Suruh di Dock", "Satu tombol di Dock untuk membuka obrolan Suruh Deskmate. Atur di Pengaturan › Dock.", "" },
+                    new[] { "Konversi lebih lengkap", "Gabungkan banyak gambar jadi satu PDF atau satu PDF per berkas, susun gambar dan GIF, serta gabungkan audio jadi satu MP3.", "" },
+                    new[] { "Pengaturan bergambar", "Setiap kategori Pengaturan kini punya ilustrasi sendiri, dan kuota agen, cuaca, serta hook agen lebih andal.", "" },
+                },
+            },
+            new Note
+            {
                 Version = "2.21.3",
                 Items = new[]
                 {

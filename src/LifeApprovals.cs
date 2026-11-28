@@ -21,6 +21,14 @@ namespace Deskmate
                 if (f.Length == 0) f = Json.Str(input, "notebook_path");
                 if (f.Length > 0) { s.Files.Add(f.ToLowerInvariant()); s.TurnFiles.Add(f.ToLowerInvariant()); }
             }
+            else if (tool == "apply_patch")
+            {
+                foreach (var f in DiffBuilder.PatchFiles(input))
+                {
+                    s.Files.Add(f.ToLowerInvariant());
+                    s.TurnFiles.Add(f.ToLowerInvariant());
+                }
+            }
         }
 
         static string Summary(AgentSession s, DateTime now)

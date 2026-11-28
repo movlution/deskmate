@@ -158,6 +158,10 @@ Every category page has an illustrated tile (`SettingsArt.DrawTile`, art in `ass
 
 Hub hero and wide cards and every page hero carry a banner scene along their right edge (`SettingsArt.DrawScene`): the category tile enlarged and tilted, a small ghost tile low on its left, one faint ring and two small dots. The top-right corner stays clear for the status pill and palette dots. The art fades out across its left half, is clipped to the card, and is drawn under the border. Text stops `SettingsArt.SceneReserve` before the right edge, so it never sits on the art. On paper the scene is drawn at 92 % opacity.
 
+### Dock icons
+
+The Dock's own buttons (Start, Task view, Work, Suruh, Rak) use illustrated tiles in the same language (`DockArt`, art in `assets/dock`): Start is the brand plum with a launcher grid ending in the mint pill, Task view slate, Work amber, Suruh violet, Rak emerald. Motifs are two or three heavy shapes so they read at 24 px. They sit on the usual plate at the app-icon size (`GlyphK`), so hover, press and the running dot behave like apps. Rak keeps its file thumbnail while it holds files; the glyphs stay as the fallback when the atlas is missing.
+
 ### Side rail
 
 - 220 px wide on `Side`. The search well (28 px, radius 7) sits on top.

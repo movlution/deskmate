@@ -48,9 +48,14 @@ namespace Deskmate
             {
                 IntPtr h;
                 if (byPid.TryGetValue(pid, out h) && IsWindow(h)) return h;
-                h = WindowFor(pid);
-                if (byPid.Count > 64) byPid.Clear();
-                byPid[pid] = h;
+                int hostPid;
+                h = WindowFor(pid, out hostPid);
+                if (hostPid > 0) pid = hostPid;
+                if (h != IntPtr.Zero && hostPid > 0)
+                {
+                    if (byPid.Count > 64) byPid.Clear();
+                    byPid[hostPid] = h;
+                }
                 return h;
             }
         }
@@ -60,34 +65,79 @@ namespace Deskmate
         {
             int size = 0;
             GetExtendedTcpTable(IntPtr.Zero, ref size, false, 2, 5, 0);
-            IntPtr buf = Marshal.AllocHGlobal(size);
-            try
+            if (size <= 0) return 0;
+            // Slack + retry: table can grow between size query and read
+            size += 4096;
+            for (int attempt = 0; attempt < 3; attempt++)
             {
-                if (GetExtendedTcpTable(buf, ref size, false, 2, 5, 0) != 0) return 0;
-                int n = Marshal.ReadInt32(buf);
-                for (int i = 0; i < n; i++)
+                IntPtr buf = Marshal.AllocHGlobal(size);
+                try
                 {
-                    IntPtr row = new IntPtr(buf.ToInt64() + 4 + i * 24);
-                    if (Port(Marshal.ReadInt32(row, 8)) == clientPort && Port(Marshal.ReadInt32(row, 16)) == serverPort)
-                        return Marshal.ReadInt32(row, 20);
+                    uint rc = GetExtendedTcpTable(buf, ref size, false, 2, 5, 0);
+                    if (rc == 122) { size += 4096; continue; }
+                    if (rc != 0) return 0;
+                    int n = Marshal.ReadInt32(buf);
+                    for (int i = 0; i < n; i++)
+                    {
+                        IntPtr row = new IntPtr(buf.ToInt64() + 4 + i * 24);
+                        if (Port(Marshal.ReadInt32(row, 8)) == clientPort && Port(Marshal.ReadInt32(row, 16)) == serverPort)
+                            return Marshal.ReadInt32(row, 20);
+                    }
+                    return 0;
                 }
+                finally { Marshal.FreeHGlobal(buf); }
             }
-            finally { Marshal.FreeHGlobal(buf); }
             return 0;
         }
 
         static int Port(int raw) { return ((raw & 0xFF) << 8) | ((raw >> 8) & 0xFF); }
 
-        // Walk up: each process's console, else its own window.
-        // Hook helpers (node, curl) have no console; their claude parent does.
-        static IntPtr WindowFor(int pid)
+        struct ProcInfo
         {
-            var parents = ParentMap();
+            public uint Parent;
+            public string Exe;
+        }
+
+        internal static bool IsEphemeralHelper(string exe)
+        {
+            if (string.IsNullOrEmpty(exe)) return false;
+            switch (exe.ToLowerInvariant())
+            {
+                case "deskmate.exe":
+                case "curl.exe":
+                case "cmd.exe":
+                case "bash.exe":
+                case "sh.exe":
+                case "conhost.exe":
+                    return true;
+            }
+            return false;
+        }
+
+        // Walk up past short-lived hook helpers so cache and s.Pid bind to the persistent agent/terminal
+        static IntPtr WindowFor(int pid, out int hostPid)
+        {
+            hostPid = pid;
+            var procs = ProcessMap();
             int self = Process.GetCurrentProcess().Id, cur = pid;
             for (int depth = 0; depth < 16 && cur > 4; depth++)
             {
+                ProcInfo info;
+                bool hasInfo = procs.TryGetValue(cur, out info);
+                // Step past ephemeral relay/curl/shell wrappers while a live parent exists
+                if (hasInfo && IsEphemeralHelper(info.Exe) && info.Parent > 4 && info.Parent != cur && procs.ContainsKey((int)info.Parent))
+                {
+                    cur = (int)info.Parent;
+                    continue;
+                }
+                IntPtr cached;
+                if (byPid.TryGetValue(cur, out cached) && IsWindow(cached))
+                {
+                    hostPid = cur;
+                    return cached;
+                }
                 IntPtr con = ConsoleOwner(cur);
-                if (con != IntPtr.Zero) return con;
+                if (con != IntPtr.Zero) { hostPid = cur; return con; }
                 try
                 {
                     using (var p = Process.GetProcessById(cur))
@@ -95,14 +145,16 @@ namespace Deskmate
                         string name = p.ProcessName.ToLowerInvariant();
                         if (name == "explorer" || cur == self) break;
                         IntPtr h = p.MainWindowHandle;
-                        if (h != IntPtr.Zero && IsWindowVisible(h)) return h;
+                        if (h != IntPtr.Zero && IsWindowVisible(h)) { hostPid = cur; return h; }
                     }
                 }
                 catch (Exception) { }
-                uint parent;
-                if (!parents.TryGetValue(cur, out parent) || parent == cur) break;
-                cur = (int)parent;
+                if (!hasInfo || info.Parent == cur) break;
+                cur = (int)info.Parent;
             }
+            // Fallback: inspect original pid directly if parent chain ended early
+            IntPtr fallback = ConsoleOwner(pid);
+            if (fallback != IntPtr.Zero) { hostPid = pid; return fallback; }
             return IntPtr.Zero;
         }
 
@@ -127,16 +179,16 @@ namespace Deskmate
             return owner != IntPtr.Zero && IsWindowVisible(owner) ? owner : IntPtr.Zero;
         }
 
-        static Dictionary<int, uint> ParentMap()
+        static Dictionary<int, ProcInfo> ProcessMap()
         {
-            var map = new Dictionary<int, uint>();
+            var map = new Dictionary<int, ProcInfo>();
             IntPtr snap = CreateToolhelp32Snapshot(2, 0);
             if (snap == IntPtr.Zero || snap == new IntPtr(-1)) return map;
             try
             {
                 var e = new PROCESSENTRY32 { dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32)) };
                 if (Process32FirstW(snap, ref e))
-                    do map[(int)e.th32ProcessID] = e.th32ParentProcessID; while (Process32NextW(snap, ref e));
+                    do map[(int)e.th32ProcessID] = new ProcInfo { Parent = e.th32ParentProcessID, Exe = e.szExeFile ?? "" }; while (Process32NextW(snap, ref e));
             }
             finally { CloseHandle(snap); }
             return map;
@@ -146,7 +198,11 @@ namespace Deskmate
         public static IntPtr ForPid(int pid)
         {
             if (pid <= 0) return IntPtr.Zero;
-            lock (sync) return WindowFor(pid);
+            lock (sync)
+            {
+                int hostPid;
+                return WindowFor(pid, out hostPid);
+            }
         }
 
         public static bool Focus(IntPtr h)

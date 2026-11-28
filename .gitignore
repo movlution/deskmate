@@ -31,3 +31,7 @@ Desktop.ini
 # Generated Settings art sources (assets/settings/render_art.ps1)
 /assets/settings/svg/
 /assets/settings/preview.html
+
+# Generated Dock icon sources (assets/dock/render_icons.ps1)
+/assets/dock/svg/
+/assets/dock/preview.html

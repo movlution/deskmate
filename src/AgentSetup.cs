@@ -92,7 +92,8 @@ namespace Deskmate
         // 8.3 path: no quotes for Codex
         internal static string Exe()
         {
-            string path = System.Reflection.Assembly.GetEntryAssembly().Location;
+            var asm = System.Reflection.Assembly.GetEntryAssembly() ?? System.Reflection.Assembly.GetExecutingAssembly();
+            string path = asm.Location;
             if (path.IndexOf(' ') < 0) return path;
             var sb = new StringBuilder(520);
             if (GetShortPathName(path, sb, sb.Capacity) > 0 && sb.ToString().IndexOf(' ') < 0) return sb.ToString();
@@ -111,19 +112,38 @@ namespace Deskmate
             return relay + " --json --event " + h.Event + (h.Event == "PreToolUse" ? " || exit /b 0" : " || echo {}");
         }
 
-        // Rewrite stale Antigravity hooks
+        // Rewrite stale Antigravity hooks and ensure Codex reply timeout covers agent.wait
         public static void Refresh(Settings s = null)
         {
             try
             {
+                var cfg = s ?? new Settings();
                 // Gemini CLI dropped: clear its old Deskmate hooks
                 string gem = ConfigFile("gemini");
                 if (File.Exists(gem) && File.ReadAllText(gem).Contains("--relay gemini")) Remove("gemini");
                 var root = HookSetup.Load(ConfigFile("antigravity"));
                 if (root != null && root.ContainsKey("deskmate") && !Installed("antigravity")) Install("antigravity");
-                if (Installed("antigravity") && (s ?? new Settings()).GetBool(StatusSetup.AgentsKey, true)) StatusSetup.AgyInstall();
+                if (Installed("antigravity") && cfg.GetBool(StatusSetup.AgentsKey, true)) StatusSetup.AgyInstall();
+                EnsureReplyTimeout("codex", AgentHub.ClampWait(cfg.GetInt("agent.wait", AgentHub.DefaultWaitSeconds)));
             }
             catch (Exception ex) { Log.Write("agent refresh: " + ex.Message); }
+        }
+
+        // Upgrade Codex PermissionRequest hook timeout when agent.wait exceeds the old 130s cap
+        public static void EnsureReplyTimeout(string id, int waitSeconds)
+        {
+            if (id != "codex" || !Installed(id)) return;
+            var root = HookSetup.Load(ConfigFile(id));
+            var events = root == null ? null : Json.Obj(root, "hooks");
+            if (events == null) return;
+            int minNeeded = AgentHub.ClampWait(waitSeconds) + 20;
+            foreach (var item in HookSetup.AsList(HookSetup.Get(events, "PermissionRequest")))
+                foreach (var x in HookSetup.AsList(HookSetup.Get(item, "hooks")))
+                    if (IsOurs(x, id) && Json.Num(x, "timeout", 0) < minNeeded)
+                    {
+                        Install(id);
+                        return;
+                    }
         }
 
         static Dictionary<string, object> Handler(string id, Hook h)
@@ -142,7 +162,7 @@ namespace Deskmate
             d["type"] = "command";
             d["command"] = Command(id, h);
             // Gemini counts milliseconds; the others seconds
-            d["timeout"] = id == "gemini" ? 5000 : h.Reply ? 130 : 10;
+            d["timeout"] = id == "gemini" ? 5000 : h.Reply ? AgentHub.HookReplyTimeoutSeconds : 10;
             return d;
         }
 
@@ -181,7 +201,7 @@ namespace Deskmate
             if (id == "codex" && !Directory.Exists(dir)) return Lang.T("Folder Codex tidak ditemukan");
             // cmd would read these as operators
             if (Exe().IndexOfAny("&|<>^%".ToCharArray()) >= 0) return Lang.T("Pindahkan Deskmate.exe ke folder tanpa & | < > ^ %");
-            if (id == "antigravity" && Exe().IndexOf('"') >= 0) return Lang.T("Pindahkan Deskmate.exe ke folder tanpa spasi");
+            if ((id == "antigravity" || id == "codex") && Exe().IndexOf('"') >= 0) return Lang.T("Pindahkan Deskmate.exe ke folder tanpa spasi");
             Directory.CreateDirectory(dir);
             var root = File.Exists(file) ? HookSetup.Load(file) : new Dictionary<string, object>();
             if (root == null) return Path.GetFileName(file) + Lang.T(" tidak terbaca");

@@ -118,6 +118,7 @@ Semua kunci di `%APPDATA%\Deskmate\settings.ini` (ubah saat Deskmate tidak berja
 | `dockbar.search`, `dockbar.taskview` | `1`, `0` | Tombol cari dan semua jendela saat menggantikan taskbar |
 | `dockbar.tray` | `1` | Saat Dock menggantikan taskbar, tombol panah di setiap monitor membuka daftar ikon tersembunyi yang sama di atas Dock yang dipilih |
 | `dockbar.capture` | `0` | Dock ikut screenshot dan screen share; kacanya diganti latar polos |
+| `dockbar.suruh` | `1` | Tombol Suruh Deskmate (Ask Deskmate) terpisah di dock; jendela obrolannya menyatu di slot tersebut |
 | `dockbar.w.clock`, `dockbar.w.media`, `dockbar.w.ai`, `dockbar.w.timer`, `dockbar.w.weather`, `dockbar.w.battery`, `dockbar.w.system` | `1` (`system`: `0`) | Widget dock |
 | `dockbar.pins` | dari taskbar | Aplikasi tersemat dipisah `\|`: shortcut, exe, atau `shell:AppsFolder\<id>`; diisi dari taskbar Windows saat dock pertama kali nyala |
 | `pet.on` | `0` | Pet berjalan di atas dock, atau di tepi bawah layar tanpa dock |

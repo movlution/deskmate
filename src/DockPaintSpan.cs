@@ -126,7 +126,7 @@ namespace Deskmate
             string SpanSig(bool left)
             {
                 var sb = new System.Text.StringBuilder();
-                sb.Append(Ink.Epoch).Append(scale).Append(Lang.English).Append('|');
+                sb.Append(Ink.Epoch).Append(scale).Append(Lang.English).Append(Full).Append('|');
                 if (hoverId != null && Owns(hoverId, left)) sb.Append('h').Append(hoverId);
                 if (pressId != null && Owns(pressId, left)) sb.Append('p').Append(pressId);
                 var now = DateTime.Now;
